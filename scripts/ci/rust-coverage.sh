@@ -30,4 +30,4 @@ cargo llvm-cov \
   --locked \
   --no-report
 
-cargo llvm-cov report --workspace --locked --lcov --output-path target/llvm-cov/lcov.info
+cargo llvm-cov report --locked --lcov --output-path target/llvm-cov/lcov.info
