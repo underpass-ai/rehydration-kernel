@@ -5,11 +5,7 @@ use neo4rs::{Graph, query};
 use rehydration_adapter_neo4j::Neo4jProjectionReader;
 use rehydration_domain::{CaseId, Role};
 use rehydration_ports::ProjectionReader;
-use testcontainers::{
-    GenericImage, ImageExt,
-    core::{IntoContainerPort, WaitFor},
-    runners::AsyncRunner,
-};
+use testcontainers::{GenericImage, ImageExt, core::IntoContainerPort, runners::AsyncRunner};
 use tokio::time::sleep;
 
 const NEO4J_INTERNAL_PORT: u16 = 7687;
@@ -20,7 +16,6 @@ const NEO4J_TAG: &str = "5.26.0-community";
 async fn load_pack_reads_role_context_projection() -> Result<(), Box<dyn Error + Send + Sync>> {
     let container = GenericImage::new(NEO4J_IMAGE, NEO4J_TAG)
         .with_exposed_port(NEO4J_INTERNAL_PORT.tcp())
-        .with_wait_for(WaitFor::message_on_stdout("Bolt enabled on"))
         .with_env_var("NEO4J_AUTH", "neo4j/neo")
         .start()
         .await?;
