@@ -90,3 +90,88 @@ jobs:
 
       - name: Run tests
         run: cargo test --workspace --locked
+
+  sonarcloud:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    needs:
+      - proto
+      - rustfmt
+      - clippy
+      - test
+    permissions:
+      contents: read
+      pull-requests: read
+    env:
+      SONAR_HOST_URL: https://sonarcloud.io
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      PR_FROM_FORK: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork || false }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Evaluate Sonar configuration
+        id: sonar-config
+        shell: bash
+        run: |
+          enabled=true
+          reason=""
+
+          if [ -z "${SONAR_TOKEN}" ]; then
+            enabled=false
+            reason="SONAR_TOKEN secret is not configured"
+          elif [ "${PR_FROM_FORK}" = "true" ]; then
+            enabled=false
+            reason="SonarCloud scan is disabled for forked pull requests"
+          fi
+
+          echo "enabled=${enabled}" >> "${GITHUB_OUTPUT}"
+          echo "reason=${reason}" >> "${GITHUB_OUTPUT}"
+
+      - name: Skip SonarCloud
+        if: steps.sonar-config.outputs.enabled != 'true'
+        run: echo "::notice::Skipping SonarCloud. ${{ steps.sonar-config.outputs.reason }}"
+
+      - name: Install Rust toolchain
+        if: steps.sonar-config.outputs.enabled == 'true'
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.90.0
+          components: llvm-tools-preview
+
+      - name: Install protoc
+        if: steps.sonar-config.outputs.enabled == 'true'
+        uses: arduino/setup-protoc@v3
+
+      - name: Install cargo-llvm-cov
+        if: steps.sonar-config.outputs.enabled == 'true'
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Cache Rust build artifacts
+        if: steps.sonar-config.outputs.enabled == 'true'
+        uses: Swatinem/rust-cache@v2
+
+      - name: Cache Sonar packages
+        if: steps.sonar-config.outputs.enabled == 'true'
+        uses: actions/cache@v4
+        with:
+          path: ~/.sonar/cache
+          key: ${{ runner.os }}-sonar
+          restore-keys: |
+            ${{ runner.os }}-sonar
+
+      - name: Generate Rust coverage
+        if: steps.sonar-config.outputs.enabled == 'true'
+        run: bash scripts/ci/rust-coverage.sh
+
+      - name: SonarCloud scan
+        if: steps.sonar-config.outputs.enabled == 'true'
+        uses: SonarSource/sonarqube-scan-action@v7
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: https://sonarcloud.io
+        with:
+          projectBaseDir: ${{ github.workspace }}

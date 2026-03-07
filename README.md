@@ -48,3 +48,18 @@ cargo test --workspace
 ```bash
 scripts/ci/quality-gate.sh
 ```
+
+## SonarCloud
+
+The GitHub Actions CI includes a `sonarcloud` job wired for Rust LCOV coverage.
+It is configured for:
+
+- organization `underpass-ai-swe-ai-fleet`
+- project key `underpass-ai_rehydration-kernel`
+
+To enable the scan, configure:
+
+- repository secret `SONAR_TOKEN`
+
+If the secret is absent, the job exits cleanly with a skip notice instead of
+failing the whole pipeline.
