@@ -44,7 +44,10 @@ Query, admin, and command flows are already mediated by dedicated application
 services, while the core domain logic behind those flows is still being ported.
 The Valkey snapshot adapter now writes real RESP `SET` commands over TCP with a
 stable JSON payload, and the Neo4j adapter has been hardened to avoid
-manufacturing synthetic bundles from infrastructure.
+manufacturing synthetic bundles from infrastructure. The first real Neo4j read
+path now loads `RoleContextPackProjection` roots linked to `CaseHeader`,
+`PlanHeader`, `WorkItem`, `Decision`, `DecisionRelation`, `TaskImpact`, and
+`Milestone` projection nodes.
 
 ## Quickstart
 
@@ -65,9 +68,11 @@ bash scripts/ci/integration-valkey.sh
 ```bash
 CONTAINER_RUNTIME=docker bash scripts/ci/integration-valkey.sh
 CONTAINER_RUNTIME=podman bash scripts/ci/integration-valkey.sh
+CONTAINER_RUNTIME=docker bash scripts/ci/integration-neo4j.sh
+CONTAINER_RUNTIME=podman bash scripts/ci/integration-neo4j.sh
 ```
 
-The Valkey integration target uses `testcontainers` and is intentionally
+The container-backed integration targets use `testcontainers` and are intentionally
 separated from `cargo test --workspace` so unit checks stay fast and
 container-backed tests remain explicit.
 
@@ -85,6 +90,9 @@ Local runtime selection works like this:
   `TESTCONTAINERS_RYUK_DISABLED=true`.
 
 GitHub Actions stays on Docker for the repository CI path.
+
+For Neo4j-backed local runs, `REHYDRATION_GRAPH_URI` may include credentials,
+for example `neo4j://neo4j:<password>@localhost:7687`.
 
 ## SonarCloud
 

@@ -7,9 +7,20 @@ rust-version.workspace = true
 [lints]
 workspace = true
 
+[features]
+default = []
+container-tests = []
+
 [dependencies]
+neo4rs.workspace = true
 rehydration-domain.workspace = true
 rehydration-ports.workspace = true
+tokio.workspace = true
 
 [dev-dependencies]
-tokio.workspace = true
+testcontainers = "0.24.0"
+
+[[test]]
+name = "neo4j_integration"
+path = "tests/neo4j_integration.rs"
+required-features = ["container-tests"]
