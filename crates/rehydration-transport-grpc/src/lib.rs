@@ -1,16 +1,20 @@
-use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
 
 use prost_types::{Duration as ProtoDuration, Timestamp};
 use rehydration_application::{
-    AcceptedVersion, ApplicationError, GetContextResult, GetContextUseCase,
-    RehydrateSessionUseCase, RehydrationApplication, ScopeValidation, UpdateContextCommand,
-    UpdateContextUseCase, ValidateScopeUseCase,
+    AcceptedVersion, AdminApplicationService, ApplicationError, BundleSnapshotResult,
+    GetBundleSnapshotQuery, GetContextQuery, GetContextResult, GetGraphRelationshipsQuery,
+    GetGraphRelationshipsResult, GetProjectionStatusQuery, GetProjectionStatusResult,
+    GetRehydrationDiagnosticsQuery, GetRehydrationDiagnosticsResult, GraphNodeView,
+    GraphRelationshipView, ProjectionStatusView, QueryApplicationService, RehydrateSessionQuery,
+    RehydrateSessionResult, RehydrationApplication, RehydrationDiagnosticView, ReplayModeSelection,
+    ReplayProjectionCommand, ReplayProjectionOutcome, ScopeValidation, UpdateContextCommand,
+    UpdateContextUseCase, ValidateScopeQuery,
 };
 use rehydration_config::AppConfig;
-use rehydration_domain::{BundleMetadata, CaseId, RehydrationBundle, Role};
+use rehydration_domain::{BundleMetadata, RehydrationBundle};
 use rehydration_ports::{ProjectionReader, SnapshotStore};
 use rehydration_proto::v1alpha1::{
     BundleRenderFormat, BundleSection, BundleSnapshot, BundleVersion, CaseHeader, CommandMetadata,
@@ -33,8 +37,8 @@ use tonic::{Request, Response, Status, transport::Server};
 #[derive(Debug)]
 pub struct GrpcServer<R, S> {
     bind_addr: String,
-    projection_reader: Arc<R>,
-    snapshot_store: Arc<S>,
+    query_application: Arc<QueryApplicationService<R, S>>,
+    admin_application: Arc<AdminApplicationService<R>>,
     update_context: Arc<UpdateContextUseCase>,
     capability_name: &'static str,
 }
@@ -47,19 +51,27 @@ where
     pub fn new(config: AppConfig, projection_reader: R, snapshot_store: S) -> Self {
         let projection_reader = Arc::new(projection_reader);
         let snapshot_store = Arc::new(snapshot_store);
+        let generator_version = env!("CARGO_PKG_VERSION");
 
         Self {
             bind_addr: config.grpc_bind,
-            projection_reader,
-            snapshot_store,
-            update_context: Arc::new(UpdateContextUseCase::new(env!("CARGO_PKG_VERSION"))),
+            query_application: Arc::new(QueryApplicationService::new(
+                Arc::clone(&projection_reader),
+                Arc::clone(&snapshot_store),
+                generator_version,
+            )),
+            admin_application: Arc::new(AdminApplicationService::new(
+                Arc::clone(&projection_reader),
+                generator_version,
+            )),
+            update_context: Arc::new(UpdateContextUseCase::new(generator_version)),
             capability_name: RehydrationApplication::capability_name(),
         }
     }
 
     pub fn describe(&self) -> String {
         format!(
-            "grpc transport placeholder for {} on {}",
+            "grpc transport for {} on {}",
             self.capability_name, self.bind_addr
         )
     }
@@ -82,11 +94,7 @@ where
     }
 
     pub fn query_service(&self) -> QueryGrpcService<R, S> {
-        QueryGrpcService::new(
-            Arc::clone(&self.projection_reader),
-            Arc::clone(&self.snapshot_store),
-            env!("CARGO_PKG_VERSION"),
-        )
+        QueryGrpcService::new(Arc::clone(&self.query_application))
     }
 
     pub fn command_service(&self) -> CommandGrpcService {
@@ -94,19 +102,11 @@ where
     }
 
     pub fn admin_service(&self) -> AdminGrpcService<R> {
-        AdminGrpcService::new(
-            Arc::clone(&self.projection_reader),
-            env!("CARGO_PKG_VERSION"),
-        )
+        AdminGrpcService::new(Arc::clone(&self.admin_application))
     }
 
     pub fn warmup_bundle(&self) -> Result<RehydrationBundle, ApplicationError> {
-        RehydrateSessionUseCase::new(
-            Arc::clone(&self.projection_reader),
-            Arc::clone(&self.snapshot_store),
-            env!("CARGO_PKG_VERSION"),
-        )
-        .execute("bootstrap-case", "system")
+        self.query_application.warmup_bundle()
     }
 
     pub async fn run(self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -125,22 +125,12 @@ where
 
 #[derive(Debug, Clone)]
 pub struct QueryGrpcService<R, S> {
-    generator_version: &'static str,
-    projection_reader: Arc<R>,
-    snapshot_store: Arc<S>,
+    application: Arc<QueryApplicationService<R, S>>,
 }
 
 impl<R, S> QueryGrpcService<R, S> {
-    pub fn new(
-        projection_reader: Arc<R>,
-        snapshot_store: Arc<S>,
-        generator_version: &'static str,
-    ) -> Self {
-        Self {
-            generator_version,
-            projection_reader,
-            snapshot_store,
-        }
+    pub fn new(application: Arc<QueryApplicationService<R, S>>) -> Self {
+        Self { application }
     }
 }
 
@@ -155,20 +145,20 @@ where
         request: Request<GetContextRequest>,
     ) -> Result<Response<GetContextResponse>, Status> {
         let request = request.into_inner();
-        let rehydrate = RehydrateSessionUseCase::new(
-            Arc::clone(&self.projection_reader),
-            Arc::clone(&self.snapshot_store),
-            self.generator_version,
-        );
-        let result = GetContextUseCase::new(rehydrate)
-            .execute(&request.case_id, &request.role, &request.requested_scopes)
+        let result = self
+            .application
+            .get_context(GetContextQuery {
+                case_id: request.case_id,
+                role: request.role,
+                requested_scopes: request.requested_scopes,
+            })
             .map_err(map_application_error)?;
 
         Ok(Response::new(GetContextResponse {
             bundle: Some(proto_bundle_from_single_role(&result.bundle)),
             rendered: Some(proto_rendered_context_from_result(&result)),
             scope_validation: Some(proto_scope_validation(&result.scope_validation)),
-            served_at: Some(now_timestamp()),
+            served_at: Some(timestamp_from(result.served_at)),
         }))
     }
 
@@ -177,52 +167,17 @@ where
         request: Request<RehydrateSessionRequest>,
     ) -> Result<Response<RehydrateSessionResponse>, Status> {
         let request = request.into_inner();
-        if request.roles.is_empty() {
-            return Err(Status::invalid_argument("roles cannot be empty"));
-        }
+        let result = self
+            .application
+            .rehydrate_session(RehydrateSessionQuery {
+                case_id: request.case_id,
+                roles: request.roles,
+                persist_snapshot: request.persist_snapshot,
+                timeline_window: request.timeline_window,
+            })
+            .map_err(map_application_error)?;
 
-        let rehydrate = RehydrateSessionUseCase::new(
-            Arc::clone(&self.projection_reader),
-            Arc::clone(&self.snapshot_store),
-            self.generator_version,
-        );
-
-        let mut packs = Vec::with_capacity(request.roles.len());
-        for role in &request.roles {
-            let bundle = rehydrate
-                .execute(&request.case_id, role)
-                .map_err(map_application_error)?;
-            packs.push(proto_role_pack_from_domain(&bundle));
-        }
-        let case_id = request.case_id.clone();
-        let snapshot_id = if request.persist_snapshot {
-            format!("snapshot:{}:{}", case_id, request.roles.join(","))
-        } else {
-            String::new()
-        };
-
-        let bundle = ProtoRehydrationBundle {
-            case_id,
-            packs,
-            stats: Some(RehydrationStats {
-                roles: request.roles.len() as u32,
-                decisions: 0,
-                decision_relations: 0,
-                impacts: 0,
-                milestones: 0,
-                timeline_events: request.timeline_window,
-            }),
-            version: Some(proto_bundle_version(&BundleMetadata::initial(
-                self.generator_version,
-            ))),
-        };
-
-        Ok(Response::new(RehydrateSessionResponse {
-            bundle: Some(bundle),
-            snapshot_persisted: request.persist_snapshot,
-            snapshot_id,
-            generated_at: Some(now_timestamp()),
-        }))
+        Ok(Response::new(proto_rehydrate_session_response(&result)))
     }
 
     async fn validate_scope(
@@ -230,8 +185,10 @@ where
         request: Request<ValidateScopeRequest>,
     ) -> Result<Response<ValidateScopeResponse>, Status> {
         let request = request.into_inner();
-        let result =
-            ValidateScopeUseCase::execute(&request.required_scopes, &request.provided_scopes);
+        let result = self.application.validate_scope(ValidateScopeQuery {
+            required_scopes: request.required_scopes,
+            provided_scopes: request.provided_scopes,
+        });
 
         Ok(Response::new(ValidateScopeResponse {
             result: Some(proto_scope_validation(&result)),
@@ -241,37 +198,12 @@ where
 
 #[derive(Debug, Clone)]
 pub struct AdminGrpcService<R> {
-    generator_version: &'static str,
-    projection_reader: Arc<R>,
+    application: Arc<AdminApplicationService<R>>,
 }
 
-impl<R> AdminGrpcService<R>
-where
-    R: ProjectionReader,
-{
-    pub fn new(projection_reader: Arc<R>, generator_version: &'static str) -> Self {
-        Self {
-            generator_version,
-            projection_reader,
-        }
-    }
-
-    fn load_or_empty_bundle(
-        &self,
-        case_id: &str,
-        role: &str,
-    ) -> Result<RehydrationBundle, ApplicationError> {
-        let case_id = CaseId::new(case_id)?;
-        let role = Role::new(role)?;
-
-        match self.projection_reader.load_bundle(&case_id, &role)? {
-            Some(bundle) => Ok(bundle),
-            None => Ok(RehydrationBundle::empty(
-                case_id,
-                role,
-                self.generator_version,
-            )),
-        }
+impl<R> AdminGrpcService<R> {
+    pub fn new(application: Arc<AdminApplicationService<R>>) -> Self {
+        Self { application }
     }
 }
 
@@ -285,19 +217,13 @@ where
         request: Request<GetProjectionStatusRequest>,
     ) -> Result<Response<GetProjectionStatusResponse>, Status> {
         let request = request.into_inner();
-        let consumer_names = if request.consumer_names.is_empty() {
-            vec!["context-projection".to_string()]
-        } else {
-            request.consumer_names
-        };
+        let result = self
+            .application
+            .get_projection_status(GetProjectionStatusQuery {
+                consumer_names: request.consumer_names,
+            });
 
-        Ok(Response::new(GetProjectionStatusResponse {
-            projections: consumer_names
-                .iter()
-                .map(|consumer_name| proto_projection_status(consumer_name))
-                .collect(),
-            observed_at: Some(now_timestamp()),
-        }))
+        Ok(Response::new(proto_projection_status_response(&result)))
     }
 
     async fn replay_projection(
@@ -305,22 +231,19 @@ where
         request: Request<ReplayProjectionRequest>,
     ) -> Result<Response<ReplayProjectionResponse>, Status> {
         let request = request.into_inner();
-        if request.consumer_name.is_empty() {
-            return Err(Status::invalid_argument("consumer_name cannot be empty"));
-        }
-        if request.stream_name.is_empty() {
-            return Err(Status::invalid_argument("stream_name cannot be empty"));
-        }
+        let result = self
+            .application
+            .replay_projection(ReplayProjectionCommand {
+                consumer_name: request.consumer_name,
+                stream_name: request.stream_name,
+                starting_after: trim_to_option(request.starting_after),
+                max_events: request.max_events,
+                replay_mode: map_replay_mode(request.replay_mode),
+                requested_by: trim_to_option(request.requested_by),
+            })
+            .map_err(map_application_error)?;
 
-        let replay_mode = ReplayMode::try_from(request.replay_mode).unwrap_or(ReplayMode::DryRun);
-
-        Ok(Response::new(ReplayProjectionResponse {
-            replay_id: format!("replay:{}:{}", request.consumer_name, request.stream_name),
-            consumer_name: request.consumer_name,
-            replay_mode: replay_mode as i32,
-            accepted_events: request.max_events,
-            requested_at: Some(now_timestamp()),
-        }))
+        Ok(Response::new(proto_replay_projection_response(&result)))
     }
 
     async fn get_bundle_snapshot(
@@ -328,13 +251,15 @@ where
         request: Request<GetBundleSnapshotRequest>,
     ) -> Result<Response<GetBundleSnapshotResponse>, Status> {
         let request = request.into_inner();
-        let bundle = self
-            .load_or_empty_bundle(&request.case_id, &request.role)
+        let result = self
+            .application
+            .get_bundle_snapshot(GetBundleSnapshotQuery {
+                case_id: request.case_id,
+                role: request.role,
+            })
             .map_err(map_application_error)?;
 
-        Ok(Response::new(GetBundleSnapshotResponse {
-            snapshot: Some(proto_bundle_snapshot(&bundle)),
-        }))
+        Ok(Response::new(proto_bundle_snapshot_response(&result)))
     }
 
     async fn get_graph_relationships(
@@ -342,70 +267,17 @@ where
         request: Request<GetGraphRelationshipsRequest>,
     ) -> Result<Response<GetGraphRelationshipsResponse>, Status> {
         let request = request.into_inner();
-        if request.node_id.is_empty() {
-            return Err(Status::invalid_argument("node_id cannot be empty"));
-        }
+        let result = self
+            .application
+            .get_graph_relationships(GetGraphRelationshipsQuery {
+                node_id: request.node_id,
+                node_kind: trim_to_option(request.node_kind),
+                depth: request.depth,
+                include_reverse_edges: request.include_reverse_edges,
+            })
+            .map_err(map_application_error)?;
 
-        let node_kind = if request.node_kind.is_empty() {
-            "unknown".to_string()
-        } else {
-            request.node_kind
-        };
-
-        let root = GraphNode {
-            node_id: request.node_id.clone(),
-            node_kind: node_kind.clone(),
-            title: format!("{} {}", node_kind, request.node_id),
-            labels: vec![node_kind.clone()],
-            properties: HashMap::from([
-                ("source".to_string(), "admin-placeholder".to_string()),
-                ("depth".to_string(), request.depth.to_string()),
-            ]),
-        };
-
-        let mut neighbors = Vec::new();
-        let mut relationships = Vec::new();
-
-        if request.depth > 0 {
-            let child_id = format!("{}-neighbor-1", request.node_id);
-            neighbors.push(GraphNode {
-                node_id: child_id.clone(),
-                node_kind: node_kind.clone(),
-                title: format!("Related {}", child_id),
-                labels: vec!["related".to_string()],
-                properties: HashMap::from([("edge_direction".to_string(), "outbound".to_string())]),
-            });
-            relationships.push(GraphRelationship {
-                source_node_id: request.node_id.clone(),
-                target_node_id: child_id,
-                relationship_type: "RELATES_TO".to_string(),
-                properties: HashMap::new(),
-            });
-        }
-
-        if request.include_reverse_edges {
-            let reverse_id = format!("{}-neighbor-reverse", request.node_id);
-            neighbors.push(GraphNode {
-                node_id: reverse_id.clone(),
-                node_kind,
-                title: format!("Reverse {}", reverse_id),
-                labels: vec!["reverse".to_string()],
-                properties: HashMap::from([("edge_direction".to_string(), "inbound".to_string())]),
-            });
-            relationships.push(GraphRelationship {
-                source_node_id: reverse_id,
-                target_node_id: request.node_id,
-                relationship_type: "INFLUENCES".to_string(),
-                properties: HashMap::new(),
-            });
-        }
-
-        Ok(Response::new(GetGraphRelationshipsResponse {
-            root: Some(root),
-            neighbors,
-            relationships,
-            observed_at: Some(now_timestamp()),
-        }))
+        Ok(Response::new(proto_graph_relationships_response(&result)))
     }
 
     async fn get_rehydration_diagnostics(
@@ -413,40 +285,22 @@ where
         request: Request<GetRehydrationDiagnosticsRequest>,
     ) -> Result<Response<GetRehydrationDiagnosticsResponse>, Status> {
         let request = request.into_inner();
-        if request.roles.is_empty() {
-            return Err(Status::invalid_argument("roles cannot be empty"));
-        }
-
-        let phase_name = Phase::try_from(request.phase)
+        let phase = Phase::try_from(request.phase)
             .unwrap_or(Phase::Unspecified)
             .as_str_name()
             .to_string();
-        let diagnostics = request
-            .roles
-            .iter()
-            .map(|role| {
-                self.load_or_empty_bundle(&request.case_id, role)
-                    .map(|bundle| RehydrationDiagnostic {
-                        role: role.clone(),
-                        version: Some(proto_bundle_version(bundle.metadata())),
-                        selected_decisions: 0,
-                        selected_impacts: 0,
-                        selected_milestones: 0,
-                        estimated_tokens: bundle
-                            .sections()
-                            .iter()
-                            .map(|section| section.split_whitespace().count() as u32)
-                            .sum(),
-                        notes: vec![format!("phase={phase_name}")],
-                    })
+        let result = self
+            .application
+            .get_rehydration_diagnostics(GetRehydrationDiagnosticsQuery {
+                case_id: request.case_id,
+                roles: request.roles,
+                phase: trim_to_option(phase),
             })
-            .collect::<Result<Vec<_>, _>>()
             .map_err(map_application_error)?;
 
-        Ok(Response::new(GetRehydrationDiagnosticsResponse {
-            diagnostics,
-            observed_at: Some(now_timestamp()),
-        }))
+        Ok(Response::new(proto_rehydration_diagnostics_response(
+            &result,
+        )))
     }
 }
 
@@ -522,6 +376,92 @@ impl ContextCommandService for CommandGrpcService {
     }
 }
 
+fn proto_rehydrate_session_response(result: &RehydrateSessionResult) -> RehydrateSessionResponse {
+    RehydrateSessionResponse {
+        bundle: Some(ProtoRehydrationBundle {
+            case_id: result.case_id.clone(),
+            packs: result
+                .bundles
+                .iter()
+                .map(proto_role_pack_from_domain)
+                .collect(),
+            stats: Some(RehydrationStats {
+                roles: result.bundles.len() as u32,
+                decisions: 0,
+                decision_relations: 0,
+                impacts: 0,
+                milestones: 0,
+                timeline_events: result.timeline_events,
+            }),
+            version: Some(proto_bundle_version(&result.version)),
+        }),
+        snapshot_persisted: result.snapshot_persisted,
+        snapshot_id: result.snapshot_id.clone().unwrap_or_default(),
+        generated_at: Some(timestamp_from(result.generated_at)),
+    }
+}
+
+fn proto_projection_status_response(
+    result: &GetProjectionStatusResult,
+) -> GetProjectionStatusResponse {
+    GetProjectionStatusResponse {
+        projections: result
+            .projections
+            .iter()
+            .map(proto_projection_status)
+            .collect(),
+        observed_at: Some(timestamp_from(result.observed_at)),
+    }
+}
+
+fn proto_replay_projection_response(result: &ReplayProjectionOutcome) -> ReplayProjectionResponse {
+    ReplayProjectionResponse {
+        replay_id: result.replay_id.clone(),
+        consumer_name: result.consumer_name.clone(),
+        replay_mode: proto_replay_mode(result.replay_mode) as i32,
+        accepted_events: result.accepted_events,
+        requested_at: Some(timestamp_from(result.requested_at)),
+    }
+}
+
+fn proto_bundle_snapshot_response(result: &BundleSnapshotResult) -> GetBundleSnapshotResponse {
+    GetBundleSnapshotResponse {
+        snapshot: Some(BundleSnapshot {
+            snapshot_id: result.snapshot_id.clone(),
+            case_id: result.case_id.clone(),
+            role: result.role.clone(),
+            bundle: Some(proto_bundle_from_single_role(&result.bundle)),
+            created_at: Some(timestamp_from(result.created_at)),
+            expires_at: Some(timestamp_from(result.expires_at)),
+            ttl: Some(proto_duration(result.ttl_seconds)),
+        }),
+    }
+}
+
+fn proto_graph_relationships_response(
+    result: &GetGraphRelationshipsResult,
+) -> GetGraphRelationshipsResponse {
+    GetGraphRelationshipsResponse {
+        root: Some(proto_graph_node(&result.root)),
+        neighbors: result.neighbors.iter().map(proto_graph_node).collect(),
+        relationships: result
+            .relationships
+            .iter()
+            .map(proto_graph_relationship)
+            .collect(),
+        observed_at: Some(timestamp_from(result.observed_at)),
+    }
+}
+
+fn proto_rehydration_diagnostics_response(
+    result: &GetRehydrationDiagnosticsResult,
+) -> GetRehydrationDiagnosticsResponse {
+    GetRehydrationDiagnosticsResponse {
+        diagnostics: result.diagnostics.iter().map(proto_diagnostic).collect(),
+        observed_at: Some(timestamp_from(result.observed_at)),
+    }
+}
+
 fn proto_bundle_from_single_role(bundle: &RehydrationBundle) -> ProtoRehydrationBundle {
     ProtoRehydrationBundle {
         case_id: bundle.case_id().as_str().to_string(),
@@ -546,7 +486,7 @@ fn proto_role_pack_from_domain(bundle: &RehydrationBundle) -> RoleContextPack {
             title: format!("Case {}", bundle.case_id().as_str()),
             summary: format!("Deterministic placeholder for {}", bundle.role().as_str()),
             status: "ACTIVE".to_string(),
-            created_at: Some(now_timestamp()),
+            created_at: Some(timestamp_from(SystemTime::now())),
             created_by: "rehydration-kernel".to_string(),
         }),
         plan_header: Some(PlanHeader {
@@ -613,13 +553,58 @@ fn proto_scope_validation(result: &ScopeValidation) -> ScopeValidationResult {
     }
 }
 
+fn proto_projection_status(view: &ProjectionStatusView) -> ProjectionStatus {
+    ProjectionStatus {
+        consumer_name: view.consumer_name.clone(),
+        stream_name: view.stream_name.clone(),
+        projection_watermark: view.projection_watermark.clone(),
+        processed_events: view.processed_events,
+        pending_events: view.pending_events,
+        last_event_at: Some(timestamp_from(view.last_event_at)),
+        updated_at: Some(timestamp_from(view.updated_at)),
+        healthy: view.healthy,
+        warnings: view.warnings.clone(),
+    }
+}
+
+fn proto_graph_node(node: &GraphNodeView) -> GraphNode {
+    GraphNode {
+        node_id: node.node_id.clone(),
+        node_kind: node.node_kind.clone(),
+        title: node.title.clone(),
+        labels: node.labels.clone(),
+        properties: node.properties.clone().into_iter().collect(),
+    }
+}
+
+fn proto_graph_relationship(relationship: &GraphRelationshipView) -> GraphRelationship {
+    GraphRelationship {
+        source_node_id: relationship.source_node_id.clone(),
+        target_node_id: relationship.target_node_id.clone(),
+        relationship_type: relationship.relationship_type.clone(),
+        properties: relationship.properties.clone().into_iter().collect(),
+    }
+}
+
+fn proto_diagnostic(diagnostic: &RehydrationDiagnosticView) -> RehydrationDiagnostic {
+    RehydrationDiagnostic {
+        role: diagnostic.role.clone(),
+        version: Some(proto_bundle_version(&diagnostic.version)),
+        selected_decisions: diagnostic.selected_decisions,
+        selected_impacts: diagnostic.selected_impacts,
+        selected_milestones: diagnostic.selected_milestones,
+        estimated_tokens: diagnostic.estimated_tokens,
+        notes: diagnostic.notes.clone(),
+    }
+}
+
 fn proto_accepted_version(version: &AcceptedVersion) -> BundleVersion {
     BundleVersion {
         revision: version.revision,
         content_hash: version.content_hash.clone(),
         schema_version: "v1alpha1".to_string(),
         projection_watermark: format!("rev-{}", version.revision),
-        generated_at: Some(now_timestamp()),
+        generated_at: Some(timestamp_from(SystemTime::now())),
         generator_version: version.generator_version.clone(),
     }
 }
@@ -630,38 +615,23 @@ fn proto_bundle_version(metadata: &BundleMetadata) -> BundleVersion {
         content_hash: metadata.content_hash.clone(),
         schema_version: "v1alpha1".to_string(),
         projection_watermark: format!("rev-{}", metadata.revision),
-        generated_at: Some(now_timestamp()),
+        generated_at: Some(timestamp_from(SystemTime::now())),
         generator_version: metadata.generator_version.clone(),
     }
 }
 
-fn proto_bundle_snapshot(bundle: &RehydrationBundle) -> BundleSnapshot {
-    BundleSnapshot {
-        snapshot_id: format!(
-            "snapshot:{}:{}",
-            bundle.case_id().as_str(),
-            bundle.role().as_str()
-        ),
-        case_id: bundle.case_id().as_str().to_string(),
-        role: bundle.role().as_str().to_string(),
-        bundle: Some(proto_bundle_from_single_role(bundle)),
-        created_at: Some(now_timestamp()),
-        expires_at: Some(now_plus_timestamp(900)),
-        ttl: Some(proto_duration(900)),
+fn map_replay_mode(value: i32) -> ReplayModeSelection {
+    match ReplayMode::try_from(value).unwrap_or(ReplayMode::DryRun) {
+        ReplayMode::DryRun => ReplayModeSelection::DryRun,
+        ReplayMode::Rebuild => ReplayModeSelection::Rebuild,
+        ReplayMode::Unspecified => ReplayModeSelection::DryRun,
     }
 }
 
-fn proto_projection_status(consumer_name: &str) -> ProjectionStatus {
-    ProjectionStatus {
-        consumer_name: consumer_name.to_string(),
-        stream_name: format!("{consumer_name}.events"),
-        projection_watermark: "rev-0".to_string(),
-        processed_events: 0,
-        pending_events: 0,
-        last_event_at: Some(now_timestamp()),
-        updated_at: Some(now_timestamp()),
-        healthy: true,
-        warnings: vec!["projection status is placeholder-backed".to_string()],
+fn proto_replay_mode(value: ReplayModeSelection) -> ReplayMode {
+    match value {
+        ReplayModeSelection::DryRun => ReplayMode::DryRun,
+        ReplayModeSelection::Rebuild => ReplayMode::Rebuild,
     }
 }
 
@@ -676,17 +646,12 @@ fn map_application_error(error: ApplicationError) -> Status {
             }
             rehydration_ports::PortError::Unavailable(message) => Status::unavailable(message),
         },
+        ApplicationError::Validation(message) => Status::invalid_argument(message),
     }
 }
 
-fn now_timestamp() -> Timestamp {
-    Timestamp::from(SystemTime::now())
-}
-
-fn now_plus_timestamp(seconds: u64) -> Timestamp {
-    let now = SystemTime::now();
-    let shifted = now.checked_add(Duration::from_secs(seconds)).unwrap_or(now);
-    Timestamp::from(shifted)
+fn timestamp_from(value: SystemTime) -> Timestamp {
+    Timestamp::from(value)
 }
 
 fn proto_duration(seconds: u64) -> ProtoDuration {
@@ -696,10 +661,20 @@ fn proto_duration(seconds: u64) -> ProtoDuration {
     }
 }
 
+fn trim_to_option(value: String) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
 
+    use rehydration_application::{AdminApplicationService, QueryApplicationService};
     use rehydration_domain::{CaseId, RehydrationBundle, Role};
     use rehydration_ports::{PortError, ProjectionReader, SnapshotStore};
     use rehydration_proto::v1alpha1::{
@@ -754,11 +729,12 @@ mod tests {
 
     #[tokio::test]
     async fn query_service_returns_rendered_context() {
-        let service = QueryGrpcService::new(
+        let application = Arc::new(QueryApplicationService::new(
             Arc::new(EmptyProjectionReader),
             Arc::new(NoopSnapshotStore),
             "0.1.0",
-        );
+        ));
+        let service = QueryGrpcService::new(application);
 
         let response = service
             .get_context(Request::new(GetContextRequest {
@@ -795,11 +771,12 @@ mod tests {
 
     #[tokio::test]
     async fn query_service_validates_scope_diffs() {
-        let service = QueryGrpcService::new(
+        let application = Arc::new(QueryApplicationService::new(
             Arc::new(EmptyProjectionReader),
             Arc::new(NoopSnapshotStore),
             "0.1.0",
-        );
+        ));
+        let service = QueryGrpcService::new(application);
 
         let response = service
             .validate_scope(Request::new(ValidateScopeRequest {
@@ -857,7 +834,11 @@ mod tests {
 
     #[tokio::test]
     async fn admin_service_returns_snapshot_and_status() {
-        let service = AdminGrpcService::new(Arc::new(EmptyProjectionReader), "0.1.0");
+        let application = Arc::new(AdminApplicationService::new(
+            Arc::new(EmptyProjectionReader),
+            "0.1.0",
+        ));
+        let service = AdminGrpcService::new(application);
 
         let status = service
             .get_projection_status(Request::new(GetProjectionStatusRequest {
@@ -885,7 +866,11 @@ mod tests {
 
     #[tokio::test]
     async fn admin_service_returns_diagnostics_per_role() {
-        let service = AdminGrpcService::new(Arc::new(EmptyProjectionReader), "0.1.0");
+        let application = Arc::new(AdminApplicationService::new(
+            Arc::new(EmptyProjectionReader),
+            "0.1.0",
+        ));
+        let service = AdminGrpcService::new(application);
 
         let response = service
             .get_rehydration_diagnostics(Request::new(GetRehydrationDiagnosticsRequest {
