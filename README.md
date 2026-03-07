@@ -49,6 +49,24 @@ path now loads `RoleContextPackProjection` roots linked to `CaseHeader`,
 `PlanHeader`, `WorkItem`, `Decision`, `DecisionRelation`, `TaskImpact`, and
 `Milestone` projection nodes.
 
+The event-driven projection foundation is node-centric by design. Inbound
+projection events no longer model `project`, `epic`, `story`, or `task`
+concepts directly; they model:
+
+- graph nodes plus their relations;
+- expanded per-node detail materialized into Valkey by `node_id`;
+- deterministic idempotency and per-consumer checkpoints.
+
+The first real projection write path is now split the same way:
+
+- Neo4j persists normalized graph nodes and node-to-node relations.
+- Valkey persists expanded node detail keyed by `node_id`.
+- `RoutingProjectionWriter` fans projection mutations out to those stores.
+
+The current gRPC query path still reads the earlier `RoleContextPackProjection`
+model. Migrating query assembly to the node-centric graph is the next step; the
+new write path is in place without pretending that migration is already done.
+
 ## Quickstart
 
 ```bash

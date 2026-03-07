@@ -10,6 +10,8 @@ workspace = true
 [dependencies]
 rehydration-domain.workspace = true
 rehydration-ports.workspace = true
+serde.workspace = true
 
 [dev-dependencies]
+rehydration-testkit.workspace = true
 tokio.workspace = true

@@ -7,7 +7,10 @@ use rehydration_domain::{
     CaseHeader, CaseId, Decision, DecisionRelation, Milestone, PlanHeader, Role, RoleContextPack,
     TaskImpact, WorkItem,
 };
-use rehydration_ports::{PortError, ProjectionReader};
+use rehydration_ports::{
+    NodeProjection, NodeRelationProjection, PortError, ProjectionMutation, ProjectionReader,
+    ProjectionWriter,
+};
 use tokio::sync::OnceCell;
 
 const ROOT_QUERY: &str = "
@@ -96,10 +99,12 @@ ORDER BY occurred_at DESC, milestone_type ASC
 ";
 
 #[derive(Clone)]
-pub struct Neo4jProjectionReader {
+pub struct Neo4jProjectionStore {
     endpoint: Neo4jEndpoint,
     graph: Arc<OnceCell<Arc<Graph>>>,
 }
+
+pub type Neo4jProjectionReader = Neo4jProjectionStore;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Neo4jEndpoint {
@@ -169,16 +174,16 @@ struct RawMilestoneRecord {
     actor: String,
 }
 
-impl fmt::Debug for Neo4jProjectionReader {
+impl fmt::Debug for Neo4jProjectionStore {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Neo4jProjectionReader")
+        f.debug_struct("Neo4jProjectionStore")
             .field("endpoint", &self.endpoint)
             .field("connected", &self.graph.get().is_some())
             .finish()
     }
 }
 
-impl Neo4jProjectionReader {
+impl Neo4jProjectionStore {
     pub fn new(graph_uri: impl Into<String>) -> Result<Self, PortError> {
         let endpoint = Neo4jEndpoint::parse(graph_uri.into())?;
         Ok(Self {
@@ -467,9 +472,83 @@ impl Neo4jProjectionReader {
 
         Ok(collected)
     }
+
+    async fn apply_node_projection(
+        &self,
+        graph: &Graph,
+        node: &NodeProjection,
+    ) -> Result<(), PortError> {
+        graph
+            .run(
+                query(
+                    "
+MERGE (node:ProjectionNode {node_id: $node_id})
+SET node.node_kind = $node_kind,
+    node.title = $title,
+    node.summary = $summary,
+    node.status = $status,
+    node.node_labels = $node_labels,
+    node.properties_json = $properties_json
+                    ",
+                )
+                .param("node_id", node.node_id.as_str())
+                .param("node_kind", node.node_kind.as_str())
+                .param("title", node.title.as_str())
+                .param("summary", node.summary.as_str())
+                .param("status", node.status.as_str())
+                .param("node_labels", node.labels.clone())
+                .param("properties_json", serialize_properties(&node.properties)?),
+            )
+            .await
+            .map_err(|error| {
+                PortError::Unavailable(format!(
+                    "neo4j apply node projection failed for node `{}`: {error}",
+                    node.node_id
+                ))
+            })
+    }
+
+    async fn apply_relation_projection(
+        &self,
+        graph: &Graph,
+        relation: &NodeRelationProjection,
+    ) -> Result<(), PortError> {
+        graph
+            .run(
+                query(
+                    "
+MERGE (source:ProjectionNode {node_id: $source_node_id})
+ON CREATE SET source.node_kind = 'unknown',
+              source.title = '',
+              source.summary = '',
+              source.status = 'STATUS_UNSPECIFIED',
+              source.node_labels = [],
+              source.properties_json = '{}'
+MERGE (target:ProjectionNode {node_id: $target_node_id})
+ON CREATE SET target.node_kind = 'unknown',
+              target.title = '',
+              target.summary = '',
+              target.status = 'STATUS_UNSPECIFIED',
+              target.node_labels = [],
+              target.properties_json = '{}'
+MERGE (source)-[edge:RELATED_TO {relation_type: $relation_type}]->(target)
+                    ",
+                )
+                .param("source_node_id", relation.source_node_id.as_str())
+                .param("target_node_id", relation.target_node_id.as_str())
+                .param("relation_type", relation.relation_type.as_str()),
+            )
+            .await
+            .map_err(|error| {
+                PortError::Unavailable(format!(
+                    "neo4j apply relation projection failed for edge `{} -> {}`: {error}",
+                    relation.source_node_id, relation.target_node_id
+                ))
+            })
+    }
 }
 
-impl ProjectionReader for Neo4jProjectionReader {
+impl ProjectionReader for Neo4jProjectionStore {
     async fn load_pack(
         &self,
         case_id: &CaseId,
@@ -500,6 +579,31 @@ impl ProjectionReader for Neo4jProjectionReader {
             root.latest_summary,
             root.token_budget_hint,
         )))
+    }
+}
+
+impl ProjectionWriter for Neo4jProjectionStore {
+    async fn apply_mutations(&self, mutations: Vec<ProjectionMutation>) -> Result<(), PortError> {
+        let graph = self.graph().await?;
+
+        for mutation in mutations {
+            match mutation {
+                ProjectionMutation::UpsertNode(node) => {
+                    self.apply_node_projection(&graph, &node).await?;
+                }
+                ProjectionMutation::UpsertNodeRelation(relation) => {
+                    self.apply_relation_projection(&graph, &relation).await?;
+                }
+                ProjectionMutation::UpsertNodeDetail(detail) => {
+                    return Err(PortError::InvalidState(format!(
+                        "neo4j graph projection writer does not persist node detail `{}`",
+                        detail.node_id
+                    )));
+                }
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -660,6 +764,16 @@ fn scoped_query(statement: &str, case_id: &CaseId, role: &Role) -> Query {
         .param("role", role.as_str())
 }
 
+fn serialize_properties(
+    properties: &std::collections::BTreeMap<String, String>,
+) -> Result<String, PortError> {
+    serde_json::to_string(properties).map_err(|error| {
+        PortError::InvalidState(format!(
+            "neo4j node projection properties could not be serialized: {error}"
+        ))
+    })
+}
+
 fn row_string(row: &Row, key: &str, entity: &str) -> Result<String, PortError> {
     row.get(key).map_err(|error| {
         PortError::InvalidState(format!(
@@ -801,14 +915,16 @@ impl TryFrom<RawMilestoneRecord> for Milestone {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
     use std::time::{Duration, SystemTime};
 
     use rehydration_domain::{CaseId, Decision, Milestone, PlanHeader, WorkItem};
+    use rehydration_ports::{NodeDetailProjection, NodeProjection, ProjectionMutation};
 
     use super::{
         Neo4jEndpoint, RawCaseHeaderRecord, RawDecisionRecord, RawMilestoneRecord,
         RawPlanHeaderRecord, RawProjectionRootRecord, RawWorkItemRecord, parse_authority,
-        parse_host_port, parse_system_time, split_uri,
+        parse_host_port, parse_system_time, serialize_properties, split_uri,
     };
 
     #[test]
@@ -1023,5 +1139,54 @@ mod tests {
                 "neo4j projection field `case_header.created_at` must be a non-negative unix timestamp in milliseconds".to_string()
             )
         );
+    }
+
+    #[test]
+    fn serialize_properties_emits_json_object() {
+        let properties = BTreeMap::from([
+            ("phase".to_string(), "build".to_string()),
+            ("role".to_string(), "developer".to_string()),
+        ]);
+
+        let serialized = serialize_properties(&properties).expect("properties should serialize");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&serialized).expect("json should parse");
+
+        assert_eq!(parsed["phase"], serde_json::json!("build"));
+        assert_eq!(parsed["role"], serde_json::json!("developer"));
+    }
+
+    #[test]
+    fn node_detail_mutation_variant_is_reserved_for_valkey() {
+        let mutation = ProjectionMutation::UpsertNodeDetail(NodeDetailProjection {
+            node_id: "node-123".to_string(),
+            detail: "expanded".to_string(),
+            content_hash: "hash-123".to_string(),
+            revision: 1,
+        });
+
+        match mutation {
+            ProjectionMutation::UpsertNodeDetail(detail) => {
+                assert_eq!(detail.node_id, "node-123");
+            }
+            other => panic!("unexpected mutation: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn node_projection_properties_can_be_prepared_for_persistence() {
+        let projection = NodeProjection {
+            node_id: "node-123".to_string(),
+            node_kind: "capability".to_string(),
+            title: "Projection foundation".to_string(),
+            summary: "Node centric".to_string(),
+            status: "ACTIVE".to_string(),
+            labels: vec!["projection".to_string()],
+            properties: BTreeMap::from([("phase".to_string(), "build".to_string())]),
+        };
+
+        let serialized =
+            serialize_properties(&projection.properties).expect("properties should serialize");
+        assert!(serialized.contains("\"phase\":\"build\""));
     }
 }
