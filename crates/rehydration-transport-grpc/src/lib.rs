@@ -394,6 +394,27 @@ impl ContextCommandService for CommandGrpcService {
 }
 
 fn proto_rehydrate_session_response(result: &RehydrateSessionResult) -> RehydrateSessionResponse {
+    let decisions = result
+        .bundles
+        .iter()
+        .map(|bundle| bundle.pack().decisions().len() as u32)
+        .sum();
+    let decision_relations = result
+        .bundles
+        .iter()
+        .map(|bundle| bundle.pack().decision_relations().len() as u32)
+        .sum();
+    let impacts = result
+        .bundles
+        .iter()
+        .map(|bundle| bundle.pack().impacts().len() as u32)
+        .sum();
+    let milestones = result
+        .bundles
+        .iter()
+        .map(|bundle| bundle.pack().milestones().len() as u32)
+        .sum();
+
     RehydrateSessionResponse {
         bundle: Some(ProtoRehydrationBundle {
             case_id: result.case_id.clone(),
@@ -404,10 +425,10 @@ fn proto_rehydrate_session_response(result: &RehydrateSessionResult) -> Rehydrat
                 .collect(),
             stats: Some(RehydrationStats {
                 roles: result.bundles.len() as u32,
-                decisions: 0,
-                decision_relations: 0,
-                impacts: 0,
-                milestones: 0,
+                decisions,
+                decision_relations,
+                impacts,
+                milestones,
                 timeline_events: result.timeline_events,
             }),
             version: Some(proto_bundle_version(&result.version)),
@@ -485,10 +506,10 @@ fn proto_bundle_from_single_role(bundle: &RehydrationBundle) -> ProtoRehydration
         packs: vec![proto_role_pack_from_domain(bundle)],
         stats: Some(RehydrationStats {
             roles: 1,
-            decisions: 0,
-            decision_relations: 0,
-            impacts: 0,
-            milestones: 0,
+            decisions: bundle.pack().decisions().len() as u32,
+            decision_relations: bundle.pack().decision_relations().len() as u32,
+            impacts: bundle.pack().impacts().len() as u32,
+            milestones: bundle.pack().milestones().len() as u32,
             timeline_events: 0,
         }),
         version: Some(proto_bundle_version(bundle.metadata())),
@@ -496,44 +517,83 @@ fn proto_bundle_from_single_role(bundle: &RehydrationBundle) -> ProtoRehydration
 }
 
 fn proto_role_pack_from_domain(bundle: &RehydrationBundle) -> RoleContextPack {
+    let pack = bundle.pack();
+    let case_header = pack.case_header();
+
     RoleContextPack {
-        role: bundle.role().as_str().to_string(),
+        role: pack.role().as_str().to_string(),
         case_header: Some(CaseHeader {
-            case_id: bundle.case_id().as_str().to_string(),
-            title: format!("Case {}", bundle.case_id().as_str()),
-            summary: format!("Deterministic placeholder for {}", bundle.role().as_str()),
-            status: "ACTIVE".to_string(),
-            created_at: Some(timestamp_from(SystemTime::now())),
-            created_by: "rehydration-kernel".to_string(),
+            case_id: case_header.case_id().as_str().to_string(),
+            title: case_header.title().to_string(),
+            summary: case_header.summary().to_string(),
+            status: case_header.status().to_string(),
+            created_at: Some(timestamp_from(case_header.created_at())),
+            created_by: case_header.created_by().to_string(),
         }),
-        plan_header: Some(PlanHeader {
-            plan_id: format!("plan:{}", bundle.case_id().as_str()),
-            revision: bundle.metadata().revision,
-            status: "PLACEHOLDER".to_string(),
-            work_items_total: bundle.sections().len() as u32,
-            work_items_completed: 0,
+        plan_header: pack.plan_header().map(|plan| PlanHeader {
+            plan_id: plan.plan_id().to_string(),
+            revision: plan.revision(),
+            status: plan.status().to_string(),
+            work_items_total: plan.work_items_total(),
+            work_items_completed: plan.work_items_completed(),
         }),
-        work_items: bundle
-            .sections()
+        work_items: pack
+            .work_items()
             .iter()
-            .enumerate()
-            .map(|(index, section)| WorkItem {
-                work_item_id: format!("section-{index}"),
-                title: format!("Section {}", index + 1),
-                summary: section.clone(),
-                role: bundle.role().as_str().to_string(),
-                phase: Phase::Build.as_str_name().to_string(),
-                status: "READY".to_string(),
-                dependency_ids: Vec::new(),
-                priority: (index + 1) as u32,
+            .map(|work_item| WorkItem {
+                work_item_id: work_item.work_item_id().to_string(),
+                title: work_item.title().to_string(),
+                summary: work_item.summary().to_string(),
+                role: work_item.role().to_string(),
+                phase: work_item.phase().to_string(),
+                status: work_item.status().to_string(),
+                dependency_ids: work_item.dependency_ids().to_vec(),
+                priority: work_item.priority(),
             })
             .collect(),
-        decisions: Vec::<Decision>::new(),
-        decision_relations: Vec::<DecisionRelation>::new(),
-        impacts: Vec::<TaskImpact>::new(),
-        milestones: Vec::<Milestone>::new(),
-        latest_summary: bundle.sections().join(" "),
-        token_budget_hint: 4096,
+        decisions: pack
+            .decisions()
+            .iter()
+            .map(|decision| Decision {
+                decision_id: decision.decision_id().to_string(),
+                title: decision.title().to_string(),
+                rationale: decision.rationale().to_string(),
+                status: decision.status().to_string(),
+                owner: decision.owner().to_string(),
+                decided_at: Some(timestamp_from(decision.decided_at())),
+            })
+            .collect(),
+        decision_relations: pack
+            .decision_relations()
+            .iter()
+            .map(|relation| DecisionRelation {
+                source_decision_id: relation.source_decision_id().to_string(),
+                target_decision_id: relation.target_decision_id().to_string(),
+                relation_type: relation.relation_type().to_string(),
+            })
+            .collect(),
+        impacts: pack
+            .impacts()
+            .iter()
+            .map(|impact| TaskImpact {
+                decision_id: impact.decision_id().to_string(),
+                work_item_id: impact.work_item_id().to_string(),
+                title: impact.title().to_string(),
+                impact_type: impact.impact_type().to_string(),
+            })
+            .collect(),
+        milestones: pack
+            .milestones()
+            .iter()
+            .map(|milestone| Milestone {
+                milestone_type: milestone.milestone_type().to_string(),
+                description: milestone.description().to_string(),
+                occurred_at: Some(timestamp_from(milestone.occurred_at())),
+                actor: milestone.actor().to_string(),
+            })
+            .collect(),
+        latest_summary: pack.latest_summary().to_string(),
+        token_budget_hint: pack.token_budget_hint(),
     }
 }
 
@@ -699,7 +759,10 @@ mod tests {
         ProjectionStatusView, QueryApplicationService, RehydrateSessionResult,
         RehydrationDiagnosticView, ReplayModeSelection, ReplayProjectionOutcome,
     };
-    use rehydration_domain::{BundleMetadata, CaseId, RehydrationBundle, Role};
+    use rehydration_domain::{
+        BundleMetadata, CaseHeader, CaseId, Decision, Milestone, PlanHeader, RehydrationBundle,
+        Role, RoleContextPack, TaskImpact, WorkItem,
+    };
     use rehydration_ports::{PortError, ProjectionReader, SnapshotStore};
     use rehydration_proto::v1alpha1::{
         BundleRenderFormat, ContextChange, ContextChangeOperation, GetBundleSnapshotRequest,
@@ -723,11 +786,11 @@ mod tests {
     struct EmptyProjectionReader;
 
     impl ProjectionReader for EmptyProjectionReader {
-        async fn load_bundle(
+        async fn load_pack(
             &self,
             _case_id: &CaseId,
             _role: &Role,
-        ) -> Result<Option<RehydrationBundle>, PortError> {
+        ) -> Result<Option<RoleContextPack>, PortError> {
             Ok(None)
         }
     }
@@ -924,6 +987,73 @@ mod tests {
                 .schema_version,
             "v1alpha1"
         );
+    }
+
+    #[test]
+    fn proto_role_pack_mapping_uses_structured_domain_data() {
+        let case_id = CaseId::new("case-123").expect("case id is valid");
+        let role = Role::new("developer").expect("role is valid");
+        let bundle = RehydrationBundle::from_pack(
+            RoleContextPack::new(
+                role.clone(),
+                CaseHeader::new(
+                    case_id.clone(),
+                    "Case 123",
+                    "Projection-backed summary",
+                    "ACTIVE",
+                    SystemTime::UNIX_EPOCH,
+                    "planner",
+                ),
+                Some(PlanHeader::new("plan-123", 4, "ACTIVE", 1, 0)),
+                vec![WorkItem::new(
+                    "task-1",
+                    "Implement projection model",
+                    "Ship a real query path",
+                    role.as_str(),
+                    "PHASE_BUILD",
+                    "READY",
+                    Vec::new(),
+                    1,
+                )],
+                vec![Decision::new(
+                    "decision-1",
+                    "Use RoleContextPack",
+                    "Stop inventing transport data",
+                    "ACCEPTED",
+                    "platform",
+                    SystemTime::UNIX_EPOCH,
+                )],
+                Vec::new(),
+                vec![TaskImpact::new(
+                    "decision-1",
+                    "task-1",
+                    "Mapping now uses real work items",
+                    "DIRECT",
+                )],
+                vec![Milestone::new(
+                    "PHASE_TRANSITIONED",
+                    "Entered build phase",
+                    SystemTime::UNIX_EPOCH,
+                    "system",
+                )],
+                "Projection-backed summary",
+                3072,
+            ),
+            BundleMetadata::initial("0.1.0"),
+        );
+
+        let proto = super::proto_role_pack_from_domain(&bundle);
+
+        assert_eq!(proto.role, "developer");
+        assert_eq!(
+            proto.case_header.expect("case header should exist").summary,
+            "Projection-backed summary"
+        );
+        assert_eq!(proto.work_items.len(), 1);
+        assert_eq!(proto.decisions.len(), 1);
+        assert_eq!(proto.impacts.len(), 1);
+        assert_eq!(proto.milestones.len(), 1);
+        assert_eq!(proto.token_budget_hint, 3072);
     }
 
     #[test]

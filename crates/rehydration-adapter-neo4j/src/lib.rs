@@ -1,4 +1,4 @@
-use rehydration_domain::{CaseId, RehydrationBundle, Role};
+use rehydration_domain::{CaseId, Role, RoleContextPack};
 use rehydration_ports::{PortError, ProjectionReader};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -19,11 +19,11 @@ impl Neo4jProjectionReader {
 }
 
 impl ProjectionReader for Neo4jProjectionReader {
-    async fn load_bundle(
+    async fn load_pack(
         &self,
         _case_id: &CaseId,
         _role: &Role,
-    ) -> Result<Option<RehydrationBundle>, PortError> {
+    ) -> Result<Option<RoleContextPack>, PortError> {
         // The projection model is not implemented yet. Returning `None` keeps the
         // adapter honest and prevents infrastructure from inventing domain data.
         let _endpoint = &self.endpoint;
@@ -128,7 +128,7 @@ mod tests {
         let reader =
             Neo4jProjectionReader::new("neo4j://localhost:7687").expect("uri should be accepted");
         let bundle = reader
-            .load_bundle(
+            .load_pack(
                 &CaseId::new("case-123").expect("case id is valid"),
                 &Role::new("developer").expect("role is valid"),
             )

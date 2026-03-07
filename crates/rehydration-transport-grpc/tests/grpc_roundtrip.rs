@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use rehydration_config::AppConfig;
-use rehydration_domain::{CaseId, RehydrationBundle, Role};
+use rehydration_domain::{CaseId, RehydrationBundle, Role, RoleContextPack};
 use rehydration_ports::{PortError, ProjectionReader, SnapshotStore};
 use rehydration_proto::v1alpha1::{
     BundleRenderFormat, ContextChange, ContextChangeOperation, GetBundleSnapshotRequest,
@@ -19,11 +19,11 @@ use tonic::transport::{Channel, Endpoint};
 struct EmptyProjectionReader;
 
 impl ProjectionReader for EmptyProjectionReader {
-    async fn load_bundle(
+    async fn load_pack(
         &self,
         _case_id: &CaseId,
         _role: &Role,
-    ) -> Result<Option<RehydrationBundle>, PortError> {
+    ) -> Result<Option<RoleContextPack>, PortError> {
         Ok(None)
     }
 }

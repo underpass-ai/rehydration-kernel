@@ -4,7 +4,9 @@ use std::fmt;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
-use rehydration_domain::{BundleMetadata, CaseId, DomainError, RehydrationBundle, Role};
+use rehydration_domain::{
+    BundleMetadata, CaseId, DomainError, RehydrationBundle, Role, RoleContextPack,
+};
 use rehydration_ports::{PortError, ProjectionReader, SnapshotStore};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -294,10 +296,12 @@ where
         let case_id = CaseId::new(case_id)?;
         let role = Role::new(role)?;
 
-        let bundle = match self.projection_reader.load_bundle(&case_id, &role).await? {
-            Some(bundle) => bundle,
-            None => RehydrationBundle::empty(case_id, role, self.generator_version),
+        let pack = match self.projection_reader.load_pack(&case_id, &role).await? {
+            Some(pack) => pack,
+            None => RoleContextPack::placeholder(case_id.clone(), role.clone()),
         };
+        let bundle =
+            RehydrationBundle::from_pack(pack, BundleMetadata::initial(self.generator_version));
 
         self.snapshot_store.save_bundle(&bundle).await?;
         Ok(bundle)
@@ -657,9 +661,9 @@ where
                     .map(|bundle| RehydrationDiagnosticView {
                         role: role.clone(),
                         version: bundle.metadata().clone(),
-                        selected_decisions: 0,
-                        selected_impacts: 0,
-                        selected_milestones: 0,
+                        selected_decisions: bundle.pack().decisions().len() as u32,
+                        selected_impacts: bundle.pack().impacts().len() as u32,
+                        selected_milestones: bundle.pack().milestones().len() as u32,
                         estimated_tokens: bundle
                             .sections()
                             .iter()
@@ -688,8 +692,11 @@ where
         let case_id = CaseId::new(case_id)?;
         let role = Role::new(role)?;
 
-        match self.projection_reader.load_bundle(&case_id, &role).await? {
-            Some(bundle) => Ok(bundle),
+        match self.projection_reader.load_pack(&case_id, &role).await? {
+            Some(pack) => Ok(RehydrationBundle::from_pack(
+                pack,
+                BundleMetadata::initial(self.generator_version),
+            )),
             None => Ok(RehydrationBundle::empty(
                 case_id,
                 role,
@@ -829,7 +836,10 @@ mod tests {
     use std::sync::Arc;
     use std::time::SystemTime;
 
-    use rehydration_domain::{CaseId, RehydrationBundle, Role};
+    use rehydration_domain::{
+        CaseHeader, CaseId, Decision, Milestone, PlanHeader, RehydrationBundle, Role,
+        RoleContextPack, TaskImpact, WorkItem,
+    };
     use rehydration_ports::{PortError, ProjectionReader, SnapshotStore};
 
     use super::{
@@ -844,12 +854,26 @@ mod tests {
     struct EmptyProjectionReader;
 
     impl ProjectionReader for EmptyProjectionReader {
-        async fn load_bundle(
+        async fn load_pack(
             &self,
             _case_id: &CaseId,
             _role: &Role,
-        ) -> Result<Option<RehydrationBundle>, PortError> {
+        ) -> Result<Option<RoleContextPack>, PortError> {
             Ok(None)
+        }
+    }
+
+    struct SeededProjectionReader {
+        pack: RoleContextPack,
+    }
+
+    impl ProjectionReader for SeededProjectionReader {
+        async fn load_pack(
+            &self,
+            _case_id: &CaseId,
+            _role: &Role,
+        ) -> Result<Option<RoleContextPack>, PortError> {
+            Ok(Some(self.pack.clone()))
         }
     }
 
@@ -996,6 +1020,73 @@ mod tests {
             .expect_err("diagnostics should require at least one role");
 
         assert_eq!(error.to_string(), "roles cannot be empty");
+    }
+
+    #[tokio::test]
+    async fn diagnostics_are_derived_from_structured_projection_pack() {
+        let case_id = CaseId::new("case-123").expect("case id is valid");
+        let role = Role::new("developer").expect("role is valid");
+        let pack = RoleContextPack::new(
+            role.clone(),
+            CaseHeader::new(
+                case_id.clone(),
+                "Case 123",
+                "Structured projection",
+                "ACTIVE",
+                SystemTime::UNIX_EPOCH,
+                "planner",
+            ),
+            Some(PlanHeader::new("plan-123", 2, "ACTIVE", 1, 0)),
+            vec![WorkItem::new(
+                "task-1",
+                "Implement projection model",
+                "Ship a real pack-backed query path",
+                role.as_str(),
+                "PHASE_BUILD",
+                "READY",
+                Vec::new(),
+                1,
+            )],
+            vec![Decision::new(
+                "decision-1",
+                "Use RoleContextPack",
+                "Avoid reading rendered bundles from infrastructure",
+                "ACCEPTED",
+                "platform",
+                SystemTime::UNIX_EPOCH,
+            )],
+            Vec::new(),
+            vec![TaskImpact::new(
+                "decision-1",
+                "task-1",
+                "Transport no longer invents work items",
+                "DIRECT",
+            )],
+            vec![Milestone::new(
+                "PHASE_TRANSITIONED",
+                "Entered build phase",
+                SystemTime::UNIX_EPOCH,
+                "system",
+            )],
+            "Projection snapshot loaded",
+            4096,
+        );
+        let service =
+            AdminApplicationService::new(Arc::new(SeededProjectionReader { pack }), "0.1.0");
+
+        let result = service
+            .get_rehydration_diagnostics(GetRehydrationDiagnosticsQuery {
+                case_id: "case-123".to_string(),
+                roles: vec!["developer".to_string()],
+                phase: Some("PHASE_BUILD".to_string()),
+            })
+            .await
+            .expect("diagnostics should succeed");
+
+        assert_eq!(result.diagnostics[0].selected_decisions, 1);
+        assert_eq!(result.diagnostics[0].selected_impacts, 1);
+        assert_eq!(result.diagnostics[0].selected_milestones, 1);
+        assert!(result.diagnostics[0].estimated_tokens > 0);
     }
 
     #[test]

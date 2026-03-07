@@ -345,7 +345,7 @@ mod tests {
         assert_eq!(request[4], "60");
         assert_eq!(
             request[2],
-            "{\"case_id\":\"case-123\",\"role\":\"reviewer\",\"sections\":[],\"metadata\":{\"revision\":1,\"content_hash\":\"pending\",\"generator_version\":\"0.1.0\"}}"
+            "{\"case_id\":\"case-123\",\"role\":\"reviewer\",\"sections\":[\"bundle for case case-123 role reviewer\"],\"metadata\":{\"revision\":1,\"content_hash\":\"pending\",\"generator_version\":\"0.1.0\"}}"
         );
     }
 

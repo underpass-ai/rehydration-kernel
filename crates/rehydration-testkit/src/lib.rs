@@ -1,29 +1,33 @@
 use std::collections::HashMap;
 
-use rehydration_domain::{CaseId, RehydrationBundle, Role};
+use rehydration_domain::{CaseId, RehydrationBundle, Role, RoleContextPack};
 use rehydration_ports::{PortError, ProjectionReader, SnapshotStore};
 
 #[derive(Debug, Default, Clone)]
 pub struct InMemoryProjectionReader {
-    bundles: HashMap<(CaseId, Role), RehydrationBundle>,
+    packs: HashMap<(CaseId, Role), RoleContextPack>,
 }
 
 impl InMemoryProjectionReader {
+    pub fn with_pack(pack: RoleContextPack) -> Self {
+        let key = (pack.case_header().case_id().clone(), pack.role().clone());
+        let mut packs = HashMap::new();
+        packs.insert(key, pack);
+        Self { packs }
+    }
+
     pub fn with_bundle(bundle: RehydrationBundle) -> Self {
-        let key = (bundle.case_id().clone(), bundle.role().clone());
-        let mut bundles = HashMap::new();
-        bundles.insert(key, bundle);
-        Self { bundles }
+        Self::with_pack(bundle.pack().clone())
     }
 }
 
 impl ProjectionReader for InMemoryProjectionReader {
-    async fn load_bundle(
+    async fn load_pack(
         &self,
         case_id: &CaseId,
         role: &Role,
-    ) -> Result<Option<RehydrationBundle>, PortError> {
-        Ok(self.bundles.get(&(case_id.clone(), role.clone())).cloned())
+    ) -> Result<Option<RoleContextPack>, PortError> {
+        Ok(self.packs.get(&(case_id.clone(), role.clone())).cloned())
     }
 }
 
@@ -53,7 +57,7 @@ mod tests {
         let reader = InMemoryProjectionReader::with_bundle(bundle);
 
         let loaded = reader
-            .load_bundle(
+            .load_pack(
                 &CaseId::new("case-123").expect("case id is valid"),
                 &Role::new("developer").expect("role is valid"),
             )
