@@ -9,6 +9,15 @@ use rehydration_domain::{
 };
 use rehydration_ports::{PortError, ProjectionReader, SnapshotStore};
 
+mod projection;
+
+pub use projection::{
+    GraphNodeMaterializedData, GraphNodeMaterializedEvent, NodeDetailMaterializedData,
+    NodeDetailMaterializedEvent, ProjectionApplicationService, ProjectionEnvelope, ProjectionEvent,
+    ProjectionEventHandler, ProjectionHandlingRequest, ProjectionHandlingResult,
+    RelatedNodeReference, RoutingProjectionWriter,
+};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RehydrationApplication;
 

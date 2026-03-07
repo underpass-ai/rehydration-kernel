@@ -1,15 +1,24 @@
 use std::fmt::Write as _;
 
 use rehydration_domain::RehydrationBundle;
-use rehydration_ports::{PortError, SnapshotStore};
+use rehydration_ports::{
+    NodeDetailProjection, PortError, ProjectionMutation, ProjectionWriter, SnapshotStore,
+};
+use serde_json::json;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 
 const DEFAULT_PORT: u16 = 6379;
 const DEFAULT_KEY_PREFIX: &str = "rehydration:snapshot";
+const DEFAULT_NODE_DETAIL_KEY_PREFIX: &str = "rehydration:node-detail";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ValkeySnapshotStore {
+    endpoint: ValkeyEndpoint,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ValkeyNodeDetailStore {
     endpoint: ValkeyEndpoint,
 }
 
@@ -42,31 +51,62 @@ impl ValkeySnapshotStore {
     }
 
     async fn execute_set_command(&self, key: &str, payload: &str) -> Result<(), PortError> {
-        let mut stream = TcpStream::connect(self.endpoint.address())
-            .await
-            .map_err(|error| {
-                PortError::Unavailable(format!(
-                    "unable to connect to valkey {}: {error}",
-                    self.endpoint.raw_uri
-                ))
-            })?;
-
-        let frame = encode_set_command(key, payload, self.endpoint.ttl_seconds);
-        stream.write_all(&frame).await.map_err(|error| {
-            PortError::Unavailable(format!("failed to write snapshot to valkey: {error}"))
-        })?;
-        stream.flush().await.map_err(|error| {
-            PortError::Unavailable(format!("failed to flush snapshot to valkey: {error}"))
-        })?;
-
-        let mut response = String::new();
-        let mut reader = BufReader::new(stream);
-        reader.read_line(&mut response).await.map_err(|error| {
-            PortError::Unavailable(format!("failed to read valkey response: {error}"))
-        })?;
-
-        map_valkey_response(&response)
+        execute_set_command(&self.endpoint, key, payload).await
     }
+}
+
+impl ValkeyNodeDetailStore {
+    pub fn new(detail_uri: impl Into<String>) -> Result<Self, PortError> {
+        let endpoint = ValkeyEndpoint::parse_with_default_key_prefix(
+            detail_uri.into(),
+            "detail",
+            DEFAULT_NODE_DETAIL_KEY_PREFIX,
+        )?;
+        Ok(Self { endpoint })
+    }
+
+    fn detail_key(&self, node_id: &str) -> String {
+        format!("{}:{}", self.endpoint.key_prefix, node_id)
+    }
+
+    fn detail_payload(&self, detail: &NodeDetailProjection) -> Result<String, PortError> {
+        serialize_node_detail(detail)
+    }
+
+    async fn execute_set_command(&self, key: &str, payload: &str) -> Result<(), PortError> {
+        execute_set_command(&self.endpoint, key, payload).await
+    }
+}
+
+async fn execute_set_command(
+    endpoint: &ValkeyEndpoint,
+    key: &str,
+    payload: &str,
+) -> Result<(), PortError> {
+    let mut stream = TcpStream::connect(endpoint.address())
+        .await
+        .map_err(|error| {
+            PortError::Unavailable(format!(
+                "unable to connect to valkey {}: {error}",
+                endpoint.raw_uri
+            ))
+        })?;
+
+    let frame = encode_set_command(key, payload, endpoint.ttl_seconds);
+    stream.write_all(&frame).await.map_err(|error| {
+        PortError::Unavailable(format!("failed to write valkey payload: {error}"))
+    })?;
+    stream.flush().await.map_err(|error| {
+        PortError::Unavailable(format!("failed to flush valkey payload: {error}"))
+    })?;
+
+    let mut response = String::new();
+    let mut reader = BufReader::new(stream);
+    reader.read_line(&mut response).await.map_err(|error| {
+        PortError::Unavailable(format!("failed to read valkey response: {error}"))
+    })?;
+
+    map_valkey_response(&response)
 }
 
 impl SnapshotStore for ValkeySnapshotStore {
@@ -77,24 +117,60 @@ impl SnapshotStore for ValkeySnapshotStore {
     }
 }
 
-impl ValkeyEndpoint {
-    fn parse(snapshot_uri: String) -> Result<Self, PortError> {
-        if snapshot_uri.trim().is_empty() {
-            return Err(PortError::InvalidState(
-                "snapshot uri cannot be empty".to_string(),
-            ));
+impl ProjectionWriter for ValkeyNodeDetailStore {
+    async fn apply_mutations(&self, mutations: Vec<ProjectionMutation>) -> Result<(), PortError> {
+        for mutation in mutations {
+            match mutation {
+                ProjectionMutation::UpsertNodeDetail(detail) => {
+                    let key = self.detail_key(&detail.node_id);
+                    let payload = self.detail_payload(&detail)?;
+                    self.execute_set_command(&key, &payload).await?;
+                }
+                ProjectionMutation::UpsertNode(node) => {
+                    return Err(PortError::InvalidState(format!(
+                        "valkey detail store does not persist graph node `{}`",
+                        node.node_id
+                    )));
+                }
+                ProjectionMutation::UpsertNodeRelation(relation) => {
+                    return Err(PortError::InvalidState(format!(
+                        "valkey detail store does not persist graph relation `{} -> {}`",
+                        relation.source_node_id, relation.target_node_id
+                    )));
+                }
+            }
         }
 
-        let (scheme, authority, query) = split_uri(&snapshot_uri, "snapshot")?;
-        if !matches!(scheme, "redis" | "valkey") {
+        Ok(())
+    }
+}
+
+impl ValkeyEndpoint {
+    fn parse(snapshot_uri: String) -> Result<Self, PortError> {
+        Self::parse_with_default_key_prefix(snapshot_uri, "snapshot", DEFAULT_KEY_PREFIX)
+    }
+
+    fn parse_with_default_key_prefix(
+        raw_uri: String,
+        name: &str,
+        default_key_prefix: &str,
+    ) -> Result<Self, PortError> {
+        if raw_uri.trim().is_empty() {
             return Err(PortError::InvalidState(format!(
-                "unsupported snapshot scheme `{scheme}`"
+                "{name} uri cannot be empty"
             )));
         }
 
-        let (host, port) = parse_authority(authority, DEFAULT_PORT, "snapshot")?;
+        let (scheme, authority, query) = split_uri(&raw_uri, name)?;
+        if !matches!(scheme, "redis" | "valkey") {
+            return Err(PortError::InvalidState(format!(
+                "unsupported {name} scheme `{scheme}`"
+            )));
+        }
 
-        let mut key_prefix = DEFAULT_KEY_PREFIX.to_string();
+        let (host, port) = parse_authority(authority, DEFAULT_PORT, name)?;
+
+        let mut key_prefix = default_key_prefix.to_string();
         let mut ttl_seconds = None;
         if let Some(query) = query {
             for pair in query.split('&') {
@@ -104,30 +180,30 @@ impl ValkeyEndpoint {
 
                 let (key, value) = pair.split_once('=').ok_or_else(|| {
                     PortError::InvalidState(format!(
-                        "snapshot uri query parameter `{pair}` is invalid"
+                        "{name} uri query parameter `{pair}` is invalid"
                     ))
                 })?;
 
                 match key {
                     "key_prefix" => {
                         if value.trim().is_empty() {
-                            return Err(PortError::InvalidState(
-                                "snapshot key_prefix cannot be empty".to_string(),
-                            ));
+                            return Err(PortError::InvalidState(format!(
+                                "{name} key_prefix cannot be empty"
+                            )));
                         }
                         key_prefix = value.to_string();
                     }
                     "ttl_seconds" => {
                         let ttl = value.parse::<u64>().map_err(|error| {
                             PortError::InvalidState(format!(
-                                "snapshot ttl_seconds must be an integer: {error}"
+                                "{name} ttl_seconds must be an integer: {error}"
                             ))
                         })?;
                         ttl_seconds = Some(ttl);
                     }
                     _ => {
                         return Err(PortError::InvalidState(format!(
-                            "unsupported snapshot uri option `{key}`"
+                            "unsupported {name} uri option `{key}`"
                         )));
                     }
                 }
@@ -135,7 +211,7 @@ impl ValkeyEndpoint {
         }
 
         Ok(Self {
-            raw_uri: snapshot_uri,
+            raw_uri,
             host,
             port,
             key_prefix,
@@ -146,6 +222,20 @@ impl ValkeyEndpoint {
     fn address(&self) -> String {
         format!("{}:{}", self.host, self.port)
     }
+}
+
+fn serialize_node_detail(detail: &NodeDetailProjection) -> Result<String, PortError> {
+    serde_json::to_string(&json!({
+        "node_id": detail.node_id,
+        "detail": detail.detail,
+        "content_hash": detail.content_hash,
+        "revision": detail.revision,
+    }))
+    .map_err(|error| {
+        PortError::InvalidState(format!(
+            "node detail could not be serialized for valkey: {error}"
+        ))
+    })
 }
 
 fn split_uri<'a>(
@@ -297,7 +387,7 @@ fn map_valkey_response(response: &str) -> Result<(), PortError> {
     match response.trim_end() {
         "+OK" => Ok(()),
         response if response.starts_with('-') => Err(PortError::Unavailable(format!(
-            "valkey rejected snapshot write: {}",
+            "valkey rejected write: {}",
             response.trim_start_matches('-')
         ))),
         response => Err(PortError::Unavailable(format!(
@@ -311,10 +401,12 @@ mod tests {
     use std::str;
 
     use super::{
-        ValkeySnapshotStore, encode_set_command, escape_json, map_valkey_response, parse_authority,
-        parse_optional_port, split_uri,
+        ValkeyNodeDetailStore, ValkeySnapshotStore, encode_set_command, escape_json,
+        map_valkey_response, parse_authority, parse_optional_port, serialize_node_detail,
+        split_uri,
     };
     use rehydration_domain::{CaseId, RehydrationBundle, Role};
+    use rehydration_ports::{NodeDetailProjection, ProjectionMutation, ProjectionWriter};
 
     #[test]
     fn snapshot_store_encodes_a_resp_set_command() {
@@ -357,7 +449,7 @@ mod tests {
         assert_eq!(
             error,
             rehydration_ports::PortError::Unavailable(
-                "valkey rejected snapshot write: ERR read only replica".to_string()
+                "valkey rejected write: ERR read only replica".to_string()
             )
         );
     }
@@ -386,6 +478,18 @@ mod tests {
         assert_eq!(store.endpoint.port, 6379);
         assert_eq!(store.endpoint.key_prefix, "rehydration:it");
         assert_eq!(store.endpoint.ttl_seconds, Some(15));
+    }
+
+    #[test]
+    fn node_detail_store_uses_dedicated_default_prefix() {
+        let store = ValkeyNodeDetailStore::new("redis://cache.internal")
+            .expect("detail uri should be accepted");
+
+        assert_eq!(store.endpoint.key_prefix, "rehydration:node-detail");
+        assert_eq!(
+            store.detail_key("node-123"),
+            "rehydration:node-detail:node-123"
+        );
     }
 
     #[test]
@@ -515,6 +619,50 @@ mod tests {
             map_valkey_response("?wat\r\n").expect_err("unexpected response must fail"),
             rehydration_ports::PortError::Unavailable(
                 "unexpected valkey response: ?wat".to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn node_detail_serializer_emits_expected_shape() {
+        let payload = serialize_node_detail(&NodeDetailProjection {
+            node_id: "node-123".to_string(),
+            detail: "Expanded detail".to_string(),
+            content_hash: "hash-123".to_string(),
+            revision: 4,
+        })
+        .expect("detail should serialize");
+
+        assert_eq!(
+            payload,
+            "{\"content_hash\":\"hash-123\",\"detail\":\"Expanded detail\",\"node_id\":\"node-123\",\"revision\":4}"
+        );
+    }
+
+    #[tokio::test]
+    async fn detail_store_rejects_graph_mutations() {
+        let store =
+            ValkeyNodeDetailStore::new("redis://cache.internal").expect("detail uri should parse");
+
+        let error = store
+            .apply_mutations(vec![ProjectionMutation::UpsertNode(
+                rehydration_ports::NodeProjection {
+                    node_id: "node-123".to_string(),
+                    node_kind: "capability".to_string(),
+                    title: "Projection".to_string(),
+                    summary: String::new(),
+                    status: "ACTIVE".to_string(),
+                    labels: Vec::new(),
+                    properties: std::collections::BTreeMap::new(),
+                },
+            )])
+            .await
+            .expect_err("graph nodes should be rejected by detail store");
+
+        assert_eq!(
+            error,
+            rehydration_ports::PortError::InvalidState(
+                "valkey detail store does not persist graph node `node-123`".to_string()
             )
         );
     }

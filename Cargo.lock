@@ -1545,6 +1545,11 @@ checksum = "dc897dd8d9e8bd1ed8cdad82b5966c3e0ecae09fb1907d58efaa013543185d0a"
 [[package]]
 name = "rehydration-adapter-nats"
 version = "0.1.0"
+dependencies = [
+ "rehydration-application",
+ "serde_json",
+ "tokio",
+]
 
 [[package]]
 name = "rehydration-adapter-neo4j"
@@ -1553,6 +1558,7 @@ dependencies = [
  "neo4rs",
  "rehydration-domain",
  "rehydration-ports",
+ "serde_json",
  "testcontainers",
  "tokio",
 ]
@@ -1563,6 +1569,7 @@ version = "0.1.0"
 dependencies = [
  "rehydration-domain",
  "rehydration-ports",
+ "serde_json",
  "testcontainers",
  "tokio",
 ]
@@ -1573,6 +1580,8 @@ version = "0.1.0"
 dependencies = [
  "rehydration-domain",
  "rehydration-ports",
+ "rehydration-testkit",
+ "serde",
  "tokio",
 ]
 

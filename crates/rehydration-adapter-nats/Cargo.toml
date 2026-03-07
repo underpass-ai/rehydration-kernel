@@ -8,3 +8,8 @@ rust-version.workspace = true
 workspace = true
 
 [dependencies]
+rehydration-application.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true

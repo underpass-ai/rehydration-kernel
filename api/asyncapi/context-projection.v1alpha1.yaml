@@ -6,35 +6,29 @@ info:
   version: 0.1.0
   description: >
     Versioned event contract for the deterministic context rehydration kernel.
-    It covers the first inbound projection subjects and the outbound bundle
-    notification emitted after successful bundle generation.
+    The projection boundary is node-centric: graph nodes and per-node expanded
+    detail can be consumed from any upstream system without coupling the kernel
+    to planning-specific concepts.
 servers:
   nats:
     url: nats://nats:4222
     protocol: nats
     description: JetStream-compatible message bus used by the kernel.
 channels:
-  planning.story.created:
-    description: Planning service announces a new case or story header.
+  graph.node.materialized:
+    description: Upstream system emits a node plus its graph relationships.
     subscribe:
-      operationId: onPlanningStoryCreated
-      summary: Consume story headers into the projection model.
+      operationId: onGraphNodeMaterialized
+      summary: Consume normalized graph nodes and relations into the projection model.
       message:
-        $ref: '#/components/messages/PlanningStoryCreated'
-  planning.task.created:
-    description: Planning service announces a new work item tied to a case.
+        $ref: '#/components/messages/GraphNodeMaterialized'
+  node.detail.materialized:
+    description: Upstream system emits expanded detail for a single node.
     subscribe:
-      operationId: onPlanningTaskCreated
-      summary: Consume work items into the projection model.
+      operationId: onNodeDetailMaterialized
+      summary: Consume expanded node detail into the Valkey-backed detail store.
       message:
-        $ref: '#/components/messages/PlanningTaskCreated'
-  decision.recorded:
-    description: Decision producer emits a normalized decision event.
-    subscribe:
-      operationId: onDecisionRecorded
-      summary: Consume decision graph changes into the projection model.
-      message:
-        $ref: '#/components/messages/DecisionRecorded'
+        $ref: '#/components/messages/NodeDetailMaterialized'
   context.bundle.generated:
     description: Kernel publishes a bundle generation notification.
     publish:
@@ -44,21 +38,16 @@ channels:
         $ref: '#/components/messages/ContextBundleGenerated'
 components:
   messages:
-    PlanningStoryCreated:
-      name: PlanningStoryCreated
-      title: planning.story.created
+    GraphNodeMaterialized:
+      name: GraphNodeMaterialized
+      title: graph.node.materialized
       payload:
-        $ref: '#/components/schemas/PlanningStoryCreatedEvent'
-    PlanningTaskCreated:
-      name: PlanningTaskCreated
-      title: planning.task.created
+        $ref: '#/components/schemas/GraphNodeMaterializedEvent'
+    NodeDetailMaterialized:
+      name: NodeDetailMaterialized
+      title: node.detail.materialized
       payload:
-        $ref: '#/components/schemas/PlanningTaskCreatedEvent'
-    DecisionRecorded:
-      name: DecisionRecorded
-      title: decision.recorded
-      payload:
-        $ref: '#/components/schemas/DecisionRecordedEvent'
+        $ref: '#/components/schemas/NodeDetailMaterializedEvent'
     ContextBundleGenerated:
       name: ContextBundleGenerated
       title: context.bundle.generated
@@ -98,7 +87,7 @@ components:
         schema_version:
           type: string
           description: Version of the event schema.
-    PlanningStoryCreatedEvent:
+    GraphNodeMaterializedEvent:
       allOf:
         - $ref: '#/components/schemas/EventEnvelope'
         - type: object
@@ -106,17 +95,17 @@ components:
             - data
           properties:
             data:
-              $ref: '#/components/schemas/PlanningStoryCreatedData'
-    PlanningStoryCreatedData:
+              $ref: '#/components/schemas/GraphNodeMaterializedData'
+    GraphNodeMaterializedData:
       type: object
       required:
-        - case_id
+        - node_id
+        - node_kind
         - title
-        - status
       properties:
-        case_id:
+        node_id:
           type: string
-        project_id:
+        node_kind:
           type: string
         title:
           type: string
@@ -124,9 +113,31 @@ components:
           type: string
         status:
           type: string
-        created_by:
+        labels:
+          type: array
+          items:
+            type: string
+        properties:
+          type: object
+          additionalProperties:
+            type: string
+        related_nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/RelatedNodeReference'
+    RelatedNodeReference:
+      type: object
+      required:
+        - node_id
+        - relation_type
+      properties:
+        node_id:
           type: string
-    PlanningTaskCreatedEvent:
+        node_kind:
+          type: string
+        relation_type:
+          type: string
+    NodeDetailMaterializedEvent:
       allOf:
         - $ref: '#/components/schemas/EventEnvelope'
         - type: object
@@ -134,66 +145,24 @@ components:
             - data
           properties:
             data:
-              $ref: '#/components/schemas/PlanningTaskCreatedData'
-    PlanningTaskCreatedData:
+              $ref: '#/components/schemas/NodeDetailMaterializedData'
+    NodeDetailMaterializedData:
       type: object
       required:
-        - case_id
-        - work_item_id
-        - role
-        - title
+        - node_id
+        - detail
+        - content_hash
+        - revision
       properties:
-        case_id:
+        node_id:
           type: string
-        work_item_id:
+        detail:
           type: string
-        role:
+        content_hash:
           type: string
-        title:
-          type: string
-        summary:
-          type: string
-        phase:
-          type: string
-        status:
-          type: string
-        dependency_ids:
-          type: array
-          items:
-            type: string
-    DecisionRecordedEvent:
-      allOf:
-        - $ref: '#/components/schemas/EventEnvelope'
-        - type: object
-          required:
-            - data
-          properties:
-            data:
-              $ref: '#/components/schemas/DecisionRecordedData'
-    DecisionRecordedData:
-      type: object
-      required:
-        - case_id
-        - decision_id
-        - title
-        - status
-      properties:
-        case_id:
-          type: string
-        decision_id:
-          type: string
-        title:
-          type: string
-        rationale:
-          type: string
-        status:
-          type: string
-        owner:
-          type: string
-        relation_ids:
-          type: array
-          items:
-            type: string
+        revision:
+          type: integer
+          format: int64
     ContextBundleGeneratedEvent:
       allOf:
         - $ref: '#/components/schemas/EventEnvelope'
@@ -220,13 +189,8 @@ components:
             type: string
         revision:
           type: integer
-          minimum: 1
+          format: int64
         content_hash:
           type: string
         projection_watermark:
           type: string
-        generator_version:
-          type: string
-        generated_at:
-          type: string
-          format: date-time

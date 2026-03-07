@@ -1,8 +1,10 @@
 use std::error::Error;
 
-use rehydration_adapter_valkey::ValkeySnapshotStore;
+use rehydration_adapter_valkey::{ValkeyNodeDetailStore, ValkeySnapshotStore};
 use rehydration_domain::{BundleMetadata, CaseId, RehydrationBundle, Role};
-use rehydration_ports::SnapshotStore;
+use rehydration_ports::{
+    NodeDetailProjection, ProjectionMutation, ProjectionWriter, SnapshotStore,
+};
 use testcontainers::{
     GenericImage,
     core::{IntoContainerPort, WaitFor},
@@ -50,6 +52,55 @@ async fn save_bundle_persists_snapshot_in_valkey() -> Result<(), Box<dyn Error +
         snapshot,
         RespValue::BulkString(Some(
             "{\"case_id\":\"case-123\",\"role\":\"reviewer\",\"sections\":[\"prior decision\",\"active milestone\"],\"metadata\":{\"revision\":7,\"content_hash\":\"abc123\",\"generator_version\":\"integration-test\"}}".to_string()
+        ))
+    );
+
+    match ttl {
+        RespValue::Integer(value) => {
+            assert!((1..=120).contains(&value));
+        }
+        other => panic!("expected integer TTL response, got {other:?}"),
+    }
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn apply_mutations_persists_node_detail_in_valkey() -> Result<(), Box<dyn Error + Send + Sync>>
+{
+    let container = GenericImage::new("docker.io/valkey/valkey", "8.1.5-alpine")
+        .with_exposed_port(VALKEY_INTERNAL_PORT.tcp())
+        .with_wait_for(WaitFor::message_on_stdout("Ready to accept connections"))
+        .start()
+        .await?;
+
+    let host = container.get_host().await?;
+    let port = container.get_host_port_ipv4(VALKEY_INTERNAL_PORT).await?;
+    let address = format!("{host}:{port}");
+
+    let store = ValkeyNodeDetailStore::new(format!(
+        "redis://{address}?key_prefix=rehydration:detail&ttl_seconds=120"
+    ))?;
+
+    store
+        .apply_mutations(vec![ProjectionMutation::UpsertNodeDetail(
+            NodeDetailProjection {
+                node_id: "node-123".to_string(),
+                detail: "Expanded node detail".to_string(),
+                content_hash: "hash-123".to_string(),
+                revision: 3,
+            },
+        )])
+        .await?;
+
+    let key = "rehydration:detail:node-123";
+    let detail = send_command(&address, &["GET", key]).await?;
+    let ttl = send_command(&address, &["TTL", key]).await?;
+
+    assert_eq!(
+        detail,
+        RespValue::BulkString(Some(
+            "{\"content_hash\":\"hash-123\",\"detail\":\"Expanded node detail\",\"node_id\":\"node-123\",\"revision\":3}".to_string()
         ))
     );
 

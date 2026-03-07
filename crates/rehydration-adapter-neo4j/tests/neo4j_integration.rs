@@ -4,7 +4,9 @@ use std::time::Duration;
 use neo4rs::{Graph, query};
 use rehydration_adapter_neo4j::Neo4jProjectionReader;
 use rehydration_domain::{CaseId, Role};
-use rehydration_ports::ProjectionReader;
+use rehydration_ports::{
+    NodeProjection, NodeRelationProjection, ProjectionMutation, ProjectionReader, ProjectionWriter,
+};
 use testcontainers::{GenericImage, ImageExt, core::IntoContainerPort, runners::AsyncRunner};
 use tokio::time::sleep;
 
@@ -66,6 +68,95 @@ async fn load_pack_reads_role_context_projection() -> Result<(), Box<dyn Error +
     assert_eq!(pack.impacts()[0].work_item_id(), "story-002");
     assert_eq!(pack.milestones().len(), 1);
     assert_eq!(pack.milestones()[0].milestone_type(), "phase_transition");
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn apply_mutations_persists_generic_nodes_and_relations()
+-> Result<(), Box<dyn Error + Send + Sync>> {
+    let container = GenericImage::new(NEO4J_IMAGE, NEO4J_TAG)
+        .with_exposed_port(NEO4J_INTERNAL_PORT.tcp())
+        .with_env_var("NEO4J_AUTH", format!("neo4j/{NEO4J_PASSWORD}"))
+        .start()
+        .await?;
+
+    let host = container.get_host().await?;
+    let port = container.get_host_port_ipv4(NEO4J_INTERNAL_PORT).await?;
+    let graph =
+        connect_with_retry(format!("neo4j://{host}:{port}"), "neo4j", NEO4J_PASSWORD).await?;
+    graph.run(query("MATCH (n) DETACH DELETE n")).await?;
+
+    let store =
+        Neo4jProjectionReader::new(format!("neo4j://neo4j:{NEO4J_PASSWORD}@{host}:{port}"))?;
+    store
+        .apply_mutations(vec![
+            ProjectionMutation::UpsertNode(NodeProjection {
+                node_id: "node-123".to_string(),
+                node_kind: "capability".to_string(),
+                title: "Projection consumer foundation".to_string(),
+                summary: "Node centric projection input".to_string(),
+                status: "ACTIVE".to_string(),
+                labels: vec!["projection".to_string(), "foundation".to_string()],
+                properties: std::collections::BTreeMap::from([(
+                    "phase".to_string(),
+                    "build".to_string(),
+                )]),
+            }),
+            ProjectionMutation::UpsertNodeRelation(NodeRelationProjection {
+                source_node_id: "node-123".to_string(),
+                target_node_id: "node-122".to_string(),
+                relation_type: "depends_on".to_string(),
+            }),
+        ])
+        .await?;
+
+    let node_row = single_row(
+        &graph,
+        query(
+            "
+MATCH (node:ProjectionNode {node_id: $node_id})
+RETURN node.node_kind AS node_kind,
+       node.title AS title,
+       node.status AS status,
+       node.node_labels AS node_labels,
+       node.properties_json AS properties_json
+            ",
+        )
+        .param("node_id", "node-123"),
+    )
+    .await?;
+
+    let relation_row = single_row(
+        &graph,
+        query(
+            "
+MATCH (:ProjectionNode {node_id: $source_node_id})-[edge:RELATED_TO {relation_type: $relation_type}]->(:ProjectionNode {node_id: $target_node_id})
+RETURN count(edge) AS edge_count
+            ",
+        )
+        .param("source_node_id", "node-123")
+        .param("target_node_id", "node-122")
+        .param("relation_type", "depends_on"),
+    )
+    .await?;
+
+    let node_kind: String = node_row.get("node_kind")?;
+    let title: String = node_row.get("title")?;
+    let status: String = node_row.get("status")?;
+    let node_labels: Vec<String> = node_row.get("node_labels")?;
+    let properties_json: String = node_row.get("properties_json")?;
+    let edge_count: i64 = relation_row.get("edge_count")?;
+
+    assert_eq!(node_kind, "capability");
+    assert_eq!(title, "Projection consumer foundation");
+    assert_eq!(status, "ACTIVE");
+    assert_eq!(
+        node_labels,
+        vec!["projection".to_string(), "foundation".to_string()]
+    );
+    assert!(properties_json.contains("\"phase\":\"build\""));
+    assert_eq!(edge_count, 1);
 
     Ok(())
 }
@@ -245,4 +336,14 @@ CREATE (pack)-[:HAS_MILESTONE]->(milestone)
         .await?;
 
     Ok(())
+}
+
+async fn single_row(
+    graph: &Graph,
+    query: neo4rs::Query,
+) -> Result<neo4rs::Row, Box<dyn Error + Send + Sync>> {
+    let mut rows = graph.execute(query).await?;
+    rows.next()
+        .await?
+        .ok_or_else(|| "expected at least one row".into())
 }
