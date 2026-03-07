@@ -1,0 +1,198 @@
+syntax = "proto3";
+
+package underpass.rehydration.kernel.v1alpha1;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/underpass-ai/rehydration-kernel/api/gen/go/underpass/rehydration/kernel/v1alpha1;rehydrationkernelv1alpha1";
+
+enum Phase {
+  PHASE_UNSPECIFIED = 0;
+  PHASE_DISCOVERY = 1;
+  PHASE_PLANNING = 2;
+  PHASE_DESIGN = 3;
+  PHASE_BUILD = 4;
+  PHASE_VALIDATE = 5;
+  PHASE_RELEASE = 6;
+}
+
+enum BundleRenderFormat {
+  BUNDLE_RENDER_FORMAT_UNSPECIFIED = 0;
+  BUNDLE_RENDER_FORMAT_STRUCTURED = 1;
+  BUNDLE_RENDER_FORMAT_LLM_PROMPT = 2;
+  BUNDLE_RENDER_FORMAT_DEBUG_JSON = 3;
+}
+
+enum ReplayMode {
+  REPLAY_MODE_UNSPECIFIED = 0;
+  REPLAY_MODE_DRY_RUN = 1;
+  REPLAY_MODE_REBUILD = 2;
+}
+
+message BundleVersion {
+  uint64 revision = 1;
+  string content_hash = 2;
+  string schema_version = 3;
+  string projection_watermark = 4;
+  google.protobuf.Timestamp generated_at = 5;
+  string generator_version = 6;
+}
+
+message BundleSection {
+  string key = 1;
+  string title = 2;
+  string content = 3;
+  uint32 token_count = 4;
+  repeated string scopes = 5;
+}
+
+message CaseHeader {
+  string case_id = 1;
+  string title = 2;
+  string summary = 3;
+  string status = 4;
+  google.protobuf.Timestamp created_at = 5;
+  string created_by = 6;
+}
+
+message PlanHeader {
+  string plan_id = 1;
+  uint64 revision = 2;
+  string status = 3;
+  uint32 work_items_total = 4;
+  uint32 work_items_completed = 5;
+}
+
+message WorkItem {
+  string work_item_id = 1;
+  string title = 2;
+  string summary = 3;
+  string role = 4;
+  string phase = 5;
+  string status = 6;
+  repeated string dependency_ids = 7;
+  uint32 priority = 8;
+}
+
+message Decision {
+  string decision_id = 1;
+  string title = 2;
+  string rationale = 3;
+  string status = 4;
+  string owner = 5;
+  google.protobuf.Timestamp decided_at = 6;
+}
+
+message DecisionRelation {
+  string source_decision_id = 1;
+  string target_decision_id = 2;
+  string relation_type = 3;
+}
+
+message TaskImpact {
+  string decision_id = 1;
+  string work_item_id = 2;
+  string title = 3;
+  string impact_type = 4;
+}
+
+message Milestone {
+  string milestone_type = 1;
+  string description = 2;
+  google.protobuf.Timestamp occurred_at = 3;
+  string actor = 4;
+}
+
+message RoleContextPack {
+  string role = 1;
+  CaseHeader case_header = 2;
+  PlanHeader plan_header = 3;
+  repeated WorkItem work_items = 4;
+  repeated Decision decisions = 5;
+  repeated DecisionRelation decision_relations = 6;
+  repeated TaskImpact impacts = 7;
+  repeated Milestone milestones = 8;
+  string latest_summary = 9;
+  uint32 token_budget_hint = 10;
+}
+
+message RehydrationStats {
+  uint32 roles = 1;
+  uint32 decisions = 2;
+  uint32 decision_relations = 3;
+  uint32 impacts = 4;
+  uint32 milestones = 5;
+  uint32 timeline_events = 6;
+}
+
+message RehydrationBundle {
+  string case_id = 1;
+  repeated RoleContextPack packs = 2;
+  RehydrationStats stats = 3;
+  BundleVersion version = 4;
+}
+
+message RenderedContext {
+  BundleRenderFormat format = 1;
+  string content = 2;
+  uint32 token_count = 3;
+  repeated BundleSection sections = 4;
+}
+
+message ScopeValidationResult {
+  bool allowed = 1;
+  repeated string required_scopes = 2;
+  repeated string provided_scopes = 3;
+  repeated string missing_scopes = 4;
+  repeated string extra_scopes = 5;
+  string reason = 6;
+  repeated string diagnostics = 7;
+}
+
+message BundleSnapshot {
+  string snapshot_id = 1;
+  string case_id = 2;
+  string role = 3;
+  RehydrationBundle bundle = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Timestamp expires_at = 6;
+  google.protobuf.Duration ttl = 7;
+}
+
+message ProjectionStatus {
+  string consumer_name = 1;
+  string stream_name = 2;
+  string projection_watermark = 3;
+  uint64 processed_events = 4;
+  uint64 pending_events = 5;
+  google.protobuf.Timestamp last_event_at = 6;
+  google.protobuf.Timestamp updated_at = 7;
+  bool healthy = 8;
+  repeated string warnings = 9;
+}
+
+message GraphNode {
+  string node_id = 1;
+  string node_kind = 2;
+  string title = 3;
+  repeated string labels = 4;
+  map<string, string> properties = 5;
+}
+
+message GraphRelationship {
+  string source_node_id = 1;
+  string target_node_id = 2;
+  string relationship_type = 3;
+  map<string, string> properties = 4;
+}
+
+message RehydrationDiagnostic {
+  string role = 1;
+  BundleVersion version = 2;
+  uint32 selected_decisions = 3;
+  uint32 selected_impacts = 4;
+  uint32 selected_milestones = 5;
+  uint32 estimated_tokens = 6;
+  repeated string notes = 7;
+}

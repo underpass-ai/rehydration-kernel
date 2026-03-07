@@ -24,6 +24,14 @@ capability into an independent repository.
 
 The repo is pinned to Rust `1.90.0` through `rust-toolchain.toml`.
 
+## API Contracts
+
+The first API split is defined under
+`api/proto/underpass/rehydration/kernel/v1alpha1` with:
+
+- `ContextQueryService`
+- `ContextAdminService`
+
 ## Quickstart
 
 ```bash

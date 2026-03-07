@@ -1,0 +1,61 @@
+syntax = "proto3";
+
+package underpass.rehydration.kernel.v1alpha1;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+import "underpass/rehydration/kernel/v1alpha1/common.proto";
+
+option go_package = "github.com/underpass-ai/rehydration-kernel/api/gen/go/underpass/rehydration/kernel/v1alpha1;rehydrationkernelv1alpha1";
+
+service ContextQueryService {
+  rpc GetContext(GetContextRequest) returns (GetContextResponse);
+  rpc RehydrateSession(RehydrateSessionRequest) returns (RehydrateSessionResponse);
+  rpc ValidateScope(ValidateScopeRequest) returns (ValidateScopeResponse);
+}
+
+message GetContextRequest {
+  string case_id = 1;
+  string role = 2;
+  Phase phase = 3;
+  string work_item_id = 4;
+  uint32 token_budget = 5;
+  repeated string requested_scopes = 6;
+  BundleRenderFormat render_format = 7;
+  bool include_debug_sections = 8;
+}
+
+message GetContextResponse {
+  RehydrationBundle bundle = 1;
+  RenderedContext rendered = 2;
+  ScopeValidationResult scope_validation = 3;
+  google.protobuf.Timestamp served_at = 4;
+}
+
+message RehydrateSessionRequest {
+  string case_id = 1;
+  repeated string roles = 2;
+  bool include_timeline = 3;
+  bool include_summaries = 4;
+  uint32 timeline_window = 5;
+  bool persist_snapshot = 6;
+  google.protobuf.Duration snapshot_ttl = 7;
+}
+
+message RehydrateSessionResponse {
+  RehydrationBundle bundle = 1;
+  bool snapshot_persisted = 2;
+  string snapshot_id = 3;
+  google.protobuf.Timestamp generated_at = 4;
+}
+
+message ValidateScopeRequest {
+  string role = 1;
+  Phase phase = 2;
+  repeated string required_scopes = 3;
+  repeated string provided_scopes = 4;
+}
+
+message ValidateScopeResponse {
+  ScopeValidationResult result = 1;
+}
