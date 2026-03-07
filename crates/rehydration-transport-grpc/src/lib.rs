@@ -5,13 +5,14 @@ use std::time::SystemTime;
 use prost_types::{Duration as ProtoDuration, Timestamp};
 use rehydration_application::{
     AcceptedVersion, AdminApplicationService, ApplicationError, BundleSnapshotResult,
-    GetBundleSnapshotQuery, GetContextQuery, GetContextResult, GetGraphRelationshipsQuery,
-    GetGraphRelationshipsResult, GetProjectionStatusQuery, GetProjectionStatusResult,
-    GetRehydrationDiagnosticsQuery, GetRehydrationDiagnosticsResult, GraphNodeView,
-    GraphRelationshipView, ProjectionStatusView, QueryApplicationService, RehydrateSessionQuery,
-    RehydrateSessionResult, RehydrationApplication, RehydrationDiagnosticView, ReplayModeSelection,
-    ReplayProjectionCommand, ReplayProjectionOutcome, ScopeValidation, UpdateContextCommand,
-    UpdateContextUseCase, ValidateScopeQuery,
+    CommandApplicationService, GetBundleSnapshotQuery, GetContextQuery, GetContextResult,
+    GetGraphRelationshipsQuery, GetGraphRelationshipsResult, GetProjectionStatusQuery,
+    GetProjectionStatusResult, GetRehydrationDiagnosticsQuery, GetRehydrationDiagnosticsResult,
+    GraphNodeView, GraphRelationshipView, ProjectionStatusView, QueryApplicationService,
+    RehydrateSessionQuery, RehydrateSessionResult, RehydrationApplication,
+    RehydrationDiagnosticView, ReplayModeSelection, ReplayProjectionCommand,
+    ReplayProjectionOutcome, ScopeValidation, UpdateContextCommand, UpdateContextUseCase,
+    ValidateScopeQuery,
 };
 use rehydration_config::AppConfig;
 use rehydration_domain::{BundleMetadata, RehydrationBundle};
@@ -39,7 +40,7 @@ pub struct GrpcServer<R, S> {
     bind_addr: String,
     query_application: Arc<QueryApplicationService<R, S>>,
     admin_application: Arc<AdminApplicationService<R>>,
-    update_context: Arc<UpdateContextUseCase>,
+    command_application: Arc<CommandApplicationService>,
     capability_name: &'static str,
 }
 
@@ -52,6 +53,7 @@ where
         let projection_reader = Arc::new(projection_reader);
         let snapshot_store = Arc::new(snapshot_store);
         let generator_version = env!("CARGO_PKG_VERSION");
+        let update_context = Arc::new(UpdateContextUseCase::new(generator_version));
 
         Self {
             bind_addr: config.grpc_bind,
@@ -64,7 +66,7 @@ where
                 Arc::clone(&projection_reader),
                 generator_version,
             )),
-            update_context: Arc::new(UpdateContextUseCase::new(generator_version)),
+            command_application: Arc::new(CommandApplicationService::new(update_context)),
             capability_name: RehydrationApplication::capability_name(),
         }
     }
@@ -98,7 +100,7 @@ where
     }
 
     pub fn command_service(&self) -> CommandGrpcService {
-        CommandGrpcService::new(Arc::clone(&self.update_context))
+        CommandGrpcService::new(Arc::clone(&self.command_application))
     }
 
     pub fn admin_service(&self) -> AdminGrpcService<R> {
@@ -306,12 +308,12 @@ where
 
 #[derive(Debug, Clone)]
 pub struct CommandGrpcService {
-    update_context: Arc<UpdateContextUseCase>,
+    application: Arc<CommandApplicationService>,
 }
 
 impl CommandGrpcService {
-    pub fn new(update_context: Arc<UpdateContextUseCase>) -> Self {
-        Self { update_context }
+    pub fn new(application: Arc<CommandApplicationService>) -> Self {
+        Self { application }
     }
 }
 
@@ -335,8 +337,8 @@ impl ContextCommandService for CommandGrpcService {
         });
 
         let outcome = self
-            .update_context
-            .execute(UpdateContextCommand {
+            .application
+            .update_context(UpdateContextCommand {
                 case_id: request.case_id,
                 role: request.role,
                 work_item_id: request.work_item_id,
@@ -367,11 +369,7 @@ impl ContextCommandService for CommandGrpcService {
             accepted_version: Some(proto_accepted_version(&outcome.accepted_version)),
             warnings: outcome.warnings,
             snapshot_persisted: outcome.snapshot_persisted,
-            snapshot_id: if outcome.snapshot_persisted {
-                "snapshot:pending".to_string()
-            } else {
-                String::new()
-            },
+            snapshot_id: outcome.snapshot_id.unwrap_or_default(),
         }))
     }
 }
@@ -674,7 +672,9 @@ fn trim_to_option(value: String) -> Option<String> {
 mod tests {
     use std::sync::Arc;
 
-    use rehydration_application::{AdminApplicationService, QueryApplicationService};
+    use rehydration_application::{
+        AdminApplicationService, CommandApplicationService, QueryApplicationService,
+    };
     use rehydration_domain::{CaseId, RehydrationBundle, Role};
     use rehydration_ports::{PortError, ProjectionReader, SnapshotStore};
     use rehydration_proto::v1alpha1::{
@@ -796,9 +796,9 @@ mod tests {
 
     #[tokio::test]
     async fn command_service_accepts_update_context() {
-        let service = CommandGrpcService::new(Arc::new(
+        let service = CommandGrpcService::new(Arc::new(CommandApplicationService::new(Arc::new(
             rehydration_application::UpdateContextUseCase::new("0.1.0"),
-        ));
+        ))));
 
         let response = service
             .update_context(Request::new(UpdateContextRequest {
@@ -830,6 +830,7 @@ mod tests {
             1
         );
         assert!(response.snapshot_persisted);
+        assert_eq!(response.snapshot_id, "snapshot:case-123:developer");
     }
 
     #[tokio::test]

@@ -13,8 +13,8 @@ capability into an independent repository.
 - `api/asyncapi`: event contracts.
 - `crates/rehydration-domain`: domain model and invariants.
 - `crates/rehydration-ports`: stable application-facing traits.
-- `crates/rehydration-application`: use cases, query/admin orchestration, and
-  application DTOs.
+- `crates/rehydration-application`: use cases, query/admin/command
+  orchestration, and application DTOs.
 - `crates/rehydration-proto`: generated protobuf and gRPC stubs.
 - `crates/rehydration-transport-grpc`: tonic gRPC transport for query, command,
   and admin services.
@@ -40,8 +40,8 @@ Rust stubs are generated at build time by `tonic-build` inside
 `crates/rehydration-proto`.
 
 The server bootstrap currently exposes all three gRPC services through `tonic`.
-Query and admin flows are already mediated by dedicated application services,
-while the core domain logic behind those flows is still being ported.
+Query, admin, and command flows are already mediated by dedicated application
+services, while the core domain logic behind those flows is still being ported.
 
 ## Quickstart
 

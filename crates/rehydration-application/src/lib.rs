@@ -140,6 +140,7 @@ pub struct UpdateContextOutcome {
     pub accepted_version: AcceptedVersion,
     pub warnings: Vec<String>,
     pub snapshot_persisted: bool,
+    pub snapshot_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -693,6 +694,32 @@ where
 }
 
 #[derive(Debug)]
+pub struct CommandApplicationService {
+    update_context: Arc<UpdateContextUseCase>,
+}
+
+impl CommandApplicationService {
+    pub fn new(update_context: Arc<UpdateContextUseCase>) -> Self {
+        Self { update_context }
+    }
+
+    pub fn update_context(
+        &self,
+        command: UpdateContextCommand,
+    ) -> Result<UpdateContextOutcome, ApplicationError> {
+        let snapshot_id = if command.persist_snapshot {
+            Some(format!("snapshot:{}:{}", command.case_id, command.role))
+        } else {
+            None
+        };
+
+        let mut outcome = self.update_context.execute(command)?;
+        outcome.snapshot_id = snapshot_id;
+        Ok(outcome)
+    }
+}
+
+#[derive(Debug)]
 pub struct UpdateContextUseCase {
     generator_version: &'static str,
 }
@@ -741,6 +768,7 @@ impl UpdateContextUseCase {
             },
             warnings,
             snapshot_persisted: command.persist_snapshot,
+            snapshot_id: None,
         })
     }
 }
@@ -799,11 +827,11 @@ mod tests {
     use rehydration_ports::{PortError, ProjectionReader, SnapshotStore};
 
     use super::{
-        AdminApplicationService, GetBundleSnapshotQuery, GetContextQuery, GetContextUseCase,
-        GetProjectionStatusQuery, GetRehydrationDiagnosticsQuery, QueryApplicationService,
-        RehydrateSessionQuery, RehydrateSessionUseCase, ReplayModeSelection,
-        ReplayProjectionCommand, UpdateContextCommand, UpdateContextUseCase, ValidateScopeQuery,
-        ValidateScopeUseCase,
+        AdminApplicationService, CommandApplicationService, GetBundleSnapshotQuery,
+        GetContextQuery, GetContextUseCase, GetProjectionStatusQuery,
+        GetRehydrationDiagnosticsQuery, QueryApplicationService, RehydrateSessionQuery,
+        RehydrateSessionUseCase, ReplayModeSelection, ReplayProjectionCommand,
+        UpdateContextCommand, UpdateContextUseCase, ValidateScopeQuery, ValidateScopeUseCase,
     };
 
     struct EmptyProjectionReader;
@@ -978,6 +1006,7 @@ mod tests {
 
         assert_eq!(result.accepted_version.revision, 5);
         assert!(result.snapshot_persisted);
+        assert!(result.snapshot_id.is_none());
         assert_eq!(result.warnings.len(), 3);
     }
 
@@ -999,5 +1028,30 @@ mod tests {
 
         assert_eq!(result.bundle.case_id().as_str(), "case-123");
         assert!(result.served_at <= SystemTime::now());
+    }
+
+    #[test]
+    fn command_application_service_adds_snapshot_metadata() {
+        let service = CommandApplicationService::new(Arc::new(UpdateContextUseCase::new("0.1.0")));
+
+        let result = service
+            .update_context(UpdateContextCommand {
+                case_id: "case-123".to_string(),
+                role: "developer".to_string(),
+                work_item_id: "task-7".to_string(),
+                changes: Vec::new(),
+                expected_revision: Some(1),
+                expected_content_hash: None,
+                idempotency_key: None,
+                requested_by: Some("agent".to_string()),
+                persist_snapshot: true,
+            })
+            .expect("command service should succeed");
+
+        assert_eq!(
+            result.snapshot_id.as_deref(),
+            Some("snapshot:case-123:developer")
+        );
+        assert!(result.snapshot_persisted);
     }
 }
