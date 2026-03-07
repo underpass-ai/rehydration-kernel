@@ -13,8 +13,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let grpc_server = GrpcServer::new(
         config.clone(),
-        Neo4jProjectionReader::new(config.graph_uri.clone()),
-        ValkeySnapshotStore::new(config.snapshot_uri.clone()),
+        Neo4jProjectionReader::new(config.graph_uri.clone())?,
+        ValkeySnapshotStore::new(config.snapshot_uri.clone())?,
     );
     let admin_server = HttpAdminServer::new(config.clone());
     let events_consumer = NatsProjectionConsumer::new(config.events_subject_prefix.clone());

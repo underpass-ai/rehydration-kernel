@@ -42,6 +42,9 @@ Rust stubs are generated at build time by `tonic-build` inside
 The server bootstrap currently exposes all three gRPC services through `tonic`.
 Query, admin, and command flows are already mediated by dedicated application
 services, while the core domain logic behind those flows is still being ported.
+The Valkey snapshot adapter now writes real RESP `SET` commands over TCP with a
+stable JSON payload, and the Neo4j adapter has been hardened to avoid
+manufacturing synthetic bundles from infrastructure.
 
 ## Quickstart
 
