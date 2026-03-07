@@ -217,6 +217,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-sonar
 
+      - name: Verify Docker
+        if: steps.sonar-config.outputs.enabled == 'true'
+        run: docker version
+
       - name: Generate Rust coverage
         if: steps.sonar-config.outputs.enabled == 'true'
         run: bash scripts/ci/rust-coverage.sh

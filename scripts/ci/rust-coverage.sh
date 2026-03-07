@@ -8,4 +8,26 @@ cd "${ROOT_DIR}"
 
 mkdir -p target/llvm-cov
 
-cargo llvm-cov --workspace --locked --lcov --output-path target/llvm-cov/lcov.info
+# Merge coverage from the fast workspace suite plus container-backed adapter
+# tests so Sonar sees the real exercised read/write paths.
+cargo llvm-cov clean --workspace
+
+cargo llvm-cov --workspace --locked --no-report
+
+. "${ROOT_DIR}/scripts/ci/testcontainers-runtime.sh"
+
+cargo llvm-cov \
+  -p rehydration-adapter-valkey \
+  --features container-tests \
+  --test valkey_integration \
+  --locked \
+  --no-report
+
+cargo llvm-cov \
+  -p rehydration-adapter-neo4j \
+  --features container-tests \
+  --test neo4j_integration \
+  --locked \
+  --no-report
+
+cargo llvm-cov report --workspace --locked --lcov --output-path target/llvm-cov/lcov.info
