@@ -33,4 +33,35 @@ mod tests {
 
         assert_eq!(request.case_id, "case-123");
     }
+
+    #[test]
+    fn generated_command_messages_are_available() {
+        let request = v1alpha1::UpdateContextRequest {
+            case_id: "case-123".to_string(),
+            role: "developer".to_string(),
+            work_item_id: "task-7".to_string(),
+            changes: vec![v1alpha1::ContextChange {
+                operation: v1alpha1::ContextChangeOperation::Update as i32,
+                entity_kind: "decision".to_string(),
+                entity_id: "decision-9".to_string(),
+                payload_json: "{\"status\":\"accepted\"}".to_string(),
+                reason: "agent refined decision".to_string(),
+                scopes: vec!["decisions".to_string()],
+            }],
+            metadata: Some(v1alpha1::CommandMetadata {
+                idempotency_key: "cmd-123".to_string(),
+                correlation_id: "corr-123".to_string(),
+                causation_id: "cause-123".to_string(),
+                requested_by: "agent-executor".to_string(),
+                requested_at: None,
+            }),
+            precondition: Some(v1alpha1::RevisionPrecondition {
+                expected_revision: 4,
+                expected_content_hash: "abc123".to_string(),
+            }),
+            persist_snapshot: true,
+        };
+
+        assert_eq!(request.changes.len(), 1);
+    }
 }

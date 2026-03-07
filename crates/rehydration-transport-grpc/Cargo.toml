@@ -13,3 +13,9 @@ rehydration-config.workspace = true
 rehydration-domain.workspace = true
 rehydration-ports.workspace = true
 rehydration-proto.workspace = true
+prost-types.workspace = true
+tonic.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+
+[dev-dependencies]

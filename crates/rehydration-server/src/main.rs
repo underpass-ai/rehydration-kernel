@@ -6,14 +6,15 @@ use rehydration_observability::init_observability;
 use rehydration_transport_grpc::GrpcServer;
 use rehydration_transport_http_admin::HttpAdminServer;
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let config = AppConfig::from_env();
     init_observability(&config.service_name);
 
     let grpc_server = GrpcServer::new(
         config.clone(),
-        Neo4jProjectionReader::new(config.graph_uri.clone()),
-        ValkeySnapshotStore::new(config.snapshot_uri.clone()),
+        Neo4jProjectionReader::new(config.graph_uri.clone())?,
+        ValkeySnapshotStore::new(config.snapshot_uri.clone())?,
     );
     let admin_server = HttpAdminServer::new(config.clone());
     let events_consumer = NatsProjectionConsumer::new(config.events_subject_prefix.clone());
@@ -26,11 +27,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         grpc_server.bootstrap_request().role
     );
 
-    let warmup_bundle = grpc_server.warmup_bundle()?;
+    let warmup_bundle = grpc_server.warmup_bundle().await?;
     println!(
         "warmup bundle revision={}",
         warmup_bundle.metadata().revision
     );
 
-    Ok(())
+    grpc_server.run().await
 }

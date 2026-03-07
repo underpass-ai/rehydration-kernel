@@ -6,6 +6,7 @@ The Rehydration Kernel contracts live under
 Current public surface:
 
 - `ContextQueryService`
+- `ContextCommandService`
 - `ContextAdminService`
 
 Validation entrypoints:

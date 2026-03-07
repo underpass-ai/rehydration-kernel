@@ -1,0 +1,166 @@
+use std::time::Duration;
+
+use rehydration_config::AppConfig;
+use rehydration_domain::{CaseId, RehydrationBundle, Role};
+use rehydration_ports::{PortError, ProjectionReader, SnapshotStore};
+use rehydration_proto::v1alpha1::{
+    BundleRenderFormat, ContextChange, ContextChangeOperation, GetBundleSnapshotRequest,
+    GetContextRequest, GetProjectionStatusRequest, Phase, UpdateContextRequest,
+    context_admin_service_client::ContextAdminServiceClient,
+    context_command_service_client::ContextCommandServiceClient,
+    context_query_service_client::ContextQueryServiceClient,
+};
+use rehydration_transport_grpc::GrpcServer;
+use tokio::net::TcpListener;
+use tokio::sync::oneshot;
+use tokio::time::sleep;
+use tonic::transport::{Channel, Endpoint};
+
+struct EmptyProjectionReader;
+
+impl ProjectionReader for EmptyProjectionReader {
+    async fn load_bundle(
+        &self,
+        _case_id: &CaseId,
+        _role: &Role,
+    ) -> Result<Option<RehydrationBundle>, PortError> {
+        Ok(None)
+    }
+}
+
+struct NoopSnapshotStore;
+
+impl SnapshotStore for NoopSnapshotStore {
+    async fn save_bundle(&self, _bundle: &RehydrationBundle) -> Result<(), PortError> {
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn grpc_server_supports_query_command_and_admin_roundtrip() {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("listener should bind");
+    let addr = listener.local_addr().expect("listener should expose addr");
+    let config = AppConfig {
+        service_name: "rehydration-kernel".to_string(),
+        grpc_bind: addr.to_string(),
+        admin_bind: "127.0.0.1:8080".to_string(),
+        graph_uri: "neo4j://localhost:7687".to_string(),
+        snapshot_uri: "redis://localhost:6379".to_string(),
+        events_subject_prefix: "rehydration".to_string(),
+    };
+    let server = GrpcServer::new(config, EmptyProjectionReader, NoopSnapshotStore);
+    let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
+
+    let server_task = tokio::spawn(async move {
+        server
+            .serve_with_listener_shutdown(listener, async move {
+                let _ = shutdown_rx.await;
+            })
+            .await
+    });
+
+    let endpoint = format!("http://{}", addr);
+    let channel = connect_channel(endpoint).await;
+    let mut query_client = ContextQueryServiceClient::new(channel.clone());
+    let mut command_client = ContextCommandServiceClient::new(channel.clone());
+    let mut admin_client = ContextAdminServiceClient::new(channel);
+
+    let get_context = query_client
+        .get_context(GetContextRequest {
+            case_id: "case-123".to_string(),
+            role: "developer".to_string(),
+            phase: Phase::Build as i32,
+            work_item_id: String::new(),
+            token_budget: 1024,
+            requested_scopes: vec!["decisions".to_string()],
+            render_format: BundleRenderFormat::Structured as i32,
+            include_debug_sections: false,
+        })
+        .await
+        .expect("query service should respond")
+        .into_inner();
+    assert_eq!(
+        get_context
+            .bundle
+            .as_ref()
+            .expect("bundle should exist")
+            .case_id,
+        "case-123"
+    );
+
+    let update_context = command_client
+        .update_context(UpdateContextRequest {
+            case_id: "case-123".to_string(),
+            role: "developer".to_string(),
+            work_item_id: "task-7".to_string(),
+            changes: vec![ContextChange {
+                operation: ContextChangeOperation::Update as i32,
+                entity_kind: "decision".to_string(),
+                entity_id: "decision-9".to_string(),
+                payload_json: "{\"status\":\"accepted\"}".to_string(),
+                reason: "refined".to_string(),
+                scopes: vec!["decisions".to_string()],
+            }],
+            metadata: None,
+            precondition: None,
+            persist_snapshot: true,
+        })
+        .await
+        .expect("command service should respond")
+        .into_inner();
+    assert_eq!(update_context.snapshot_id, "snapshot:case-123:developer");
+
+    let projection_status = admin_client
+        .get_projection_status(GetProjectionStatusRequest {
+            consumer_names: vec!["context-projection".to_string()],
+        })
+        .await
+        .expect("admin projection status should respond")
+        .into_inner();
+    assert_eq!(projection_status.projections.len(), 1);
+    assert!(projection_status.projections[0].healthy);
+
+    let snapshot = admin_client
+        .get_bundle_snapshot(GetBundleSnapshotRequest {
+            case_id: "case-123".to_string(),
+            role: "developer".to_string(),
+        })
+        .await
+        .expect("admin snapshot should respond")
+        .into_inner();
+    assert_eq!(
+        snapshot
+            .snapshot
+            .as_ref()
+            .expect("snapshot should exist")
+            .snapshot_id,
+        "snapshot:case-123:developer"
+    );
+
+    let _ = shutdown_tx.send(());
+    let result = server_task.await.expect("server task should join cleanly");
+    result.expect("server should shut down cleanly");
+}
+
+async fn connect_channel(endpoint: String) -> Channel {
+    let mut attempts = 0u8;
+
+    loop {
+        let connection = Endpoint::from_shared(endpoint.clone())
+            .expect("endpoint should be valid")
+            .connect()
+            .await;
+
+        match connection {
+            Ok(channel) => return channel,
+            Err(error) if attempts < 20 => {
+                attempts += 1;
+                sleep(Duration::from_millis(25)).await;
+                let _ = error;
+            }
+            Err(error) => panic!("gRPC server did not become ready: {error}"),
+        }
+    }
+}

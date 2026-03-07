@@ -18,7 +18,7 @@ impl InMemoryProjectionReader {
 }
 
 impl ProjectionReader for InMemoryProjectionReader {
-    fn load_bundle(
+    async fn load_bundle(
         &self,
         case_id: &CaseId,
         role: &Role,
@@ -31,7 +31,7 @@ impl ProjectionReader for InMemoryProjectionReader {
 pub struct NoopSnapshotStore;
 
 impl SnapshotStore for NoopSnapshotStore {
-    fn save_bundle(&self, _bundle: &RehydrationBundle) -> Result<(), PortError> {
+    async fn save_bundle(&self, _bundle: &RehydrationBundle) -> Result<(), PortError> {
         Ok(())
     }
 }
@@ -39,12 +39,12 @@ impl SnapshotStore for NoopSnapshotStore {
 #[cfg(test)]
 mod tests {
     use rehydration_domain::{CaseId, RehydrationBundle, Role};
-    use rehydration_ports::ProjectionReader;
+    use rehydration_ports::{ProjectionReader, SnapshotStore};
 
-    use super::InMemoryProjectionReader;
+    use super::{InMemoryProjectionReader, NoopSnapshotStore};
 
-    #[test]
-    fn in_memory_reader_returns_seeded_bundle() {
+    #[tokio::test]
+    async fn in_memory_reader_returns_seeded_bundle() {
         let bundle = RehydrationBundle::empty(
             CaseId::new("case-123").expect("case id is valid"),
             Role::new("developer").expect("role is valid"),
@@ -57,8 +57,23 @@ mod tests {
                 &CaseId::new("case-123").expect("case id is valid"),
                 &Role::new("developer").expect("role is valid"),
             )
+            .await
             .expect("load should succeed");
 
         assert!(loaded.is_some());
+    }
+
+    #[tokio::test]
+    async fn noop_snapshot_store_accepts_bundle() {
+        let bundle = RehydrationBundle::empty(
+            CaseId::new("case-123").expect("case id is valid"),
+            Role::new("developer").expect("role is valid"),
+            "0.1.0",
+        );
+
+        NoopSnapshotStore
+            .save_bundle(&bundle)
+            .await
+            .expect("noop snapshot store should accept bundles");
     }
 }
