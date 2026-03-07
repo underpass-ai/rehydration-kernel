@@ -71,6 +71,10 @@ The Valkey integration target uses `testcontainers` and is intentionally
 separated from `cargo test --workspace` so unit checks stay fast and
 container-backed tests remain explicit.
 
+Container runtime bootstrap for local integration tests lives in
+`scripts/ci/testcontainers-runtime.sh`, so individual integration scripts only
+need to source that setup and run their target.
+
 Local runtime selection works like this:
 
 - `auto`: prefer `Docker`; if it is unavailable, fall back to `Podman`.
