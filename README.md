@@ -31,6 +31,7 @@ The first API split is defined under
 `api/proto/underpass/rehydration/kernel/v1alpha1` with:
 
 - `ContextQueryService`
+- `ContextCommandService`
 - `ContextAdminService`
 
 Rust stubs are generated at build time by `tonic-build` inside

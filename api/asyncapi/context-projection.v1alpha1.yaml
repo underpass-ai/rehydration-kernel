@@ -1,0 +1,232 @@
+asyncapi: 2.6.0
+id: urn:underpass:rehydration-kernel:context-projection:v1alpha1
+defaultContentType: application/json
+info:
+  title: Rehydration Kernel Projection Events
+  version: 0.1.0
+  description: >
+    Versioned event contract for the deterministic context rehydration kernel.
+    It covers the first inbound projection subjects and the outbound bundle
+    notification emitted after successful bundle generation.
+servers:
+  nats:
+    url: nats://nats:4222
+    protocol: nats
+    description: JetStream-compatible message bus used by the kernel.
+channels:
+  planning.story.created:
+    description: Planning service announces a new case or story header.
+    subscribe:
+      operationId: onPlanningStoryCreated
+      summary: Consume story headers into the projection model.
+      message:
+        $ref: '#/components/messages/PlanningStoryCreated'
+  planning.task.created:
+    description: Planning service announces a new work item tied to a case.
+    subscribe:
+      operationId: onPlanningTaskCreated
+      summary: Consume work items into the projection model.
+      message:
+        $ref: '#/components/messages/PlanningTaskCreated'
+  decision.recorded:
+    description: Decision producer emits a normalized decision event.
+    subscribe:
+      operationId: onDecisionRecorded
+      summary: Consume decision graph changes into the projection model.
+      message:
+        $ref: '#/components/messages/DecisionRecorded'
+  context.bundle.generated:
+    description: Kernel publishes a bundle generation notification.
+    publish:
+      operationId: publishContextBundleGenerated
+      summary: Notify downstream systems that a deterministic bundle was produced.
+      message:
+        $ref: '#/components/messages/ContextBundleGenerated'
+components:
+  messages:
+    PlanningStoryCreated:
+      name: PlanningStoryCreated
+      title: planning.story.created
+      payload:
+        $ref: '#/components/schemas/PlanningStoryCreatedEvent'
+    PlanningTaskCreated:
+      name: PlanningTaskCreated
+      title: planning.task.created
+      payload:
+        $ref: '#/components/schemas/PlanningTaskCreatedEvent'
+    DecisionRecorded:
+      name: DecisionRecorded
+      title: decision.recorded
+      payload:
+        $ref: '#/components/schemas/DecisionRecordedEvent'
+    ContextBundleGenerated:
+      name: ContextBundleGenerated
+      title: context.bundle.generated
+      payload:
+        $ref: '#/components/schemas/ContextBundleGeneratedEvent'
+  schemas:
+    EventEnvelope:
+      type: object
+      required:
+        - event_id
+        - correlation_id
+        - causation_id
+        - occurred_at
+        - aggregate_id
+        - aggregate_type
+        - schema_version
+      properties:
+        event_id:
+          type: string
+          description: Globally unique event identifier.
+        correlation_id:
+          type: string
+          description: Correlates work across services.
+        causation_id:
+          type: string
+          description: Immediate triggering command or event identifier.
+        occurred_at:
+          type: string
+          format: date-time
+          description: Time when the event became true.
+        aggregate_id:
+          type: string
+          description: Domain aggregate identifier.
+        aggregate_type:
+          type: string
+          description: Domain aggregate type.
+        schema_version:
+          type: string
+          description: Version of the event schema.
+    PlanningStoryCreatedEvent:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelope'
+        - type: object
+          required:
+            - data
+          properties:
+            data:
+              $ref: '#/components/schemas/PlanningStoryCreatedData'
+    PlanningStoryCreatedData:
+      type: object
+      required:
+        - case_id
+        - title
+        - status
+      properties:
+        case_id:
+          type: string
+        project_id:
+          type: string
+        title:
+          type: string
+        summary:
+          type: string
+        status:
+          type: string
+        created_by:
+          type: string
+    PlanningTaskCreatedEvent:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelope'
+        - type: object
+          required:
+            - data
+          properties:
+            data:
+              $ref: '#/components/schemas/PlanningTaskCreatedData'
+    PlanningTaskCreatedData:
+      type: object
+      required:
+        - case_id
+        - work_item_id
+        - role
+        - title
+      properties:
+        case_id:
+          type: string
+        work_item_id:
+          type: string
+        role:
+          type: string
+        title:
+          type: string
+        summary:
+          type: string
+        phase:
+          type: string
+        status:
+          type: string
+        dependency_ids:
+          type: array
+          items:
+            type: string
+    DecisionRecordedEvent:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelope'
+        - type: object
+          required:
+            - data
+          properties:
+            data:
+              $ref: '#/components/schemas/DecisionRecordedData'
+    DecisionRecordedData:
+      type: object
+      required:
+        - case_id
+        - decision_id
+        - title
+        - status
+      properties:
+        case_id:
+          type: string
+        decision_id:
+          type: string
+        title:
+          type: string
+        rationale:
+          type: string
+        status:
+          type: string
+        owner:
+          type: string
+        relation_ids:
+          type: array
+          items:
+            type: string
+    ContextBundleGeneratedEvent:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelope'
+        - type: object
+          required:
+            - data
+          properties:
+            data:
+              $ref: '#/components/schemas/ContextBundleGeneratedData'
+    ContextBundleGeneratedData:
+      type: object
+      required:
+        - case_id
+        - roles
+        - revision
+        - content_hash
+        - projection_watermark
+      properties:
+        case_id:
+          type: string
+        roles:
+          type: array
+          items:
+            type: string
+        revision:
+          type: integer
+          minimum: 1
+        content_hash:
+          type: string
+        projection_watermark:
+          type: string
+        generator_version:
+          type: string
+        generated_at:
+          type: string
+          format: date-time
