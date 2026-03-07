@@ -28,6 +28,8 @@ jobs:
 
       - name: Setup buf
         uses: bufbuild/buf-setup-action@a47c93e0b1648d5651a065437926377d060baa99
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Lint proto contracts
         run: buf lint api
