@@ -1,0 +1,17 @@
+[package]
+name = "rehydration-server"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+rehydration-adapter-nats.workspace = true
+rehydration-adapter-neo4j.workspace = true
+rehydration-adapter-valkey.workspace = true
+rehydration-config.workspace = true
+rehydration-observability.workspace = true
+rehydration-transport-grpc.workspace = true
+rehydration-transport-http-admin.workspace = true

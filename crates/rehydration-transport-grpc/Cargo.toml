@@ -1,0 +1,14 @@
+[package]
+name = "rehydration-transport-grpc"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+rehydration-application.workspace = true
+rehydration-config.workspace = true
+rehydration-domain.workspace = true
+rehydration-ports.workspace = true
