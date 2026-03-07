@@ -121,6 +121,29 @@ jobs:
       - name: Run Valkey integration tests
         run: bash scripts/ci/integration-valkey.sh
 
+  integration-neo4j:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9
+        with:
+          toolchain: 1.90.0
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5
+
+      - name: Verify Docker
+        run: docker version
+
+      - name: Run Neo4j integration tests
+        run: bash scripts/ci/integration-neo4j.sh
+
   sonarcloud:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
@@ -130,6 +153,7 @@ jobs:
       - clippy
       - test
       - integration-valkey
+      - integration-neo4j
     permissions:
       contents: read
       pull-requests: read
