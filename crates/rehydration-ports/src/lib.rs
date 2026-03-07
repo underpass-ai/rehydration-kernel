@@ -1,5 +1,6 @@
 use std::error::Error;
 use std::fmt;
+use std::sync::Arc;
 
 use rehydration_domain::{CaseId, RehydrationBundle, Role};
 
@@ -31,13 +32,92 @@ pub trait SnapshotStore {
     fn save_bundle(&self, bundle: &RehydrationBundle) -> Result<(), PortError>;
 }
 
+impl<T> ProjectionReader for Arc<T>
+where
+    T: ProjectionReader + ?Sized,
+{
+    fn load_bundle(
+        &self,
+        case_id: &CaseId,
+        role: &Role,
+    ) -> Result<Option<RehydrationBundle>, PortError> {
+        (**self).load_bundle(case_id, role)
+    }
+}
+
+impl<T> SnapshotStore for Arc<T>
+where
+    T: SnapshotStore + ?Sized,
+{
+    fn save_bundle(&self, bundle: &RehydrationBundle) -> Result<(), PortError> {
+        (**self).save_bundle(bundle)
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
+    use rehydration_domain::{BundleMetadata, CaseId, RehydrationBundle, Role};
+
     use super::PortError;
+    use super::{ProjectionReader, SnapshotStore};
+
+    struct Reader;
+
+    impl ProjectionReader for Reader {
+        fn load_bundle(
+            &self,
+            case_id: &CaseId,
+            role: &Role,
+        ) -> Result<Option<RehydrationBundle>, PortError> {
+            Ok(Some(RehydrationBundle::new(
+                case_id.clone(),
+                role.clone(),
+                vec!["section".to_string()],
+                BundleMetadata::initial("test"),
+            )))
+        }
+    }
+
+    struct Store;
+
+    impl SnapshotStore for Store {
+        fn save_bundle(&self, _bundle: &RehydrationBundle) -> Result<(), PortError> {
+            Ok(())
+        }
+    }
 
     #[test]
     fn port_error_uses_inner_message() {
         let error = PortError::Unavailable("neo4j unavailable".to_string());
         assert_eq!(error.to_string(), "neo4j unavailable");
+    }
+
+    #[test]
+    fn arc_projection_reader_delegates() {
+        let reader = Arc::new(Reader);
+        let bundle = reader
+            .load_bundle(
+                &CaseId::new("case-123").expect("case id is valid"),
+                &Role::new("developer").expect("role is valid"),
+            )
+            .expect("load should succeed");
+
+        assert!(bundle.is_some());
+    }
+
+    #[test]
+    fn arc_snapshot_store_delegates() {
+        let store = Arc::new(Store);
+        let bundle = RehydrationBundle::empty(
+            CaseId::new("case-123").expect("case id is valid"),
+            Role::new("developer").expect("role is valid"),
+            "0.1.0",
+        );
+
+        store
+            .save_bundle(&bundle)
+            .expect("save via arc should succeed");
     }
 }

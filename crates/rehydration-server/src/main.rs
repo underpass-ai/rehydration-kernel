@@ -6,7 +6,8 @@ use rehydration_observability::init_observability;
 use rehydration_transport_grpc::GrpcServer;
 use rehydration_transport_http_admin::HttpAdminServer;
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let config = AppConfig::from_env();
     init_observability(&config.service_name);
 
@@ -32,5 +33,5 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         warmup_bundle.metadata().revision
     );
 
-    Ok(())
+    grpc_server.run().await
 }

@@ -15,10 +15,11 @@ capability into an independent repository.
 - `crates/rehydration-ports`: stable application-facing traits.
 - `crates/rehydration-application`: use cases and orchestration.
 - `crates/rehydration-proto`: generated protobuf and gRPC stubs.
-- `crates/rehydration-transport-grpc`: public query transport.
+- `crates/rehydration-transport-grpc`: tonic gRPC transport for query, command,
+  and admin services.
 - `crates/rehydration-transport-http-admin`: admin transport placeholder.
 - `crates/rehydration-adapter-*`: infrastructure adapters.
-- `crates/rehydration-server`: composition root.
+- `crates/rehydration-server`: composition root and async tonic bootstrap.
 - `crates/rehydration-testkit`: in-memory testing helpers.
 
 ## Toolchain
@@ -36,6 +37,10 @@ The first API split is defined under
 
 Rust stubs are generated at build time by `tonic-build` inside
 `crates/rehydration-proto`.
+
+The server bootstrap currently exposes all three gRPC services through `tonic`
+with deterministic placeholder handlers while the core use cases continue to be
+ported.
 
 ## Quickstart
 

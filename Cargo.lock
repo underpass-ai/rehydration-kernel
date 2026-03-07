@@ -767,6 +767,7 @@ dependencies = [
  "rehydration-observability",
  "rehydration-transport-grpc",
  "rehydration-transport-http-admin",
+ "tokio",
 ]
 
 [[package]]
@@ -781,11 +782,14 @@ dependencies = [
 name = "rehydration-transport-grpc"
 version = "0.1.0"
 dependencies = [
+ "prost-types",
  "rehydration-application",
  "rehydration-config",
  "rehydration-domain",
  "rehydration-ports",
  "rehydration-proto",
+ "tokio",
+ "tonic",
 ]
 
 [[package]]
