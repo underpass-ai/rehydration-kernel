@@ -92,7 +92,7 @@ Local runtime selection works like this:
 GitHub Actions stays on Docker for the repository CI path.
 
 For Neo4j-backed local runs, `REHYDRATION_GRAPH_URI` may include credentials,
-for example `neo4j://neo4j:neo@localhost:7687`.
+for example `neo4j://neo4j:<password>@localhost:7687`.
 
 ## SonarCloud
 

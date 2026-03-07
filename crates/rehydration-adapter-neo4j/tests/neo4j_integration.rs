@@ -11,22 +11,25 @@ use tokio::time::sleep;
 const NEO4J_INTERNAL_PORT: u16 = 7687;
 const NEO4J_IMAGE: &str = "docker.io/neo4j";
 const NEO4J_TAG: &str = "5.26.0-community";
+const NEO4J_PASSWORD: &str = "underpass-test-password";
 
 #[tokio::test]
 async fn load_pack_reads_role_context_projection() -> Result<(), Box<dyn Error + Send + Sync>> {
     let container = GenericImage::new(NEO4J_IMAGE, NEO4J_TAG)
         .with_exposed_port(NEO4J_INTERNAL_PORT.tcp())
-        .with_env_var("NEO4J_AUTH", "neo4j/neo")
+        .with_env_var("NEO4J_AUTH", format!("neo4j/{NEO4J_PASSWORD}"))
         .start()
         .await?;
 
     let host = container.get_host().await?;
     let port = container.get_host_port_ipv4(NEO4J_INTERNAL_PORT).await?;
-    let graph = connect_with_retry(format!("neo4j://{host}:{port}"), "neo4j", "neo").await?;
+    let graph =
+        connect_with_retry(format!("neo4j://{host}:{port}"), "neo4j", NEO4J_PASSWORD).await?;
 
     seed_projection(&graph).await?;
 
-    let reader = Neo4jProjectionReader::new(format!("neo4j://neo4j:neo@{host}:{port}"))?;
+    let reader =
+        Neo4jProjectionReader::new(format!("neo4j://neo4j:{NEO4J_PASSWORD}@{host}:{port}"))?;
     let pack = reader
         .load_pack(&CaseId::new("case-123")?, &Role::new("developer")?)
         .await?
