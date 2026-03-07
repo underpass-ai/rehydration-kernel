@@ -1,5 +1,6 @@
 use std::error::Error;
 use std::fmt;
+use std::future::Future;
 use std::sync::Arc;
 
 use rehydration_domain::{CaseId, RehydrationBundle, Role};
@@ -25,32 +26,35 @@ pub trait ProjectionReader {
         &self,
         case_id: &CaseId,
         role: &Role,
-    ) -> Result<Option<RehydrationBundle>, PortError>;
+    ) -> impl Future<Output = Result<Option<RehydrationBundle>, PortError>> + Send;
 }
 
 pub trait SnapshotStore {
-    fn save_bundle(&self, bundle: &RehydrationBundle) -> Result<(), PortError>;
+    fn save_bundle(
+        &self,
+        bundle: &RehydrationBundle,
+    ) -> impl Future<Output = Result<(), PortError>> + Send;
 }
 
 impl<T> ProjectionReader for Arc<T>
 where
-    T: ProjectionReader + ?Sized,
+    T: ProjectionReader + Send + Sync + ?Sized,
 {
-    fn load_bundle(
+    async fn load_bundle(
         &self,
         case_id: &CaseId,
         role: &Role,
     ) -> Result<Option<RehydrationBundle>, PortError> {
-        (**self).load_bundle(case_id, role)
+        self.as_ref().load_bundle(case_id, role).await
     }
 }
 
 impl<T> SnapshotStore for Arc<T>
 where
-    T: SnapshotStore + ?Sized,
+    T: SnapshotStore + Send + Sync + ?Sized,
 {
-    fn save_bundle(&self, bundle: &RehydrationBundle) -> Result<(), PortError> {
-        (**self).save_bundle(bundle)
+    async fn save_bundle(&self, bundle: &RehydrationBundle) -> Result<(), PortError> {
+        self.as_ref().save_bundle(bundle).await
     }
 }
 
@@ -66,7 +70,7 @@ mod tests {
     struct Reader;
 
     impl ProjectionReader for Reader {
-        fn load_bundle(
+        async fn load_bundle(
             &self,
             case_id: &CaseId,
             role: &Role,
@@ -83,7 +87,7 @@ mod tests {
     struct Store;
 
     impl SnapshotStore for Store {
-        fn save_bundle(&self, _bundle: &RehydrationBundle) -> Result<(), PortError> {
+        async fn save_bundle(&self, _bundle: &RehydrationBundle) -> Result<(), PortError> {
             Ok(())
         }
     }
@@ -94,21 +98,22 @@ mod tests {
         assert_eq!(error.to_string(), "neo4j unavailable");
     }
 
-    #[test]
-    fn arc_projection_reader_delegates() {
+    #[tokio::test]
+    async fn arc_projection_reader_delegates() {
         let reader = Arc::new(Reader);
         let bundle = reader
             .load_bundle(
                 &CaseId::new("case-123").expect("case id is valid"),
                 &Role::new("developer").expect("role is valid"),
             )
+            .await
             .expect("load should succeed");
 
         assert!(bundle.is_some());
     }
 
-    #[test]
-    fn arc_snapshot_store_delegates() {
+    #[tokio::test]
+    async fn arc_snapshot_store_delegates() {
         let store = Arc::new(Store);
         let bundle = RehydrationBundle::empty(
             CaseId::new("case-123").expect("case id is valid"),
@@ -118,6 +123,7 @@ mod tests {
 
         store
             .save_bundle(&bundle)
+            .await
             .expect("save via arc should succeed");
     }
 }

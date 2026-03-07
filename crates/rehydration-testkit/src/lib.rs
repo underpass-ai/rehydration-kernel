@@ -18,7 +18,7 @@ impl InMemoryProjectionReader {
 }
 
 impl ProjectionReader for InMemoryProjectionReader {
-    fn load_bundle(
+    async fn load_bundle(
         &self,
         case_id: &CaseId,
         role: &Role,
@@ -31,7 +31,7 @@ impl ProjectionReader for InMemoryProjectionReader {
 pub struct NoopSnapshotStore;
 
 impl SnapshotStore for NoopSnapshotStore {
-    fn save_bundle(&self, _bundle: &RehydrationBundle) -> Result<(), PortError> {
+    async fn save_bundle(&self, _bundle: &RehydrationBundle) -> Result<(), PortError> {
         Ok(())
     }
 }
@@ -43,8 +43,8 @@ mod tests {
 
     use super::InMemoryProjectionReader;
 
-    #[test]
-    fn in_memory_reader_returns_seeded_bundle() {
+    #[tokio::test]
+    async fn in_memory_reader_returns_seeded_bundle() {
         let bundle = RehydrationBundle::empty(
             CaseId::new("case-123").expect("case id is valid"),
             Role::new("developer").expect("role is valid"),
@@ -57,6 +57,7 @@ mod tests {
                 &CaseId::new("case-123").expect("case id is valid"),
                 &Role::new("developer").expect("role is valid"),
             )
+            .await
             .expect("load should succeed");
 
         assert!(loaded.is_some());

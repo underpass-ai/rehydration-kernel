@@ -19,7 +19,7 @@ use tonic::transport::{Channel, Endpoint};
 struct EmptyProjectionReader;
 
 impl ProjectionReader for EmptyProjectionReader {
-    fn load_bundle(
+    async fn load_bundle(
         &self,
         _case_id: &CaseId,
         _role: &Role,
@@ -31,7 +31,7 @@ impl ProjectionReader for EmptyProjectionReader {
 struct NoopSnapshotStore;
 
 impl SnapshotStore for NoopSnapshotStore {
-    fn save_bundle(&self, _bundle: &RehydrationBundle) -> Result<(), PortError> {
+    async fn save_bundle(&self, _bundle: &RehydrationBundle) -> Result<(), PortError> {
         Ok(())
     }
 }

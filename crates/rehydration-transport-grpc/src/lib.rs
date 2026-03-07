@@ -110,8 +110,8 @@ where
         AdminGrpcService::new(Arc::clone(&self.admin_application))
     }
 
-    pub fn warmup_bundle(&self) -> Result<RehydrationBundle, ApplicationError> {
-        self.query_application.warmup_bundle()
+    pub async fn warmup_bundle(&self) -> Result<RehydrationBundle, ApplicationError> {
+        self.query_application.warmup_bundle().await
     }
 
     pub async fn run(self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -169,6 +169,7 @@ where
                 role: request.role,
                 requested_scopes: request.requested_scopes,
             })
+            .await
             .map_err(map_application_error)?;
 
         Ok(Response::new(GetContextResponse {
@@ -192,6 +193,7 @@ where
                 persist_snapshot: request.persist_snapshot,
                 timeline_window: request.timeline_window,
             })
+            .await
             .map_err(map_application_error)?;
 
         Ok(Response::new(proto_rehydrate_session_response(&result)))
@@ -274,6 +276,7 @@ where
                 case_id: request.case_id,
                 role: request.role,
             })
+            .await
             .map_err(map_application_error)?;
 
         Ok(Response::new(proto_bundle_snapshot_response(&result)))
@@ -313,6 +316,7 @@ where
                 roles: request.roles,
                 phase: trim_to_option(phase),
             })
+            .await
             .map_err(map_application_error)?;
 
         Ok(Response::new(proto_rehydration_diagnostics_response(
@@ -707,7 +711,7 @@ mod tests {
     struct EmptyProjectionReader;
 
     impl ProjectionReader for EmptyProjectionReader {
-        fn load_bundle(
+        async fn load_bundle(
             &self,
             _case_id: &CaseId,
             _role: &Role,
@@ -719,7 +723,7 @@ mod tests {
     struct NoopSnapshotStore;
 
     impl SnapshotStore for NoopSnapshotStore {
-        fn save_bundle(&self, _bundle: &RehydrationBundle) -> Result<(), PortError> {
+        async fn save_bundle(&self, _bundle: &RehydrationBundle) -> Result<(), PortError> {
             Ok(())
         }
     }

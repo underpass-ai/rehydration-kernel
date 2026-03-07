@@ -9,3 +9,6 @@ workspace = true
 
 [dependencies]
 rehydration-domain.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true

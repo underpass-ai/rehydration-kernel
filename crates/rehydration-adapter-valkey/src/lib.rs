@@ -13,7 +13,7 @@ impl ValkeySnapshotStore {
 }
 
 impl SnapshotStore for ValkeySnapshotStore {
-    fn save_bundle(&self, bundle: &RehydrationBundle) -> Result<(), PortError> {
+    async fn save_bundle(&self, bundle: &RehydrationBundle) -> Result<(), PortError> {
         if self.snapshot_uri.trim().is_empty() {
             return Err(PortError::InvalidState(
                 "snapshot uri cannot be empty".to_string(),
@@ -32,8 +32,8 @@ mod tests {
 
     use super::ValkeySnapshotStore;
 
-    #[test]
-    fn snapshot_store_accepts_non_empty_uri() {
+    #[tokio::test]
+    async fn snapshot_store_accepts_non_empty_uri() {
         let store = ValkeySnapshotStore::new("redis://localhost:6379".to_string());
         let bundle = RehydrationBundle::empty(
             CaseId::new("case-123").expect("case id is valid"),
@@ -43,6 +43,7 @@ mod tests {
 
         store
             .save_bundle(&bundle)
+            .await
             .expect("non-empty uri should be accepted");
     }
 }

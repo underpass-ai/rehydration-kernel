@@ -709,6 +709,7 @@ version = "0.1.0"
 dependencies = [
  "rehydration-domain",
  "rehydration-ports",
+ "tokio",
 ]
 
 [[package]]
@@ -717,6 +718,7 @@ version = "0.1.0"
 dependencies = [
  "rehydration-domain",
  "rehydration-ports",
+ "tokio",
 ]
 
 [[package]]
@@ -725,6 +727,7 @@ version = "0.1.0"
 dependencies = [
  "rehydration-domain",
  "rehydration-ports",
+ "tokio",
 ]
 
 [[package]]
@@ -744,6 +747,7 @@ name = "rehydration-ports"
 version = "0.1.0"
 dependencies = [
  "rehydration-domain",
+ "tokio",
 ]
 
 [[package]]
@@ -776,6 +780,7 @@ version = "0.1.0"
 dependencies = [
  "rehydration-domain",
  "rehydration-ports",
+ "tokio",
 ]
 
 [[package]]

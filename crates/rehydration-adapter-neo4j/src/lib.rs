@@ -13,7 +13,7 @@ impl Neo4jProjectionReader {
 }
 
 impl ProjectionReader for Neo4jProjectionReader {
-    fn load_bundle(
+    async fn load_bundle(
         &self,
         case_id: &CaseId,
         role: &Role,
@@ -41,14 +41,15 @@ mod tests {
 
     use super::Neo4jProjectionReader;
 
-    #[test]
-    fn adapter_returns_a_placeholder_bundle() {
+    #[tokio::test]
+    async fn adapter_returns_a_placeholder_bundle() {
         let reader = Neo4jProjectionReader::new("neo4j://localhost:7687".to_string());
         let bundle = reader
             .load_bundle(
                 &CaseId::new("case-123").expect("case id is valid"),
                 &Role::new("developer").expect("role is valid"),
             )
+            .await
             .expect("bundle load should succeed")
             .expect("placeholder bundle should exist");
 

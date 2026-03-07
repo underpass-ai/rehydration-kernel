@@ -27,7 +27,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         grpc_server.bootstrap_request().role
     );
 
-    let warmup_bundle = grpc_server.warmup_bundle()?;
+    let warmup_bundle = grpc_server.warmup_bundle().await?;
     println!(
         "warmup bundle revision={}",
         warmup_bundle.metadata().revision

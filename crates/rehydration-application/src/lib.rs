@@ -286,7 +286,7 @@ where
         }
     }
 
-    pub fn execute(
+    pub async fn execute(
         &self,
         case_id: &str,
         role: &str,
@@ -294,12 +294,12 @@ where
         let case_id = CaseId::new(case_id)?;
         let role = Role::new(role)?;
 
-        let bundle = match self.projection_reader.load_bundle(&case_id, &role)? {
+        let bundle = match self.projection_reader.load_bundle(&case_id, &role).await? {
             Some(bundle) => bundle,
             None => RehydrationBundle::empty(case_id, role, self.generator_version),
         };
 
-        self.snapshot_store.save_bundle(&bundle)?;
+        self.snapshot_store.save_bundle(&bundle).await?;
         Ok(bundle)
     }
 }
@@ -356,13 +356,13 @@ where
         Self { rehydrate_session }
     }
 
-    pub fn execute(
+    pub async fn execute(
         &self,
         case_id: &str,
         role: &str,
         requested_scopes: &[String],
     ) -> Result<GetContextResult, ApplicationError> {
-        let bundle = self.rehydrate_session.execute(case_id, role)?;
+        let bundle = self.rehydrate_session.execute(case_id, role).await?;
         let rendered = render_bundle(&bundle);
         let scope_validation = ValidateScopeUseCase::execute(requested_scopes, requested_scopes);
 
@@ -384,8 +384,8 @@ pub struct QueryApplicationService<R, S> {
 
 impl<R, S> QueryApplicationService<R, S>
 where
-    R: ProjectionReader,
-    S: SnapshotStore,
+    R: ProjectionReader + Send + Sync,
+    S: SnapshotStore + Send + Sync,
 {
     pub fn new(
         projection_reader: Arc<R>,
@@ -399,7 +399,7 @@ where
         }
     }
 
-    pub fn get_context(
+    pub async fn get_context(
         &self,
         query: GetContextQuery,
     ) -> Result<GetContextResult, ApplicationError> {
@@ -409,14 +409,12 @@ where
             self.generator_version,
         );
 
-        GetContextUseCase::new(rehydrate).execute(
-            &query.case_id,
-            &query.role,
-            &query.requested_scopes,
-        )
+        GetContextUseCase::new(rehydrate)
+            .execute(&query.case_id, &query.role, &query.requested_scopes)
+            .await
     }
 
-    pub fn rehydrate_session(
+    pub async fn rehydrate_session(
         &self,
         query: RehydrateSessionQuery,
     ) -> Result<RehydrateSessionResult, ApplicationError> {
@@ -428,7 +426,7 @@ where
 
         let mut bundles = Vec::with_capacity(query.roles.len());
         for role in &query.roles {
-            bundles.push(self.rehydrate_single(&query.case_id, role)?);
+            bundles.push(self.rehydrate_single(&query.case_id, role).await?);
         }
 
         let snapshot_id = if query.persist_snapshot {
@@ -456,11 +454,11 @@ where
         ValidateScopeUseCase::execute(&query.required_scopes, &query.provided_scopes)
     }
 
-    pub fn warmup_bundle(&self) -> Result<RehydrationBundle, ApplicationError> {
-        self.rehydrate_single("bootstrap-case", "system")
+    pub async fn warmup_bundle(&self) -> Result<RehydrationBundle, ApplicationError> {
+        self.rehydrate_single("bootstrap-case", "system").await
     }
 
-    fn rehydrate_single(
+    async fn rehydrate_single(
         &self,
         case_id: &str,
         role: &str,
@@ -471,6 +469,7 @@ where
             self.generator_version,
         )
         .execute(case_id, role)
+        .await
     }
 }
 
@@ -482,7 +481,7 @@ pub struct AdminApplicationService<R> {
 
 impl<R> AdminApplicationService<R>
 where
-    R: ProjectionReader,
+    R: ProjectionReader + Send + Sync,
 {
     pub fn new(projection_reader: Arc<R>, generator_version: &'static str) -> Self {
         Self {
@@ -537,11 +536,13 @@ where
         })
     }
 
-    pub fn get_bundle_snapshot(
+    pub async fn get_bundle_snapshot(
         &self,
         query: GetBundleSnapshotQuery,
     ) -> Result<BundleSnapshotResult, ApplicationError> {
-        let bundle = self.load_or_empty_bundle(&query.case_id, &query.role)?;
+        let bundle = self
+            .load_or_empty_bundle(&query.case_id, &query.role)
+            .await?;
         let created_at = SystemTime::now();
         let ttl_seconds = 900;
         let expires_at = created_at
@@ -632,7 +633,7 @@ where
         })
     }
 
-    pub fn get_rehydration_diagnostics(
+    pub async fn get_rehydration_diagnostics(
         &self,
         query: GetRehydrationDiagnosticsQuery,
     ) -> Result<GetRehydrationDiagnosticsResult, ApplicationError> {
@@ -650,8 +651,9 @@ where
         let diagnostics = query
             .roles
             .iter()
-            .map(|role| {
+            .map(|role| async {
                 self.load_or_empty_bundle(&query.case_id, role)
+                    .await
                     .map(|bundle| RehydrationDiagnosticView {
                         role: role.clone(),
                         version: bundle.metadata().clone(),
@@ -666,15 +668,19 @@ where
                         notes: vec![format!("phase={phase}")],
                     })
             })
-            .collect::<Result<Vec<_>, _>>()?;
+            .collect::<Vec<_>>();
+        let mut collected = Vec::with_capacity(diagnostics.len());
+        for diagnostic in diagnostics {
+            collected.push(diagnostic.await?);
+        }
 
         Ok(GetRehydrationDiagnosticsResult {
-            diagnostics,
+            diagnostics: collected,
             observed_at,
         })
     }
 
-    fn load_or_empty_bundle(
+    async fn load_or_empty_bundle(
         &self,
         case_id: &str,
         role: &str,
@@ -682,7 +688,7 @@ where
         let case_id = CaseId::new(case_id)?;
         let role = Role::new(role)?;
 
-        match self.projection_reader.load_bundle(&case_id, &role)? {
+        match self.projection_reader.load_bundle(&case_id, &role).await? {
             Some(bundle) => Ok(bundle),
             None => Ok(RehydrationBundle::empty(
                 case_id,
@@ -837,7 +843,7 @@ mod tests {
     struct EmptyProjectionReader;
 
     impl ProjectionReader for EmptyProjectionReader {
-        fn load_bundle(
+        async fn load_bundle(
             &self,
             _case_id: &CaseId,
             _role: &Role,
@@ -849,18 +855,19 @@ mod tests {
     struct RecordingSnapshotStore;
 
     impl SnapshotStore for RecordingSnapshotStore {
-        fn save_bundle(&self, _bundle: &RehydrationBundle) -> Result<(), PortError> {
+        async fn save_bundle(&self, _bundle: &RehydrationBundle) -> Result<(), PortError> {
             Ok(())
         }
     }
 
-    #[test]
-    fn use_case_builds_a_placeholder_bundle_when_projection_is_empty() {
+    #[tokio::test]
+    async fn use_case_builds_a_placeholder_bundle_when_projection_is_empty() {
         let use_case =
             RehydrateSessionUseCase::new(EmptyProjectionReader, RecordingSnapshotStore, "0.1.0");
 
         let bundle = use_case
             .execute("case-123", "system")
+            .await
             .expect("placeholder bundle should be built");
 
         assert_eq!(bundle.case_id().as_str(), "case-123");
@@ -879,22 +886,23 @@ mod tests {
         assert_eq!(result.extra_scopes, vec!["milestones".to_string()]);
     }
 
-    #[test]
-    fn get_context_renders_placeholder_content() {
+    #[tokio::test]
+    async fn get_context_renders_placeholder_content() {
         let rehydrate =
             RehydrateSessionUseCase::new(EmptyProjectionReader, RecordingSnapshotStore, "0.1.0");
         let use_case = GetContextUseCase::new(rehydrate);
 
         let result = use_case
             .execute("case-123", "system", &["decisions".to_string()])
+            .await
             .expect("get context should succeed");
 
         assert!(result.rendered.content.contains("bundle for case case-123"));
         assert!(result.scope_validation.allowed);
     }
 
-    #[test]
-    fn query_application_service_rehydrates_multiple_roles() {
+    #[tokio::test]
+    async fn query_application_service_rehydrates_multiple_roles() {
         let service = QueryApplicationService::new(
             Arc::new(EmptyProjectionReader),
             Arc::new(RecordingSnapshotStore),
@@ -908,6 +916,7 @@ mod tests {
                 persist_snapshot: true,
                 timeline_window: 32,
             })
+            .await
             .expect("rehydration should succeed");
 
         assert_eq!(result.bundles.len(), 2);
@@ -944,8 +953,8 @@ mod tests {
         assert_eq!(result.projections[0].consumer_name, "context-projection");
     }
 
-    #[test]
-    fn admin_application_service_builds_snapshot_and_replay() {
+    #[tokio::test]
+    async fn admin_application_service_builds_snapshot_and_replay() {
         let service = AdminApplicationService::new(Arc::new(EmptyProjectionReader), "0.1.0");
 
         let snapshot = service
@@ -953,6 +962,7 @@ mod tests {
                 case_id: "case-123".to_string(),
                 role: "developer".to_string(),
             })
+            .await
             .expect("snapshot should succeed");
         assert_eq!(snapshot.case_id, "case-123");
         assert_eq!(snapshot.ttl_seconds, 900);
@@ -971,8 +981,8 @@ mod tests {
         assert_eq!(replay.accepted_events, 50);
     }
 
-    #[test]
-    fn admin_application_service_requires_roles_for_diagnostics() {
+    #[tokio::test]
+    async fn admin_application_service_requires_roles_for_diagnostics() {
         let service = AdminApplicationService::new(Arc::new(EmptyProjectionReader), "0.1.0");
 
         let error = service
@@ -981,6 +991,7 @@ mod tests {
                 roles: Vec::new(),
                 phase: Some("PHASE_BUILD".to_string()),
             })
+            .await
             .expect_err("diagnostics should require at least one role");
 
         assert_eq!(error.to_string(), "roles cannot be empty");
@@ -1010,8 +1021,8 @@ mod tests {
         assert_eq!(result.warnings.len(), 3);
     }
 
-    #[test]
-    fn get_context_query_round_trip_works() {
+    #[tokio::test]
+    async fn get_context_query_round_trip_works() {
         let service = QueryApplicationService::new(
             Arc::new(EmptyProjectionReader),
             Arc::new(RecordingSnapshotStore),
@@ -1024,6 +1035,7 @@ mod tests {
                 role: "developer".to_string(),
                 requested_scopes: vec!["decisions".to_string()],
             })
+            .await
             .expect("get context should succeed");
 
         assert_eq!(result.bundle.case_id().as_str(), "case-123");
