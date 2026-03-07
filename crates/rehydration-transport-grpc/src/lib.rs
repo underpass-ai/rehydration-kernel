@@ -690,11 +690,16 @@ fn trim_to_option(value: String) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
+    use std::time::{Duration, SystemTime};
 
     use rehydration_application::{
-        AdminApplicationService, CommandApplicationService, QueryApplicationService,
+        AcceptedVersion, AdminApplicationService, ApplicationError, BundleSnapshotResult,
+        CommandApplicationService, GetGraphRelationshipsResult, GetProjectionStatusResult,
+        GetRehydrationDiagnosticsResult, GraphNodeView, GraphRelationshipView,
+        ProjectionStatusView, QueryApplicationService, RehydrateSessionResult,
+        RehydrationDiagnosticView, ReplayModeSelection, ReplayProjectionOutcome,
     };
-    use rehydration_domain::{CaseId, RehydrationBundle, Role};
+    use rehydration_domain::{BundleMetadata, CaseId, RehydrationBundle, Role};
     use rehydration_ports::{PortError, ProjectionReader, SnapshotStore};
     use rehydration_proto::v1alpha1::{
         BundleRenderFormat, ContextChange, ContextChangeOperation, GetBundleSnapshotRequest,
@@ -706,7 +711,14 @@ mod tests {
     };
     use tonic::Request;
 
-    use super::{AdminGrpcService, CommandGrpcService, GrpcServer, QueryGrpcService};
+    use super::{
+        AdminGrpcService, CommandGrpcService, GrpcServer, QueryGrpcService, map_application_error,
+        map_replay_mode, proto_accepted_version, proto_bundle_snapshot_response,
+        proto_bundle_version, proto_duration, proto_graph_relationships_response,
+        proto_projection_status_response, proto_rehydrate_session_response,
+        proto_rehydration_diagnostics_response, proto_replay_mode,
+        proto_replay_projection_response, trim_to_option,
+    };
 
     struct EmptyProjectionReader;
 
@@ -912,5 +924,174 @@ mod tests {
                 .schema_version,
             "v1alpha1"
         );
+    }
+
+    #[test]
+    fn helper_mappers_cover_projection_replay_and_diagnostics() {
+        let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+        let projection_status = proto_projection_status_response(&GetProjectionStatusResult {
+            projections: vec![ProjectionStatusView {
+                consumer_name: "context-projection".to_string(),
+                stream_name: "planning.story.created".to_string(),
+                projection_watermark: "evt-42".to_string(),
+                processed_events: 12,
+                pending_events: 1,
+                last_event_at: now,
+                updated_at: now,
+                healthy: true,
+                warnings: vec!["lagging".to_string()],
+            }],
+            observed_at: now,
+        });
+        assert_eq!(
+            projection_status.projections[0].consumer_name,
+            "context-projection"
+        );
+
+        let replay = proto_replay_projection_response(&ReplayProjectionOutcome {
+            replay_id: "replay-1".to_string(),
+            consumer_name: "context-projection".to_string(),
+            replay_mode: ReplayModeSelection::Rebuild,
+            accepted_events: 42,
+            requested_at: now,
+        });
+        assert_eq!(
+            replay.replay_mode,
+            rehydration_proto::v1alpha1::ReplayMode::Rebuild as i32
+        );
+
+        let diagnostics =
+            proto_rehydration_diagnostics_response(&GetRehydrationDiagnosticsResult {
+                diagnostics: vec![RehydrationDiagnosticView {
+                    role: "developer".to_string(),
+                    version: BundleMetadata::initial("0.1.0"),
+                    selected_decisions: 2,
+                    selected_impacts: 3,
+                    selected_milestones: 1,
+                    estimated_tokens: 256,
+                    notes: vec!["ok".to_string()],
+                }],
+                observed_at: now,
+            });
+        assert_eq!(diagnostics.diagnostics[0].estimated_tokens, 256);
+
+        let graph = proto_graph_relationships_response(&GetGraphRelationshipsResult {
+            root: GraphNodeView {
+                node_id: "root".to_string(),
+                node_kind: "case".to_string(),
+                title: "Case".to_string(),
+                labels: vec!["Case".to_string()],
+                properties: [("phase".to_string(), "build".to_string())]
+                    .into_iter()
+                    .collect(),
+            },
+            neighbors: vec![GraphNodeView {
+                node_id: "task-1".to_string(),
+                node_kind: "task".to_string(),
+                title: "Task 1".to_string(),
+                labels: vec!["Task".to_string()],
+                properties: Default::default(),
+            }],
+            relationships: vec![GraphRelationshipView {
+                source_node_id: "root".to_string(),
+                target_node_id: "task-1".to_string(),
+                relationship_type: "DEPENDS_ON".to_string(),
+                properties: [("order".to_string(), "1".to_string())]
+                    .into_iter()
+                    .collect(),
+            }],
+            observed_at: now,
+        });
+        assert_eq!(graph.neighbors.len(), 1);
+        assert_eq!(graph.relationships[0].relationship_type, "DEPENDS_ON");
+    }
+
+    #[test]
+    fn helper_mappers_cover_versions_errors_and_trim_logic() {
+        let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_100);
+        let version = proto_bundle_version(&BundleMetadata {
+            revision: 7,
+            content_hash: "abc123".to_string(),
+            generator_version: "0.1.0".to_string(),
+        });
+        let accepted = proto_accepted_version(&AcceptedVersion {
+            revision: 8,
+            content_hash: "xyz789".to_string(),
+            generator_version: "0.1.0".to_string(),
+        });
+
+        assert_eq!(version.revision, 7);
+        assert_eq!(accepted.projection_watermark, "rev-8");
+        assert_eq!(proto_duration(30).seconds, 30);
+        assert_eq!(
+            trim_to_option("  value  ".to_string()),
+            Some("value".to_string())
+        );
+        assert_eq!(trim_to_option("   ".to_string()), None);
+        assert_eq!(
+            map_application_error(ApplicationError::Validation("bad".to_string())).code(),
+            tonic::Code::InvalidArgument
+        );
+        assert_eq!(
+            map_application_error(ApplicationError::Ports(PortError::Unavailable(
+                "down".to_string()
+            )))
+            .code(),
+            tonic::Code::Unavailable
+        );
+        assert_eq!(proto_replay_mode(map_replay_mode(999)) as i32, 1);
+        assert_eq!(proto_replay_mode(ReplayModeSelection::Rebuild) as i32, 2);
+
+        let response = proto_rehydrate_session_response(&RehydrateSessionResult {
+            case_id: "case-123".to_string(),
+            bundles: vec![RehydrationBundle::new(
+                CaseId::new("case-123").expect("case id is valid"),
+                Role::new("developer").expect("role is valid"),
+                vec!["section one".to_string()],
+                BundleMetadata::initial("0.1.0"),
+            )],
+            timeline_events: 9,
+            version: BundleMetadata::initial("0.1.0"),
+            snapshot_persisted: true,
+            snapshot_id: Some("snapshot:case-123:developer".to_string()),
+            generated_at: now,
+        });
+        assert_eq!(
+            response
+                .bundle
+                .expect("bundle should exist")
+                .stats
+                .expect("stats should exist")
+                .timeline_events,
+            9
+        );
+
+        let snapshot = proto_bundle_snapshot_response(&BundleSnapshotResult {
+            snapshot_id: "snapshot:case-123:developer".to_string(),
+            case_id: "case-123".to_string(),
+            role: "developer".to_string(),
+            bundle: RehydrationBundle::empty(
+                CaseId::new("case-123").expect("case id is valid"),
+                Role::new("developer").expect("role is valid"),
+                "0.1.0",
+            ),
+            created_at: now,
+            expires_at: now + Duration::from_secs(900),
+            ttl_seconds: 900,
+        });
+        assert_eq!(
+            snapshot
+                .snapshot
+                .expect("snapshot should exist")
+                .ttl
+                .expect("ttl should exist")
+                .seconds,
+            900
+        );
+
+        let invalid_argument = map_application_error(ApplicationError::Domain(
+            rehydration_domain::DomainError::EmptyValue("case_id"),
+        ));
+        assert_eq!(invalid_argument.code(), tonic::Code::InvalidArgument);
     }
 }

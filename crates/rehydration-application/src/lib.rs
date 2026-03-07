@@ -838,6 +838,7 @@ mod tests {
         GetRehydrationDiagnosticsQuery, QueryApplicationService, RehydrateSessionQuery,
         RehydrateSessionUseCase, ReplayModeSelection, ReplayProjectionCommand,
         UpdateContextCommand, UpdateContextUseCase, ValidateScopeQuery, ValidateScopeUseCase,
+        dedupe_scopes, render_bundle, require_non_empty, trim_to_option,
     };
 
     struct EmptyProjectionReader;
@@ -1065,5 +1066,55 @@ mod tests {
             Some("snapshot:case-123:developer")
         );
         assert!(result.snapshot_persisted);
+    }
+
+    #[test]
+    fn helper_functions_trim_render_and_validate() {
+        let bundle = RehydrationBundle::new(
+            CaseId::new("case-123").expect("case id is valid"),
+            Role::new("developer").expect("role is valid"),
+            vec!["first section".to_string(), "second section".to_string()],
+            rehydration_domain::BundleMetadata::initial("0.1.0"),
+        );
+        let rendered = render_bundle(&bundle);
+
+        assert_eq!(rendered.sections.len(), 2);
+        assert_eq!(rendered.token_count, 4);
+        assert_eq!(
+            dedupe_scopes(&[
+                " decisions ".to_string(),
+                "".to_string(),
+                "tasks".to_string(),
+                "decisions".to_string(),
+            ]),
+            vec!["decisions".to_string(), "tasks".to_string()]
+        );
+        assert_eq!(
+            require_non_empty("  case-123  ".to_string(), "case_id")
+                .expect("value should be trimmed"),
+            "case-123"
+        );
+        assert_eq!(trim_to_option("  scoped  "), Some("scoped".to_string()));
+        assert_eq!(trim_to_option("   "), None);
+        let error =
+            require_non_empty("   ".to_string(), "case_id").expect_err("empty values must fail");
+        assert_eq!(error.to_string(), "case_id cannot be empty");
+    }
+
+    #[test]
+    fn validate_scope_passes_when_inputs_are_equivalent_after_trimming() {
+        let result = ValidateScopeUseCase::execute(
+            &[
+                " decisions ".to_string(),
+                "tasks".to_string(),
+                "tasks".to_string(),
+            ],
+            &["tasks".to_string(), "decisions".to_string()],
+        );
+
+        assert!(result.allowed);
+        assert_eq!(result.reason, "scope validation passed");
+        assert!(result.missing_scopes.is_empty());
+        assert!(result.extra_scopes.is_empty());
     }
 }

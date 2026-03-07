@@ -121,7 +121,7 @@ mod tests {
     use rehydration_domain::{CaseId, Role};
     use rehydration_ports::ProjectionReader;
 
-    use super::Neo4jProjectionReader;
+    use super::{Neo4jProjectionReader, parse_authority, split_uri};
 
     #[tokio::test]
     async fn adapter_does_not_invent_projection_data() {
@@ -149,5 +149,61 @@ mod tests {
                 "unsupported graph scheme `https`".to_string()
             )
         );
+    }
+
+    #[test]
+    fn adapter_rejects_missing_scheme_and_host() {
+        let missing_scheme =
+            Neo4jProjectionReader::new("localhost:7687").expect_err("scheme is required");
+        let missing_host = Neo4jProjectionReader::new("neo4j://").expect_err("host is required");
+
+        assert_eq!(
+            missing_scheme,
+            rehydration_ports::PortError::InvalidState(
+                "graph uri must include a scheme".to_string()
+            )
+        );
+        assert_eq!(
+            missing_host,
+            rehydration_ports::PortError::InvalidState("graph uri must include a host".to_string())
+        );
+    }
+
+    #[test]
+    fn parser_rejects_unsupported_authorities() {
+        let auth_segment =
+            parse_authority("user@localhost:7687", "graph").expect_err("auth is not supported");
+        let invalid_separator = parse_authority("[::1]7687", "graph")
+            .expect_err("ipv6 port separator must be explicit");
+        let invalid_port =
+            parse_authority("localhost:not-a-port", "graph").expect_err("port must be numeric");
+
+        assert_eq!(
+            auth_segment,
+            rehydration_ports::PortError::InvalidState(
+                "graph uri auth segments are not supported yet".to_string()
+            )
+        );
+        assert_eq!(
+            invalid_separator,
+            rehydration_ports::PortError::InvalidState(
+                "graph uri contains an invalid port separator".to_string()
+            )
+        );
+        assert!(
+            invalid_port
+                .to_string()
+                .starts_with("graph uri contains an invalid port:")
+        );
+    }
+
+    #[test]
+    fn parser_accepts_ipv6_and_splits_query_away() {
+        let (scheme, authority) =
+            split_uri("neo4j://[::1]:7687/path?tls=true", "graph").expect("uri should parse");
+        parse_authority(authority, "graph").expect("ipv6 authority should be valid");
+
+        assert_eq!(scheme, "neo4j");
+        assert_eq!(authority, "[::1]:7687");
     }
 }

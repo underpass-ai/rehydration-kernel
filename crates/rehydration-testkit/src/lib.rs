@@ -39,9 +39,9 @@ impl SnapshotStore for NoopSnapshotStore {
 #[cfg(test)]
 mod tests {
     use rehydration_domain::{CaseId, RehydrationBundle, Role};
-    use rehydration_ports::ProjectionReader;
+    use rehydration_ports::{ProjectionReader, SnapshotStore};
 
-    use super::InMemoryProjectionReader;
+    use super::{InMemoryProjectionReader, NoopSnapshotStore};
 
     #[tokio::test]
     async fn in_memory_reader_returns_seeded_bundle() {
@@ -61,5 +61,19 @@ mod tests {
             .expect("load should succeed");
 
         assert!(loaded.is_some());
+    }
+
+    #[tokio::test]
+    async fn noop_snapshot_store_accepts_bundle() {
+        let bundle = RehydrationBundle::empty(
+            CaseId::new("case-123").expect("case id is valid"),
+            Role::new("developer").expect("role is valid"),
+            "0.1.0",
+        );
+
+        NoopSnapshotStore
+            .save_bundle(&bundle)
+            .await
+            .expect("noop snapshot store should accept bundles");
     }
 }

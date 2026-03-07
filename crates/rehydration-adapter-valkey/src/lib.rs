@@ -310,7 +310,10 @@ fn map_valkey_response(response: &str) -> Result<(), PortError> {
 mod tests {
     use std::str;
 
-    use super::{ValkeySnapshotStore, encode_set_command, map_valkey_response};
+    use super::{
+        ValkeySnapshotStore, encode_set_command, escape_json, map_valkey_response, parse_authority,
+        parse_optional_port, split_uri,
+    };
     use rehydration_domain::{CaseId, RehydrationBundle, Role};
 
     #[test]
@@ -368,6 +371,150 @@ mod tests {
             error,
             rehydration_ports::PortError::InvalidState(
                 "unsupported snapshot scheme `http`".to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn snapshot_store_parses_valid_runtime_options() {
+        let store = ValkeySnapshotStore::new(
+            "valkey://cache.internal?key_prefix=rehydration:it&ttl_seconds=15",
+        )
+        .expect("valkey uri should be accepted");
+
+        assert_eq!(store.endpoint.host, "cache.internal");
+        assert_eq!(store.endpoint.port, 6379);
+        assert_eq!(store.endpoint.key_prefix, "rehydration:it");
+        assert_eq!(store.endpoint.ttl_seconds, Some(15));
+    }
+
+    #[test]
+    fn snapshot_store_rejects_invalid_query_options() {
+        let invalid_pair = ValkeySnapshotStore::new("redis://localhost:6379?ttl_seconds")
+            .expect_err("query pairs must contain =");
+        let invalid_ttl = ValkeySnapshotStore::new("redis://localhost:6379?ttl_seconds=soon")
+            .expect_err("ttl must be numeric");
+        let empty_prefix = ValkeySnapshotStore::new("redis://localhost:6379?key_prefix=   ")
+            .expect_err("key prefix cannot be empty");
+        let unsupported_option = ValkeySnapshotStore::new("redis://localhost:6379?database=1")
+            .expect_err("unsupported options must fail");
+
+        assert_eq!(
+            invalid_pair,
+            rehydration_ports::PortError::InvalidState(
+                "snapshot uri query parameter `ttl_seconds` is invalid".to_string()
+            )
+        );
+        assert!(
+            invalid_ttl
+                .to_string()
+                .starts_with("snapshot ttl_seconds must be an integer:")
+        );
+        assert_eq!(
+            empty_prefix,
+            rehydration_ports::PortError::InvalidState(
+                "snapshot key_prefix cannot be empty".to_string()
+            )
+        );
+        assert_eq!(
+            unsupported_option,
+            rehydration_ports::PortError::InvalidState(
+                "unsupported snapshot uri option `database`".to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn parser_helpers_cover_ipv6_and_error_branches() {
+        let (scheme, authority, query) =
+            split_uri("redis://[::1]:6380/cache?ttl_seconds=5", "snapshot")
+                .expect("uri should parse");
+        let (host, port) =
+            parse_authority(authority, 6379, "snapshot").expect("authority should parse");
+
+        assert_eq!(scheme, "redis");
+        assert_eq!(authority, "[::1]:6380");
+        assert_eq!(query, Some("ttl_seconds=5"));
+        assert_eq!(host, "[::1]");
+        assert_eq!(port, 6380);
+
+        let missing_scheme =
+            split_uri("localhost:6379", "snapshot").expect_err("scheme is required");
+        let missing_host = split_uri("redis://", "snapshot").expect_err("host is required");
+        let auth_segment = parse_authority("user@localhost:6379", 6379, "snapshot")
+            .expect_err("auth is not supported");
+        let invalid_ipv6 =
+            parse_authority("[::1", 6379, "snapshot").expect_err("ipv6 host must be complete");
+        let invalid_port = parse_authority("localhost:not-a-port", 6379, "snapshot")
+            .expect_err("ports must be numeric");
+        let invalid_separator = parse_optional_port("6380", 6379, "snapshot")
+            .expect_err("port separators must be explicit");
+
+        assert_eq!(
+            missing_scheme,
+            rehydration_ports::PortError::InvalidState(
+                "snapshot uri must include a scheme".to_string()
+            )
+        );
+        assert_eq!(
+            missing_host,
+            rehydration_ports::PortError::InvalidState(
+                "snapshot uri must include a host".to_string()
+            )
+        );
+        assert_eq!(
+            auth_segment,
+            rehydration_ports::PortError::InvalidState(
+                "snapshot uri auth segments are not supported yet".to_string()
+            )
+        );
+        assert_eq!(
+            invalid_ipv6,
+            rehydration_ports::PortError::InvalidState(
+                "snapshot uri contains an invalid IPv6 host".to_string()
+            )
+        );
+        assert!(
+            invalid_port
+                .to_string()
+                .starts_with("snapshot uri contains an invalid port:")
+        );
+        assert_eq!(
+            invalid_separator,
+            rehydration_ports::PortError::InvalidState(
+                "snapshot uri contains an invalid port separator".to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn serializer_and_response_helpers_cover_escape_paths() {
+        let bundle = RehydrationBundle::new(
+            CaseId::new("case-123").expect("case id is valid"),
+            Role::new("reviewer").expect("role is valid"),
+            vec!["quote \" slash \\ newline\n tab\t".to_string()],
+            rehydration_domain::BundleMetadata {
+                revision: 2,
+                content_hash: "hash\rvalue".to_string(),
+                generator_version: "0.1.0".to_string(),
+            },
+        );
+        let store = ValkeySnapshotStore::new("redis://localhost").expect("uri should be accepted");
+        let payload = store
+            .snapshot_payload(&bundle)
+            .expect("snapshot payload should serialize");
+
+        assert!(payload.contains("\\\""));
+        assert!(payload.contains("\\\\"));
+        assert!(payload.contains("\\n"));
+        assert!(payload.contains("\\t"));
+        assert!(payload.contains("\\r"));
+        assert_eq!(escape_json("\u{0001}"), "\\u0001");
+        assert!(matches!(map_valkey_response("+OK\r\n"), Ok(())));
+        assert_eq!(
+            map_valkey_response("?wat\r\n").expect_err("unexpected response must fail"),
+            rehydration_ports::PortError::Unavailable(
+                "unexpected valkey response: ?wat".to_string()
             )
         );
     }
