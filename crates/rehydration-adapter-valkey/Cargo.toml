@@ -7,7 +7,19 @@ rust-version.workspace = true
 [lints]
 workspace = true
 
+[features]
+default = []
+container-tests = []
+
 [dependencies]
 rehydration-domain.workspace = true
 rehydration-ports.workspace = true
 tokio.workspace = true
+
+[dev-dependencies]
+testcontainers = "0.24.0"
+
+[[test]]
+name = "valkey_integration"
+path = "tests/valkey_integration.rs"
+required-features = ["container-tests"]

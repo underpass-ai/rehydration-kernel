@@ -91,6 +91,27 @@ jobs:
       - name: Run tests
         run: cargo test --workspace --locked
 
+  integration-valkey:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.90.0
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Verify Docker
+        run: docker version
+
+      - name: Run Valkey integration tests
+        run: bash scripts/ci/integration-valkey.sh
+
   sonarcloud:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
@@ -99,6 +120,7 @@ jobs:
       - rustfmt
       - clippy
       - test
+      - integration-valkey
     permissions:
       contents: read
       pull-requests: read

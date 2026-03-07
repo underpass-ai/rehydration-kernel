@@ -58,6 +58,30 @@ cargo test --workspace
 scripts/ci/quality-gate.sh
 ```
 
+```bash
+bash scripts/ci/integration-valkey.sh
+```
+
+```bash
+CONTAINER_RUNTIME=docker bash scripts/ci/integration-valkey.sh
+CONTAINER_RUNTIME=podman bash scripts/ci/integration-valkey.sh
+```
+
+The Valkey integration target uses `testcontainers` and is intentionally
+separated from `cargo test --workspace` so unit checks stay fast and
+container-backed tests remain explicit.
+
+Local runtime selection works like this:
+
+- `auto`: prefer `Docker`; if it is unavailable, fall back to `Podman`.
+- `docker`: require a working Docker daemon.
+- `podman`: use a Docker-compatible Podman socket, first from the standard user
+  socket, then by trying `podman.socket`, and finally by launching a temporary
+  `podman system service`. In this mode the script exports
+  `TESTCONTAINERS_RYUK_DISABLED=true`.
+
+GitHub Actions stays on Docker for the repository CI path.
+
 ## SonarCloud
 
 The GitHub Actions CI includes a `sonarcloud` job wired for Rust LCOV coverage.
