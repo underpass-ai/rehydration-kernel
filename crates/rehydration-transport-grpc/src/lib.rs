@@ -1,3 +1,4 @@
+use std::future::{Future, pending};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -33,6 +34,8 @@ use rehydration_proto::v1alpha1::{
     context_command_service_server::{ContextCommandService, ContextCommandServiceServer},
     context_query_service_server::{ContextQueryService, ContextQueryServiceServer},
 };
+use tokio::net::TcpListener;
+use tokio_stream::wrappers::TcpListenerStream;
 use tonic::{Request, Response, Status, transport::Server};
 
 #[derive(Debug)]
@@ -113,12 +116,24 @@ where
 
     pub async fn run(self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let bind_addr: SocketAddr = self.bind_addr.parse()?;
+        let listener = TcpListener::bind(bind_addr).await?;
 
+        self.serve_with_listener_shutdown(listener, pending()).await
+    }
+
+    pub async fn serve_with_listener_shutdown<F>(
+        self,
+        listener: TcpListener,
+        shutdown: F,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
         Server::builder()
             .add_service(ContextQueryServiceServer::new(self.query_service()))
             .add_service(ContextCommandServiceServer::new(self.command_service()))
             .add_service(ContextAdminServiceServer::new(self.admin_service()))
-            .serve(bind_addr)
+            .serve_with_incoming_shutdown(TcpListenerStream::new(listener), shutdown)
             .await?;
 
         Ok(())

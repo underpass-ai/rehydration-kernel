@@ -789,6 +789,7 @@ dependencies = [
  "rehydration-ports",
  "rehydration-proto",
  "tokio",
+ "tokio-stream",
  "tonic",
 ]
 
