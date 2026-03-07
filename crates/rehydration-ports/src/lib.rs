@@ -3,7 +3,7 @@ use std::fmt;
 use std::future::Future;
 use std::sync::Arc;
 
-use rehydration_domain::{CaseId, RehydrationBundle, Role};
+use rehydration_domain::{CaseId, RehydrationBundle, Role, RoleContextPack};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PortError {
@@ -22,11 +22,11 @@ impl fmt::Display for PortError {
 impl Error for PortError {}
 
 pub trait ProjectionReader {
-    fn load_bundle(
+    fn load_pack(
         &self,
         case_id: &CaseId,
         role: &Role,
-    ) -> impl Future<Output = Result<Option<RehydrationBundle>, PortError>> + Send;
+    ) -> impl Future<Output = Result<Option<RoleContextPack>, PortError>> + Send;
 }
 
 pub trait SnapshotStore {
@@ -40,12 +40,12 @@ impl<T> ProjectionReader for Arc<T>
 where
     T: ProjectionReader + Send + Sync + ?Sized,
 {
-    async fn load_bundle(
+    async fn load_pack(
         &self,
         case_id: &CaseId,
         role: &Role,
-    ) -> Result<Option<RehydrationBundle>, PortError> {
-        self.as_ref().load_bundle(case_id, role).await
+    ) -> Result<Option<RoleContextPack>, PortError> {
+        self.as_ref().load_pack(case_id, role).await
     }
 }
 
@@ -62,7 +62,7 @@ where
 mod tests {
     use std::sync::Arc;
 
-    use rehydration_domain::{BundleMetadata, CaseId, RehydrationBundle, Role};
+    use rehydration_domain::{CaseHeader, CaseId, RehydrationBundle, Role, RoleContextPack};
 
     use super::PortError;
     use super::{ProjectionReader, SnapshotStore};
@@ -70,16 +70,29 @@ mod tests {
     struct Reader;
 
     impl ProjectionReader for Reader {
-        async fn load_bundle(
+        async fn load_pack(
             &self,
             case_id: &CaseId,
             role: &Role,
-        ) -> Result<Option<RehydrationBundle>, PortError> {
-            Ok(Some(RehydrationBundle::new(
-                case_id.clone(),
+        ) -> Result<Option<RoleContextPack>, PortError> {
+            Ok(Some(RoleContextPack::new(
                 role.clone(),
-                vec!["section".to_string()],
-                BundleMetadata::initial("test"),
+                CaseHeader::new(
+                    case_id.clone(),
+                    "Case 123",
+                    "A seeded pack",
+                    "ACTIVE",
+                    std::time::SystemTime::UNIX_EPOCH,
+                    "testkit",
+                ),
+                None,
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                "A seeded pack",
+                4096,
             )))
         }
     }
@@ -102,7 +115,7 @@ mod tests {
     async fn arc_projection_reader_delegates() {
         let reader = Arc::new(Reader);
         let bundle = reader
-            .load_bundle(
+            .load_pack(
                 &CaseId::new("case-123").expect("case id is valid"),
                 &Role::new("developer").expect("role is valid"),
             )
