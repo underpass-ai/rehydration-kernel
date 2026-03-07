@@ -2,6 +2,9 @@ use rehydration_application::{ApplicationError, RehydrateSessionUseCase, Rehydra
 use rehydration_config::AppConfig;
 use rehydration_domain::RehydrationBundle;
 use rehydration_ports::{ProjectionReader, SnapshotStore};
+use rehydration_proto::v1alpha1::{
+    BundleRenderFormat, FILE_DESCRIPTOR_SET, GetContextRequest, Phase,
+};
 
 #[derive(Debug)]
 pub struct GrpcServer<R, S> {
@@ -32,6 +35,23 @@ where
             "grpc transport placeholder for {} on {}",
             self.capability_name, self.bind_addr
         )
+    }
+
+    pub fn bootstrap_request(&self) -> GetContextRequest {
+        GetContextRequest {
+            case_id: "bootstrap-case".to_string(),
+            role: "system".to_string(),
+            phase: Phase::Build as i32,
+            work_item_id: String::new(),
+            token_budget: 4096,
+            requested_scopes: Vec::new(),
+            render_format: BundleRenderFormat::Structured as i32,
+            include_debug_sections: false,
+        }
+    }
+
+    pub fn descriptor_set(&self) -> &'static [u8] {
+        FILE_DESCRIPTOR_SET
     }
 
     pub fn warmup_bundle(&self) -> Result<RehydrationBundle, ApplicationError> {
@@ -79,5 +99,8 @@ mod tests {
         let server = GrpcServer::new(config, EmptyProjectionReader, NoopSnapshotStore);
 
         assert!(server.describe().contains("127.0.0.1:50054"));
+        assert_eq!(server.bootstrap_request().case_id, "bootstrap-case");
+        let descriptor_set = std::hint::black_box(server.descriptor_set());
+        assert!(!descriptor_set.is_empty());
     }
 }

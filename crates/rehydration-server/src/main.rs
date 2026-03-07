@@ -21,6 +21,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{}", grpc_server.describe());
     println!("{}", admin_server.describe());
     println!("{}", events_consumer.describe());
+    println!(
+        "query bootstrap role={}",
+        grpc_server.bootstrap_request().role
+    );
 
     let warmup_bundle = grpc_server.warmup_bundle()?;
     println!(

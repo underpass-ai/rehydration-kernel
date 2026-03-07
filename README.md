@@ -14,6 +14,7 @@ capability into an independent repository.
 - `crates/rehydration-domain`: domain model and invariants.
 - `crates/rehydration-ports`: stable application-facing traits.
 - `crates/rehydration-application`: use cases and orchestration.
+- `crates/rehydration-proto`: generated protobuf and gRPC stubs.
 - `crates/rehydration-transport-grpc`: public query transport.
 - `crates/rehydration-transport-http-admin`: admin transport placeholder.
 - `crates/rehydration-adapter-*`: infrastructure adapters.
@@ -32,10 +33,17 @@ The first API split is defined under
 - `ContextQueryService`
 - `ContextAdminService`
 
+Rust stubs are generated at build time by `tonic-build` inside
+`crates/rehydration-proto`.
+
 ## Quickstart
 
 ```bash
 cargo fmt --all
 cargo check --workspace
 cargo test --workspace
+```
+
+```bash
+scripts/ci/quality-gate.sh
 ```

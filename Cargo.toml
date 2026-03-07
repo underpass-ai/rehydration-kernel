@@ -8,6 +8,7 @@ members = [
     "crates/rehydration-domain",
     "crates/rehydration-observability",
     "crates/rehydration-ports",
+    "crates/rehydration-proto",
     "crates/rehydration-server",
     "crates/rehydration-testkit",
     "crates/rehydration-transport-grpc",
@@ -29,9 +30,14 @@ rehydration-config = { path = "crates/rehydration-config" }
 rehydration-domain = { path = "crates/rehydration-domain" }
 rehydration-observability = { path = "crates/rehydration-observability" }
 rehydration-ports = { path = "crates/rehydration-ports" }
+rehydration-proto = { path = "crates/rehydration-proto" }
 rehydration-testkit = { path = "crates/rehydration-testkit" }
 rehydration-transport-grpc = { path = "crates/rehydration-transport-grpc" }
 rehydration-transport-http-admin = { path = "crates/rehydration-transport-http-admin" }
+prost = "0.13.5"
+prost-types = "0.13.5"
+tonic = { version = "0.12.3", features = ["transport"] }
+tonic-build = "0.12.3"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
