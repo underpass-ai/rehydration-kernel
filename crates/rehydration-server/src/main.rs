@@ -1,6 +1,6 @@
 use rehydration_adapter_nats::NatsProjectionConsumer;
 use rehydration_adapter_neo4j::Neo4jProjectionReader;
-use rehydration_adapter_valkey::ValkeySnapshotStore;
+use rehydration_adapter_valkey::{ValkeyNodeDetailStore, ValkeySnapshotStore};
 use rehydration_config::AppConfig;
 use rehydration_observability::init_observability;
 use rehydration_transport_grpc::GrpcServer;
@@ -11,9 +11,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let config = AppConfig::from_env();
     init_observability(&config.service_name);
 
+    let graph_reader = Neo4jProjectionReader::new(config.graph_uri.clone())?;
+    let detail_reader = ValkeyNodeDetailStore::new(config.detail_uri.clone())?;
     let grpc_server = GrpcServer::new(
         config.clone(),
-        Neo4jProjectionReader::new(config.graph_uri.clone())?,
+        graph_reader,
+        detail_reader,
         ValkeySnapshotStore::new(config.snapshot_uri.clone())?,
     );
     let admin_server = HttpAdminServer::new(config.clone());

@@ -1,0 +1,121 @@
+use rehydration_domain::{BundleMetadata, GraphNeighborhoodReader, NodeDetailReader};
+
+use crate::ApplicationError;
+use crate::queries::{AdminQueryApplicationService, BundleAssembler, NodeCentricProjectionReader};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GetRehydrationDiagnosticsQuery {
+    pub case_id: String,
+    pub roles: Vec<String>,
+    pub phase: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RehydrationDiagnosticView {
+    pub role: String,
+    pub version: BundleMetadata,
+    pub selected_decisions: u32,
+    pub selected_impacts: u32,
+    pub selected_milestones: u32,
+    pub estimated_tokens: u32,
+    pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GetRehydrationDiagnosticsResult {
+    pub diagnostics: Vec<RehydrationDiagnosticView>,
+    pub observed_at: std::time::SystemTime,
+}
+
+#[derive(Debug)]
+pub struct GetRehydrationDiagnosticsUseCase<G, D> {
+    graph_reader: G,
+    detail_reader: D,
+    generator_version: &'static str,
+}
+
+impl<G, D> GetRehydrationDiagnosticsUseCase<G, D>
+where
+    G: GraphNeighborhoodReader + Send + Sync,
+    D: NodeDetailReader + Send + Sync,
+{
+    pub fn new(graph_reader: G, detail_reader: D, generator_version: &'static str) -> Self {
+        Self {
+            graph_reader,
+            detail_reader,
+            generator_version,
+        }
+    }
+
+    pub async fn execute(
+        &self,
+        query: GetRehydrationDiagnosticsQuery,
+    ) -> Result<GetRehydrationDiagnosticsResult, ApplicationError> {
+        if query.roles.is_empty() {
+            return Err(ApplicationError::Validation(
+                "roles cannot be empty".to_string(),
+            ));
+        }
+
+        let phase = query
+            .phase
+            .and_then(|value| trim_to_option(&value))
+            .unwrap_or_else(|| "PHASE_UNSPECIFIED".to_string());
+        let observed_at = std::time::SystemTime::now();
+        let mut diagnostics = Vec::with_capacity(query.roles.len());
+        let pack_reader = NodeCentricProjectionReader::new(&self.graph_reader, &self.detail_reader);
+
+        for role in &query.roles {
+            let bundle = match pack_reader.load_pack(&query.case_id, role).await? {
+                Some(pack) => BundleAssembler::assemble(pack, self.generator_version),
+                None => BundleAssembler::placeholder(&query.case_id, role, self.generator_version)?,
+            };
+            diagnostics.push(RehydrationDiagnosticView {
+                role: role.clone(),
+                version: bundle.metadata().clone(),
+                selected_decisions: bundle.pack().decisions().len() as u32,
+                selected_impacts: bundle.pack().impacts().len() as u32,
+                selected_milestones: bundle.pack().milestones().len() as u32,
+                estimated_tokens: bundle
+                    .sections()
+                    .iter()
+                    .map(|section| section.split_whitespace().count() as u32)
+                    .sum(),
+                notes: vec![format!("phase={phase}")],
+            });
+        }
+
+        Ok(GetRehydrationDiagnosticsResult {
+            diagnostics,
+            observed_at,
+        })
+    }
+}
+
+impl<G, D> AdminQueryApplicationService<G, D>
+where
+    G: GraphNeighborhoodReader + Send + Sync,
+    D: NodeDetailReader + Send + Sync,
+{
+    pub async fn get_rehydration_diagnostics(
+        &self,
+        query: GetRehydrationDiagnosticsQuery,
+    ) -> Result<GetRehydrationDiagnosticsResult, ApplicationError> {
+        GetRehydrationDiagnosticsUseCase::new(
+            std::sync::Arc::clone(&self.graph_reader),
+            std::sync::Arc::clone(&self.detail_reader),
+            self.generator_version,
+        )
+        .execute(query)
+        .await
+    }
+}
+
+fn trim_to_option(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}

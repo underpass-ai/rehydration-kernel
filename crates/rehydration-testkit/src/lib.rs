@@ -1,38 +1,57 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use rehydration_domain::{CaseId, RehydrationBundle, Role, RoleContextPack};
-use rehydration_ports::{
-    PortError, ProcessedEventStore, ProjectionCheckpoint, ProjectionCheckpointStore,
-    ProjectionMutation, ProjectionReader, ProjectionWriter, SnapshotStore,
+use rehydration_domain::{
+    GraphNeighborhoodReader, NodeDetailProjection, NodeDetailReader, NodeNeighborhood, PortError,
+    ProcessedEventStore, ProjectionCheckpoint, ProjectionCheckpointStore, ProjectionMutation,
+    ProjectionWriter, RehydrationBundle, SnapshotStore,
 };
 use tokio::sync::Mutex;
 
 #[derive(Debug, Default, Clone)]
-pub struct InMemoryProjectionReader {
-    packs: HashMap<(CaseId, Role), RoleContextPack>,
+pub struct InMemoryGraphNeighborhoodReader {
+    neighborhoods: HashMap<String, NodeNeighborhood>,
 }
 
-impl InMemoryProjectionReader {
-    pub fn with_pack(pack: RoleContextPack) -> Self {
-        let key = (pack.case_header().case_id().clone(), pack.role().clone());
-        let mut packs = HashMap::new();
-        packs.insert(key, pack);
-        Self { packs }
-    }
-
-    pub fn with_bundle(bundle: RehydrationBundle) -> Self {
-        Self::with_pack(bundle.pack().clone())
+impl InMemoryGraphNeighborhoodReader {
+    pub fn with_neighborhood(neighborhood: NodeNeighborhood) -> Self {
+        let mut neighborhoods = HashMap::new();
+        neighborhoods.insert(neighborhood.root.node_id.clone(), neighborhood);
+        Self { neighborhoods }
     }
 }
 
-impl ProjectionReader for InMemoryProjectionReader {
-    async fn load_pack(
+impl GraphNeighborhoodReader for InMemoryGraphNeighborhoodReader {
+    async fn load_neighborhood(
         &self,
-        case_id: &CaseId,
-        role: &Role,
-    ) -> Result<Option<RoleContextPack>, PortError> {
-        Ok(self.packs.get(&(case_id.clone(), role.clone())).cloned())
+        root_node_id: &str,
+    ) -> Result<Option<NodeNeighborhood>, PortError> {
+        Ok(self.neighborhoods.get(root_node_id).cloned())
+    }
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct InMemoryNodeDetailReader {
+    details: HashMap<String, NodeDetailProjection>,
+}
+
+impl InMemoryNodeDetailReader {
+    pub fn with_details(details: impl IntoIterator<Item = NodeDetailProjection>) -> Self {
+        Self {
+            details: details
+                .into_iter()
+                .map(|detail| (detail.node_id.clone(), detail))
+                .collect(),
+        }
+    }
+}
+
+impl NodeDetailReader for InMemoryNodeDetailReader {
+    async fn load_node_detail(
+        &self,
+        node_id: &str,
+    ) -> Result<Option<NodeDetailProjection>, PortError> {
+        Ok(self.details.get(node_id).cloned())
     }
 }
 
@@ -136,35 +155,96 @@ impl SnapshotStore for NoopSnapshotStore {
 }
 
 #[cfg(test)]
+fn seed_bundle(case_id: rehydration_domain::CaseId, role: &str) -> RehydrationBundle {
+    let role = rehydration_domain::Role::new(role).expect("role must be valid");
+    RehydrationBundle::new(
+        rehydration_domain::RoleContextPack::new(
+            role.clone(),
+            rehydration_domain::CaseHeader::new(
+                case_id.clone(),
+                format!("Node {}", case_id.as_str()),
+                format!(
+                    "bundle for node {} role {}",
+                    case_id.as_str(),
+                    role.as_str()
+                ),
+                "ACTIVE",
+                std::time::SystemTime::UNIX_EPOCH,
+                "testkit",
+            ),
+            None,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            format!(
+                "bundle for node {} role {}",
+                case_id.as_str(),
+                role.as_str()
+            ),
+            4096,
+        ),
+        vec![format!(
+            "bundle for node {} role {}",
+            case_id.as_str(),
+            role.as_str()
+        )],
+        rehydration_domain::BundleMetadata::initial("0.1.0"),
+    )
+}
+
+#[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
 
-    use rehydration_domain::{CaseId, RehydrationBundle, Role};
-    use rehydration_ports::{
-        NodeDetailProjection, NodeProjection, ProcessedEventStore, ProjectionCheckpoint,
-        ProjectionCheckpointStore, ProjectionMutation, ProjectionReader, ProjectionWriter,
-        SnapshotStore,
+    use rehydration_domain::{
+        CaseId, GraphNeighborhoodReader, NodeDetailProjection, NodeDetailReader, NodeNeighborhood,
+        NodeProjection, ProcessedEventStore, ProjectionCheckpoint, ProjectionCheckpointStore,
+        ProjectionMutation, ProjectionWriter, SnapshotStore,
     };
 
     use super::{
-        InMemoryProcessedEventStore, InMemoryProjectionCheckpointStore, InMemoryProjectionReader,
-        InMemoryProjectionWriter, NoopSnapshotStore,
+        InMemoryGraphNeighborhoodReader, InMemoryNodeDetailReader, InMemoryProcessedEventStore,
+        InMemoryProjectionCheckpointStore, InMemoryProjectionWriter, NoopSnapshotStore,
+        seed_bundle,
     };
 
     #[tokio::test]
-    async fn in_memory_reader_returns_seeded_bundle() {
-        let bundle = RehydrationBundle::empty(
-            CaseId::new("case-123").expect("case id is valid"),
-            Role::new("developer").expect("role is valid"),
-            "0.1.0",
-        );
-        let reader = InMemoryProjectionReader::with_bundle(bundle);
+    async fn in_memory_graph_reader_returns_seeded_neighborhood() {
+        let reader = InMemoryGraphNeighborhoodReader::with_neighborhood(NodeNeighborhood {
+            root: NodeProjection {
+                node_id: "node-123".to_string(),
+                node_kind: "capability".to_string(),
+                title: "Projection".to_string(),
+                summary: String::new(),
+                status: "ACTIVE".to_string(),
+                labels: vec!["projection".to_string()],
+                properties: BTreeMap::new(),
+            },
+            neighbors: Vec::new(),
+            relations: Vec::new(),
+        });
 
         let loaded = reader
-            .load_pack(
-                &CaseId::new("case-123").expect("case id is valid"),
-                &Role::new("developer").expect("role is valid"),
-            )
+            .load_neighborhood("node-123")
+            .await
+            .expect("load should succeed");
+
+        assert!(loaded.is_some());
+    }
+
+    #[tokio::test]
+    async fn in_memory_node_detail_reader_returns_seeded_detail() {
+        let reader = InMemoryNodeDetailReader::with_details([NodeDetailProjection {
+            node_id: "node-123".to_string(),
+            detail: "Expanded detail".to_string(),
+            content_hash: "hash-1".to_string(),
+            revision: 1,
+        }]);
+
+        let loaded = reader
+            .load_node_detail("node-123")
             .await
             .expect("load should succeed");
 
@@ -248,10 +328,9 @@ mod tests {
 
     #[tokio::test]
     async fn noop_snapshot_store_accepts_bundle() {
-        let bundle = RehydrationBundle::empty(
+        let bundle = seed_bundle(
             CaseId::new("case-123").expect("case id is valid"),
-            Role::new("developer").expect("role is valid"),
-            "0.1.0",
+            "developer",
         );
 
         NoopSnapshotStore

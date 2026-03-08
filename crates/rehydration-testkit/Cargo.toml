@@ -9,5 +9,4 @@ workspace = true
 
 [dependencies]
 rehydration-domain.workspace = true
-rehydration-ports.workspace = true
 tokio.workspace = true

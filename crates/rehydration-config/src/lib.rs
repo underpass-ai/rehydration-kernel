@@ -6,6 +6,7 @@ pub struct AppConfig {
     pub grpc_bind: String,
     pub admin_bind: String,
     pub graph_uri: String,
+    pub detail_uri: String,
     pub snapshot_uri: String,
     pub events_subject_prefix: String,
 }
@@ -21,6 +22,8 @@ impl AppConfig {
                 .unwrap_or_else(|_| "0.0.0.0:8080".to_string()),
             graph_uri: env::var("REHYDRATION_GRAPH_URI")
                 .unwrap_or_else(|_| "neo4j://localhost:7687".to_string()),
+            detail_uri: env::var("REHYDRATION_DETAIL_URI")
+                .unwrap_or_else(|_| "redis://localhost:6379".to_string()),
             snapshot_uri: env::var("REHYDRATION_SNAPSHOT_URI")
                 .unwrap_or_else(|_| "redis://localhost:6379".to_string()),
             events_subject_prefix: env::var("REHYDRATION_EVENTS_PREFIX")

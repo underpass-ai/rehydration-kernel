@@ -1569,6 +1569,7 @@ version = "0.1.0"
 dependencies = [
  "rehydration-domain",
  "rehydration-ports",
+ "serde",
  "serde_json",
  "testcontainers",
  "tokio",
@@ -1579,7 +1580,6 @@ name = "rehydration-application"
 version = "0.1.0"
 dependencies = [
  "rehydration-domain",
- "rehydration-ports",
  "rehydration-testkit",
  "serde",
  "tokio",
@@ -1622,6 +1622,7 @@ dependencies = [
  "rehydration-adapter-nats",
  "rehydration-adapter-neo4j",
  "rehydration-adapter-valkey",
+ "rehydration-application",
  "rehydration-config",
  "rehydration-observability",
  "rehydration-transport-grpc",
@@ -1634,7 +1635,6 @@ name = "rehydration-testkit"
 version = "0.1.0"
 dependencies = [
  "rehydration-domain",
- "rehydration-ports",
  "tokio",
 ]
 

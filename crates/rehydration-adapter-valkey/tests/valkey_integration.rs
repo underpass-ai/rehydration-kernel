@@ -3,7 +3,7 @@ use std::error::Error;
 use rehydration_adapter_valkey::{ValkeyNodeDetailStore, ValkeySnapshotStore};
 use rehydration_domain::{BundleMetadata, CaseId, RehydrationBundle, Role};
 use rehydration_ports::{
-    NodeDetailProjection, ProjectionMutation, ProjectionWriter, SnapshotStore,
+    NodeDetailProjection, NodeDetailReader, ProjectionMutation, ProjectionWriter, SnapshotStore,
 };
 use testcontainers::{
     GenericImage,
@@ -66,8 +66,8 @@ async fn save_bundle_persists_snapshot_in_valkey() -> Result<(), Box<dyn Error +
 }
 
 #[tokio::test]
-async fn apply_mutations_persists_node_detail_in_valkey() -> Result<(), Box<dyn Error + Send + Sync>>
-{
+async fn node_detail_roundtrip_reads_expanded_detail_from_valkey()
+-> Result<(), Box<dyn Error + Send + Sync>> {
     let container = GenericImage::new("docker.io/valkey/valkey", "8.1.5-alpine")
         .with_exposed_port(VALKEY_INTERNAL_PORT.tcp())
         .with_wait_for(WaitFor::message_on_stdout("Ready to accept connections"))
@@ -93,21 +93,19 @@ async fn apply_mutations_persists_node_detail_in_valkey() -> Result<(), Box<dyn 
         )])
         .await?;
 
-    let key = "rehydration:detail:node-123";
-    let detail = send_command(&address, &["GET", key]).await?;
-    let ttl = send_command(&address, &["TTL", key]).await?;
+    let loaded = store
+        .load_node_detail("node-123")
+        .await?
+        .expect("detail should exist");
+    let ttl = send_command(&address, &["TTL", "rehydration:detail:node-123"]).await?;
 
-    assert_eq!(
-        detail,
-        RespValue::BulkString(Some(
-            "{\"content_hash\":\"hash-123\",\"detail\":\"Expanded node detail\",\"node_id\":\"node-123\",\"revision\":3}".to_string()
-        ))
-    );
+    assert_eq!(loaded.node_id, "node-123");
+    assert_eq!(loaded.detail, "Expanded node detail");
+    assert_eq!(loaded.content_hash, "hash-123");
+    assert_eq!(loaded.revision, 3);
 
     match ttl {
-        RespValue::Integer(value) => {
-            assert!((1..=120).contains(&value));
-        }
+        RespValue::Integer(value) => assert!((1..=120).contains(&value)),
         other => panic!("expected integer TTL response, got {other:?}"),
     }
 
