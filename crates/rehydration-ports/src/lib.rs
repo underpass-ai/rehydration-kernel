@@ -1,7 +1,5 @@
 pub mod commands;
-pub mod queries;
-
-pub use queries::ProjectionReader;
+mod queries;
 pub use rehydration_domain::{
     BundleMetadata, CaseHeader, CaseId, Decision, DecisionRelation, DomainError,
     GraphNeighborhoodReader, Milestone, NodeDetailProjection, NodeDetailReader, NodeNeighborhood,
