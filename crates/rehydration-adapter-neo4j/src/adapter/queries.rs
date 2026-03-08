@@ -12,10 +12,7 @@ LIMIT 1
 
 pub(crate) const NODE_NEIGHBORHOOD_QUERY: &str = "
 MATCH (root:ProjectionNode {node_id: $root_node_id})
-OPTIONAL MATCH (source:ProjectionNode)-[edge:RELATED_TO]-(target:ProjectionNode)
-WHERE source.node_id = $root_node_id OR target.node_id = $root_node_id
-WITH source, edge, target,
-     CASE WHEN source.node_id = $root_node_id THEN target ELSE source END AS neighbor
+OPTIONAL MATCH (root)-[edge:RELATED_TO]-(neighbor:ProjectionNode)
 RETURN coalesce(neighbor.node_id, '') AS neighbor_node_id,
        coalesce(neighbor.node_kind, '') AS neighbor_node_kind,
        coalesce(neighbor.title, '') AS neighbor_title,
@@ -23,7 +20,7 @@ RETURN coalesce(neighbor.node_id, '') AS neighbor_node_id,
        coalesce(neighbor.status, '') AS neighbor_status,
        coalesce(neighbor.node_labels, []) AS neighbor_node_labels,
        coalesce(neighbor.properties_json, '{}') AS neighbor_properties_json,
-       coalesce(source.node_id, '') AS source_node_id,
-       coalesce(target.node_id, '') AS target_node_id,
+       CASE WHEN edge IS NULL THEN '' ELSE startNode(edge).node_id END AS source_node_id,
+       CASE WHEN edge IS NULL THEN '' ELSE endNode(edge).node_id END AS target_node_id,
        coalesce(edge.relation_type, '') AS relation_type
 ";

@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::sync::Arc;
 
@@ -230,6 +230,7 @@ impl GraphNeighborhoodReader for Neo4jProjectionStore {
         let rows = self.load_neighbor_rows(&graph, root_node_id).await?;
 
         let mut neighbors_by_id = BTreeMap::<String, NodeProjection>::new();
+        let mut relation_keys = BTreeSet::<(String, String, String)>::new();
         let mut relations = Vec::new();
 
         for row in rows {
@@ -246,11 +247,21 @@ impl GraphNeighborhoodReader for Neo4jProjectionStore {
                     "neighbor_",
                     "neighbor node",
                 )?);
-            relations.push(NodeRelationProjection {
-                source_node_id: row_string(&row, "source_node_id", "neighbor relation")?,
-                target_node_id: row_string(&row, "target_node_id", "neighbor relation")?,
-                relation_type,
-            });
+            let source_node_id = row_string(&row, "source_node_id", "neighbor relation")?;
+            let target_node_id = row_string(&row, "target_node_id", "neighbor relation")?;
+            let relation_key = (
+                source_node_id.clone(),
+                target_node_id.clone(),
+                relation_type.clone(),
+            );
+
+            if relation_keys.insert(relation_key) {
+                relations.push(NodeRelationProjection {
+                    source_node_id,
+                    target_node_id,
+                    relation_type,
+                });
+            }
         }
 
         Ok(Some(NodeNeighborhood {
