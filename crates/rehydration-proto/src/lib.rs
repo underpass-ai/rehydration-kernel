@@ -8,9 +8,19 @@ pub mod v1alpha1 {
         tonic::include_file_descriptor_set!("rehydration_kernel_v1alpha1_descriptor");
 }
 
+pub mod fleet_context_v1 {
+    #![allow(clippy::all)]
+    #![allow(missing_docs)]
+
+    tonic::include_proto!("fleet.context.v1");
+
+    pub const FILE_DESCRIPTOR_SET: &[u8] =
+        tonic::include_file_descriptor_set!("fleet_context_v1_descriptor");
+}
+
 #[cfg(test)]
 mod tests {
-    use super::v1alpha1;
+    use super::{fleet_context_v1, v1alpha1};
 
     #[test]
     fn descriptor_set_is_embedded() {
@@ -63,5 +73,24 @@ mod tests {
         };
 
         assert_eq!(request.changes.len(), 1);
+    }
+
+    #[test]
+    fn compatibility_descriptor_set_is_embedded() {
+        let descriptor_set = std::hint::black_box(fleet_context_v1::FILE_DESCRIPTOR_SET);
+        assert!(!descriptor_set.is_empty());
+    }
+
+    #[test]
+    fn generated_compatibility_messages_are_available() {
+        let request = fleet_context_v1::GetContextRequest {
+            story_id: "story-123".to_string(),
+            role: "DEV".to_string(),
+            phase: "BUILD".to_string(),
+            subtask_id: "task-9".to_string(),
+            token_budget: 2048,
+        };
+
+        assert_eq!(request.story_id, "story-123");
     }
 }

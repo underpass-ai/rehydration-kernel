@@ -1,25 +1,29 @@
 # Context Service Rust Roadmap
 
-Status: Active  
+Status: Active
 Source of truth: [`CONTEXT_SERVICE_RUST_MIGRATION_PLAN.md`](../../CONTEXT_SERVICE_RUST_MIGRATION_PLAN.md)
 
 ## Purpose
 
-Turn the RFC into an execution roadmap for this repo.
+Turn the migration RFC into an execution roadmap for this repo.
 
 This roadmap keeps two rules explicit:
 
-1. The internal core of this repo stays node-centric.
-2. Compatibility with the existing Context Service is handled at the boundary,
-   not by polluting the core with external domain nouns.
+1. the internal core stays node-centric
+2. compatibility with the existing Context Service is implemented at the edge
 
-## Non-negotiable constraints
+External legacy nouns appear in this roadmap only when naming the frozen
+boundary contract.
+
+## Non-Negotiable Constraints
 
 - no god objects
 - no god files
 - DDD first
 - hexagonal boundaries
 - one main concept per file
+- one use case per file
+- one command or query entry point per file
 - legacy compatibility only at adapters and transport edges
 - the core language remains:
   - root node
@@ -27,70 +31,67 @@ This roadmap keeps two rules explicit:
   - relationships
   - extended node detail in Valkey
 
-## Current baseline
+## Current Baseline
 
-The repo already has a usable node-centric substrate in `main`:
+`main` already provides the substrate needed before starting compatibility work:
 
 - graph-native bundle domain
-- split application services and use cases
-- Neo4j adapter split into focused modules
-- Valkey adapter split into focused modules
-- NATS adapter no longer implemented as a god file
-- gRPC transport split into focused modules
-- workspace tests green
-- GitHub Actions quality gate green
-- SonarCloud quality gate green
+- focused application use cases
+- split Neo4j adapter
+- split Valkey adapter
+- split NATS adapter
+- split gRPC transport
+- green repo quality gates
 
-That means the engineering substrate is ahead of the migration contract work.
+That means the next milestone is not another core refactor.
+The next milestone is the compatibility shell.
 
-The missing work is not “more refactor”. The missing work is compatibility and
-rollout against the existing Context Service contract described in:
-
-- `specs/fleet/context/v1/context.proto`
-- `services/context/README.md`
-
-## Status by stream
+## Status by Stream
 
 ### Stream A: Internal node-centric core
 
-Status: `done for current foundation`
+Status: `done for foundation`
 
 Delivered:
 
-- graph-native bundle model
-- split adapters
-- split transport
-- test and quality gates in place
+- graph-native domain
+- focused application layer
+- modular adapters
+- modular transport
+- quality gates and tests
 
-This stream continues only when a compatibility phase reveals a real gap.
+This stream should reopen only if a compatibility slice exposes a real core
+gap.
 
 ### Stream B: External contract compatibility
 
-Status: `not started to completion`
+Status: `phase 0 complete, phase 1 next`
 
-Missing:
+Frozen in Phase 0:
 
-- exact parity inventory against the existing service contract
-- compatibility mapping for every RPC and NATS subject
-- explicit edge adapters for legacy request and response shapes
-- golden tests against the baseline implementation
+- external gRPC inventory
+- external NATS subjects
+- EventEnvelope rules
+- config and startup behavior
+- compatibility matrix
+- golden test catalog
+- reuse boundary
 
-### Stream C: Migration rollout
+### Stream C: Rollout and shadow mode
 
 Status: `not started`
 
 Missing:
 
-- dual-run plan
-- canary plan
-- rollback plan
+- dual-run strategy
 - shadow comparison harness
+- canary and rollback procedure
 
-## Phase roadmap
+## Phase Roadmap
 
-### Phase 0: Contract freeze
+### Phase 0: Contract Freeze
 
-Status: `in progress`
+Status: `complete`
 
 Goal:
 
@@ -99,54 +100,46 @@ Goal:
 
 Outputs:
 
-- RPC inventory
-- NATS subject inventory
-- compatibility matrix
-- golden test catalog
-- explicit reuse boundary for this repo
+- [`context-service-phase0-contract-freeze.md`](./context-service-phase0-contract-freeze.md)
+- [`context-service-compatibility-matrix.md`](./context-service-compatibility-matrix.md)
+- [`context-service-golden-tests.md`](./context-service-golden-tests.md)
+- [`rehydration-kernel-reuse-boundary.md`](./rehydration-kernel-reuse-boundary.md)
 
-Inputs:
+Exit gate: complete
 
-- [`CONTEXT_SERVICE_RUST_MIGRATION_PLAN.md`](../../CONTEXT_SERVICE_RUST_MIGRATION_PLAN.md)
-- `specs/fleet/context/v1/context.proto`
-- `services/context/README.md`
-- existing docs under `docs/migration/`
+### Phase 1: Compatibility Shell
 
-Exit gate:
-
-- every public RPC and every public subject classified as:
-  - preserved as-is
-  - adapted at the edge
-  - deferred with explicit reason
-
-### Phase 1: Compatibility shell
-
-Status: `pending`
+Status: `next`
 
 Goal:
 
-- expose the external Context Service surface in Rust without leaking external
-  domain vocabulary into the internal core
+- expose `fleet.context.v1` in Rust without leaking external legacy nouns into
+  the node-centric core
 
 Deliverables:
 
-- boundary transport module for `fleet.context.v1`
-- edge DTOs and mappers
-- compatibility error mapping
-- health/readiness bootstrap
+- compatibility proto package and transport module
+- one `ContextService` boundary facade
+- focused request DTO files
+- focused response DTO files
+- explicit request mappers
+- explicit response mappers
+- compatibility status and error mapping
+- compatibility bootstrap for external config defaults
 
-Notes:
+Structural rules:
 
-- internal use cases continue to work with nodes, relationships, and node
-  details
-- legacy naming is allowed only in transport and adapter modules
+- separate files for DTOs, request mapping, response mapping, and status mapping
+- no transport god service
+- no compatibility mapper file that owns unrelated RPCs
 
 Exit gate:
 
-- the Rust service can boot and answer the external API surface, even if some
-  methods still route to controlled placeholders
+- the Rust service boots with the external package and service identity
+- boundary error mapping is proven by tests
+- the shell routes requests into the current node-centric application layer
 
-### Phase 2: Read-path parity
+### Phase 2: Read-Path Parity
 
 Status: `pending`
 
@@ -163,23 +156,26 @@ Scope:
 
 Deliverables:
 
-- transport-to-core mapping from external requests to `root_node_id` workflows
-- compatibility rendering from graph-native bundle to external response shape
-- deterministic scope validation parity
-- snapshot and detail loading parity
+- request mapping from external identifiers into node-centric workflows
+- response rendering from graph-native outputs into external DTOs
+- depth clamp and validation parity for `GetGraphRelationships`
+- scope validation parity
+- golden tests for all read RPCs
 
 Exit gate:
 
-- golden read-path tests pass against the baseline
-- shadow comparisons show no unacceptable response drift
+- read-path golden tests pass
+- external DTOs match the frozen contract
+- no core module adopts external legacy nouns
 
-### Phase 3: Async NATS parity
+### Phase 3: Async NATS Parity
 
 Status: `pending`
 
 Goal:
 
-- implement the request/reply and event flows required by the existing service
+- implement the async request or reply and event flows required by the existing
+  service
 
 Scope:
 
@@ -192,80 +188,74 @@ Scope:
 Deliverables:
 
 - subject routers per public flow
-- request/reply correlation
-- idempotent processing policy
-- redelivery tests
+- EventEnvelope parsing and validation
+- request or reply correlation
+- `ack` or `nak` parity
+- publish envelope parity
 
 Exit gate:
 
-- request/reply parity proven in tests
-- deduplication behavior documented and verified
+- async golden tests pass
+- envelope behavior matches the baseline
+- public subjects are implemented without turning the NATS adapter into a god file
 
-### Phase 4: Write-path parity
+### Phase 4: Write-Path Parity
 
 Status: `pending`
 
 Goal:
 
-- support external write operations while keeping the core node-centric
+- support the external write API while keeping the core node-centric
+
+Scope:
+
+- `UpdateContext`
+- `CreateStory`
+- `CreateTask`
+- `AddProjectDecision`
+- `TransitionPhase`
 
 Deliverables:
 
-- explicit command-side edge mapping
-- idempotent graph writes
-- version and event publication parity
+- focused compatibility commands and mappers
+- write-path response parity
+- response publication parity where applicable
+- golden tests for all write RPCs
 
 Exit gate:
 
-- write contract tests pass
-- single-writer rollout strategy is documented
+- write-path golden tests pass
+- event publication parity is verified
+- no external write DTO leaks into the domain core
 
-### Phase 5: Dual-run and cutover
+### Phase 5: Rollout
 
 Status: `pending`
 
 Goal:
 
-- move production traffic safely from the existing implementation to Rust
+- cut over safely from the Python service to the Rust implementation
 
 Deliverables:
 
-- shadow mode plan
-- canary percentages and gates
-- rollback mechanism
-- observability dashboard checklist
+- shadow comparison harness
+- canary procedure
+- rollback procedure
+- cutover checklist
 
 Exit gate:
 
-- staged rollout completed with rollback path verified
+- shadow comparisons are within accepted drift
+- rollback is exercised
+- production cutover checklist is signed off
 
-## Immediate next slices
+## Immediate Next Slice
 
-These are the next slices to execute in order.
+Start Phase 1 with the compatibility shell, not with more internal refactor.
 
-1. Finish Phase 0 as a hard inventory, not as a redesign.
-2. Create the compatibility shell for the external gRPC surface.
-3. Add golden tests for read-path parity before implementing more external
-   behavior.
+The first implementation cut should produce:
 
-## Work package rules
-
-Every new work package must satisfy all of these rules:
-
-- one responsibility per file
-- one use case per file
-- one mapper family per file
-- one subject router per file when the logic is non-trivial
-- one query builder per query family when the query is not trivial
-- no adapter may own transport, mapping, orchestration, and persistence logic in
-  the same file
-
-## Definition of done for the roadmap
-
-The migration is done only when all of the following are true:
-
-- the external Context Service surface is compatible
-- the internal core remains node-centric
-- contract tests are green
-- quality gate remains green
-- rollout and rollback are both proven
+1. external package and service scaffolding for `fleet.context.v1`
+2. focused edge DTO modules
+3. error mapping parity at the boundary
+4. tests that prove the compatibility shell boots without polluting the core

@@ -11,6 +11,7 @@ use rehydration_config::AppConfig;
 use rehydration_domain::{
     GraphNeighborhoodReader, NodeDetailReader, RehydrationBundle, SnapshotStore,
 };
+use rehydration_proto::fleet_context_v1::context_service_server::ContextServiceServer;
 use rehydration_proto::v1alpha1::{
     BundleRenderFormat, FILE_DESCRIPTOR_SET, GetContextRequest, Phase,
     context_admin_service_server::ContextAdminServiceServer,
@@ -21,7 +22,9 @@ use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::transport::Server;
 
-use crate::transport::{AdminGrpcService, CommandGrpcService, QueryGrpcService};
+use crate::transport::{
+    AdminGrpcService, CommandGrpcService, ContextCompatibilityGrpcService, QueryGrpcService,
+};
 
 #[derive(Debug)]
 pub struct GrpcServer<G, D, S> {
@@ -104,6 +107,14 @@ where
         )
     }
 
+    pub fn compatibility_service(&self) -> ContextCompatibilityGrpcService<G, D, S> {
+        ContextCompatibilityGrpcService::new(
+            Arc::clone(&self.query_application),
+            Arc::clone(&self.admin_query_application),
+            Arc::clone(&self.command_application),
+        )
+    }
+
     pub async fn warmup_bundle(&self) -> Result<RehydrationBundle, ApplicationError> {
         self.query_application.warmup_bundle().await
     }
@@ -124,6 +135,7 @@ where
         F: Future<Output = ()> + Send + 'static,
     {
         Server::builder()
+            .add_service(ContextServiceServer::new(self.compatibility_service()))
             .add_service(ContextQueryServiceServer::new(self.query_service()))
             .add_service(ContextCommandServiceServer::new(self.command_service()))
             .add_service(ContextAdminServiceServer::new(self.admin_service()))

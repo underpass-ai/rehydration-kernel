@@ -8,8 +8,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let command_proto = proto_root.join("underpass/rehydration/kernel/v1alpha1/command.proto");
     let admin_proto = proto_root.join("underpass/rehydration/kernel/v1alpha1/admin.proto");
     let common_proto = proto_root.join("underpass/rehydration/kernel/v1alpha1/common.proto");
+    let context_service_proto = proto_root.join("fleet/context/v1/context.proto");
     let descriptor_path =
         PathBuf::from(env::var("OUT_DIR")?).join("rehydration_kernel_v1alpha1_descriptor.bin");
+    let compatibility_descriptor_path =
+        PathBuf::from(env::var("OUT_DIR")?).join("fleet_context_v1_descriptor.bin");
 
     for path in [
         &proto_root,
@@ -17,6 +20,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &command_proto,
         &admin_proto,
         &common_proto,
+        &context_service_proto,
     ] {
         println!("cargo:rerun-if-changed={}", path.display());
     }
@@ -25,7 +29,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build_client(true)
         .build_server(true)
         .file_descriptor_set_path(descriptor_path)
-        .compile_protos(&[query_proto, command_proto, admin_proto], &[proto_root])?;
+        .compile_protos(
+            &[query_proto, command_proto, admin_proto],
+            std::slice::from_ref(&proto_root),
+        )?;
+
+    tonic_build::configure()
+        .build_client(true)
+        .build_server(true)
+        .file_descriptor_set_path(compatibility_descriptor_path)
+        .compile_protos(&[context_service_proto], std::slice::from_ref(&proto_root))?;
 
     Ok(())
 }

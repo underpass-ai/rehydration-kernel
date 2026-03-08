@@ -1,94 +1,223 @@
-# Node-Centric Contract Freeze
+# Context Service Phase 0 Contract Freeze
 
-Status: Draft  
+Status: Complete
 Source of truth: [`CONTEXT_SERVICE_RUST_MIGRATION_PLAN.md`](../../CONTEXT_SERVICE_RUST_MIGRATION_PLAN.md)
 
-## Goal
+## Purpose
 
-Freeze the contract and implementation invariants for this repo without
-introducing any domain vocabulary that does not exist here.
+Freeze the observable contract of the existing Context Service before building
+the Rust compatibility shell.
 
-This repo is node-centric:
+This freeze applies to the external service boundary only.
+It does not change the internal language of this repo, which remains
+node-centric:
 
-- one root node starts rehydration
-- related nodes and relationships come from Neo4j
-- extended per-node context comes from Valkey
-- rendered context is derived from that graph neighborhood
-
-## Phase 0 decisions
-
-1. The internal domain is graph-native and node-centric.
-2. The core unit is a node, never a non-graph aggregate.
-3. Relationships are first-class data in the bundle.
-4. Extended node detail is loaded from Valkey and remains first-class data.
-5. Role may affect filtering and rendering, but not the underlying graph shape.
-6. No repo documentation or new code should introduce non-graph domain nouns as
-   core concepts.
-
-## Frozen gRPC expectations
-
-The repo contract must stay aligned with graph-native rehydration.
-
-### Query expectations
-
-- `GetContext` operates from `root_node_id`
-- `RehydrateSession` operates from `root_node_id`
-- `ValidateScope` remains role- and scope-based
-- `GetGraphRelationships` remains graph-native
-
-### Bundle expectations
-
-The bundle returned by the query path must be graph-native and centered on:
-
-- `root_node_id`
 - root node
 - neighbor nodes
 - relationships
-- node details
-- bundle metadata
-- derived stats
+- extended node detail in Valkey
 
-The bundle must not use semantic pack objects as its source of truth.
+## Evidence Used
 
-## Frozen eventing expectations
+Primary sources:
 
-The repo event model stays node-centric:
+- [`context.proto`](../../to-delete-when-finish-the-standalone-extraction/swe-ai-fleet-base-for-context-extraction/specs/fleet/context/v1/context.proto)
+- [`services/context/README.md`](../../to-delete-when-finish-the-standalone-extraction/swe-ai-fleet-base-for-context-extraction/services/context/README.md)
+- [`services/context/server.py`](../../to-delete-when-finish-the-standalone-extraction/swe-ai-fleet-base-for-context-extraction/services/context/server.py)
+- [`services/context/nats_handler.py`](../../to-delete-when-finish-the-standalone-extraction/swe-ai-fleet-base-for-context-extraction/services/context/nats_handler.py)
+- [`core/context/adapters/env_config_adapter.py`](../../to-delete-when-finish-the-standalone-extraction/swe-ai-fleet-base-for-context-extraction/core/context/adapters/env_config_adapter.py)
 
-- `graph.node.materialized`
-- `node.detail.materialized`
-- optional bundle-generation notification if needed later
+Behavioral evidence:
 
-No new implementation work should pivot this repo toward non-graph event
-subjects.
+- [`test_context_service_servicer.py`](../../to-delete-when-finish-the-standalone-extraction/swe-ai-fleet-base-for-context-extraction/services/context/tests/unit/test_context_service_servicer.py)
+- [`test_nats_handler.py`](../../to-delete-when-finish-the-standalone-extraction/swe-ai-fleet-base-for-context-extraction/services/context/tests/unit/test_nats_handler.py)
+- [`test_nats_messaging_adapter.py`](../../to-delete-when-finish-the-standalone-extraction/swe-ai-fleet-base-for-context-extraction/services/context/tests/unit/infrastructure/adapters/test_nats_messaging_adapter.py)
+- [`test_env_config_adapter.py`](../../to-delete-when-finish-the-standalone-extraction/swe-ai-fleet-base-for-context-extraction/core/context/tests/unit/adapters/test_env_config_adapter.py)
+- [`test_required_envelope_parser.py`](../../to-delete-when-finish-the-standalone-extraction/swe-ai-fleet-base-for-context-extraction/core/shared/tests/unit/events/infrastructure/test_required_envelope_parser.py)
+- [`test_server.py`](../../to-delete-when-finish-the-standalone-extraction/swe-ai-fleet-base-for-context-extraction/services/context/tests/unit/test_server.py)
 
-## Frozen storage expectations
+## Frozen External gRPC Contract
 
-- Neo4j stores and serves the graph neighborhood
-- Valkey stores extended node detail
-- snapshot persistence must store graph-native bundle data
+Package and service identity:
 
-## Frozen engineering constraints
+- package: `fleet.context.v1`
+- service: `ContextService`
 
-- no god objects
-- one main concept per file
-- explicit boundary mapping
-- pure domain
-- adapters only at the edges
+Frozen RPC inventory:
 
-## Current mismatch to resolve
+1. `GetContext`
+2. `UpdateContext`
+3. `RehydrateSession`
+4. `ValidateScope`
+5. `CreateStory`
+6. `CreateTask`
+7. `AddProjectDecision`
+8. `TransitionPhase`
+9. `GetGraphRelationships`
 
-Today the repo still has a hybrid read path:
+Frozen public field names that must be preserved at the boundary:
 
-- graph-native inputs
-- semantic pack-shaped bundle output
+- `story_id`
+- `case_id`
+- `task_id`
+- `subtask_id`
+- `entity_type`
+- `payload`
+- `blocks`
+- `packs`
+- `PromptBlocks`
+- `RoleContextPack`
 
-That mismatch is the main implementation target for the next slice.
+Phase 1 and Phase 2 may adapt these names internally, but they may not rename
+them on the public interface.
 
-## Acceptance criteria for the freeze
+## Frozen External NATS Contract
 
-This freeze is valid only while all future implementation work preserves these
-rules:
+Consumed planning subjects:
 
-- nodes and relationships remain the core language
-- Valkey detail remains node-centric
-- any legacy or compatibility naming stays outside the core
+- `planning.project.created`
+- `planning.epic.created`
+- `planning.story.created`
+- `planning.task.created`
+- `planning.story.transitioned`
+- `planning.plan.approved`
+
+Consumed orchestration subjects:
+
+- `orchestration.deliberation.completed`
+- `orchestration.task.dispatched`
+
+Async request subjects:
+
+- `context.update.request`
+- `context.rehydrate.request`
+
+Published subjects:
+
+- `context.update.response`
+- `context.rehydrate.response`
+- `context.events.updated`
+
+Published envelope event types proven in adapter tests:
+
+- `context.update.response` -> `event_type=context.update.response`
+- `context.rehydrate.response` -> `event_type=context.rehydrate.response`
+- `context.events.updated` -> `event_type=context.updated`
+
+## Frozen EventEnvelope Rules
+
+Inbound async request messages are wrapped in a required `EventEnvelope`.
+They are not raw request payloads.
+
+Required fields:
+
+- `event_type`
+- `payload`
+- `idempotency_key`
+- `correlation_id`
+- `timestamp`
+- `producer`
+
+Optional fields:
+
+- `causation_id`
+- `metadata`
+
+Observed and frozen handler behavior:
+
+- invalid JSON -> `ack` and drop
+- invalid or incomplete envelope -> `ack` and drop
+- envelope payload not being an object -> `ack` and drop
+- handler or servicer failure after successful parsing -> `nak`
+
+## Frozen Startup and Configuration Behavior
+
+Defaults and validations frozen from the Python implementation:
+
+- `GRPC_PORT`: default `50054`
+- `NEO4J_URI`: default `bolt://neo4j:7687`
+- `NEO4J_USER`: default `neo4j`
+- `NEO4J_PASSWORD`: required
+- `REDIS_HOST`: default `redis`
+- `REDIS_PORT`: default `6379`
+- `NATS_URL`: default `nats://nats:4222`
+- `ENABLE_NATS`: boolean, default `true`
+
+Observed fail-fast behavior:
+
+- missing or empty `NEO4J_PASSWORD` fails config loading
+- invalid `REDIS_PORT` fails config loading
+- `ENABLE_NATS=false` still parses successfully, but startup aborts because
+  NATS is required for the service
+
+Observed lenient behavior:
+
+- missing scopes YAML -> empty config
+- invalid scopes YAML -> empty config
+
+This leniency is part of the frozen external baseline until explicitly changed
+in a later migration decision.
+
+## Frozen Observable Behavior
+
+Only behaviors proven by source or tests are frozen here.
+
+### gRPC
+
+- `GetGraphRelationships.depth` is clamped to `1..3`
+- `GetGraphRelationships` maps validation errors to `INVALID_ARGUMENT`
+- unexpected servicer failures are mapped to `INTERNAL`
+
+### Async NATS
+
+- request handlers invoke servicer methods through an internal servicer context
+- if the servicer sets an error on that context, the handler raises and `nak`s
+  the original message
+
+## Compatibility Boundary Rule
+
+The migration keeps a strict split:
+
+1. external callers keep speaking `fleet.context.v1`
+2. external NATS flows keep using the existing subject names and envelope rules
+3. compatibility mappers translate external nouns into node-centric inputs
+4. internal application code stays graph-native
+5. compatibility mappers render the external response DTOs on the way out
+
+This means external nouns are allowed only in transport and adapter code.
+They must not leak into the domain core of this repo.
+
+## Non-Blocking Open Questions
+
+Phase 0 is still considered complete because these questions do not block the
+compatibility shell design:
+
+- exact text parity for all gRPC error messages is not fully frozen yet
+- response ordering is frozen only where tests or source prove determinism
+- deduplication and retry policy beyond current `ack` or `nak` behavior is not
+  specified by the baseline
+
+These are explicit Phase 1 and Phase 3 verification tasks, not reasons to
+reopen Phase 0.
+
+## Phase 0 Exit Criteria
+
+Phase 0 is closed because the repo now has:
+
+- this contract freeze
+- a compatibility gap inventory
+- a golden test catalog
+- a reuse-boundary note
+- an execution roadmap that starts the compatibility shell next
+
+## Consequence for Phase 1
+
+The next phase must not continue redesigning the internal core in search of
+compatibility.
+
+The next phase must build:
+
+- a `fleet.context.v1` transport shell
+- external DTOs and mappers at the edge
+- external NATS routers and envelope handling
+- golden tests that validate the boundary against this freeze

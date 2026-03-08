@@ -1,3 +1,6 @@
 mod transport;
 
-pub use transport::{AdminGrpcService, CommandGrpcService, GrpcServer, QueryGrpcService};
+pub use transport::{
+    AdminGrpcService, CommandGrpcService, ContextCompatibilityGrpcService, GrpcServer,
+    QueryGrpcService,
+};
