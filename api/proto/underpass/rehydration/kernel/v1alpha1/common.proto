@@ -47,88 +47,32 @@ message BundleSection {
   repeated string scopes = 5;
 }
 
-message CaseHeader {
-  string case_id = 1;
-  string title = 2;
-  string summary = 3;
-  string status = 4;
-  google.protobuf.Timestamp created_at = 5;
-  string created_by = 6;
+message BundleNodeDetail {
+  string node_id = 1;
+  string detail = 2;
+  string content_hash = 3;
+  uint64 revision = 4;
 }
 
-message PlanHeader {
-  string plan_id = 1;
-  uint64 revision = 2;
-  string status = 3;
-  uint32 work_items_total = 4;
-  uint32 work_items_completed = 5;
-}
-
-message WorkItem {
-  string work_item_id = 1;
-  string title = 2;
-  string summary = 3;
-  string role = 4;
-  string phase = 5;
-  string status = 6;
-  repeated string dependency_ids = 7;
-  uint32 priority = 8;
-}
-
-message Decision {
-  string decision_id = 1;
-  string title = 2;
-  string rationale = 3;
-  string status = 4;
-  string owner = 5;
-  google.protobuf.Timestamp decided_at = 6;
-}
-
-message DecisionRelation {
-  string source_decision_id = 1;
-  string target_decision_id = 2;
-  string relation_type = 3;
-}
-
-message TaskImpact {
-  string decision_id = 1;
-  string work_item_id = 2;
-  string title = 3;
-  string impact_type = 4;
-}
-
-message Milestone {
-  string milestone_type = 1;
-  string description = 2;
-  google.protobuf.Timestamp occurred_at = 3;
-  string actor = 4;
-}
-
-message RoleContextPack {
+message GraphRoleBundle {
   string role = 1;
-  CaseHeader case_header = 2;
-  PlanHeader plan_header = 3;
-  repeated WorkItem work_items = 4;
-  repeated Decision decisions = 5;
-  repeated DecisionRelation decision_relations = 6;
-  repeated TaskImpact impacts = 7;
-  repeated Milestone milestones = 8;
-  string latest_summary = 9;
-  uint32 token_budget_hint = 10;
+  GraphNode root_node = 2;
+  repeated GraphNode neighbor_nodes = 3;
+  repeated GraphRelationship relationships = 4;
+  repeated BundleNodeDetail node_details = 5;
 }
 
 message RehydrationStats {
   uint32 roles = 1;
-  uint32 decisions = 2;
-  uint32 decision_relations = 3;
-  uint32 impacts = 4;
-  uint32 milestones = 5;
-  uint32 timeline_events = 6;
+  uint32 nodes = 2;
+  uint32 relationships = 3;
+  uint32 detailed_nodes = 4;
+  uint32 timeline_events = 5;
 }
 
 message RehydrationBundle {
-  string case_id = 1;
-  repeated RoleContextPack packs = 2;
+  string root_node_id = 1;
+  repeated GraphRoleBundle bundles = 2;
   RehydrationStats stats = 3;
   BundleVersion version = 4;
 }
@@ -152,7 +96,7 @@ message ScopeValidationResult {
 
 message BundleSnapshot {
   string snapshot_id = 1;
-  string case_id = 2;
+  string root_node_id = 2;
   string role = 3;
   RehydrationBundle bundle = 4;
   google.protobuf.Timestamp created_at = 5;
@@ -176,8 +120,10 @@ message GraphNode {
   string node_id = 1;
   string node_kind = 2;
   string title = 3;
-  repeated string labels = 4;
-  map<string, string> properties = 5;
+  string summary = 4;
+  string status = 5;
+  repeated string labels = 6;
+  map<string, string> properties = 7;
 }
 
 message GraphRelationship {
@@ -190,9 +136,9 @@ message GraphRelationship {
 message RehydrationDiagnostic {
   string role = 1;
   BundleVersion version = 2;
-  uint32 selected_decisions = 3;
-  uint32 selected_impacts = 4;
-  uint32 selected_milestones = 5;
+  uint32 selected_nodes = 3;
+  uint32 selected_relationships = 4;
+  uint32 detailed_nodes = 5;
   uint32 estimated_tokens = 6;
   repeated string notes = 7;
 }

@@ -42,7 +42,7 @@ message ContextChange {
 }
 
 message UpdateContextRequest {
-  string case_id = 1;
+  string root_node_id = 1;
   string role = 2;
   string work_item_id = 3;
   repeated ContextChange changes = 4;

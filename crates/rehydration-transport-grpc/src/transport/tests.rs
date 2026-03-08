@@ -1,0 +1,522 @@
+use std::collections::BTreeMap;
+use std::sync::Arc;
+use std::time::{Duration, SystemTime};
+
+use rehydration_application::{
+    AcceptedVersion, AdminCommandApplicationService, AdminQueryApplicationService,
+    ApplicationError, BundleAssembler, BundleSnapshotResult, CommandApplicationService,
+    GetGraphRelationshipsResult, GetProjectionStatusResult, GetRehydrationDiagnosticsResult,
+    GraphNodeView, GraphRelationshipView, ProjectionStatusView, QueryApplicationService,
+    RehydrateSessionResult, RehydrationDiagnosticView, ReplayModeSelection,
+    ReplayProjectionOutcome,
+};
+use rehydration_domain::{
+    BundleMetadata, BundleNode, BundleNodeDetail, BundleRelationship, CaseId,
+    GraphNeighborhoodReader, NodeDetailProjection, NodeDetailReader, NodeNeighborhood, PortError,
+    RehydrationBundle, Role, SnapshotStore,
+};
+use rehydration_proto::v1alpha1::{
+    BundleRenderFormat, ContextChange, ContextChangeOperation, GetBundleSnapshotRequest,
+    GetContextRequest, GetProjectionStatusRequest, GetRehydrationDiagnosticsRequest, Phase,
+    UpdateContextRequest, ValidateScopeRequest, context_admin_service_server::ContextAdminService,
+    context_command_service_server::ContextCommandService,
+    context_query_service_server::ContextQueryService,
+};
+use tonic::Request;
+
+use super::admin_grpc_service::AdminGrpcService;
+use super::command_grpc_service::CommandGrpcService;
+use super::grpc_server::GrpcServer;
+use super::proto_mapping::{
+    proto_accepted_version, proto_bundle_from_single_role, proto_bundle_node,
+    proto_bundle_node_detail, proto_bundle_relationship, proto_bundle_snapshot_response,
+    proto_bundle_version, proto_diagnostic, proto_graph_node, proto_graph_relationship,
+    proto_graph_relationships_response, proto_projection_status, proto_projection_status_response,
+    proto_rehydrate_session_response, proto_rehydration_diagnostics_response,
+    proto_replay_projection_response,
+};
+use super::query_grpc_service::QueryGrpcService;
+use super::support::{
+    map_application_error, map_replay_mode, proto_duration, proto_replay_mode, trim_to_option,
+};
+
+struct EmptyGraphNeighborhoodReader;
+
+impl GraphNeighborhoodReader for EmptyGraphNeighborhoodReader {
+    async fn load_neighborhood(
+        &self,
+        _root_node_id: &str,
+    ) -> Result<Option<NodeNeighborhood>, PortError> {
+        Ok(None)
+    }
+}
+
+struct EmptyNodeDetailReader;
+
+impl NodeDetailReader for EmptyNodeDetailReader {
+    async fn load_node_detail(
+        &self,
+        _node_id: &str,
+    ) -> Result<Option<NodeDetailProjection>, PortError> {
+        Ok(None)
+    }
+}
+
+struct NoopSnapshotStore;
+
+impl SnapshotStore for NoopSnapshotStore {
+    async fn save_bundle(&self, _bundle: &RehydrationBundle) -> Result<(), PortError> {
+        Ok(())
+    }
+}
+
+#[test]
+fn describe_mentions_bind_address() {
+    let config = rehydration_config::AppConfig {
+        service_name: "rehydration-kernel".to_string(),
+        grpc_bind: "127.0.0.1:50054".to_string(),
+        admin_bind: "127.0.0.1:8080".to_string(),
+        graph_uri: "neo4j://localhost:7687".to_string(),
+        detail_uri: "redis://localhost:6379".to_string(),
+        snapshot_uri: "redis://localhost:6379".to_string(),
+        events_subject_prefix: "rehydration".to_string(),
+    };
+    let server = GrpcServer::new(
+        config,
+        EmptyGraphNeighborhoodReader,
+        EmptyNodeDetailReader,
+        NoopSnapshotStore,
+    );
+
+    assert!(server.describe().contains("127.0.0.1:50054"));
+    assert_eq!(server.bootstrap_request().root_node_id, "bootstrap-node");
+    let descriptor_set = std::hint::black_box(server.descriptor_set());
+    assert!(!descriptor_set.is_empty());
+}
+
+#[tokio::test]
+async fn query_service_returns_rendered_context() {
+    let application = Arc::new(QueryApplicationService::new(
+        Arc::new(EmptyGraphNeighborhoodReader),
+        Arc::new(EmptyNodeDetailReader),
+        Arc::new(NoopSnapshotStore),
+        "0.1.0",
+    ));
+    let service = QueryGrpcService::new(application);
+
+    let response = service
+        .get_context(Request::new(GetContextRequest {
+            root_node_id: "node-123".to_string(),
+            role: "developer".to_string(),
+            phase: Phase::Build as i32,
+            work_item_id: String::new(),
+            token_budget: 1024,
+            requested_scopes: vec!["graph".to_string()],
+            render_format: BundleRenderFormat::Structured as i32,
+            include_debug_sections: false,
+        }))
+        .await
+        .expect("get context should succeed")
+        .into_inner();
+
+    assert_eq!(
+        response
+            .bundle
+            .as_ref()
+            .expect("bundle should exist")
+            .root_node_id,
+        "node-123"
+    );
+    assert!(
+        response
+            .rendered
+            .as_ref()
+            .expect("rendered context should exist")
+            .content
+            .contains("node-123")
+    );
+}
+
+#[tokio::test]
+async fn query_service_validates_scope_diffs() {
+    let application = Arc::new(QueryApplicationService::new(
+        Arc::new(EmptyGraphNeighborhoodReader),
+        Arc::new(EmptyNodeDetailReader),
+        Arc::new(NoopSnapshotStore),
+        "0.1.0",
+    ));
+    let service = QueryGrpcService::new(application);
+
+    let response = service
+        .validate_scope(Request::new(ValidateScopeRequest {
+            role: "developer".to_string(),
+            phase: Phase::Build as i32,
+            required_scopes: vec!["graph".to_string()],
+            provided_scopes: vec!["details".to_string()],
+        }))
+        .await
+        .expect("validate scope should succeed")
+        .into_inner();
+
+    let result = response.result.expect("validation result should exist");
+    assert!(!result.allowed);
+    assert_eq!(result.missing_scopes, vec!["graph".to_string()]);
+}
+
+#[tokio::test]
+async fn command_service_accepts_update_context() {
+    let service = CommandGrpcService::new(Arc::new(CommandApplicationService::new(Arc::new(
+        rehydration_application::UpdateContextUseCase::new("0.1.0"),
+    ))));
+
+    let response = service
+        .update_context(Request::new(UpdateContextRequest {
+            root_node_id: "node-123".to_string(),
+            role: "developer".to_string(),
+            work_item_id: String::new(),
+            changes: vec![ContextChange {
+                operation: ContextChangeOperation::Update as i32,
+                entity_kind: "node_detail".to_string(),
+                entity_id: "node-456".to_string(),
+                payload_json: "{\"status\":\"ACTIVE\"}".to_string(),
+                reason: "refined".to_string(),
+                scopes: vec!["graph".to_string()],
+            }],
+            metadata: None,
+            precondition: None,
+            persist_snapshot: true,
+        }))
+        .await
+        .expect("update context should succeed")
+        .into_inner();
+
+    assert_eq!(
+        response
+            .accepted_version
+            .as_ref()
+            .expect("accepted version should exist")
+            .revision,
+        1
+    );
+    assert!(response.snapshot_persisted);
+    assert_eq!(response.snapshot_id, "snapshot:node-123:developer");
+}
+
+#[tokio::test]
+async fn admin_service_returns_snapshot_and_status() {
+    let application = Arc::new(AdminQueryApplicationService::new(
+        Arc::new(EmptyGraphNeighborhoodReader),
+        Arc::new(EmptyNodeDetailReader),
+        "0.1.0",
+    ));
+    let service = AdminGrpcService::new(application, Arc::new(AdminCommandApplicationService));
+
+    let status = service
+        .get_projection_status(Request::new(GetProjectionStatusRequest {
+            consumer_names: vec!["context-projection".to_string()],
+        }))
+        .await
+        .expect("projection status should succeed")
+        .into_inner();
+    assert_eq!(status.projections.len(), 1);
+    assert_eq!(status.projections[0].consumer_name, "context-projection");
+
+    let snapshot = service
+        .get_bundle_snapshot(Request::new(GetBundleSnapshotRequest {
+            root_node_id: "node-123".to_string(),
+            role: "developer".to_string(),
+        }))
+        .await
+        .expect("bundle snapshot should succeed")
+        .into_inner()
+        .snapshot
+        .expect("snapshot should exist");
+    assert_eq!(snapshot.root_node_id, "node-123");
+    assert_eq!(snapshot.role, "developer");
+}
+
+#[tokio::test]
+async fn admin_service_returns_diagnostics_per_role() {
+    let application = Arc::new(AdminQueryApplicationService::new(
+        Arc::new(EmptyGraphNeighborhoodReader),
+        Arc::new(EmptyNodeDetailReader),
+        "0.1.0",
+    ));
+    let service = AdminGrpcService::new(application, Arc::new(AdminCommandApplicationService));
+
+    let response = service
+        .get_rehydration_diagnostics(Request::new(GetRehydrationDiagnosticsRequest {
+            root_node_id: "node-123".to_string(),
+            roles: vec!["developer".to_string(), "reviewer".to_string()],
+            phase: Phase::Build as i32,
+        }))
+        .await
+        .expect("diagnostics should succeed")
+        .into_inner();
+
+    assert_eq!(response.diagnostics.len(), 2);
+    assert_eq!(response.diagnostics[0].role, "developer");
+    assert_eq!(
+        response.diagnostics[0]
+            .version
+            .as_ref()
+            .expect("version should exist")
+            .schema_version,
+        "v1alpha1"
+    );
+}
+
+#[test]
+fn helper_mappers_cover_bundle_mapping() {
+    let bundle = sample_bundle("node-123", "developer", "Projection-backed summary");
+    let proto_bundle = proto_bundle_from_single_role(&bundle);
+    let proto_root = proto_bundle_node(bundle.root_node());
+    let proto_relationship = proto_bundle_relationship(&bundle.relationships()[0]);
+    let proto_detail = proto_bundle_node_detail(&bundle.node_details()[0]);
+
+    assert_eq!(proto_bundle.root_node_id, "node-123");
+    assert_eq!(proto_bundle.bundles.len(), 1);
+    assert_eq!(proto_bundle.bundles[0].role, "developer");
+    assert_eq!(
+        proto_bundle.bundles[0]
+            .root_node
+            .as_ref()
+            .expect("root node should exist")
+            .summary,
+        "Projection-backed summary"
+    );
+    assert_eq!(proto_bundle.bundles[0].neighbor_nodes.len(), 1);
+    assert_eq!(proto_bundle.bundles[0].relationships.len(), 1);
+    assert_eq!(proto_bundle.bundles[0].node_details.len(), 1);
+    assert_eq!(
+        proto_bundle
+            .stats
+            .as_ref()
+            .expect("stats should exist")
+            .nodes,
+        2
+    );
+    assert_eq!(proto_root.status, "ACTIVE");
+    assert_eq!(proto_relationship.relationship_type, "RELATES_TO");
+    assert_eq!(proto_detail.content_hash, "hash-1");
+}
+
+#[test]
+fn helper_mappers_cover_projection_replay_and_diagnostics() {
+    let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    let projection_view = ProjectionStatusView {
+        consumer_name: "context-projection".to_string(),
+        stream_name: "graph.node.materialized".to_string(),
+        projection_watermark: "evt-42".to_string(),
+        processed_events: 12,
+        pending_events: 1,
+        last_event_at: now,
+        updated_at: now,
+        healthy: true,
+        warnings: vec!["lagging".to_string()],
+    };
+    let projection_status = proto_projection_status_response(&GetProjectionStatusResult {
+        projections: vec![projection_view.clone()],
+        observed_at: now,
+    });
+    let projection = proto_projection_status(&projection_view);
+    assert_eq!(
+        projection_status.projections[0].consumer_name,
+        "context-projection"
+    );
+    assert_eq!(projection.stream_name, "graph.node.materialized");
+
+    let replay = proto_replay_projection_response(&ReplayProjectionOutcome {
+        replay_id: "replay-1".to_string(),
+        consumer_name: "context-projection".to_string(),
+        replay_mode: ReplayModeSelection::Rebuild,
+        accepted_events: 42,
+        requested_at: now,
+    });
+    assert_eq!(
+        replay.replay_mode,
+        rehydration_proto::v1alpha1::ReplayMode::Rebuild as i32
+    );
+
+    let diagnostic_view = RehydrationDiagnosticView {
+        role: "developer".to_string(),
+        version: BundleMetadata::initial("0.1.0"),
+        selected_nodes: 2,
+        selected_relationships: 1,
+        detailed_nodes: 1,
+        estimated_tokens: 256,
+        notes: vec!["ok".to_string()],
+    };
+    let diagnostics = proto_rehydration_diagnostics_response(&GetRehydrationDiagnosticsResult {
+        diagnostics: vec![diagnostic_view.clone()],
+        observed_at: now,
+    });
+    let diagnostic = proto_diagnostic(&diagnostic_view);
+    assert_eq!(diagnostics.diagnostics[0].estimated_tokens, 256);
+    assert_eq!(diagnostic.selected_relationships, 1);
+
+    let root = GraphNodeView {
+        node_id: "root".to_string(),
+        node_kind: "capability".to_string(),
+        title: "Root".to_string(),
+        summary: "Root summary".to_string(),
+        status: "ACTIVE".to_string(),
+        labels: vec!["Capability".to_string()],
+        properties: [("phase".to_string(), "build".to_string())]
+            .into_iter()
+            .collect(),
+    };
+    let neighbor = GraphNodeView {
+        node_id: "node-1".to_string(),
+        node_kind: "artifact".to_string(),
+        title: "Neighbor".to_string(),
+        summary: "Neighbor summary".to_string(),
+        status: "ACTIVE".to_string(),
+        labels: vec!["Artifact".to_string()],
+        properties: Default::default(),
+    };
+    let relationship = GraphRelationshipView {
+        source_node_id: "root".to_string(),
+        target_node_id: "node-1".to_string(),
+        relationship_type: "DEPENDS_ON".to_string(),
+        properties: [("order".to_string(), "1".to_string())]
+            .into_iter()
+            .collect(),
+    };
+    let graph = proto_graph_relationships_response(&GetGraphRelationshipsResult {
+        root: root.clone(),
+        neighbors: vec![neighbor.clone()],
+        relationships: vec![relationship.clone()],
+        observed_at: now,
+    });
+    let graph_root = proto_graph_node(&root);
+    let graph_relationship = proto_graph_relationship(&relationship);
+
+    assert_eq!(graph.neighbors.len(), 1);
+    assert_eq!(graph.relationships[0].relationship_type, "DEPENDS_ON");
+    assert_eq!(graph_root.summary, "Root summary");
+    assert_eq!(graph_relationship.target_node_id, "node-1");
+}
+
+#[test]
+fn helper_mappers_cover_versions_errors_and_trim_logic() {
+    let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_100);
+    let version = proto_bundle_version(&BundleMetadata {
+        revision: 7,
+        content_hash: "abc123".to_string(),
+        generator_version: "0.1.0".to_string(),
+    });
+    let accepted = proto_accepted_version(&AcceptedVersion {
+        revision: 8,
+        content_hash: "xyz789".to_string(),
+        generator_version: "0.1.0".to_string(),
+    });
+
+    assert_eq!(version.revision, 7);
+    assert_eq!(accepted.projection_watermark, "rev-8");
+    assert_eq!(proto_duration(30).seconds, 30);
+    assert_eq!(
+        trim_to_option("  value  ".to_string()),
+        Some("value".to_string())
+    );
+    assert_eq!(trim_to_option("   ".to_string()), None);
+    assert_eq!(
+        map_application_error(ApplicationError::Validation("bad".to_string())).code(),
+        tonic::Code::InvalidArgument
+    );
+    assert_eq!(
+        map_application_error(ApplicationError::Ports(PortError::Unavailable(
+            "down".to_string()
+        )))
+        .code(),
+        tonic::Code::Unavailable
+    );
+    assert_eq!(proto_replay_mode(map_replay_mode(999)) as i32, 1);
+    assert_eq!(proto_replay_mode(ReplayModeSelection::Rebuild) as i32, 2);
+
+    let response = proto_rehydrate_session_response(&RehydrateSessionResult {
+        root_node_id: "node-123".to_string(),
+        bundles: vec![sample_bundle("node-123", "developer", "Section one")],
+        timeline_events: 9,
+        version: BundleMetadata::initial("0.1.0"),
+        snapshot_persisted: true,
+        snapshot_id: Some("snapshot:node-123:developer".to_string()),
+        generated_at: now,
+    });
+    assert_eq!(
+        response
+            .bundle
+            .expect("bundle should exist")
+            .stats
+            .expect("stats should exist")
+            .timeline_events,
+        9
+    );
+
+    let snapshot = proto_bundle_snapshot_response(&BundleSnapshotResult {
+        snapshot_id: "snapshot:node-123:developer".to_string(),
+        root_node_id: "node-123".to_string(),
+        role: "developer".to_string(),
+        bundle: BundleAssembler::placeholder("node-123", "developer", "0.1.0")
+            .expect("placeholder bundle should build"),
+        created_at: now,
+        expires_at: now + Duration::from_secs(900),
+        ttl_seconds: 900,
+    });
+    assert_eq!(
+        snapshot
+            .snapshot
+            .expect("snapshot should exist")
+            .ttl
+            .expect("ttl should exist")
+            .seconds,
+        900
+    );
+
+    let invalid_argument = map_application_error(ApplicationError::Domain(
+        rehydration_domain::DomainError::EmptyValue("root_node_id"),
+    ));
+    assert_eq!(invalid_argument.code(), tonic::Code::InvalidArgument);
+}
+
+fn sample_bundle(root_node_id: &str, role: &str, summary: &str) -> RehydrationBundle {
+    let case_id = CaseId::new(root_node_id).expect("root node id is valid");
+    let role = Role::new(role).expect("role is valid");
+
+    RehydrationBundle::new(
+        case_id.clone(),
+        role,
+        BundleNode::new(
+            case_id.as_str(),
+            "capability",
+            format!("Node {}", case_id.as_str()),
+            summary,
+            "ACTIVE",
+            vec!["projection-node".to_string()],
+            BTreeMap::new(),
+        ),
+        vec![BundleNode::new(
+            "node-456",
+            "artifact",
+            "Linked artifact",
+            "Linked summary",
+            "ACTIVE",
+            vec!["artifact".to_string()],
+            BTreeMap::new(),
+        )],
+        vec![BundleRelationship::new(
+            case_id.as_str(),
+            "node-456",
+            "RELATES_TO",
+            BTreeMap::new(),
+        )],
+        vec![BundleNodeDetail::new(
+            case_id.as_str(),
+            summary,
+            "hash-1",
+            1,
+        )],
+        BundleMetadata::initial("0.1.0"),
+    )
+    .expect("sample bundle should be valid")
+}

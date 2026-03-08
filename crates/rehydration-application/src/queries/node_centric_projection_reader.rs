@@ -1,0 +1,155 @@
+use rehydration_domain::{
+    BundleMetadata, BundleNode, BundleNodeDetail, BundleRelationship, CaseId,
+    GraphNeighborhoodReader, NodeDetailReader, NodeNeighborhood, RehydrationBundle, Role,
+};
+
+use crate::ApplicationError;
+
+#[derive(Debug, Clone)]
+pub struct NodeCentricProjectionReader<G, D> {
+    graph_reader: G,
+    detail_reader: D,
+}
+
+impl<G, D> NodeCentricProjectionReader<G, D> {
+    pub fn new(graph_reader: G, detail_reader: D) -> Self {
+        Self {
+            graph_reader,
+            detail_reader,
+        }
+    }
+}
+
+impl<G, D> NodeCentricProjectionReader<G, D>
+where
+    G: GraphNeighborhoodReader + Send + Sync,
+    D: NodeDetailReader + Send + Sync,
+{
+    pub async fn load_bundle(
+        &self,
+        root_node_id: &str,
+        role: &str,
+        generator_version: &str,
+    ) -> Result<Option<RehydrationBundle>, ApplicationError> {
+        let Some(neighborhood) = self.graph_reader.load_neighborhood(root_node_id).await? else {
+            return Ok(None);
+        };
+
+        let node_details = load_node_details(&self.detail_reader, &neighborhood).await?;
+        let root_node_id = CaseId::new(root_node_id)?;
+        let role = Role::new(role)?;
+
+        Ok(Some(RehydrationBundle::new(
+            root_node_id,
+            role,
+            BundleNode::from_projection(&neighborhood.root),
+            neighborhood
+                .neighbors
+                .iter()
+                .map(BundleNode::from_projection)
+                .collect(),
+            neighborhood
+                .relations
+                .iter()
+                .map(BundleRelationship::from_projection)
+                .collect(),
+            node_details,
+            BundleMetadata::initial(generator_version),
+        )?))
+    }
+}
+
+async fn load_node_details<D>(
+    detail_reader: &D,
+    neighborhood: &NodeNeighborhood,
+) -> Result<Vec<BundleNodeDetail>, rehydration_domain::PortError>
+where
+    D: NodeDetailReader + Send + Sync,
+{
+    let mut details = Vec::new();
+
+    for node in std::iter::once(&neighborhood.root).chain(neighborhood.neighbors.iter()) {
+        if let Some(detail) = detail_reader.load_node_detail(&node.node_id).await? {
+            details.push(BundleNodeDetail::from_projection(&detail));
+        }
+    }
+
+    Ok(details)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use rehydration_domain::{
+        NodeDetailProjection, NodeNeighborhood, NodeProjection, NodeRelationProjection, PortError,
+    };
+
+    use super::NodeCentricProjectionReader;
+
+    struct StubGraphReader;
+
+    impl rehydration_domain::GraphNeighborhoodReader for StubGraphReader {
+        async fn load_neighborhood(
+            &self,
+            _root_node_id: &str,
+        ) -> Result<Option<NodeNeighborhood>, PortError> {
+            Ok(Some(NodeNeighborhood {
+                root: NodeProjection {
+                    node_id: "node-root".to_string(),
+                    node_kind: "case".to_string(),
+                    title: "Root".to_string(),
+                    summary: "Root summary".to_string(),
+                    status: "ACTIVE".to_string(),
+                    labels: vec!["ProjectionNode".to_string()],
+                    properties: BTreeMap::new(),
+                },
+                neighbors: vec![NodeProjection {
+                    node_id: "node-1".to_string(),
+                    node_kind: "decision".to_string(),
+                    title: "Neighbor".to_string(),
+                    summary: "Neighbor summary".to_string(),
+                    status: "ACTIVE".to_string(),
+                    labels: vec!["ProjectionNode".to_string()],
+                    properties: BTreeMap::new(),
+                }],
+                relations: vec![NodeRelationProjection {
+                    source_node_id: "node-root".to_string(),
+                    target_node_id: "node-1".to_string(),
+                    relation_type: "RELATES_TO".to_string(),
+                }],
+            }))
+        }
+    }
+
+    struct StubDetailReader;
+
+    impl rehydration_domain::NodeDetailReader for StubDetailReader {
+        async fn load_node_detail(
+            &self,
+            node_id: &str,
+        ) -> Result<Option<NodeDetailProjection>, PortError> {
+            Ok((node_id == "node-root").then(|| NodeDetailProjection {
+                node_id: node_id.to_string(),
+                detail: "Expanded detail".to_string(),
+                content_hash: "hash-1".to_string(),
+                revision: 2,
+            }))
+        }
+    }
+
+    #[tokio::test]
+    async fn load_bundle_returns_graph_native_bundle() {
+        let reader = NodeCentricProjectionReader::new(StubGraphReader, StubDetailReader);
+        let bundle = reader
+            .load_bundle("node-root", "developer", "0.1.0")
+            .await
+            .expect("bundle load should succeed")
+            .expect("bundle should exist");
+
+        assert_eq!(bundle.root_node().node_id(), "node-root");
+        assert_eq!(bundle.neighbor_nodes().len(), 1);
+        assert_eq!(bundle.relationships().len(), 1);
+        assert_eq!(bundle.node_details().len(), 1);
+    }
+}

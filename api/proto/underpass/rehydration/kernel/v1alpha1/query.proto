@@ -15,7 +15,7 @@ service ContextQueryService {
 }
 
 message GetContextRequest {
-  string case_id = 1;
+  string root_node_id = 1;
   string role = 2;
   Phase phase = 3;
   string work_item_id = 4;
@@ -33,7 +33,7 @@ message GetContextResponse {
 }
 
 message RehydrateSessionRequest {
-  string case_id = 1;
+  string root_node_id = 1;
   repeated string roles = 2;
   bool include_timeline = 3;
   bool include_summaries = 4;

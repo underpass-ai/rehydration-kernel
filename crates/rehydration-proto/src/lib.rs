@@ -21,7 +21,7 @@ mod tests {
     #[test]
     fn generated_messages_are_available() {
         let request = v1alpha1::GetContextRequest {
-            case_id: "case-123".to_string(),
+            root_node_id: "case-123".to_string(),
             role: "developer".to_string(),
             phase: v1alpha1::Phase::Build as i32,
             work_item_id: "task-7".to_string(),
@@ -31,13 +31,13 @@ mod tests {
             include_debug_sections: false,
         };
 
-        assert_eq!(request.case_id, "case-123");
+        assert_eq!(request.root_node_id, "case-123");
     }
 
     #[test]
     fn generated_command_messages_are_available() {
         let request = v1alpha1::UpdateContextRequest {
-            case_id: "case-123".to_string(),
+            root_node_id: "case-123".to_string(),
             role: "developer".to_string(),
             work_item_id: "task-7".to_string(),
             changes: vec![v1alpha1::ContextChange {

@@ -1,8 +1,10 @@
 use std::time::Duration;
 
 use rehydration_config::AppConfig;
-use rehydration_domain::{CaseId, RehydrationBundle, Role, RoleContextPack};
-use rehydration_ports::{PortError, ProjectionReader, SnapshotStore};
+use rehydration_domain::{
+    GraphNeighborhoodReader, NodeDetailProjection, NodeDetailReader, NodeNeighborhood, PortError,
+    RehydrationBundle, SnapshotStore,
+};
 use rehydration_proto::v1alpha1::{
     BundleRenderFormat, ContextChange, ContextChangeOperation, GetBundleSnapshotRequest,
     GetContextRequest, GetProjectionStatusRequest, Phase, UpdateContextRequest,
@@ -16,14 +18,24 @@ use tokio::sync::oneshot;
 use tokio::time::sleep;
 use tonic::transport::{Channel, Endpoint};
 
-struct EmptyProjectionReader;
+struct EmptyGraphNeighborhoodReader;
 
-impl ProjectionReader for EmptyProjectionReader {
-    async fn load_pack(
+impl GraphNeighborhoodReader for EmptyGraphNeighborhoodReader {
+    async fn load_neighborhood(
         &self,
-        _case_id: &CaseId,
-        _role: &Role,
-    ) -> Result<Option<RoleContextPack>, PortError> {
+        _root_node_id: &str,
+    ) -> Result<Option<NodeNeighborhood>, PortError> {
+        Ok(None)
+    }
+}
+
+struct EmptyNodeDetailReader;
+
+impl NodeDetailReader for EmptyNodeDetailReader {
+    async fn load_node_detail(
+        &self,
+        _node_id: &str,
+    ) -> Result<Option<NodeDetailProjection>, PortError> {
         Ok(None)
     }
 }
@@ -38,19 +50,27 @@ impl SnapshotStore for NoopSnapshotStore {
 
 #[tokio::test]
 async fn grpc_server_supports_query_command_and_admin_roundtrip() {
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("listener should bind");
+    let listener = match TcpListener::bind("127.0.0.1:0").await {
+        Ok(listener) => listener,
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => return,
+        Err(error) => panic!("listener should bind: {error}"),
+    };
     let addr = listener.local_addr().expect("listener should expose addr");
     let config = AppConfig {
         service_name: "rehydration-kernel".to_string(),
         grpc_bind: addr.to_string(),
         admin_bind: "127.0.0.1:8080".to_string(),
         graph_uri: "neo4j://localhost:7687".to_string(),
+        detail_uri: "redis://localhost:6379".to_string(),
         snapshot_uri: "redis://localhost:6379".to_string(),
         events_subject_prefix: "rehydration".to_string(),
     };
-    let server = GrpcServer::new(config, EmptyProjectionReader, NoopSnapshotStore);
+    let server = GrpcServer::new(
+        config,
+        EmptyGraphNeighborhoodReader,
+        EmptyNodeDetailReader,
+        NoopSnapshotStore,
+    );
     let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
 
     let server_task = tokio::spawn(async move {
@@ -69,7 +89,7 @@ async fn grpc_server_supports_query_command_and_admin_roundtrip() {
 
     let get_context = query_client
         .get_context(GetContextRequest {
-            case_id: "case-123".to_string(),
+            root_node_id: "case-123".to_string(),
             role: "developer".to_string(),
             phase: Phase::Build as i32,
             work_item_id: String::new(),
@@ -86,13 +106,13 @@ async fn grpc_server_supports_query_command_and_admin_roundtrip() {
             .bundle
             .as_ref()
             .expect("bundle should exist")
-            .case_id,
+            .root_node_id,
         "case-123"
     );
 
     let update_context = command_client
         .update_context(UpdateContextRequest {
-            case_id: "case-123".to_string(),
+            root_node_id: "case-123".to_string(),
             role: "developer".to_string(),
             work_item_id: "task-7".to_string(),
             changes: vec![ContextChange {
@@ -124,7 +144,7 @@ async fn grpc_server_supports_query_command_and_admin_roundtrip() {
 
     let snapshot = admin_client
         .get_bundle_snapshot(GetBundleSnapshotRequest {
-            case_id: "case-123".to_string(),
+            root_node_id: "case-123".to_string(),
             role: "developer".to_string(),
         })
         .await

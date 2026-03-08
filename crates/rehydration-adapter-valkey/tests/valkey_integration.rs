@@ -1,10 +1,13 @@
 use std::error::Error;
 
 use rehydration_adapter_valkey::{ValkeyNodeDetailStore, ValkeySnapshotStore};
-use rehydration_domain::{BundleMetadata, CaseId, RehydrationBundle, Role};
-use rehydration_ports::{
-    NodeDetailProjection, ProjectionMutation, ProjectionWriter, SnapshotStore,
+use rehydration_domain::{
+    BundleMetadata, BundleNode, BundleNodeDetail, CaseId, RehydrationBundle, Role,
 };
+use rehydration_ports::{
+    NodeDetailProjection, NodeDetailReader, ProjectionMutation, ProjectionWriter, SnapshotStore,
+};
+use serde_json::{Value, json};
 use testcontainers::{
     GenericImage,
     core::{IntoContainerPort, WaitFor},
@@ -31,29 +34,81 @@ async fn save_bundle_persists_snapshot_in_valkey() -> Result<(), Box<dyn Error +
         "redis://{address}?key_prefix=rehydration:it&ttl_seconds=120"
     ))?;
 
+    let case_id = CaseId::new("node-123")?;
+    let role = Role::new("reviewer")?;
     let bundle = RehydrationBundle::new(
-        CaseId::new("case-123")?,
-        Role::new("reviewer")?,
-        vec!["prior decision".to_string(), "active milestone".to_string()],
+        case_id.clone(),
+        role.clone(),
+        BundleNode::new(
+            case_id.as_str(),
+            "capability",
+            format!("Node {}", case_id.as_str()),
+            "expanded context",
+            "ACTIVE",
+            vec!["projection-node".to_string()],
+            std::collections::BTreeMap::new(),
+        ),
+        Vec::new(),
+        Vec::new(),
+        vec![BundleNodeDetail::new(
+            case_id.as_str(),
+            "expanded context",
+            "abc123",
+            7,
+        )],
         BundleMetadata {
             revision: 7,
             content_hash: "abc123".to_string(),
             generator_version: "integration-test".to_string(),
         },
     );
+    let bundle = bundle?;
 
     store.save_bundle(&bundle).await?;
 
-    let key = "rehydration:it:case-123:reviewer";
+    let key = "rehydration:it:node-123:reviewer";
     let snapshot = send_command(&address, &["GET", key]).await?;
     let ttl = send_command(&address, &["TTL", key]).await?;
 
-    assert_eq!(
-        snapshot,
-        RespValue::BulkString(Some(
-            "{\"case_id\":\"case-123\",\"role\":\"reviewer\",\"sections\":[\"prior decision\",\"active milestone\"],\"metadata\":{\"revision\":7,\"content_hash\":\"abc123\",\"generator_version\":\"integration-test\"}}".to_string()
-        ))
-    );
+    match snapshot {
+        RespValue::BulkString(Some(payload)) => {
+            assert_eq!(
+                serde_json::from_str::<Value>(&payload)?,
+                json!({
+                    "root_node_id": "node-123",
+                    "role": "reviewer",
+                    "root_node": {
+                        "node_id": "node-123",
+                        "node_kind": "capability",
+                        "title": "Node node-123",
+                        "summary": "expanded context",
+                        "status": "ACTIVE",
+                        "labels": ["projection-node"],
+                        "properties": {}
+                    },
+                    "neighbor_nodes": [],
+                    "relationships": [],
+                    "node_details": [{
+                        "node_id": "node-123",
+                        "detail": "expanded context",
+                        "content_hash": "abc123",
+                        "revision": 7
+                    }],
+                    "stats": {
+                        "selected_nodes": 1,
+                        "selected_relationships": 0,
+                        "detailed_nodes": 1
+                    },
+                    "metadata": {
+                        "revision": 7,
+                        "content_hash": "abc123",
+                        "generator_version": "integration-test"
+                    }
+                })
+            );
+        }
+        other => panic!("expected snapshot payload, got {other:?}"),
+    }
 
     match ttl {
         RespValue::Integer(value) => {
@@ -66,8 +121,8 @@ async fn save_bundle_persists_snapshot_in_valkey() -> Result<(), Box<dyn Error +
 }
 
 #[tokio::test]
-async fn apply_mutations_persists_node_detail_in_valkey() -> Result<(), Box<dyn Error + Send + Sync>>
-{
+async fn node_detail_roundtrip_reads_expanded_detail_from_valkey()
+-> Result<(), Box<dyn Error + Send + Sync>> {
     let container = GenericImage::new("docker.io/valkey/valkey", "8.1.5-alpine")
         .with_exposed_port(VALKEY_INTERNAL_PORT.tcp())
         .with_wait_for(WaitFor::message_on_stdout("Ready to accept connections"))
@@ -93,21 +148,19 @@ async fn apply_mutations_persists_node_detail_in_valkey() -> Result<(), Box<dyn 
         )])
         .await?;
 
-    let key = "rehydration:detail:node-123";
-    let detail = send_command(&address, &["GET", key]).await?;
-    let ttl = send_command(&address, &["TTL", key]).await?;
+    let loaded = store
+        .load_node_detail("node-123")
+        .await?
+        .expect("detail should exist");
+    let ttl = send_command(&address, &["TTL", "rehydration:detail:node-123"]).await?;
 
-    assert_eq!(
-        detail,
-        RespValue::BulkString(Some(
-            "{\"content_hash\":\"hash-123\",\"detail\":\"Expanded node detail\",\"node_id\":\"node-123\",\"revision\":3}".to_string()
-        ))
-    );
+    assert_eq!(loaded.node_id, "node-123");
+    assert_eq!(loaded.detail, "Expanded node detail");
+    assert_eq!(loaded.content_hash, "hash-123");
+    assert_eq!(loaded.revision, 3);
 
     match ttl {
-        RespValue::Integer(value) => {
-            assert!((1..=120).contains(&value));
-        }
+        RespValue::Integer(value) => assert!((1..=120).contains(&value)),
         other => panic!("expected integer TTL response, got {other:?}"),
     }
 
