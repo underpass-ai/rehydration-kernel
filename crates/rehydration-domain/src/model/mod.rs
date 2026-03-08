@@ -1,19 +1,27 @@
+pub mod bundle_node;
+pub mod bundle_node_detail;
+pub mod bundle_relationship;
 pub mod case_header;
 pub mod decision;
 pub mod decision_relation;
 pub mod milestone;
 pub mod plan_header;
 pub mod rehydration_bundle;
+pub mod rehydration_stats;
 pub mod role_context_pack;
 pub mod task_impact;
 pub mod work_item;
 
+pub use bundle_node::BundleNode;
+pub use bundle_node_detail::BundleNodeDetail;
+pub use bundle_relationship::BundleRelationship;
 pub use case_header::CaseHeader;
 pub use decision::Decision;
 pub use decision_relation::DecisionRelation;
 pub use milestone::Milestone;
 pub use plan_header::PlanHeader;
 pub use rehydration_bundle::RehydrationBundle;
+pub use rehydration_stats::RehydrationStats;
 pub use role_context_pack::RoleContextPack;
 pub use task_impact::TaskImpact;
 pub use work_item::WorkItem;

@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
@@ -10,9 +11,9 @@ use rehydration_application::{
     ReplayProjectionOutcome,
 };
 use rehydration_domain::{
-    BundleMetadata, CaseHeader, CaseId, Decision, GraphNeighborhoodReader, Milestone,
-    NodeDetailProjection, NodeDetailReader, PlanHeader, PortError, RehydrationBundle, Role,
-    RoleContextPack, SnapshotStore, TaskImpact, WorkItem,
+    BundleMetadata, BundleNode, BundleNodeDetail, BundleRelationship, CaseId,
+    GraphNeighborhoodReader, NodeDetailProjection, NodeDetailReader, NodeNeighborhood, PortError,
+    RehydrationBundle, Role, SnapshotStore,
 };
 use rehydration_proto::v1alpha1::{
     BundleRenderFormat, ContextChange, ContextChangeOperation, GetBundleSnapshotRequest,
@@ -27,10 +28,12 @@ use super::admin_grpc_service::AdminGrpcService;
 use super::command_grpc_service::CommandGrpcService;
 use super::grpc_server::GrpcServer;
 use super::proto_mapping::{
-    proto_accepted_version, proto_bundle_snapshot_response, proto_bundle_version,
-    proto_graph_relationships_response, proto_projection_status_response,
+    proto_accepted_version, proto_bundle_from_single_role, proto_bundle_node,
+    proto_bundle_node_detail, proto_bundle_relationship, proto_bundle_snapshot_response,
+    proto_bundle_version, proto_diagnostic, proto_graph_node, proto_graph_relationship,
+    proto_graph_relationships_response, proto_projection_status, proto_projection_status_response,
     proto_rehydrate_session_response, proto_rehydration_diagnostics_response,
-    proto_replay_projection_response, proto_role_pack_from_domain,
+    proto_replay_projection_response,
 };
 use super::query_grpc_service::QueryGrpcService;
 use super::support::{
@@ -43,7 +46,7 @@ impl GraphNeighborhoodReader for EmptyGraphNeighborhoodReader {
     async fn load_neighborhood(
         &self,
         _root_node_id: &str,
-    ) -> Result<Option<rehydration_domain::NodeNeighborhood>, PortError> {
+    ) -> Result<Option<NodeNeighborhood>, PortError> {
         Ok(None)
     }
 }
@@ -86,7 +89,7 @@ fn describe_mentions_bind_address() {
     );
 
     assert!(server.describe().contains("127.0.0.1:50054"));
-    assert_eq!(server.bootstrap_request().root_node_id, "bootstrap-case");
+    assert_eq!(server.bootstrap_request().root_node_id, "bootstrap-node");
     let descriptor_set = std::hint::black_box(server.descriptor_set());
     assert!(!descriptor_set.is_empty());
 }
@@ -103,12 +106,12 @@ async fn query_service_returns_rendered_context() {
 
     let response = service
         .get_context(Request::new(GetContextRequest {
-            root_node_id: "case-123".to_string(),
+            root_node_id: "node-123".to_string(),
             role: "developer".to_string(),
             phase: Phase::Build as i32,
             work_item_id: String::new(),
             token_budget: 1024,
-            requested_scopes: vec!["decisions".to_string()],
+            requested_scopes: vec!["graph".to_string()],
             render_format: BundleRenderFormat::Structured as i32,
             include_debug_sections: false,
         }))
@@ -122,7 +125,7 @@ async fn query_service_returns_rendered_context() {
             .as_ref()
             .expect("bundle should exist")
             .root_node_id,
-        "case-123"
+        "node-123"
     );
     assert!(
         response
@@ -130,7 +133,7 @@ async fn query_service_returns_rendered_context() {
             .as_ref()
             .expect("rendered context should exist")
             .content
-            .contains("case-123")
+            .contains("node-123")
     );
 }
 
@@ -148,8 +151,8 @@ async fn query_service_validates_scope_diffs() {
         .validate_scope(Request::new(ValidateScopeRequest {
             role: "developer".to_string(),
             phase: Phase::Build as i32,
-            required_scopes: vec!["decisions".to_string()],
-            provided_scopes: vec!["milestones".to_string()],
+            required_scopes: vec!["graph".to_string()],
+            provided_scopes: vec!["details".to_string()],
         }))
         .await
         .expect("validate scope should succeed")
@@ -157,7 +160,7 @@ async fn query_service_validates_scope_diffs() {
 
     let result = response.result.expect("validation result should exist");
     assert!(!result.allowed);
-    assert_eq!(result.missing_scopes, vec!["decisions".to_string()]);
+    assert_eq!(result.missing_scopes, vec!["graph".to_string()]);
 }
 
 #[tokio::test]
@@ -168,16 +171,16 @@ async fn command_service_accepts_update_context() {
 
     let response = service
         .update_context(Request::new(UpdateContextRequest {
-            root_node_id: "case-123".to_string(),
+            root_node_id: "node-123".to_string(),
             role: "developer".to_string(),
-            work_item_id: "task-7".to_string(),
+            work_item_id: String::new(),
             changes: vec![ContextChange {
                 operation: ContextChangeOperation::Update as i32,
-                entity_kind: "decision".to_string(),
-                entity_id: "decision-9".to_string(),
-                payload_json: "{\"status\":\"accepted\"}".to_string(),
+                entity_kind: "node_detail".to_string(),
+                entity_id: "node-456".to_string(),
+                payload_json: "{\"status\":\"ACTIVE\"}".to_string(),
                 reason: "refined".to_string(),
-                scopes: vec!["decisions".to_string()],
+                scopes: vec!["graph".to_string()],
             }],
             metadata: None,
             precondition: None,
@@ -196,7 +199,7 @@ async fn command_service_accepts_update_context() {
         1
     );
     assert!(response.snapshot_persisted);
-    assert_eq!(response.snapshot_id, "snapshot:case-123:developer");
+    assert_eq!(response.snapshot_id, "snapshot:node-123:developer");
 }
 
 #[tokio::test]
@@ -220,7 +223,7 @@ async fn admin_service_returns_snapshot_and_status() {
 
     let snapshot = service
         .get_bundle_snapshot(Request::new(GetBundleSnapshotRequest {
-            root_node_id: "case-123".to_string(),
+            root_node_id: "node-123".to_string(),
             role: "developer".to_string(),
         }))
         .await
@@ -228,7 +231,7 @@ async fn admin_service_returns_snapshot_and_status() {
         .into_inner()
         .snapshot
         .expect("snapshot should exist");
-    assert_eq!(snapshot.root_node_id, "case-123");
+    assert_eq!(snapshot.root_node_id, "node-123");
     assert_eq!(snapshot.role, "developer");
 }
 
@@ -243,7 +246,7 @@ async fn admin_service_returns_diagnostics_per_role() {
 
     let response = service
         .get_rehydration_diagnostics(Request::new(GetRehydrationDiagnosticsRequest {
-            root_node_id: "case-123".to_string(),
+            root_node_id: "node-123".to_string(),
             roles: vec!["developer".to_string(), "reviewer".to_string()],
             phase: Phase::Build as i32,
         }))
@@ -264,94 +267,64 @@ async fn admin_service_returns_diagnostics_per_role() {
 }
 
 #[test]
-fn proto_role_pack_mapping_uses_structured_domain_data() {
-    let case_id = CaseId::new("case-123").expect("case id is valid");
-    let role = Role::new("developer").expect("role is valid");
-    let bundle = RehydrationBundle::new(
-        RoleContextPack::new(
-            role.clone(),
-            CaseHeader::new(
-                case_id.clone(),
-                "Case 123",
-                "Projection-backed summary",
-                "ACTIVE",
-                SystemTime::UNIX_EPOCH,
-                "planner",
-            ),
-            Some(PlanHeader::new("plan-123", 4, "ACTIVE", 1, 0)),
-            vec![WorkItem::new(
-                "task-1",
-                "Implement projection model",
-                "Ship a real query path",
-                role.as_str(),
-                "PHASE_BUILD",
-                "READY",
-                Vec::new(),
-                1,
-            )],
-            vec![Decision::new(
-                "decision-1",
-                "Use RoleContextPack",
-                "Stop inventing transport data",
-                "ACCEPTED",
-                "platform",
-                SystemTime::UNIX_EPOCH,
-            )],
-            Vec::new(),
-            vec![TaskImpact::new(
-                "decision-1",
-                "task-1",
-                "Mapping now uses real work items",
-                "DIRECT",
-            )],
-            vec![Milestone::new(
-                "PHASE_TRANSITIONED",
-                "Entered build phase",
-                SystemTime::UNIX_EPOCH,
-                "system",
-            )],
-            "Projection-backed summary",
-            3072,
-        ),
-        vec!["Projection-backed summary".to_string()],
-        BundleMetadata::initial("0.1.0"),
-    );
+fn helper_mappers_cover_bundle_mapping() {
+    let bundle = sample_bundle("node-123", "developer", "Projection-backed summary");
+    let proto_bundle = proto_bundle_from_single_role(&bundle);
+    let proto_root = proto_bundle_node(bundle.root_node());
+    let proto_relationship = proto_bundle_relationship(&bundle.relationships()[0]);
+    let proto_detail = proto_bundle_node_detail(&bundle.node_details()[0]);
 
-    let proto = proto_role_pack_from_domain(&bundle);
-
-    assert_eq!(proto.role, "developer");
+    assert_eq!(proto_bundle.root_node_id, "node-123");
+    assert_eq!(proto_bundle.bundles.len(), 1);
+    assert_eq!(proto_bundle.bundles[0].role, "developer");
     assert_eq!(
-        proto.case_header.expect("case header should exist").summary,
+        proto_bundle.bundles[0]
+            .root_node
+            .as_ref()
+            .expect("root node should exist")
+            .summary,
         "Projection-backed summary"
     );
-    assert_eq!(proto.work_items.len(), 1);
-    assert_eq!(proto.decisions.len(), 1);
-    assert_eq!(proto.impacts.len(), 1);
-    assert_eq!(proto.milestones.len(), 1);
-    assert_eq!(proto.token_budget_hint, 3072);
+    assert_eq!(proto_bundle.bundles[0].neighbor_nodes.len(), 1);
+    assert_eq!(proto_bundle.bundles[0].relationships.len(), 1);
+    assert_eq!(proto_bundle.bundles[0].node_details.len(), 1);
+    assert_eq!(
+        proto_bundle
+            .stats
+            .as_ref()
+            .expect("stats should exist")
+            .nodes,
+        2
+    );
+    assert_eq!(proto_root.status, "ACTIVE");
+    assert_eq!(proto_relationship.relationship_type, "RELATES_TO");
+    assert_eq!(proto_detail.content_hash, "hash-1");
 }
 
 #[test]
 fn helper_mappers_cover_projection_replay_and_diagnostics() {
     let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    let projection_view = ProjectionStatusView {
+        consumer_name: "context-projection".to_string(),
+        stream_name: "graph.node.materialized".to_string(),
+        projection_watermark: "evt-42".to_string(),
+        processed_events: 12,
+        pending_events: 1,
+        last_event_at: now,
+        updated_at: now,
+        healthy: true,
+        warnings: vec!["lagging".to_string()],
+    };
     let projection_status = proto_projection_status_response(&GetProjectionStatusResult {
-        projections: vec![ProjectionStatusView {
-            consumer_name: "context-projection".to_string(),
-            stream_name: "planning.story.created".to_string(),
-            projection_watermark: "evt-42".to_string(),
-            processed_events: 12,
-            pending_events: 1,
-            last_event_at: now,
-            updated_at: now,
-            healthy: true,
-            warnings: vec!["lagging".to_string()],
-        }],
+        projections: vec![projection_view.clone()],
         observed_at: now,
     });
+    let projection = proto_projection_status(&projection_view);
     assert_eq!(
         projection_status.projections[0].consumer_name,
         "context-projection"
     );
+    assert_eq!(projection.stream_name, "graph.node.materialized");
 
     let replay = proto_replay_projection_response(&ReplayProjectionOutcome {
         replay_id: "replay-1".to_string(),
@@ -365,49 +338,64 @@ fn helper_mappers_cover_projection_replay_and_diagnostics() {
         rehydration_proto::v1alpha1::ReplayMode::Rebuild as i32
     );
 
+    let diagnostic_view = RehydrationDiagnosticView {
+        role: "developer".to_string(),
+        version: BundleMetadata::initial("0.1.0"),
+        selected_nodes: 2,
+        selected_relationships: 1,
+        detailed_nodes: 1,
+        estimated_tokens: 256,
+        notes: vec!["ok".to_string()],
+    };
     let diagnostics = proto_rehydration_diagnostics_response(&GetRehydrationDiagnosticsResult {
-        diagnostics: vec![RehydrationDiagnosticView {
-            role: "developer".to_string(),
-            version: BundleMetadata::initial("0.1.0"),
-            selected_decisions: 2,
-            selected_impacts: 3,
-            selected_milestones: 1,
-            estimated_tokens: 256,
-            notes: vec!["ok".to_string()],
-        }],
+        diagnostics: vec![diagnostic_view.clone()],
         observed_at: now,
     });
+    let diagnostic = proto_diagnostic(&diagnostic_view);
     assert_eq!(diagnostics.diagnostics[0].estimated_tokens, 256);
+    assert_eq!(diagnostic.selected_relationships, 1);
 
+    let root = GraphNodeView {
+        node_id: "root".to_string(),
+        node_kind: "capability".to_string(),
+        title: "Root".to_string(),
+        summary: "Root summary".to_string(),
+        status: "ACTIVE".to_string(),
+        labels: vec!["Capability".to_string()],
+        properties: [("phase".to_string(), "build".to_string())]
+            .into_iter()
+            .collect(),
+    };
+    let neighbor = GraphNodeView {
+        node_id: "node-1".to_string(),
+        node_kind: "artifact".to_string(),
+        title: "Neighbor".to_string(),
+        summary: "Neighbor summary".to_string(),
+        status: "ACTIVE".to_string(),
+        labels: vec!["Artifact".to_string()],
+        properties: Default::default(),
+    };
+    let relationship = GraphRelationshipView {
+        source_node_id: "root".to_string(),
+        target_node_id: "node-1".to_string(),
+        relationship_type: "DEPENDS_ON".to_string(),
+        properties: [("order".to_string(), "1".to_string())]
+            .into_iter()
+            .collect(),
+    };
     let graph = proto_graph_relationships_response(&GetGraphRelationshipsResult {
-        root: GraphNodeView {
-            node_id: "root".to_string(),
-            node_kind: "case".to_string(),
-            title: "Case".to_string(),
-            labels: vec!["Case".to_string()],
-            properties: [("phase".to_string(), "build".to_string())]
-                .into_iter()
-                .collect(),
-        },
-        neighbors: vec![GraphNodeView {
-            node_id: "task-1".to_string(),
-            node_kind: "task".to_string(),
-            title: "Task 1".to_string(),
-            labels: vec!["Task".to_string()],
-            properties: Default::default(),
-        }],
-        relationships: vec![GraphRelationshipView {
-            source_node_id: "root".to_string(),
-            target_node_id: "task-1".to_string(),
-            relationship_type: "DEPENDS_ON".to_string(),
-            properties: [("order".to_string(), "1".to_string())]
-                .into_iter()
-                .collect(),
-        }],
+        root: root.clone(),
+        neighbors: vec![neighbor.clone()],
+        relationships: vec![relationship.clone()],
         observed_at: now,
     });
+    let graph_root = proto_graph_node(&root);
+    let graph_relationship = proto_graph_relationship(&relationship);
+
     assert_eq!(graph.neighbors.len(), 1);
     assert_eq!(graph.relationships[0].relationship_type, "DEPENDS_ON");
+    assert_eq!(graph_root.summary, "Root summary");
+    assert_eq!(graph_relationship.target_node_id, "node-1");
 }
 
 #[test]
@@ -447,34 +435,12 @@ fn helper_mappers_cover_versions_errors_and_trim_logic() {
     assert_eq!(proto_replay_mode(ReplayModeSelection::Rebuild) as i32, 2);
 
     let response = proto_rehydrate_session_response(&RehydrateSessionResult {
-        root_node_id: "case-123".to_string(),
-        bundles: vec![RehydrationBundle::new(
-            RoleContextPack::new(
-                Role::new("developer").expect("role is valid"),
-                CaseHeader::new(
-                    CaseId::new("case-123").expect("case id is valid"),
-                    "Case 123",
-                    "Section one",
-                    "ACTIVE",
-                    SystemTime::UNIX_EPOCH,
-                    "test",
-                ),
-                None,
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
-                "Section one",
-                4096,
-            ),
-            vec!["section one".to_string()],
-            BundleMetadata::initial("0.1.0"),
-        )],
+        root_node_id: "node-123".to_string(),
+        bundles: vec![sample_bundle("node-123", "developer", "Section one")],
         timeline_events: 9,
         version: BundleMetadata::initial("0.1.0"),
         snapshot_persisted: true,
-        snapshot_id: Some("snapshot:case-123:developer".to_string()),
+        snapshot_id: Some("snapshot:node-123:developer".to_string()),
         generated_at: now,
     });
     assert_eq!(
@@ -488,10 +454,10 @@ fn helper_mappers_cover_versions_errors_and_trim_logic() {
     );
 
     let snapshot = proto_bundle_snapshot_response(&BundleSnapshotResult {
-        snapshot_id: "snapshot:case-123:developer".to_string(),
-        root_node_id: "case-123".to_string(),
+        snapshot_id: "snapshot:node-123:developer".to_string(),
+        root_node_id: "node-123".to_string(),
         role: "developer".to_string(),
-        bundle: BundleAssembler::placeholder("case-123", "developer", "0.1.0")
+        bundle: BundleAssembler::placeholder("node-123", "developer", "0.1.0")
             .expect("placeholder bundle should build"),
         created_at: now,
         expires_at: now + Duration::from_secs(900),
@@ -508,7 +474,49 @@ fn helper_mappers_cover_versions_errors_and_trim_logic() {
     );
 
     let invalid_argument = map_application_error(ApplicationError::Domain(
-        rehydration_domain::DomainError::EmptyValue("case_id"),
+        rehydration_domain::DomainError::EmptyValue("root_node_id"),
     ));
     assert_eq!(invalid_argument.code(), tonic::Code::InvalidArgument);
+}
+
+fn sample_bundle(root_node_id: &str, role: &str, summary: &str) -> RehydrationBundle {
+    let case_id = CaseId::new(root_node_id).expect("root node id is valid");
+    let role = Role::new(role).expect("role is valid");
+
+    RehydrationBundle::new(
+        case_id.clone(),
+        role,
+        BundleNode::new(
+            case_id.as_str(),
+            "capability",
+            format!("Node {}", case_id.as_str()),
+            summary,
+            "ACTIVE",
+            vec!["projection-node".to_string()],
+            BTreeMap::new(),
+        ),
+        vec![BundleNode::new(
+            "node-456",
+            "artifact",
+            "Linked artifact",
+            "Linked summary",
+            "ACTIVE",
+            vec!["artifact".to_string()],
+            BTreeMap::new(),
+        )],
+        vec![BundleRelationship::new(
+            case_id.as_str(),
+            "node-456",
+            "RELATES_TO",
+            BTreeMap::new(),
+        )],
+        vec![BundleNodeDetail::new(
+            case_id.as_str(),
+            summary,
+            "hash-1",
+            1,
+        )],
+        BundleMetadata::initial("0.1.0"),
+    )
+    .expect("sample bundle should be valid")
 }

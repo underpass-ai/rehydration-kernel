@@ -4,8 +4,7 @@ use rehydration_ports::{
 
 use crate::adapter::endpoint::{DEFAULT_NODE_DETAIL_KEY_PREFIX, ValkeyEndpoint};
 use crate::adapter::io::{execute_get_command, execute_set_command};
-use crate::adapter::serialization::{deserialize_node_detail, serialize_node_detail};
-
+use crate::adapter::node_detail_serialization::{deserialize_node_detail, serialize_node_detail};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ValkeyNodeDetailStore {
     pub(crate) endpoint: ValkeyEndpoint,

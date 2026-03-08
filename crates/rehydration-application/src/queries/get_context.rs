@@ -3,16 +3,11 @@ use rehydration_domain::{
 };
 
 use crate::ApplicationError;
+pub use crate::queries::render_graph_bundle::RenderedContext;
 use crate::queries::{
     QueryApplicationService, RehydrateSessionUseCase, ScopeValidation, ValidateScopeUseCase,
+    render_graph_bundle,
 };
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RenderedContext {
-    pub content: String,
-    pub token_count: u32,
-    pub sections: Vec<String>,
-}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GetContextQuery {
@@ -54,7 +49,7 @@ where
             .rehydrate_session
             .execute(root_node_id, role, false)
             .await?;
-        let rendered = render_bundle(&bundle);
+        let rendered = render_graph_bundle(&bundle);
         let scope_validation = ValidateScopeUseCase::execute(requested_scopes, requested_scopes);
 
         Ok(GetContextResult {
@@ -86,25 +81,5 @@ where
         GetContextUseCase::new(rehydrate)
             .execute(&query.root_node_id, &query.role, &query.requested_scopes)
             .await
-    }
-}
-
-pub fn render_bundle(bundle: &RehydrationBundle) -> RenderedContext {
-    let sections = if bundle.sections().is_empty() {
-        vec![format!(
-            "bundle for node {} role {}",
-            bundle.root_node_id().as_str(),
-            bundle.role().as_str()
-        )]
-    } else {
-        bundle.sections().to_vec()
-    };
-    let content = sections.join("\n\n");
-    let token_count = content.split_whitespace().count() as u32;
-
-    RenderedContext {
-        content,
-        token_count,
-        sections,
     }
 }

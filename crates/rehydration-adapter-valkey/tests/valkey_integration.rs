@@ -2,11 +2,12 @@ use std::error::Error;
 
 use rehydration_adapter_valkey::{ValkeyNodeDetailStore, ValkeySnapshotStore};
 use rehydration_domain::{
-    BundleMetadata, CaseHeader, CaseId, RehydrationBundle, Role, RoleContextPack,
+    BundleMetadata, BundleNode, BundleNodeDetail, CaseId, RehydrationBundle, Role,
 };
 use rehydration_ports::{
     NodeDetailProjection, NodeDetailReader, ProjectionMutation, ProjectionWriter, SnapshotStore,
 };
+use serde_json::{Value, json};
 use testcontainers::{
     GenericImage,
     core::{IntoContainerPort, WaitFor},
@@ -33,48 +34,81 @@ async fn save_bundle_persists_snapshot_in_valkey() -> Result<(), Box<dyn Error +
         "redis://{address}?key_prefix=rehydration:it&ttl_seconds=120"
     ))?;
 
-    let case_id = CaseId::new("case-123")?;
+    let case_id = CaseId::new("node-123")?;
     let role = Role::new("reviewer")?;
     let bundle = RehydrationBundle::new(
-        RoleContextPack::new(
-            role.clone(),
-            CaseHeader::new(
-                case_id.clone(),
-                "Node case-123",
-                "prior decision",
-                "ACTIVE",
-                std::time::SystemTime::UNIX_EPOCH,
-                "integration-test",
-            ),
-            None,
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            "prior decision",
-            4096,
+        case_id.clone(),
+        role.clone(),
+        BundleNode::new(
+            case_id.as_str(),
+            "capability",
+            format!("Node {}", case_id.as_str()),
+            "expanded context",
+            "ACTIVE",
+            vec!["projection-node".to_string()],
+            std::collections::BTreeMap::new(),
         ),
-        vec!["prior decision".to_string(), "active milestone".to_string()],
+        Vec::new(),
+        Vec::new(),
+        vec![BundleNodeDetail::new(
+            case_id.as_str(),
+            "expanded context",
+            "abc123",
+            7,
+        )],
         BundleMetadata {
             revision: 7,
             content_hash: "abc123".to_string(),
             generator_version: "integration-test".to_string(),
         },
     );
+    let bundle = bundle?;
 
     store.save_bundle(&bundle).await?;
 
-    let key = "rehydration:it:case-123:reviewer";
+    let key = "rehydration:it:node-123:reviewer";
     let snapshot = send_command(&address, &["GET", key]).await?;
     let ttl = send_command(&address, &["TTL", key]).await?;
 
-    assert_eq!(
-        snapshot,
-        RespValue::BulkString(Some(
-            "{\"root_node_id\":\"case-123\",\"role\":\"reviewer\",\"sections\":[\"prior decision\",\"active milestone\"],\"metadata\":{\"revision\":7,\"content_hash\":\"abc123\",\"generator_version\":\"integration-test\"}}".to_string()
-        ))
-    );
+    match snapshot {
+        RespValue::BulkString(Some(payload)) => {
+            assert_eq!(
+                serde_json::from_str::<Value>(&payload)?,
+                json!({
+                    "root_node_id": "node-123",
+                    "role": "reviewer",
+                    "root_node": {
+                        "node_id": "node-123",
+                        "node_kind": "capability",
+                        "title": "Node node-123",
+                        "summary": "expanded context",
+                        "status": "ACTIVE",
+                        "labels": ["projection-node"],
+                        "properties": {}
+                    },
+                    "neighbor_nodes": [],
+                    "relationships": [],
+                    "node_details": [{
+                        "node_id": "node-123",
+                        "detail": "expanded context",
+                        "content_hash": "abc123",
+                        "revision": 7
+                    }],
+                    "stats": {
+                        "selected_nodes": 1,
+                        "selected_relationships": 0,
+                        "detailed_nodes": 1
+                    },
+                    "metadata": {
+                        "revision": 7,
+                        "content_hash": "abc123",
+                        "generator_version": "integration-test"
+                    }
+                })
+            );
+        }
+        other => panic!("expected snapshot payload, got {other:?}"),
+    }
 
     match ttl {
         RespValue::Integer(value) => {

@@ -75,9 +75,13 @@ where
         root_node_id: &str,
         role: &str,
     ) -> Result<RehydrationBundle, ApplicationError> {
-        let pack_reader = NodeCentricProjectionReader::new(&self.graph_reader, &self.detail_reader);
-        match pack_reader.load_pack(root_node_id, role).await? {
-            Some(pack) => Ok(BundleAssembler::assemble(pack, self.generator_version)),
+        let bundle_reader =
+            NodeCentricProjectionReader::new(&self.graph_reader, &self.detail_reader);
+        match bundle_reader
+            .load_bundle(root_node_id, role, self.generator_version)
+            .await?
+        {
+            Some(bundle) => Ok(bundle),
             None => BundleAssembler::placeholder(root_node_id, role, self.generator_version),
         }
     }

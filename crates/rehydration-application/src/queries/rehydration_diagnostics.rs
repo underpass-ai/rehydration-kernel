@@ -1,7 +1,9 @@
 use rehydration_domain::{BundleMetadata, GraphNeighborhoodReader, NodeDetailReader};
 
 use crate::ApplicationError;
-use crate::queries::{AdminQueryApplicationService, BundleAssembler, NodeCentricProjectionReader};
+use crate::queries::{
+    AdminQueryApplicationService, BundleAssembler, NodeCentricProjectionReader, render_graph_bundle,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GetRehydrationDiagnosticsQuery {
@@ -14,9 +16,9 @@ pub struct GetRehydrationDiagnosticsQuery {
 pub struct RehydrationDiagnosticView {
     pub role: String,
     pub version: BundleMetadata,
-    pub selected_decisions: u32,
-    pub selected_impacts: u32,
-    pub selected_milestones: u32,
+    pub selected_nodes: u32,
+    pub selected_relationships: u32,
+    pub detailed_nodes: u32,
     pub estimated_tokens: u32,
     pub notes: Vec<String>,
 }
@@ -63,26 +65,27 @@ where
             .unwrap_or_else(|| "PHASE_UNSPECIFIED".to_string());
         let observed_at = std::time::SystemTime::now();
         let mut diagnostics = Vec::with_capacity(query.roles.len());
-        let pack_reader = NodeCentricProjectionReader::new(&self.graph_reader, &self.detail_reader);
+        let bundle_reader =
+            NodeCentricProjectionReader::new(&self.graph_reader, &self.detail_reader);
 
         for role in &query.roles {
-            let bundle = match pack_reader.load_pack(&query.root_node_id, role).await? {
-                Some(pack) => BundleAssembler::assemble(pack, self.generator_version),
+            let bundle = match bundle_reader
+                .load_bundle(&query.root_node_id, role, self.generator_version)
+                .await?
+            {
+                Some(bundle) => bundle,
                 None => {
                     BundleAssembler::placeholder(&query.root_node_id, role, self.generator_version)?
                 }
             };
+            let rendered = render_graph_bundle(&bundle);
             diagnostics.push(RehydrationDiagnosticView {
                 role: role.clone(),
                 version: bundle.metadata().clone(),
-                selected_decisions: bundle.pack().decisions().len() as u32,
-                selected_impacts: bundle.pack().impacts().len() as u32,
-                selected_milestones: bundle.pack().milestones().len() as u32,
-                estimated_tokens: bundle
-                    .sections()
-                    .iter()
-                    .map(|section| section.split_whitespace().count() as u32)
-                    .sum(),
+                selected_nodes: bundle.stats().selected_nodes(),
+                selected_relationships: bundle.stats().selected_relationships(),
+                detailed_nodes: bundle.stats().detailed_nodes(),
+                estimated_tokens: rendered.token_count,
                 notes: vec![format!("phase={phase}")],
             });
         }

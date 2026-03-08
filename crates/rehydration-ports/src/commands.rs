@@ -248,28 +248,28 @@ mod tests {
         let case_id = CaseId::new("case-123").expect("case id is valid");
         let role = Role::new("developer").expect("role is valid");
         let bundle = RehydrationBundle::new(
-            rehydration_domain::RoleContextPack::new(
-                role.clone(),
-                rehydration_domain::CaseHeader::new(
-                    case_id.clone(),
-                    "Node case-123",
-                    "bundle for node case-123 role developer",
-                    "ACTIVE",
-                    std::time::SystemTime::UNIX_EPOCH,
-                    "ports-test",
-                ),
-                None,
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
+            case_id.clone(),
+            role.clone(),
+            rehydration_domain::BundleNode::new(
+                case_id.as_str(),
+                "capability",
+                "Node case-123",
                 "bundle for node case-123 role developer",
-                4096,
+                "ACTIVE",
+                vec!["projection-node".to_string()],
+                BTreeMap::new(),
             ),
-            vec!["bundle for node case-123 role developer".to_string()],
+            Vec::new(),
+            Vec::new(),
+            vec![rehydration_domain::BundleNodeDetail::new(
+                case_id.as_str(),
+                "bundle for node case-123 role developer",
+                "pending",
+                1,
+            )],
             rehydration_domain::BundleMetadata::initial("0.1.0"),
-        );
+        )
+        .expect("bundle should be valid");
 
         store
             .save_bundle(&bundle)

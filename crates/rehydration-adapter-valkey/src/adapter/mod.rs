@@ -1,8 +1,9 @@
+pub mod bundle_serialization;
 pub mod endpoint;
 pub mod io;
+pub mod node_detail_serialization;
 pub mod node_detail_store;
 pub mod resp;
-pub mod serialization;
 pub mod snapshot_store;
 
 #[cfg(test)]

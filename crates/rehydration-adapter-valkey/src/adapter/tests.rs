@@ -1,14 +1,15 @@
 use std::str;
 
 use rehydration_domain::{
-    BundleMetadata, CaseHeader, CaseId, RehydrationBundle, Role, RoleContextPack,
+    BundleMetadata, BundleNode, BundleNodeDetail, CaseId, RehydrationBundle, Role,
 };
 use rehydration_ports::{NodeDetailProjection, ProjectionMutation, ProjectionWriter};
+use serde_json::{Value, json};
 
 use super::endpoint::{parse_authority, parse_optional_port, split_uri};
+use super::node_detail_serialization::serialize_node_detail;
 use super::node_detail_store::ValkeyNodeDetailStore;
 use super::resp::{RespValue, encode_set_command, map_valkey_response};
-use super::serialization::{escape_json, serialize_node_detail};
 use super::snapshot_store::ValkeySnapshotStore;
 
 #[test]
@@ -17,29 +18,12 @@ fn snapshot_store_encodes_a_resp_set_command() {
         "redis://localhost:6379?key_prefix=rehydration:test&ttl_seconds=60",
     )
     .expect("uri should be accepted");
-    let case_id = CaseId::new("case-123").expect("case id is valid");
+    let case_id = CaseId::new("node-123").expect("case id is valid");
     let role = Role::new("reviewer").expect("role is valid");
-    let bundle = RehydrationBundle::new(
-        RoleContextPack::new(
-            role.clone(),
-            CaseHeader::new(
-                case_id.clone(),
-                "Node case-123",
-                "bundle for node case-123 role reviewer",
-                "ACTIVE",
-                std::time::SystemTime::UNIX_EPOCH,
-                "valkey-test",
-            ),
-            None,
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            "bundle for node case-123 role reviewer",
-            4096,
-        ),
-        vec!["bundle for node case-123 role reviewer".to_string()],
+    let bundle = sample_bundle(
+        case_id.clone(),
+        role.clone(),
+        "bundle for node node-123 role reviewer",
         BundleMetadata::initial("0.1.0"),
     );
 
@@ -55,12 +39,42 @@ fn snapshot_store_encodes_a_resp_set_command() {
     .expect("resp command should be parsed");
 
     assert_eq!(request[0], "SET");
-    assert_eq!(request[1], "rehydration:test:case-123:reviewer");
+    assert_eq!(request[1], "rehydration:test:node-123:reviewer");
     assert_eq!(request[3], "EX");
     assert_eq!(request[4], "60");
     assert_eq!(
-        request[2],
-        "{\"root_node_id\":\"case-123\",\"role\":\"reviewer\",\"sections\":[\"bundle for node case-123 role reviewer\"],\"metadata\":{\"revision\":1,\"content_hash\":\"pending\",\"generator_version\":\"0.1.0\"}}"
+        serde_json::from_str::<Value>(&request[2]).expect("payload should be valid json"),
+        json!({
+            "root_node_id": "node-123",
+            "role": "reviewer",
+            "root_node": {
+                "node_id": "node-123",
+                "node_kind": "capability",
+                "title": "Node node-123",
+                "summary": "bundle for node node-123 role reviewer",
+                "status": "ACTIVE",
+                "labels": ["projection-node"],
+                "properties": {}
+            },
+            "neighbor_nodes": [],
+            "relationships": [],
+            "node_details": [{
+                "node_id": "node-123",
+                "detail": "bundle for node node-123 role reviewer",
+                "content_hash": "pending",
+                "revision": 1
+            }],
+            "stats": {
+                "selected_nodes": 1,
+                "selected_relationships": 0,
+                "detailed_nodes": 1
+            },
+            "metadata": {
+                "revision": 1,
+                "content_hash": "pending",
+                "generator_version": "0.1.0"
+            }
+        })
     );
 }
 
@@ -212,29 +226,12 @@ fn parser_helpers_cover_ipv6_and_error_branches() {
 
 #[test]
 fn serializer_and_response_helpers_cover_escape_paths() {
-    let case_id = CaseId::new("case-123").expect("case id is valid");
+    let case_id = CaseId::new("node-123").expect("case id is valid");
     let role = Role::new("reviewer").expect("role is valid");
-    let bundle = RehydrationBundle::new(
-        RoleContextPack::new(
-            role.clone(),
-            CaseHeader::new(
-                case_id.clone(),
-                "Node case-123",
-                "quote \" slash \\ newline\n tab\t",
-                "ACTIVE",
-                std::time::SystemTime::UNIX_EPOCH,
-                "valkey-test",
-            ),
-            None,
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            "quote \" slash \\ newline\n tab\t",
-            4096,
-        ),
-        vec!["quote \" slash \\ newline\n tab\t".to_string()],
+    let bundle = sample_bundle(
+        case_id.clone(),
+        role.clone(),
+        "quote \" slash \\ newline\n tab\t",
         BundleMetadata {
             revision: 2,
             content_hash: "hash\rvalue".to_string(),
@@ -245,13 +242,18 @@ fn serializer_and_response_helpers_cover_escape_paths() {
     let payload = store
         .snapshot_payload(&bundle)
         .expect("snapshot payload should serialize");
+    let payload_json =
+        serde_json::from_str::<Value>(&payload).expect("payload should be valid json");
 
     assert!(payload.contains("\\\""));
     assert!(payload.contains("\\\\"));
     assert!(payload.contains("\\n"));
     assert!(payload.contains("\\t"));
     assert!(payload.contains("\\r"));
-    assert_eq!(escape_json("\u{0001}"), "\\u0001");
+    assert_eq!(
+        payload_json["root_node"]["summary"],
+        Value::String("quote \" slash \\ newline\n tab\t".to_string())
+    );
     assert!(matches!(
         map_valkey_response(RespValue::SimpleString("OK".to_string())),
         Ok(())
@@ -307,6 +309,37 @@ async fn detail_store_rejects_graph_mutations() {
             "valkey detail store does not persist graph node `node-123`".to_string()
         )
     );
+}
+
+fn sample_bundle(
+    case_id: CaseId,
+    role: Role,
+    summary: &str,
+    metadata: BundleMetadata,
+) -> RehydrationBundle {
+    RehydrationBundle::new(
+        case_id.clone(),
+        role,
+        BundleNode::new(
+            case_id.as_str(),
+            "capability",
+            format!("Node {}", case_id.as_str()),
+            summary,
+            "ACTIVE",
+            vec!["projection-node".to_string()],
+            std::collections::BTreeMap::new(),
+        ),
+        Vec::new(),
+        Vec::new(),
+        vec![BundleNodeDetail::new(
+            case_id.as_str(),
+            summary,
+            metadata.content_hash.clone(),
+            metadata.revision,
+        )],
+        metadata,
+    )
+    .expect("bundle should be valid")
 }
 
 fn parse_resp_array(

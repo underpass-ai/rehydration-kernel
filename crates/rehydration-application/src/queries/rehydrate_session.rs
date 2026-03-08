@@ -61,9 +61,13 @@ where
         role: &str,
         persist_snapshot: bool,
     ) -> Result<RehydrationBundle, ApplicationError> {
-        let pack_reader = NodeCentricProjectionReader::new(&self.graph_reader, &self.detail_reader);
-        let bundle = match pack_reader.load_pack(root_node_id, role).await? {
-            Some(pack) => BundleAssembler::assemble(pack, self.generator_version),
+        let bundle_reader =
+            NodeCentricProjectionReader::new(&self.graph_reader, &self.detail_reader);
+        let bundle = match bundle_reader
+            .load_bundle(root_node_id, role, self.generator_version)
+            .await?
+        {
+            Some(bundle) => bundle,
             None => BundleAssembler::placeholder(root_node_id, role, self.generator_version)?,
         };
 
@@ -134,7 +138,7 @@ where
             Arc::clone(&self.snapshot_store),
             self.generator_version,
         )
-        .execute("bootstrap-case", "system", false)
+        .execute("bootstrap-node", "system", false)
         .await
     }
 }

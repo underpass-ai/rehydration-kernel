@@ -158,40 +158,36 @@ impl SnapshotStore for NoopSnapshotStore {
 fn seed_bundle(case_id: rehydration_domain::CaseId, role: &str) -> RehydrationBundle {
     let role = rehydration_domain::Role::new(role).expect("role must be valid");
     RehydrationBundle::new(
-        rehydration_domain::RoleContextPack::new(
-            role.clone(),
-            rehydration_domain::CaseHeader::new(
-                case_id.clone(),
-                format!("Node {}", case_id.as_str()),
-                format!(
-                    "bundle for node {} role {}",
-                    case_id.as_str(),
-                    role.as_str()
-                ),
-                "ACTIVE",
-                std::time::SystemTime::UNIX_EPOCH,
-                "testkit",
-            ),
-            None,
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
+        case_id.clone(),
+        role.clone(),
+        rehydration_domain::BundleNode::new(
+            case_id.as_str(),
+            "capability",
+            format!("Node {}", case_id.as_str()),
             format!(
                 "bundle for node {} role {}",
                 case_id.as_str(),
                 role.as_str()
             ),
-            4096,
+            "ACTIVE",
+            vec!["projection-node".to_string()],
+            std::collections::BTreeMap::new(),
         ),
-        vec![format!(
-            "bundle for node {} role {}",
+        Vec::new(),
+        Vec::new(),
+        vec![rehydration_domain::BundleNodeDetail::new(
             case_id.as_str(),
-            role.as_str()
+            format!(
+                "bundle for node {} role {}",
+                case_id.as_str(),
+                role.as_str()
+            ),
+            "pending",
+            1,
         )],
         rehydration_domain::BundleMetadata::initial("0.1.0"),
     )
+    .expect("seed bundle should be valid")
 }
 
 #[cfg(test)]

@@ -6,8 +6,9 @@ pub mod value_objects;
 
 pub use error::DomainError;
 pub use model::{
-    CaseHeader, Decision, DecisionRelation, Milestone, PlanHeader, RehydrationBundle,
-    RoleContextPack, TaskImpact, WorkItem,
+    BundleNode, BundleNodeDetail, BundleRelationship, CaseHeader, Decision, DecisionRelation,
+    Milestone, PlanHeader, RehydrationBundle, RehydrationStats, RoleContextPack, TaskImpact,
+    WorkItem,
 };
 pub use projection::{
     NodeDetailProjection, NodeNeighborhood, NodeProjection, NodeRelationProjection,
@@ -21,10 +22,9 @@ pub use value_objects::{BundleMetadata, CaseId, Role};
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        BundleMetadata, CaseHeader, CaseId, Decision, DecisionRelation, DomainError, Milestone,
-        PlanHeader, RehydrationBundle, Role, RoleContextPack, TaskImpact, WorkItem,
-    };
+    use std::collections::BTreeMap;
+
+    use super::{BundleMetadata, BundleNode, CaseId, DomainError, RehydrationBundle, Role};
 
     #[test]
     fn case_id_requires_a_value() {
@@ -33,69 +33,66 @@ mod tests {
     }
 
     #[test]
-    fn bundle_keeps_explicit_structured_sections() {
+    fn bundle_tracks_graph_native_state() {
         let case_id = CaseId::new("case-123").expect("case id is valid");
         let role = Role::new("developer").expect("role is valid");
-        let pack = RoleContextPack::new(
-            role.clone(),
-            CaseHeader::new(
-                case_id.clone(),
-                "Case 123",
-                "Delivery planning",
-                "ACTIVE",
-                std::time::SystemTime::UNIX_EPOCH,
-                "planner",
-            ),
-            Some(PlanHeader::new("plan-123", 3, "ACTIVE", 1, 0)),
-            vec![WorkItem::new(
-                "task-1",
-                "Implement projection model",
-                "Add structured pack support",
-                role.as_str(),
-                "PHASE_BUILD",
-                "READY",
-                Vec::new(),
-                1,
-            )],
-            vec![Decision::new(
-                "decision-1",
-                "Adopt projection packs",
-                "Stop reading pre-rendered bundles from infrastructure",
-                "ACCEPTED",
-                "platform",
-                std::time::SystemTime::UNIX_EPOCH,
-            )],
-            vec![DecisionRelation::new(
-                "decision-1",
-                "decision-2",
-                "INFLUENCES",
-            )],
-            vec![TaskImpact::new(
-                "decision-1",
-                "task-1",
-                "Transport mapping must stop inventing work items",
-                "DIRECT",
-            )],
-            vec![Milestone::new(
-                "PHASE_TRANSITIONED",
-                "Moved from planning to build",
-                std::time::SystemTime::UNIX_EPOCH,
-                "system",
-            )],
+        let root = BundleNode::new(
+            "case-123",
+            "case",
+            "Case 123",
             "Projection snapshot loaded",
-            4096,
+            "ACTIVE",
+            vec!["ProjectionNode".to_string()],
+            BTreeMap::new(),
         );
         let bundle = RehydrationBundle::new(
-            pack,
-            vec![
-                "Projection snapshot loaded".to_string(),
-                "Implement projection model: Add structured pack support".to_string(),
-            ],
+            case_id,
+            role.clone(),
+            root,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
             BundleMetadata::initial("0.1.0"),
-        );
+        )
+        .expect("bundle should be valid");
 
-        assert_eq!(bundle.case_id().as_str(), "case-123");
         assert_eq!(bundle.role().as_str(), "developer");
-        assert_eq!(bundle.sections()[0], "Projection snapshot loaded");
+        assert_eq!(bundle.root_node().summary(), "Projection snapshot loaded");
+        assert_eq!(bundle.stats().selected_nodes(), 1);
+    }
+
+    #[test]
+    fn bundle_rejects_relationships_outside_the_bundle() {
+        let bundle = RehydrationBundle::new(
+            CaseId::new("case-123").expect("case id is valid"),
+            Role::new("developer").expect("role is valid"),
+            BundleNode::new(
+                "case-123",
+                "case",
+                "Case 123",
+                "Projection snapshot loaded",
+                "ACTIVE",
+                vec![],
+                BTreeMap::new(),
+            ),
+            Vec::new(),
+            vec![super::BundleRelationship::new(
+                "case-123",
+                "node-missing",
+                "RELATES_TO",
+                BTreeMap::new(),
+            )],
+            Vec::new(),
+            BundleMetadata::initial("0.1.0"),
+        )
+        .expect_err("invalid relationship should fail");
+
+        assert_eq!(
+            bundle,
+            DomainError::InvalidState(
+                "relationship `case-123` -> `node-missing` references nodes outside the bundle"
+                    .to_string()
+            )
+        );
     }
 }

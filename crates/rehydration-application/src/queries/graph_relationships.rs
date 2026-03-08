@@ -18,6 +18,8 @@ pub struct GraphNodeView {
     pub node_id: String,
     pub node_kind: String,
     pub title: String,
+    pub summary: String,
+    pub status: String,
     pub labels: Vec<String>,
     pub properties: BTreeMap<String, String>,
 }
@@ -100,6 +102,8 @@ fn map_node(node: &rehydration_domain::NodeProjection) -> GraphNodeView {
         node_id: node.node_id.clone(),
         node_kind: node.node_kind.clone(),
         title: node.title.clone(),
+        summary: node.summary.clone(),
+        status: node.status.clone(),
         labels: node.labels.clone(),
         properties: node.properties.clone(),
     }
