@@ -6,9 +6,7 @@ pub mod value_objects;
 
 pub use error::DomainError;
 pub use model::{
-    BundleNode, BundleNodeDetail, BundleRelationship, CaseHeader, Decision, DecisionRelation,
-    Milestone, PlanHeader, RehydrationBundle, RehydrationStats, RoleContextPack, TaskImpact,
-    WorkItem,
+    BundleNode, BundleNodeDetail, BundleRelationship, RehydrationBundle, RehydrationStats,
 };
 pub use projection::{
     NodeDetailProjection, NodeNeighborhood, NodeProjection, NodeRelationProjection,

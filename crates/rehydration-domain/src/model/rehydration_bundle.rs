@@ -117,3 +117,112 @@ impl RehydrationBundle {
         &self.metadata
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use crate::{
+        BundleMetadata, BundleNode, BundleNodeDetail, BundleRelationship, CaseId, DomainError, Role,
+    };
+
+    use super::RehydrationBundle;
+
+    #[test]
+    fn bundle_rejects_mismatched_root_node_ids() {
+        let error = RehydrationBundle::new(
+            CaseId::new("node-123").expect("case id is valid"),
+            Role::new("developer").expect("role is valid"),
+            BundleNode::new(
+                "node-999",
+                "capability",
+                "Node 999",
+                "summary",
+                "ACTIVE",
+                vec![],
+                BTreeMap::new(),
+            ),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            BundleMetadata::initial("0.1.0"),
+        )
+        .expect_err("mismatched root ids must fail");
+
+        assert_eq!(
+            error,
+            DomainError::InvalidState(
+                "root node id `node-999` does not match bundle root `node-123`".to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn bundle_rejects_duplicate_neighbor_nodes() {
+        let error = RehydrationBundle::new(
+            CaseId::new("node-123").expect("case id is valid"),
+            Role::new("developer").expect("role is valid"),
+            root_node("node-123"),
+            vec![neighbor_node("node-456"), neighbor_node("node-456")],
+            Vec::new(),
+            Vec::new(),
+            BundleMetadata::initial("0.1.0"),
+        )
+        .expect_err("duplicate neighbors must fail");
+
+        assert_eq!(
+            error,
+            DomainError::InvalidState("duplicate bundle node `node-456`".to_string())
+        );
+    }
+
+    #[test]
+    fn bundle_rejects_details_for_missing_nodes() {
+        let error = RehydrationBundle::new(
+            CaseId::new("node-123").expect("case id is valid"),
+            Role::new("developer").expect("role is valid"),
+            root_node("node-123"),
+            vec![neighbor_node("node-456")],
+            vec![BundleRelationship::new(
+                "node-123",
+                "node-456",
+                "RELATES_TO",
+                BTreeMap::new(),
+            )],
+            vec![BundleNodeDetail::new("node-789", "detail", "hash-1", 1)],
+            BundleMetadata::initial("0.1.0"),
+        )
+        .expect_err("orphan details must fail");
+
+        assert_eq!(
+            error,
+            DomainError::InvalidState(
+                "node detail `node-789` does not belong to this bundle".to_string()
+            )
+        );
+    }
+
+    fn root_node(node_id: &str) -> BundleNode {
+        BundleNode::new(
+            node_id,
+            "capability",
+            format!("Node {node_id}"),
+            "summary",
+            "ACTIVE",
+            vec!["projection-node".to_string()],
+            BTreeMap::new(),
+        )
+    }
+
+    fn neighbor_node(node_id: &str) -> BundleNode {
+        BundleNode::new(
+            node_id,
+            "artifact",
+            format!("Node {node_id}"),
+            "detail",
+            "ACTIVE",
+            vec!["artifact".to_string()],
+            BTreeMap::new(),
+        )
+    }
+}

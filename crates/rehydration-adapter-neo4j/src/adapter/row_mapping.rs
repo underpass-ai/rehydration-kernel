@@ -58,3 +58,108 @@ pub(crate) fn node_projection_from_row(
         )?,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use neo4rs::{BoltList, BoltType, Row};
+    use rehydration_ports::PortError;
+
+    use super::{node_projection_from_row, row_string, serialize_properties};
+
+    #[test]
+    fn serialize_properties_emits_json_payloads() {
+        let payload = serialize_properties(
+            &[("phase".to_string(), "build".to_string())]
+                .into_iter()
+                .collect::<BTreeMap<_, _>>(),
+        )
+        .expect("properties should serialize");
+
+        assert_eq!(payload, "{\"phase\":\"build\"}");
+    }
+
+    #[test]
+    fn node_projection_from_row_maps_complete_rows() {
+        let row = row(vec![
+            ("node_id", BoltType::from("node-123")),
+            ("node_kind", BoltType::from("capability")),
+            ("title", BoltType::from("Root node")),
+            ("summary", BoltType::from("expanded context")),
+            ("status", BoltType::from("ACTIVE")),
+            (
+                "node_labels",
+                BoltType::List(BoltList::from(vec![
+                    BoltType::from("Capability"),
+                    BoltType::from("ProjectionNode"),
+                ])),
+            ),
+            ("properties_json", BoltType::from("{\"phase\":\"build\"}")),
+        ]);
+
+        let projection =
+            node_projection_from_row(&row, "", "node").expect("rows should map successfully");
+
+        assert_eq!(projection.node_id, "node-123");
+        assert_eq!(projection.node_kind, "capability");
+        assert_eq!(projection.labels, vec!["Capability", "ProjectionNode"]);
+        assert_eq!(
+            projection.properties,
+            [("phase".to_string(), "build".to_string())]
+                .into_iter()
+                .collect::<BTreeMap<_, _>>()
+        );
+    }
+
+    #[test]
+    fn row_mapping_surfaces_missing_fields_and_invalid_json() {
+        let missing_field =
+            row_string(&row(vec![]), "node_id", "node").expect_err("missing node ids must fail");
+        let invalid_json = node_projection_from_row(
+            &row(vec![
+                ("node_id", BoltType::from("node-123")),
+                ("node_kind", BoltType::from("capability")),
+                ("title", BoltType::from("Root node")),
+                ("summary", BoltType::from("expanded context")),
+                ("status", BoltType::from("ACTIVE")),
+                (
+                    "node_labels",
+                    BoltType::List(BoltList::from(Vec::<BoltType>::new())),
+                ),
+                ("properties_json", BoltType::from("{not-json}")),
+            ]),
+            "",
+            "node",
+        )
+        .expect_err("invalid json must fail");
+
+        assert!(
+            missing_field
+                .to_string()
+                .starts_with("neo4j node field `node_id` could not be decoded:")
+        );
+        assert!(matches!(
+            invalid_json,
+            PortError::InvalidState(message)
+                if message.starts_with("neo4j node properties_json could not be decoded:")
+        ));
+    }
+
+    fn row(values: Vec<(&str, BoltType)>) -> Row {
+        let fields = BoltList::from(
+            values
+                .iter()
+                .map(|(key, _)| BoltType::from(*key))
+                .collect::<Vec<_>>(),
+        );
+        let data = BoltList::from(
+            values
+                .into_iter()
+                .map(|(_, value)| value)
+                .collect::<Vec<_>>(),
+        );
+
+        Row::new(fields, data)
+    }
+}

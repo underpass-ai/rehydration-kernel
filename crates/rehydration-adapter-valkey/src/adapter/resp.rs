@@ -1,5 +1,4 @@
-use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::net::TcpStream;
+use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncRead, AsyncReadExt};
 
 use rehydration_ports::PortError;
 
@@ -33,9 +32,10 @@ pub(crate) fn encode_command(arguments: &[&str]) -> Vec<u8> {
     command
 }
 
-pub(crate) async fn read_response(
-    reader: &mut BufReader<TcpStream>,
-) -> Result<RespValue, PortError> {
+pub(crate) async fn read_response<R>(reader: &mut R) -> Result<RespValue, PortError>
+where
+    R: AsyncBufRead + AsyncRead + Unpin,
+{
     let mut line = String::new();
     reader.read_line(&mut line).await.map_err(|error| {
         PortError::Unavailable(format!("failed to read valkey response: {error}"))
@@ -61,21 +61,17 @@ pub(crate) async fn read_response(
             }
 
             let mut buffer = vec![0_u8; length as usize];
-            tokio::io::AsyncReadExt::read_exact(reader, &mut buffer)
-                .await
-                .map_err(|error| {
-                    PortError::Unavailable(format!(
-                        "failed to read valkey bulk string payload: {error}"
-                    ))
-                })?;
+            reader.read_exact(&mut buffer).await.map_err(|error| {
+                PortError::Unavailable(format!(
+                    "failed to read valkey bulk string payload: {error}"
+                ))
+            })?;
             let mut crlf = [0_u8; 2];
-            tokio::io::AsyncReadExt::read_exact(reader, &mut crlf)
-                .await
-                .map_err(|error| {
-                    PortError::Unavailable(format!(
-                        "failed to read valkey bulk string terminator: {error}"
-                    ))
-                })?;
+            reader.read_exact(&mut crlf).await.map_err(|error| {
+                PortError::Unavailable(format!(
+                    "failed to read valkey bulk string terminator: {error}"
+                ))
+            })?;
 
             let payload = String::from_utf8(buffer).map_err(|error| {
                 PortError::Unavailable(format!("invalid valkey bulk string payload: {error}"))
@@ -97,5 +93,94 @@ pub(crate) fn map_valkey_response(response: RespValue) -> Result<(), PortError> 
         other => Err(PortError::Unavailable(format!(
             "unexpected valkey response: {other:?}"
         ))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use tokio::io::BufReader;
+
+    use super::{
+        RespValue, encode_command, encode_set_command, map_valkey_response, read_response,
+    };
+    use rehydration_ports::PortError;
+
+    #[test]
+    fn encoders_support_plain_and_expiring_commands() {
+        let plain =
+            String::from_utf8(encode_command(&["GET", "node-123"])).expect("resp must be utf8");
+        let expiring = String::from_utf8(encode_set_command("node-123", "payload", Some(60)))
+            .expect("resp must be utf8");
+
+        assert_eq!(plain, "*2\r\n$3\r\nGET\r\n$8\r\nnode-123\r\n");
+        assert_eq!(
+            expiring,
+            "*5\r\n$3\r\nSET\r\n$8\r\nnode-123\r\n$7\r\npayload\r\n$2\r\nEX\r\n$2\r\n60\r\n"
+        );
+    }
+
+    #[tokio::test]
+    async fn read_response_supports_simple_integer_and_bulk_values() {
+        assert_eq!(
+            read_from_buffer(b"+OK\r\n")
+                .await
+                .expect("simple strings should parse"),
+            RespValue::SimpleString("OK".to_string())
+        );
+        assert_eq!(
+            read_from_buffer(b":42\r\n")
+                .await
+                .expect("integers should parse"),
+            RespValue::Integer(42)
+        );
+        assert_eq!(
+            read_from_buffer(b"$11\r\nhello world\r\n")
+                .await
+                .expect("bulk strings should parse"),
+            RespValue::BulkString(Some("hello world".to_string()))
+        );
+        assert_eq!(
+            read_from_buffer(b"$-1\r\n")
+                .await
+                .expect("nil bulk strings should parse"),
+            RespValue::BulkString(None)
+        );
+    }
+
+    #[tokio::test]
+    async fn read_response_surfaces_invalid_frames() {
+        let invalid_prefix = read_from_buffer(b"!wat\r\n")
+            .await
+            .expect_err("unsupported prefixes must fail");
+        let invalid_integer = read_from_buffer(b":NaN\r\n")
+            .await
+            .expect_err("invalid integers must fail");
+
+        assert_eq!(
+            invalid_prefix,
+            PortError::Unavailable("unsupported valkey RESP prefix `!`".to_string())
+        );
+        assert!(
+            invalid_integer
+                .to_string()
+                .starts_with("invalid valkey integer response:")
+        );
+    }
+
+    #[test]
+    fn map_valkey_response_accepts_ok_and_rejects_other_payloads() {
+        assert!(map_valkey_response(RespValue::SimpleString("OK".to_string())).is_ok());
+        assert_eq!(
+            map_valkey_response(RespValue::BulkString(Some("payload".to_string())))
+                .expect_err("unexpected responses must fail"),
+            PortError::Unavailable(
+                "unexpected valkey response: BulkString(Some(\"payload\"))".to_string()
+            )
+        );
+    }
+
+    async fn read_from_buffer(payload: &[u8]) -> Result<RespValue, PortError> {
+        let mut reader = BufReader::new(payload);
+        read_response(&mut reader).await
     }
 }
