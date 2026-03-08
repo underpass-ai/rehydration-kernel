@@ -45,7 +45,7 @@ impl ContextCommandService for CommandGrpcService {
         let outcome = self
             .application
             .update_context(UpdateContextCommand {
-                case_id: request.case_id,
+                root_node_id: request.root_node_id,
                 role: request.role,
                 work_item_id: request.work_item_id,
                 changes: request

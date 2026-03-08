@@ -42,7 +42,7 @@ message ReplayProjectionResponse {
 }
 
 message GetBundleSnapshotRequest {
-  string case_id = 1;
+  string root_node_id = 1;
   string role = 2;
 }
 
@@ -65,7 +65,7 @@ message GetGraphRelationshipsResponse {
 }
 
 message GetRehydrationDiagnosticsRequest {
-  string case_id = 1;
+  string root_node_id = 1;
   repeated string roles = 2;
   Phase phase = 3;
 }

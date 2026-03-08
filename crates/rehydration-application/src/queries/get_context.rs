@@ -16,7 +16,7 @@ pub struct RenderedContext {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GetContextQuery {
-    pub case_id: String,
+    pub root_node_id: String,
     pub role: String,
     pub requested_scopes: Vec<String>,
 }
@@ -84,7 +84,7 @@ where
         );
 
         GetContextUseCase::new(rehydrate)
-            .execute(&query.case_id, &query.role, &query.requested_scopes)
+            .execute(&query.root_node_id, &query.role, &query.requested_scopes)
             .await
     }
 }

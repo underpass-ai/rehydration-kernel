@@ -14,7 +14,7 @@ pub struct UpdateContextChange {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UpdateContextCommand {
-    pub case_id: String,
+    pub root_node_id: String,
     pub role: String,
     pub work_item_id: String,
     pub changes: Vec<UpdateContextChange>,
@@ -54,7 +54,7 @@ impl UpdateContextUseCase {
         &self,
         command: UpdateContextCommand,
     ) -> Result<UpdateContextOutcome, ApplicationError> {
-        let case_id = CaseId::new(command.case_id)?;
+        let case_id = CaseId::new(command.root_node_id)?;
         let role = Role::new(command.role)?;
 
         let revision = command.expected_revision.unwrap_or(0) + 1;

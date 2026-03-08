@@ -74,7 +74,7 @@ where
 
     pub fn bootstrap_request(&self) -> GetContextRequest {
         GetContextRequest {
-            case_id: "bootstrap-case".to_string(),
+            root_node_id: "bootstrap-case".to_string(),
             role: "system".to_string(),
             phase: Phase::Build as i32,
             work_item_id: String::new(),

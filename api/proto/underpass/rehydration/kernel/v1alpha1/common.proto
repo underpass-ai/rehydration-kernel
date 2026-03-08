@@ -48,7 +48,7 @@ message BundleSection {
 }
 
 message CaseHeader {
-  string case_id = 1;
+  string root_node_id = 1;
   string title = 2;
   string summary = 3;
   string status = 4;
@@ -127,7 +127,7 @@ message RehydrationStats {
 }
 
 message RehydrationBundle {
-  string case_id = 1;
+  string root_node_id = 1;
   repeated RoleContextPack packs = 2;
   RehydrationStats stats = 3;
   BundleVersion version = 4;
@@ -152,7 +152,7 @@ message ScopeValidationResult {
 
 message BundleSnapshot {
   string snapshot_id = 1;
-  string case_id = 2;
+  string root_node_id = 2;
   string role = 3;
   RehydrationBundle bundle = 4;
   google.protobuf.Timestamp created_at = 5;

@@ -7,14 +7,14 @@ use crate::queries::{AdminQueryApplicationService, BundleAssembler, NodeCentricP
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GetBundleSnapshotQuery {
-    pub case_id: String,
+    pub root_node_id: String,
     pub role: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BundleSnapshotResult {
     pub snapshot_id: String,
-    pub case_id: String,
+    pub root_node_id: String,
     pub role: String,
     pub bundle: RehydrationBundle,
     pub created_at: std::time::SystemTime,
@@ -47,7 +47,7 @@ where
         query: GetBundleSnapshotQuery,
     ) -> Result<BundleSnapshotResult, ApplicationError> {
         let bundle = self
-            .load_or_placeholder_bundle(&query.case_id, &query.role)
+            .load_or_placeholder_bundle(&query.root_node_id, &query.role)
             .await?;
         let created_at = std::time::SystemTime::now();
         let ttl_seconds = 900;
@@ -61,7 +61,7 @@ where
                 bundle.root_node_id().as_str(),
                 bundle.role().as_str()
             ),
-            case_id: bundle.root_node_id().as_str().to_string(),
+            root_node_id: bundle.root_node_id().as_str().to_string(),
             role: bundle.role().as_str().to_string(),
             bundle,
             created_at,

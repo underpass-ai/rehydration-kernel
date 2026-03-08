@@ -5,7 +5,7 @@ use crate::queries::{AdminQueryApplicationService, BundleAssembler, NodeCentricP
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GetRehydrationDiagnosticsQuery {
-    pub case_id: String,
+    pub root_node_id: String,
     pub roles: Vec<String>,
     pub phase: Option<String>,
 }
@@ -66,9 +66,11 @@ where
         let pack_reader = NodeCentricProjectionReader::new(&self.graph_reader, &self.detail_reader);
 
         for role in &query.roles {
-            let bundle = match pack_reader.load_pack(&query.case_id, role).await? {
+            let bundle = match pack_reader.load_pack(&query.root_node_id, role).await? {
                 Some(pack) => BundleAssembler::assemble(pack, self.generator_version),
-                None => BundleAssembler::placeholder(&query.case_id, role, self.generator_version)?,
+                None => {
+                    BundleAssembler::placeholder(&query.root_node_id, role, self.generator_version)?
+                }
             };
             diagnostics.push(RehydrationDiagnosticView {
                 role: role.clone(),

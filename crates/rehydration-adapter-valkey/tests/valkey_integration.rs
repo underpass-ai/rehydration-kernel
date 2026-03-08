@@ -1,7 +1,9 @@
 use std::error::Error;
 
 use rehydration_adapter_valkey::{ValkeyNodeDetailStore, ValkeySnapshotStore};
-use rehydration_domain::{BundleMetadata, CaseId, RehydrationBundle, Role};
+use rehydration_domain::{
+    BundleMetadata, CaseHeader, CaseId, RehydrationBundle, Role, RoleContextPack,
+};
 use rehydration_ports::{
     NodeDetailProjection, NodeDetailReader, ProjectionMutation, ProjectionWriter, SnapshotStore,
 };
@@ -31,9 +33,28 @@ async fn save_bundle_persists_snapshot_in_valkey() -> Result<(), Box<dyn Error +
         "redis://{address}?key_prefix=rehydration:it&ttl_seconds=120"
     ))?;
 
+    let case_id = CaseId::new("case-123")?;
+    let role = Role::new("reviewer")?;
     let bundle = RehydrationBundle::new(
-        CaseId::new("case-123")?,
-        Role::new("reviewer")?,
+        RoleContextPack::new(
+            role.clone(),
+            CaseHeader::new(
+                case_id.clone(),
+                "Node case-123",
+                "prior decision",
+                "ACTIVE",
+                std::time::SystemTime::UNIX_EPOCH,
+                "integration-test",
+            ),
+            None,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            "prior decision",
+            4096,
+        ),
         vec!["prior decision".to_string(), "active milestone".to_string()],
         BundleMetadata {
             revision: 7,
@@ -51,7 +72,7 @@ async fn save_bundle_persists_snapshot_in_valkey() -> Result<(), Box<dyn Error +
     assert_eq!(
         snapshot,
         RespValue::BulkString(Some(
-            "{\"case_id\":\"case-123\",\"role\":\"reviewer\",\"sections\":[\"prior decision\",\"active milestone\"],\"metadata\":{\"revision\":7,\"content_hash\":\"abc123\",\"generator_version\":\"integration-test\"}}".to_string()
+            "{\"root_node_id\":\"case-123\",\"role\":\"reviewer\",\"sections\":[\"prior decision\",\"active milestone\"],\"metadata\":{\"revision\":7,\"content_hash\":\"abc123\",\"generator_version\":\"integration-test\"}}".to_string()
         ))
     );
 

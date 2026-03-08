@@ -86,7 +86,7 @@ fn describe_mentions_bind_address() {
     );
 
     assert!(server.describe().contains("127.0.0.1:50054"));
-    assert_eq!(server.bootstrap_request().case_id, "bootstrap-case");
+    assert_eq!(server.bootstrap_request().root_node_id, "bootstrap-case");
     let descriptor_set = std::hint::black_box(server.descriptor_set());
     assert!(!descriptor_set.is_empty());
 }
@@ -103,7 +103,7 @@ async fn query_service_returns_rendered_context() {
 
     let response = service
         .get_context(Request::new(GetContextRequest {
-            case_id: "case-123".to_string(),
+            root_node_id: "case-123".to_string(),
             role: "developer".to_string(),
             phase: Phase::Build as i32,
             work_item_id: String::new(),
@@ -121,7 +121,7 @@ async fn query_service_returns_rendered_context() {
             .bundle
             .as_ref()
             .expect("bundle should exist")
-            .case_id,
+            .root_node_id,
         "case-123"
     );
     assert!(
@@ -168,7 +168,7 @@ async fn command_service_accepts_update_context() {
 
     let response = service
         .update_context(Request::new(UpdateContextRequest {
-            case_id: "case-123".to_string(),
+            root_node_id: "case-123".to_string(),
             role: "developer".to_string(),
             work_item_id: "task-7".to_string(),
             changes: vec![ContextChange {
@@ -220,7 +220,7 @@ async fn admin_service_returns_snapshot_and_status() {
 
     let snapshot = service
         .get_bundle_snapshot(Request::new(GetBundleSnapshotRequest {
-            case_id: "case-123".to_string(),
+            root_node_id: "case-123".to_string(),
             role: "developer".to_string(),
         }))
         .await
@@ -228,7 +228,7 @@ async fn admin_service_returns_snapshot_and_status() {
         .into_inner()
         .snapshot
         .expect("snapshot should exist");
-    assert_eq!(snapshot.case_id, "case-123");
+    assert_eq!(snapshot.root_node_id, "case-123");
     assert_eq!(snapshot.role, "developer");
 }
 
@@ -243,7 +243,7 @@ async fn admin_service_returns_diagnostics_per_role() {
 
     let response = service
         .get_rehydration_diagnostics(Request::new(GetRehydrationDiagnosticsRequest {
-            case_id: "case-123".to_string(),
+            root_node_id: "case-123".to_string(),
             roles: vec!["developer".to_string(), "reviewer".to_string()],
             phase: Phase::Build as i32,
         }))
@@ -447,7 +447,7 @@ fn helper_mappers_cover_versions_errors_and_trim_logic() {
     assert_eq!(proto_replay_mode(ReplayModeSelection::Rebuild) as i32, 2);
 
     let response = proto_rehydrate_session_response(&RehydrateSessionResult {
-        case_id: "case-123".to_string(),
+        root_node_id: "case-123".to_string(),
         bundles: vec![RehydrationBundle::new(
             RoleContextPack::new(
                 Role::new("developer").expect("role is valid"),
@@ -489,7 +489,7 @@ fn helper_mappers_cover_versions_errors_and_trim_logic() {
 
     let snapshot = proto_bundle_snapshot_response(&BundleSnapshotResult {
         snapshot_id: "snapshot:case-123:developer".to_string(),
-        case_id: "case-123".to_string(),
+        root_node_id: "case-123".to_string(),
         role: "developer".to_string(),
         bundle: BundleAssembler::placeholder("case-123", "developer", "0.1.0")
             .expect("placeholder bundle should build"),

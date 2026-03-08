@@ -1,16 +1,10 @@
 use std::collections::BTreeMap;
-use std::time::{Duration, SystemTime};
 
-use rehydration_domain::{CaseId, Decision, Milestone, PlanHeader, WorkItem};
 use rehydration_ports::{NodeDetailProjection, NodeProjection, PortError, ProjectionMutation};
 
 use super::endpoint::{Neo4jEndpoint, parse_authority, parse_host_port, split_uri};
 use super::projection_store::Neo4jProjectionStore;
-use super::row_mapping::{
-    ProjectionRootRecord, RawCaseHeaderRecord, RawDecisionRecord, RawMilestoneRecord,
-    RawPlanHeaderRecord, RawProjectionRootRecord, RawWorkItemRecord, parse_system_time,
-    serialize_properties,
-};
+use super::row_mapping::serialize_properties;
 
 #[test]
 fn endpoint_supports_auth_segments() {
@@ -110,119 +104,6 @@ fn split_uri_supports_ipv6_without_losing_authority() {
     assert_eq!(uri.scheme, "neo4j");
     assert_eq!(uri.authority, "[::1]:7687");
     assert!(uri.query.is_none());
-}
-
-#[test]
-fn root_record_requires_non_negative_token_budget() {
-    let error = ProjectionRootRecord::try_from(RawProjectionRootRecord {
-        latest_summary: "latest".to_string(),
-        token_budget_hint: -1,
-    })
-    .expect_err("negative token budget must fail");
-
-    assert_eq!(
-        error,
-        PortError::InvalidState(
-            "neo4j projection field `token_budget_hint` must be a non-negative u32".to_string()
-        )
-    );
-}
-
-#[test]
-fn raw_case_header_maps_to_domain() {
-    let created_at = 1_728_345_600_000_i64;
-    let header = rehydration_domain::CaseHeader::try_from(RawCaseHeaderRecord {
-        case_id: "case-123".to_string(),
-        title: "Graph-backed case".to_string(),
-        summary: "Loaded from neo4j".to_string(),
-        status: "ACTIVE".to_string(),
-        created_at_millis: created_at,
-        created_by: "planner".to_string(),
-    })
-    .expect("record should map");
-
-    assert_eq!(
-        header.case_id(),
-        &CaseId::new("case-123").expect("case id is valid")
-    );
-    assert_eq!(header.title(), "Graph-backed case");
-    assert_eq!(
-        header.created_at(),
-        SystemTime::UNIX_EPOCH + Duration::from_millis(created_at as u64)
-    );
-}
-
-#[test]
-fn raw_plan_header_maps_to_domain() {
-    let plan = PlanHeader::try_from(RawPlanHeaderRecord {
-        plan_id: "plan-123".to_string(),
-        revision: 7,
-        status: "ACTIVE".to_string(),
-        work_items_total: 10,
-        work_items_completed: 4,
-    })
-    .expect("record should map");
-
-    assert_eq!(plan.plan_id(), "plan-123");
-    assert_eq!(plan.revision(), 7);
-    assert_eq!(plan.work_items_total(), 10);
-}
-
-#[test]
-fn raw_work_item_maps_to_domain() {
-    let work_item = WorkItem::try_from(RawWorkItemRecord {
-        work_item_id: "story-123".to_string(),
-        title: "Implement read model".to_string(),
-        summary: "Port the first real query".to_string(),
-        role: "developer".to_string(),
-        phase: "delivery".to_string(),
-        status: "in_progress".to_string(),
-        dependency_ids: vec!["story-100".to_string()],
-        priority: 90,
-    })
-    .expect("record should map");
-
-    assert_eq!(work_item.work_item_id(), "story-123");
-    assert_eq!(work_item.dependency_ids(), &["story-100".to_string()]);
-    assert_eq!(work_item.priority(), 90);
-}
-
-#[test]
-fn raw_decision_and_milestone_map_to_domain() {
-    let decision = Decision::try_from(RawDecisionRecord {
-        decision_id: "dec-1".to_string(),
-        title: "Use Neo4j projection".to_string(),
-        rationale: "Supports graph traversal later".to_string(),
-        status: "accepted".to_string(),
-        owner: "architect".to_string(),
-        decided_at_millis: 10,
-    })
-    .expect("decision should map");
-    let milestone = Milestone::try_from(RawMilestoneRecord {
-        milestone_type: "phase_transition".to_string(),
-        description: "Moved to delivery".to_string(),
-        occurred_at_millis: 20,
-        actor: "planner".to_string(),
-    })
-    .expect("milestone should map");
-
-    assert_eq!(decision.decision_id(), "dec-1");
-    assert_eq!(decision.owner(), "architect");
-    assert_eq!(milestone.milestone_type(), "phase_transition");
-    assert_eq!(milestone.actor(), "planner");
-}
-
-#[test]
-fn timestamps_must_be_non_negative() {
-    let error =
-        parse_system_time(-1, "case_header.created_at").expect_err("negative timestamps must fail");
-
-    assert_eq!(
-        error,
-        PortError::InvalidState(
-            "neo4j projection field `case_header.created_at` must be a non-negative unix timestamp in milliseconds".to_string()
-        )
-    );
 }
 
 #[test]

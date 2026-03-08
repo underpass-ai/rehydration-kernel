@@ -88,7 +88,7 @@ where
         let result = self
             .query_application
             .get_bundle_snapshot(GetBundleSnapshotQuery {
-                case_id: request.case_id,
+                root_node_id: request.root_node_id,
                 role: request.role,
             })
             .await
@@ -128,7 +128,7 @@ where
         let result = self
             .query_application
             .get_rehydration_diagnostics(GetRehydrationDiagnosticsQuery {
-                case_id: request.case_id,
+                root_node_id: request.root_node_id,
                 roles: request.roles,
                 phase: trim_to_option(phase),
             })

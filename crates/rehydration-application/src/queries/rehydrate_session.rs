@@ -10,7 +10,7 @@ use crate::queries::{BundleAssembler, NodeCentricProjectionReader, QueryApplicat
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RehydrateSessionQuery {
-    pub case_id: String,
+    pub root_node_id: String,
     pub roles: Vec<String>,
     pub persist_snapshot: bool,
     pub timeline_window: u32,
@@ -18,7 +18,7 @@ pub struct RehydrateSessionQuery {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RehydrateSessionResult {
-    pub case_id: String,
+    pub root_node_id: String,
     pub bundles: Vec<RehydrationBundle>,
     pub timeline_events: u32,
     pub version: BundleMetadata,
@@ -101,7 +101,7 @@ where
         for role in &query.roles {
             bundles.push(
                 use_case
-                    .execute(&query.case_id, role, query.persist_snapshot)
+                    .execute(&query.root_node_id, role, query.persist_snapshot)
                     .await?,
             );
         }
@@ -109,7 +109,7 @@ where
         let snapshot_id = if query.persist_snapshot {
             Some(format!(
                 "snapshot:{}:{}",
-                query.case_id,
+                query.root_node_id,
                 query.roles.join(",")
             ))
         } else {
@@ -117,7 +117,7 @@ where
         };
 
         Ok(RehydrateSessionResult {
-            case_id: query.case_id,
+            root_node_id: query.root_node_id,
             bundles,
             timeline_events: query.timeline_window,
             version: BundleMetadata::initial(self.generator_version),

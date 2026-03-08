@@ -45,7 +45,7 @@ pub(crate) fn proto_rehydrate_session_response(
 
     RehydrateSessionResponse {
         bundle: Some(ProtoRehydrationBundle {
-            case_id: result.case_id.clone(),
+            root_node_id: result.root_node_id.clone(),
             packs: result
                 .bundles
                 .iter()
@@ -98,7 +98,7 @@ pub(crate) fn proto_bundle_snapshot_response(
     GetBundleSnapshotResponse {
         snapshot: Some(BundleSnapshot {
             snapshot_id: result.snapshot_id.clone(),
-            case_id: result.case_id.clone(),
+            root_node_id: result.root_node_id.clone(),
             role: result.role.clone(),
             bundle: Some(proto_bundle_from_single_role(&result.bundle)),
             created_at: Some(timestamp_from(result.created_at)),
@@ -134,7 +134,7 @@ pub(crate) fn proto_rehydration_diagnostics_response(
 
 pub(crate) fn proto_bundle_from_single_role(bundle: &RehydrationBundle) -> ProtoRehydrationBundle {
     ProtoRehydrationBundle {
-        case_id: bundle.case_id().as_str().to_string(),
+        root_node_id: bundle.root_node_id().as_str().to_string(),
         packs: vec![proto_role_pack_from_domain(bundle)],
         stats: Some(RehydrationStats {
             roles: 1,
@@ -155,7 +155,7 @@ pub(crate) fn proto_role_pack_from_domain(bundle: &RehydrationBundle) -> RoleCon
     RoleContextPack {
         role: pack.role().as_str().to_string(),
         case_header: Some(CaseHeader {
-            case_id: case_header.case_id().as_str().to_string(),
+            root_node_id: case_header.case_id().as_str().to_string(),
             title: case_header.title().to_string(),
             summary: case_header.summary().to_string(),
             status: case_header.status().to_string(),

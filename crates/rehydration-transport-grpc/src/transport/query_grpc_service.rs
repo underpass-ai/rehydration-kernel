@@ -42,7 +42,7 @@ where
         let result = self
             .application
             .get_context(GetContextQuery {
-                case_id: request.case_id,
+                root_node_id: request.root_node_id,
                 role: request.role,
                 requested_scopes: request.requested_scopes,
             })
@@ -65,7 +65,7 @@ where
         let result = self
             .application
             .rehydrate_session(RehydrateSessionQuery {
-                case_id: request.case_id,
+                root_node_id: request.root_node_id,
                 roles: request.roles,
                 persist_snapshot: request.persist_snapshot,
                 timeline_window: request.timeline_window,

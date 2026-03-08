@@ -89,7 +89,7 @@ async fn grpc_server_supports_query_command_and_admin_roundtrip() {
 
     let get_context = query_client
         .get_context(GetContextRequest {
-            case_id: "case-123".to_string(),
+            root_node_id: "case-123".to_string(),
             role: "developer".to_string(),
             phase: Phase::Build as i32,
             work_item_id: String::new(),
@@ -106,13 +106,13 @@ async fn grpc_server_supports_query_command_and_admin_roundtrip() {
             .bundle
             .as_ref()
             .expect("bundle should exist")
-            .case_id,
+            .root_node_id,
         "case-123"
     );
 
     let update_context = command_client
         .update_context(UpdateContextRequest {
-            case_id: "case-123".to_string(),
+            root_node_id: "case-123".to_string(),
             role: "developer".to_string(),
             work_item_id: "task-7".to_string(),
             changes: vec![ContextChange {
@@ -144,7 +144,7 @@ async fn grpc_server_supports_query_command_and_admin_roundtrip() {
 
     let snapshot = admin_client
         .get_bundle_snapshot(GetBundleSnapshotRequest {
-            case_id: "case-123".to_string(),
+            root_node_id: "case-123".to_string(),
             role: "developer".to_string(),
         })
         .await

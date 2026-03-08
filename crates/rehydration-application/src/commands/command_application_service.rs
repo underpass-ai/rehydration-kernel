@@ -13,7 +13,10 @@ impl CommandApplicationService {
         command: crate::commands::UpdateContextCommand,
     ) -> Result<crate::commands::UpdateContextOutcome, crate::ApplicationError> {
         let snapshot_id = if command.persist_snapshot {
-            Some(format!("snapshot:{}:{}", command.case_id, command.role))
+            Some(format!(
+                "snapshot:{}:{}",
+                command.root_node_id, command.role
+            ))
         } else {
             None
         };

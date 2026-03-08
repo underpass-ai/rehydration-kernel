@@ -60,7 +60,7 @@ fn snapshot_store_encodes_a_resp_set_command() {
     assert_eq!(request[4], "60");
     assert_eq!(
         request[2],
-        "{\"case_id\":\"case-123\",\"role\":\"reviewer\",\"sections\":[\"bundle for node case-123 role reviewer\"],\"metadata\":{\"revision\":1,\"content_hash\":\"pending\",\"generator_version\":\"0.1.0\"}}"
+        "{\"root_node_id\":\"case-123\",\"role\":\"reviewer\",\"sections\":[\"bundle for node case-123 role reviewer\"],\"metadata\":{\"revision\":1,\"content_hash\":\"pending\",\"generator_version\":\"0.1.0\"}}"
     );
 }
 

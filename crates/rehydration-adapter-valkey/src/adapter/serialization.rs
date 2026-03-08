@@ -56,7 +56,7 @@ pub(crate) fn serialize_bundle(bundle: &RehydrationBundle) -> String {
     format!(
         concat!(
             "{{",
-            "\"case_id\":\"{}\",",
+            "\"root_node_id\":\"{}\",",
             "\"role\":\"{}\",",
             "\"sections\":[{}],",
             "\"metadata\":{{",
@@ -66,7 +66,7 @@ pub(crate) fn serialize_bundle(bundle: &RehydrationBundle) -> String {
             "}}",
             "}}"
         ),
-        escape_json(bundle.case_id().as_str()),
+        escape_json(bundle.root_node_id().as_str()),
         escape_json(bundle.role().as_str()),
         sections,
         bundle.metadata().revision,
