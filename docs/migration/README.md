@@ -2,6 +2,10 @@
 
 Migration plans, parity reports, and shadow-mode notes will live here.
 
+Primary roadmap:
+
+- `context-service-rust-roadmap.md`
+
 Current Phase 0 documents:
 
 - `context-service-phase0-contract-freeze.md`
