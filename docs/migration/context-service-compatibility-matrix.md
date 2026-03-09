@@ -52,10 +52,10 @@ Status values:
 | --- | --- | --- | --- | --- | --- |
 | planning consumed subjects | six `planning.*` subjects | absent | missing | add compatibility consumers | Phase 3 |
 | orchestration consumed subjects | `orchestration.deliberation.completed`, `orchestration.task.dispatched` | absent | missing | add compatibility consumers | Phase 3 |
-| async request subjects | `context.update.request`, `context.rehydrate.request` | absent | missing | implement request/reply handlers | Phase 3 |
-| async response subjects | `context.update.response`, `context.rehydrate.response` | absent | missing | implement publishers | Phase 3 |
-| context-updated event | `context.events.updated` | absent | missing | implement publisher | Phase 4 |
-| request wrapper | required `EventEnvelope` | no external envelope parser on the current public path | missing | preserve envelope handling at edge | Phase 3 |
+| async request subjects | `context.update.request`, `context.rehydrate.request` | compatibility consumer implemented with subject routing and request handling | partial | wire the consumer into runtime JetStream setup | Phase 3 |
+| async response subjects | `context.update.response`, `context.rehydrate.response` | compatibility envelope publication implemented | partial | wire the publisher into runtime JetStream setup | Phase 3 |
+| context-updated event | `context.events.updated` | compatibility publisher and envelope publication implemented | partial | wire the publisher into UpdateContext and orchestration runtime paths | Phase 3 |
+| request wrapper | required `EventEnvelope` | compatibility parser enforces required envelope and object payload | partial | keep parity and wire to runtime subscriptions | Phase 3 |
 | current internal subjects | not part of external contract | `graph.node.materialized`, `node.detail.materialized` | diverged | keep as internal projection traffic only | Phase 1 |
 
 ## Behavioral Parity
@@ -65,9 +65,9 @@ Status values:
 | `GetGraphRelationships.depth` | clamp to `1..3` | compatibility shell clamps to the frozen bounds | match | keep parity covered by tests | Phase 2 |
 | validation error mapping | `INVALID_ARGUMENT` in tested paths | current transport uses internal status mapping | partial | freeze boundary error mapping | Phase 1 |
 | unexpected error mapping | `INTERNAL` in tested paths | current transport uses repo-local mapping | partial | align compatibility surface | Phase 1 |
-| invalid inbound async JSON | `ack` and drop | no handler | missing | preserve exact behavior | Phase 3 |
-| invalid inbound envelope | `ack` and drop | no handler | missing | preserve exact behavior | Phase 3 |
-| post-parse handler failure | `nak` | no handler | missing | preserve exact behavior | Phase 3 |
+| invalid inbound async JSON | `ack` and drop | compatibility consumer acks and drops invalid JSON | match | keep parity covered by golden tests | Phase 3 |
+| invalid inbound envelope | `ack` and drop | compatibility consumer acks and drops invalid envelope or non-object payload | match | keep parity covered by golden tests | Phase 3 |
+| post-parse handler failure | `nak` | compatibility consumer naks on application or publish failure | match | keep parity covered by golden tests | Phase 3 |
 
 ## Configuration and Startup
 
