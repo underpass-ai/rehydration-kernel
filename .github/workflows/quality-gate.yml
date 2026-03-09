@@ -67,7 +67,7 @@ jobs:
           components: clippy
 
       - name: Install protoc
-        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b
+        run: bash scripts/ci/install-protoc.sh
 
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5
@@ -90,7 +90,7 @@ jobs:
           toolchain: 1.90.0
 
       - name: Install protoc
-        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b
+        run: bash scripts/ci/install-protoc.sh
 
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5
@@ -159,7 +159,7 @@ jobs:
           toolchain: 1.90.0
 
       - name: Install protoc
-        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b
+        run: bash scripts/ci/install-protoc.sh
 
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5
@@ -225,7 +225,7 @@ jobs:
 
       - name: Install protoc
         if: steps.sonar-config.outputs.enabled == 'true'
-        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b
+        run: bash scripts/ci/install-protoc.sh
 
       - name: Install cargo-llvm-cov
         if: steps.sonar-config.outputs.enabled == 'true'
