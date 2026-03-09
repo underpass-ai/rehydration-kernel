@@ -40,5 +40,11 @@ mod tests {
     fn default_service_name_is_stable() {
         let config = AppConfig::from_env();
         assert_eq!(config.service_name, "rehydration-kernel");
+        assert_eq!(config.grpc_bind, "0.0.0.0:50054");
+        assert_eq!(config.admin_bind, "0.0.0.0:8080");
+        assert_eq!(config.graph_uri, "neo4j://localhost:7687");
+        assert_eq!(config.detail_uri, "redis://localhost:6379");
+        assert_eq!(config.snapshot_uri, "redis://localhost:6379");
+        assert_eq!(config.events_subject_prefix, "rehydration");
     }
 }

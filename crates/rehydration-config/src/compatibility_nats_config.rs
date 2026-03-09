@@ -20,6 +20,10 @@ fn parse_bool_env(name: &str, default: bool) -> bool {
         return default;
     };
 
+    parse_bool_value(&value)
+}
+
+fn parse_bool_value(value: &str) -> bool {
     matches!(
         value.trim().to_ascii_lowercase().as_str(),
         "true" | "1" | "yes" | "on"
@@ -28,7 +32,7 @@ fn parse_bool_env(name: &str, default: bool) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::CompatibilityNatsConfig;
+    use super::{CompatibilityNatsConfig, parse_bool_value};
 
     #[test]
     fn defaults_match_external_compatibility_contract() {
@@ -36,5 +40,19 @@ mod tests {
 
         assert_eq!(config.url, "nats://nats:4222");
         assert!(config.enabled);
+    }
+
+    #[test]
+    fn parse_bool_value_accepts_frozen_truthy_values() {
+        for value in ["true", "TRUE", "1", " yes ", "on"] {
+            assert!(parse_bool_value(value));
+        }
+    }
+
+    #[test]
+    fn parse_bool_value_treats_other_values_as_false() {
+        for value in ["false", "0", "no", "off", ""] {
+            assert!(!parse_bool_value(value));
+        }
     }
 }
