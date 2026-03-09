@@ -30,4 +30,11 @@ cargo llvm-cov \
   --locked \
   --no-report
 
+cargo llvm-cov \
+  -p rehydration-transport-grpc \
+  --features container-tests \
+  --test compatibility_integration \
+  --locked \
+  --no-report
+
 cargo llvm-cov report --locked --lcov --output-path target/llvm-cov/lcov.info
