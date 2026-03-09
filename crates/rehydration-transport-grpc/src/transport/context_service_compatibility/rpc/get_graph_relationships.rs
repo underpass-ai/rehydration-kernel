@@ -5,7 +5,10 @@ use rehydration_proto::fleet_context_v1::{
 use tonic::{Request, Response, Status};
 
 use crate::transport::context_service_compatibility::{
-    ContextCompatibilityGrpcService, request_mapping::map_get_graph_relationships_query,
+    ContextCompatibilityGrpcService,
+    request_mapping::{
+        map_get_graph_relationships_query, validate_get_graph_relationships_node_type,
+    },
     response_mapping::proto_get_graph_relationships_response,
     status_mapping::map_compatibility_error,
 };
@@ -19,9 +22,13 @@ where
     D: NodeDetailReader + Send + Sync + 'static,
     S: SnapshotStore + Send + Sync + 'static,
 {
+    let mut request = request.into_inner();
+    request.node_type = validate_get_graph_relationships_node_type(request.node_type)
+        .map_err(map_compatibility_error)?;
+
     let result = service
         .admin_query_application
-        .get_graph_relationships(map_get_graph_relationships_query(request.into_inner()))
+        .get_graph_relationships(map_get_graph_relationships_query(request))
         .await
         .map_err(map_compatibility_error)?;
 

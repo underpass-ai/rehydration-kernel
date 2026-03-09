@@ -72,6 +72,7 @@ Not allowed:
 | `grpc-get-graph-relationships-basic` | `GetGraphRelationships` | valid `node_id`, `node_type`, `depth=2` | proto plus use-case and servicer tests | `node`, `neighbors`, `relationships`, `success`, `message` |
 | `grpc-get-graph-relationships-depth-clamp` | `GetGraphRelationships` | request `depth=5` | source plus tests | effective depth clamped to `3` |
 | `grpc-get-graph-relationships-invalid-node-type` | `GetGraphRelationships` | invalid node type | servicer tests | `INVALID_ARGUMENT` |
+| `grpc-get-graph-relationships-node-not-found` | `GetGraphRelationships` | valid node type, missing node | use-case and servicer tests | `INVALID_ARGUMENT` |
 
 ## Required Async NATS Golden Tests
 
