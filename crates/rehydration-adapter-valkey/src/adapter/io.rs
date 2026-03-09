@@ -13,6 +13,7 @@ pub(crate) async fn execute_set_command(
     endpoint: &ValkeyEndpoint,
     key: &str,
     payload: &str,
+    ttl_seconds: Option<u64>,
 ) -> Result<(), PortError> {
     let mut stream = TcpStream::connect(endpoint.address())
         .await
@@ -23,7 +24,7 @@ pub(crate) async fn execute_set_command(
             ))
         })?;
 
-    let frame = encode_set_command(key, payload, endpoint.ttl_seconds);
+    let frame = encode_set_command(key, payload, ttl_seconds.or(endpoint.ttl_seconds));
     stream.write_all(&frame).await.map_err(|error| {
         PortError::Unavailable(format!("failed to write valkey payload: {error}"))
     })?;

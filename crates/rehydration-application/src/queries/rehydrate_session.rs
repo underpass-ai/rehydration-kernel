@@ -2,7 +2,8 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use rehydration_domain::{
-    BundleMetadata, GraphNeighborhoodReader, NodeDetailReader, RehydrationBundle, SnapshotStore,
+    BundleMetadata, GraphNeighborhoodReader, NodeDetailReader, RehydrationBundle,
+    SnapshotSaveOptions, SnapshotStore,
 };
 
 use crate::ApplicationError;
@@ -14,6 +15,7 @@ pub struct RehydrateSessionQuery {
     pub roles: Vec<String>,
     pub persist_snapshot: bool,
     pub timeline_window: u32,
+    pub snapshot_ttl_seconds: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -60,6 +62,7 @@ where
         root_node_id: &str,
         role: &str,
         persist_snapshot: bool,
+        snapshot_options: SnapshotSaveOptions,
     ) -> Result<RehydrationBundle, ApplicationError> {
         let bundle_reader =
             NodeCentricProjectionReader::new(&self.graph_reader, &self.detail_reader);
@@ -72,7 +75,9 @@ where
         };
 
         if persist_snapshot {
-            self.snapshot_store.save_bundle(&bundle).await?;
+            self.snapshot_store
+                .save_bundle_with_options(&bundle, snapshot_options)
+                .await?;
         }
         Ok(bundle)
     }
@@ -100,12 +105,18 @@ where
             Arc::clone(&self.snapshot_store),
             self.generator_version,
         );
+        let snapshot_options = SnapshotSaveOptions::new(Some(query.snapshot_ttl_seconds));
 
         let mut bundles = Vec::with_capacity(query.roles.len());
         for role in &query.roles {
             bundles.push(
                 use_case
-                    .execute(&query.root_node_id, role, query.persist_snapshot)
+                    .execute(
+                        &query.root_node_id,
+                        role,
+                        query.persist_snapshot,
+                        snapshot_options,
+                    )
                     .await?,
             );
         }
@@ -138,7 +149,109 @@ where
             Arc::clone(&self.snapshot_store),
             self.generator_version,
         )
-        .execute("bootstrap-node", "system", false)
+        .execute(
+            "bootstrap-node",
+            "system",
+            false,
+            SnapshotSaveOptions::default(),
+        )
         .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+    use std::sync::Arc;
+
+    use tokio::sync::Mutex;
+
+    use rehydration_domain::{
+        NodeDetailProjection, NodeNeighborhood, NodeProjection, PortError, SnapshotSaveOptions,
+    };
+
+    use super::{QueryApplicationService, RehydrateSessionQuery};
+
+    struct SeededGraphReader;
+
+    impl rehydration_domain::GraphNeighborhoodReader for SeededGraphReader {
+        async fn load_neighborhood(
+            &self,
+            root_node_id: &str,
+        ) -> Result<Option<NodeNeighborhood>, PortError> {
+            Ok(Some(NodeNeighborhood {
+                root: NodeProjection {
+                    node_id: root_node_id.to_string(),
+                    node_kind: "story".to_string(),
+                    title: "Root".to_string(),
+                    summary: "Root summary".to_string(),
+                    status: "ACTIVE".to_string(),
+                    labels: vec!["Story".to_string()],
+                    properties: BTreeMap::new(),
+                },
+                neighbors: Vec::new(),
+                relations: Vec::new(),
+            }))
+        }
+    }
+
+    struct SeededDetailReader;
+
+    impl rehydration_domain::NodeDetailReader for SeededDetailReader {
+        async fn load_node_detail(
+            &self,
+            node_id: &str,
+        ) -> Result<Option<NodeDetailProjection>, PortError> {
+            Ok(Some(NodeDetailProjection {
+                node_id: node_id.to_string(),
+                detail: "Expanded detail".to_string(),
+                content_hash: "hash-1".to_string(),
+                revision: 2,
+            }))
+        }
+    }
+
+    #[derive(Debug, Default)]
+    struct RecordingSnapshotStore {
+        options: Mutex<Vec<SnapshotSaveOptions>>,
+    }
+
+    impl rehydration_domain::SnapshotStore for RecordingSnapshotStore {
+        async fn save_bundle_with_options(
+            &self,
+            _bundle: &rehydration_domain::RehydrationBundle,
+            options: SnapshotSaveOptions,
+        ) -> Result<(), PortError> {
+            self.options.lock().await.push(options);
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn rehydrate_session_propagates_snapshot_ttl_to_store() {
+        let snapshot_store = Arc::new(RecordingSnapshotStore::default());
+        let service = QueryApplicationService::new(
+            Arc::new(SeededGraphReader),
+            Arc::new(SeededDetailReader),
+            Arc::clone(&snapshot_store),
+            "0.1.0",
+        );
+
+        let result = service
+            .rehydrate_session(RehydrateSessionQuery {
+                root_node_id: "story-123".to_string(),
+                roles: vec!["developer".to_string()],
+                persist_snapshot: true,
+                timeline_window: 50,
+                snapshot_ttl_seconds: 1800,
+            })
+            .await
+            .expect("rehydration should succeed");
+
+        assert!(result.snapshot_persisted);
+        assert_eq!(
+            snapshot_store.options.lock().await.as_slice(),
+            &[SnapshotSaveOptions::new(Some(1800))]
+        );
     }
 }

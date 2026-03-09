@@ -4,6 +4,7 @@ pub mod port_error;
 pub mod processed_event_store;
 pub mod projection_checkpoint_store;
 pub mod projection_writer;
+pub mod snapshot_save_options;
 pub mod snapshot_store;
 
 pub use graph_neighborhood_reader::GraphNeighborhoodReader;
@@ -12,4 +13,5 @@ pub use port_error::PortError;
 pub use processed_event_store::ProcessedEventStore;
 pub use projection_checkpoint_store::ProjectionCheckpointStore;
 pub use projection_writer::ProjectionWriter;
+pub use snapshot_save_options::SnapshotSaveOptions;
 pub use snapshot_store::SnapshotStore;

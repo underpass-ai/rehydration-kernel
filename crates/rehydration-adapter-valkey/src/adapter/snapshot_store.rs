@@ -1,4 +1,4 @@
-use rehydration_domain::RehydrationBundle;
+use rehydration_domain::{RehydrationBundle, SnapshotSaveOptions};
 use rehydration_ports::{PortError, SnapshotStore};
 
 use crate::adapter::bundle_serialization::serialize_bundle;
@@ -29,15 +29,34 @@ impl ValkeySnapshotStore {
         serialize_bundle(bundle)
     }
 
-    async fn execute_set_command(&self, key: &str, payload: &str) -> Result<(), PortError> {
-        execute_set_command(&self.endpoint, key, payload).await
+    pub(crate) fn effective_ttl_seconds(&self, options: SnapshotSaveOptions) -> Option<u64> {
+        options.ttl_seconds().or(self.endpoint.ttl_seconds)
+    }
+
+    async fn execute_set_command(
+        &self,
+        key: &str,
+        payload: &str,
+        options: SnapshotSaveOptions,
+    ) -> Result<(), PortError> {
+        execute_set_command(
+            &self.endpoint,
+            key,
+            payload,
+            self.effective_ttl_seconds(options),
+        )
+        .await
     }
 }
 
 impl SnapshotStore for ValkeySnapshotStore {
-    async fn save_bundle(&self, bundle: &RehydrationBundle) -> Result<(), PortError> {
+    async fn save_bundle_with_options(
+        &self,
+        bundle: &RehydrationBundle,
+        options: SnapshotSaveOptions,
+    ) -> Result<(), PortError> {
         let key = self.snapshot_key(bundle);
         let payload = self.snapshot_payload(bundle)?;
-        self.execute_set_command(&key, &payload).await
+        self.execute_set_command(&key, &payload, options).await
     }
 }

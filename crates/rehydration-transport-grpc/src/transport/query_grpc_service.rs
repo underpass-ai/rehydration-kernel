@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use rehydration_application::{
-    GetContextQuery, QueryApplicationService, RehydrateSessionQuery, ValidateScopeQuery,
+    ContextRenderOptions, GetContextQuery, QueryApplicationService, RehydrateSessionQuery,
+    ValidateScopeQuery,
 };
 use rehydration_domain::{GraphNeighborhoodReader, NodeDetailReader, SnapshotStore};
 use rehydration_proto::v1alpha1::{
@@ -44,6 +45,10 @@ where
             .get_context(GetContextQuery {
                 root_node_id: request.root_node_id,
                 role: request.role,
+                render_options: ContextRenderOptions {
+                    focus_node_id: None,
+                    token_budget: (request.token_budget > 0).then_some(request.token_budget),
+                },
                 requested_scopes: request.requested_scopes,
             })
             .await
@@ -68,6 +73,7 @@ where
                 root_node_id: request.root_node_id,
                 roles: request.roles,
                 persist_snapshot: request.persist_snapshot,
+                snapshot_ttl_seconds: 900,
                 timeline_window: request.timeline_window,
             })
             .await

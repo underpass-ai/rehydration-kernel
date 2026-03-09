@@ -5,7 +5,7 @@ use std::time::SystemTime;
 use rehydration_domain::{BundleMetadata, BundleNode, BundleNodeDetail, CaseId, Role};
 use rehydration_ports::commands::{
     ProcessedEventStore, ProjectionCheckpoint, ProjectionCheckpointStore, ProjectionMutation,
-    ProjectionWriter, SnapshotStore,
+    ProjectionWriter, SnapshotSaveOptions, SnapshotStore,
 };
 use rehydration_ports::{NodeDetailProjection, NodeProjection, PortError, RehydrationBundle};
 
@@ -62,7 +62,11 @@ impl ProjectionCheckpointStore for CheckpointStore {
 struct SnapshotWriter;
 
 impl SnapshotStore for SnapshotWriter {
-    async fn save_bundle(&self, _bundle: &RehydrationBundle) -> Result<(), PortError> {
+    async fn save_bundle_with_options(
+        &self,
+        _bundle: &RehydrationBundle,
+        _options: SnapshotSaveOptions,
+    ) -> Result<(), PortError> {
         Ok(())
     }
 }

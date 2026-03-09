@@ -13,7 +13,7 @@ use rehydration_application::{
 use rehydration_domain::{
     BundleMetadata, BundleNode, BundleNodeDetail, BundleRelationship, CaseId,
     GraphNeighborhoodReader, NodeDetailProjection, NodeDetailReader, NodeNeighborhood, PortError,
-    RehydrationBundle, Role, SnapshotStore,
+    RehydrationBundle, Role, SnapshotSaveOptions, SnapshotStore,
 };
 use rehydration_proto::fleet_context_v1::{
     ContextChange as CompatibilityContextChange,
@@ -76,7 +76,11 @@ impl NodeDetailReader for EmptyNodeDetailReader {
 struct NoopSnapshotStore;
 
 impl SnapshotStore for NoopSnapshotStore {
-    async fn save_bundle(&self, _bundle: &RehydrationBundle) -> Result<(), PortError> {
+    async fn save_bundle_with_options(
+        &self,
+        _bundle: &RehydrationBundle,
+        _options: SnapshotSaveOptions,
+    ) -> Result<(), PortError> {
         Ok(())
     }
 }
@@ -295,7 +299,19 @@ async fn compatibility_service_returns_external_context_shape() {
 
     assert!(response.context.contains("node-123"));
     assert_eq!(response.version, "rev-1");
-    assert_eq!(response.blocks.expect("blocks").system, "role=developer");
+    assert_eq!(
+        response.scopes,
+        vec![
+            "CASE_HEADER".to_string(),
+            "DECISIONS_RELEVANT_ROLE".to_string(),
+            "DEPS_RELEVANT".to_string(),
+            "PLAN_HEADER".to_string(),
+            "SUBTASKS_ROLE".to_string(),
+        ]
+    );
+    let blocks = response.blocks.expect("blocks");
+    assert_eq!(blocks.system, "role=developer");
+    assert!(blocks.tools.contains("CASE_HEADER"));
 }
 
 #[tokio::test]

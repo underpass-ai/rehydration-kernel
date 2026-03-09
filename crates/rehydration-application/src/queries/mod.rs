@@ -1,6 +1,7 @@
 pub mod admin_query_application_service;
 pub mod bundle_assembler;
 pub mod bundle_snapshot;
+pub mod context_render_options;
 pub mod get_context;
 pub mod graph_relationships;
 pub mod node_centric_projection_reader;
@@ -15,6 +16,7 @@ pub mod validate_scope;
 pub use admin_query_application_service::AdminQueryApplicationService;
 pub use bundle_assembler::BundleAssembler;
 pub use bundle_snapshot::{BundleSnapshotResult, GetBundleSnapshotQuery, GetBundleSnapshotUseCase};
+pub use context_render_options::ContextRenderOptions;
 pub use get_context::{GetContextQuery, GetContextResult, GetContextUseCase};
 pub use graph_relationships::{
     GetGraphRelationshipsQuery, GetGraphRelationshipsResult, GetGraphRelationshipsUseCase,
@@ -33,7 +35,9 @@ pub use rehydration_diagnostics::{
     GetRehydrationDiagnosticsQuery, GetRehydrationDiagnosticsResult,
     GetRehydrationDiagnosticsUseCase, RehydrationDiagnosticView,
 };
-pub use render_graph_bundle::{RenderedContext, render_graph_bundle};
+pub use render_graph_bundle::{
+    RenderedContext, render_graph_bundle, render_graph_bundle_with_options,
+};
 pub use validate_scope::{
     ScopeValidation, ValidateScopeQuery, ValidateScopeUseCase, dedupe_scopes,
 };

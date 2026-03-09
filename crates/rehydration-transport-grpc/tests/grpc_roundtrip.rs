@@ -3,7 +3,7 @@ use std::time::Duration;
 use rehydration_config::AppConfig;
 use rehydration_domain::{
     GraphNeighborhoodReader, NodeDetailProjection, NodeDetailReader, NodeNeighborhood, PortError,
-    RehydrationBundle, SnapshotStore,
+    RehydrationBundle, SnapshotSaveOptions, SnapshotStore,
 };
 use rehydration_proto::fleet_context_v1::{
     GetContextRequest as CompatibilityGetContextRequest,
@@ -48,7 +48,11 @@ impl NodeDetailReader for EmptyNodeDetailReader {
 struct NoopSnapshotStore;
 
 impl SnapshotStore for NoopSnapshotStore {
-    async fn save_bundle(&self, _bundle: &RehydrationBundle) -> Result<(), PortError> {
+    async fn save_bundle_with_options(
+        &self,
+        _bundle: &RehydrationBundle,
+        _options: SnapshotSaveOptions,
+    ) -> Result<(), PortError> {
         Ok(())
     }
 }

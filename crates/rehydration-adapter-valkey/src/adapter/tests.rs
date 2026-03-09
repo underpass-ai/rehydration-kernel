@@ -2,6 +2,7 @@ use std::str;
 
 use rehydration_domain::{
     BundleMetadata, BundleNode, BundleNodeDetail, CaseId, RehydrationBundle, Role,
+    SnapshotSaveOptions,
 };
 use rehydration_ports::{NodeDetailProjection, ProjectionMutation, ProjectionWriter};
 use serde_json::{Value, json};
@@ -115,6 +116,32 @@ fn snapshot_store_parses_valid_runtime_options() {
     assert_eq!(store.endpoint.port, 6379);
     assert_eq!(store.endpoint.key_prefix, "rehydration:it");
     assert_eq!(store.endpoint.ttl_seconds, Some(15));
+}
+
+#[test]
+fn snapshot_store_prefers_request_ttl_over_endpoint_default() {
+    let store = ValkeySnapshotStore::new(
+        "redis://localhost:6379?key_prefix=rehydration:test&ttl_seconds=60",
+    )
+    .expect("uri should be accepted");
+    let case_id = CaseId::new("node-123").expect("case id is valid");
+    let role = Role::new("reviewer").expect("role is valid");
+    let bundle = sample_bundle(
+        case_id,
+        role,
+        "bundle for node node-123 role reviewer",
+        BundleMetadata::initial("0.1.0"),
+    );
+
+    let key = store.snapshot_key(&bundle);
+    let payload = store
+        .snapshot_payload(&bundle)
+        .expect("snapshot payload should serialize");
+    let ttl_seconds = store.effective_ttl_seconds(SnapshotSaveOptions::new(Some(15)));
+    let request = parse_resp_array(&encode_set_command(&key, &payload, ttl_seconds))
+        .expect("resp command should be parsed");
+
+    assert_eq!(request[4], "15");
 }
 
 #[test]

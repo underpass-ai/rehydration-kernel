@@ -17,15 +17,15 @@ pub use projection::{
     RelatedNodeReference, RoutingProjectionWriter,
 };
 pub use queries::{
-    AdminQueryApplicationService, BundleAssembler, BundleSnapshotResult, GetBundleSnapshotQuery,
-    GetBundleSnapshotUseCase, GetContextQuery, GetContextResult, GetContextUseCase,
-    GetGraphRelationshipsQuery, GetGraphRelationshipsResult, GetGraphRelationshipsUseCase,
-    GetProjectionStatusQuery, GetProjectionStatusResult, GetProjectionStatusUseCase,
-    GetRehydrationDiagnosticsQuery, GetRehydrationDiagnosticsResult,
+    AdminQueryApplicationService, BundleAssembler, BundleSnapshotResult, ContextRenderOptions,
+    GetBundleSnapshotQuery, GetBundleSnapshotUseCase, GetContextQuery, GetContextResult,
+    GetContextUseCase, GetGraphRelationshipsQuery, GetGraphRelationshipsResult,
+    GetGraphRelationshipsUseCase, GetProjectionStatusQuery, GetProjectionStatusResult,
+    GetProjectionStatusUseCase, GetRehydrationDiagnosticsQuery, GetRehydrationDiagnosticsResult,
     GetRehydrationDiagnosticsUseCase, GraphNodeView, GraphRelationshipView,
     NodeCentricProjectionReader, ProjectionStatusView, QueryApplicationService,
     RehydrateSessionQuery, RehydrateSessionResult, RehydrateSessionUseCase,
     RehydrationDiagnosticView, RenderedContext, ScopeValidation, ValidateScopeQuery,
-    ValidateScopeUseCase,
+    ValidateScopeUseCase, render_graph_bundle_with_options,
 };
 pub use rehydration_application::RehydrationApplication;

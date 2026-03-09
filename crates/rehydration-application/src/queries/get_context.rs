@@ -1,12 +1,13 @@
 use rehydration_domain::{
-    GraphNeighborhoodReader, NodeDetailReader, RehydrationBundle, SnapshotStore,
+    GraphNeighborhoodReader, NodeDetailReader, RehydrationBundle, SnapshotSaveOptions,
+    SnapshotStore,
 };
 
 use crate::ApplicationError;
 pub use crate::queries::render_graph_bundle::RenderedContext;
 use crate::queries::{
-    QueryApplicationService, RehydrateSessionUseCase, ScopeValidation, ValidateScopeUseCase,
-    render_graph_bundle,
+    ContextRenderOptions, QueryApplicationService, RehydrateSessionUseCase, ScopeValidation,
+    ValidateScopeUseCase, render_graph_bundle_with_options,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -14,6 +15,7 @@ pub struct GetContextQuery {
     pub root_node_id: String,
     pub role: String,
     pub requested_scopes: Vec<String>,
+    pub render_options: ContextRenderOptions,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -44,12 +46,13 @@ where
         root_node_id: &str,
         role: &str,
         requested_scopes: &[String],
+        render_options: &ContextRenderOptions,
     ) -> Result<GetContextResult, ApplicationError> {
         let bundle = self
             .rehydrate_session
-            .execute(root_node_id, role, false)
+            .execute(root_node_id, role, false, SnapshotSaveOptions::default())
             .await?;
-        let rendered = render_graph_bundle(&bundle);
+        let rendered = render_graph_bundle_with_options(&bundle, render_options);
         let scope_validation = ValidateScopeUseCase::execute(requested_scopes, requested_scopes);
 
         Ok(GetContextResult {
@@ -79,7 +82,12 @@ where
         );
 
         GetContextUseCase::new(rehydrate)
-            .execute(&query.root_node_id, &query.role, &query.requested_scopes)
+            .execute(
+                &query.root_node_id,
+                &query.role,
+                &query.requested_scopes,
+                &query.render_options,
+            )
             .await
     }
 }

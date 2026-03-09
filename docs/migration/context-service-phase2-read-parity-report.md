@@ -1,6 +1,6 @@
 # Context Service Phase 2 Read-Parity Report
 
-Status: In progress
+Status: Complete
 Scope reviewed: `GetContext`, `RehydrateSession`, `ValidateScope`, `GetGraphRelationships`
 
 ## Purpose
@@ -31,17 +31,24 @@ Rust boundary and tests:
 - request mapping under [`request_mapping/`](../../crates/rehydration-transport-grpc/src/transport/context_service_compatibility/request_mapping/)
 - response mapping under [`response_mapping/`](../../crates/rehydration-transport-grpc/src/transport/context_service_compatibility/response_mapping/)
 - read golden tests under [`compatibility_golden/`](../../crates/rehydration-transport-grpc/tests/compatibility_golden/)
+- render controls under [`render_graph_bundle.rs`](../../crates/rehydration-application/src/queries/render_graph_bundle.rs)
+- snapshot persistence options under [`snapshot_store.rs`](../../crates/rehydration-domain/src/repositories/snapshot_store.rs)
+- Valkey TTL handling under [`snapshot_store.rs`](../../crates/rehydration-adapter-valkey/src/adapter/snapshot_store.rs)
 
 ## Current Result
 
 ### `GetContext`
 
-Boundary DTO status: `partial`
+Boundary DTO status: `match`
 
 Confirmed parity:
 
 - external request and response field names are preserved
 - response exposes `context`, `token_count`, `scopes`, `version`, and `blocks`
+- `phase` is translated into the compatibility scope catalog at the boundary
+- `subtask_id` becomes a node-centric focus hint that reorders rendered sections
+- `token_budget` is enforced as a render budget hint without leaking the external
+  field into the domain model
 - unexpected application errors map to gRPC `INTERNAL`
 
 Implemented evidence:
@@ -49,31 +56,30 @@ Implemented evidence:
 - [`get_context.rs`](../../crates/rehydration-transport-grpc/src/transport/context_service_compatibility/rpc/get_context.rs)
 - [`get_context_query.rs`](../../crates/rehydration-transport-grpc/src/transport/context_service_compatibility/request_mapping/get_context_query.rs)
 - [`get_context_response.rs`](../../crates/rehydration-transport-grpc/src/transport/context_service_compatibility/response_mapping/get_context_response.rs)
+- [`context_render_options.rs`](../../crates/rehydration-application/src/queries/context_render_options.rs)
+- [`render_graph_bundle.rs`](../../crates/rehydration-application/src/queries/render_graph_bundle.rs)
 - [`get_context.rs`](../../crates/rehydration-transport-grpc/tests/compatibility_golden/get_context.rs)
 
 Residual drift:
 
-- `phase` is accepted at the boundary but does not yet influence the rendered
-  node-centric context
-- `subtask_id` is accepted at the boundary but is not yet projected into a
-  task-focused context enrichment path
-- `token_budget` is accepted but not yet enforced or reflected in rendering
+- no evidence-backed DTO drift remains in the implemented read path
 
 Decision:
 
-- keep this drift in Phase 2
-- do not move it to Phase 3, because it belongs to read-path parity, not async
-  transport
+- `GetContext` parity is considered closed for the implemented contract surface
 
 ### `RehydrateSession`
 
-Boundary DTO status: `partial`
+Boundary DTO status: `match`
 
 Confirmed parity:
 
 - external request and response field names are preserved
 - `packs` and nested public DTOs are rendered at the boundary
 - `timeline_events <= 0` now falls back to the frozen external default `50`
+- `ttl_seconds <= 0` now falls back to the frozen external default `3600`
+- per-request `ttl_seconds` now reaches the snapshot persistence boundary and is
+  honored by the Valkey adapter ahead of endpoint defaults
 - `generated_at_ms` is treated as nondeterministic and normalized only in
   golden tests
 
@@ -82,19 +88,20 @@ Implemented evidence:
 - [`rehydrate_session.rs`](../../crates/rehydration-transport-grpc/src/transport/context_service_compatibility/rpc/rehydrate_session.rs)
 - [`rehydrate_session_query.rs`](../../crates/rehydration-transport-grpc/src/transport/context_service_compatibility/request_mapping/rehydrate_session_query.rs)
 - [`rehydrate_session_response.rs`](../../crates/rehydration-transport-grpc/src/transport/context_service_compatibility/response_mapping/rehydrate_session_response.rs)
+- [`rehydrate_session.rs`](../../crates/rehydration-application/src/queries/rehydrate_session.rs)
+- [`snapshot_save_options.rs`](../../crates/rehydration-domain/src/repositories/snapshot_save_options.rs)
+- [`snapshot_store.rs`](../../crates/rehydration-adapter-valkey/src/adapter/snapshot_store.rs)
 - [`rehydrate_session.rs`](../../crates/rehydration-transport-grpc/tests/compatibility_golden/rehydrate_session.rs)
+- [`valkey_integration.rs`](../../crates/rehydration-adapter-valkey/tests/valkey_integration.rs)
 
 Residual drift:
 
-- `ttl_seconds` from the external request is still not wired through to the
-  snapshot persistence boundary; the current snapshot store uses adapter
-  configuration TTL instead of per-request TTL
+- no evidence-backed DTO drift remains in the implemented read path
 
 Decision:
 
-- keep this drift in Phase 2
-- do not start Phase 3 until the team decides whether per-request snapshot TTL
-  is required for rollout parity
+- `RehydrateSession` parity is considered closed for the implemented contract
+  surface
 
 ### `ValidateScope`
 
@@ -151,7 +158,7 @@ Decision:
 
 ## Phase 2 Closeout Decision
 
-Phase 2 is not yet closed.
+Phase 2 is closed.
 
 What is already closed:
 
@@ -160,18 +167,15 @@ What is already closed:
   `GetGraphRelationships`
 - frozen `GetGraphRelationships.depth` clamp
 - frozen invalid `node_type` handling
+- frozen missing-node handling for `GetGraphRelationships`
 - frozen `RehydrateSession.timeline_events` defaulting
-
-What still blocks Phase 2 exit:
-
-1. `GetContext` request semantics are still weaker than the Python baseline for
-   `phase`, `subtask_id`, and `token_budget`
-2. `RehydrateSession.ttl_seconds` is not yet represented at the persistence
-   boundary
+- frozen `RehydrateSession.ttl_seconds` defaulting and persistence propagation
+- `GetContext` request semantics for `phase`, `subtask_id`, and `token_budget`
 
 ## Next Slice
 
-The next slice should stay inside Phase 2 and address one of these two options:
+The next slice moves to Phase 3:
 
-1. close `GetContext` request-semantic parity at the compatibility edge
-2. decide and implement the `ttl_seconds` strategy for snapshots
+1. implement async NATS request and reply parity
+2. preserve `EventEnvelope` handling and `ack` or `nak` behavior
+3. keep the NATS adapter split by routing, decoding, and publication concerns
