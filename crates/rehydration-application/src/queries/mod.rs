@@ -4,6 +4,7 @@ pub mod bundle_snapshot;
 pub mod get_context;
 pub mod graph_relationships;
 pub mod node_centric_projection_reader;
+pub mod ordered_neighborhood;
 pub mod projection_status;
 pub mod query_application_service;
 pub mod rehydrate_session;

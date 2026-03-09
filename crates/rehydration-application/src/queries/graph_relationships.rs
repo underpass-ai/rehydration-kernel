@@ -4,6 +4,7 @@ use rehydration_domain::{GraphNeighborhoodReader, NodeNeighborhood};
 
 use crate::ApplicationError;
 use crate::queries::AdminQueryApplicationService;
+use crate::queries::ordered_neighborhood::ordered_neighborhood;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GetGraphRelationshipsQuery {
@@ -59,11 +60,12 @@ where
     ) -> Result<GetGraphRelationshipsResult, ApplicationError> {
         let node_id = trim_to_option(&query.node_id)
             .ok_or_else(|| ApplicationError::Validation("node_id cannot be empty".to_string()))?;
-        let neighborhood = self
-            .graph_reader
-            .load_neighborhood(&node_id)
-            .await?
-            .unwrap_or_else(|| placeholder_neighborhood(&node_id, query.node_kind));
+        let neighborhood = ordered_neighborhood(
+            self.graph_reader
+                .load_neighborhood(&node_id)
+                .await?
+                .unwrap_or_else(|| placeholder_neighborhood(&node_id, query.node_kind)),
+        );
 
         Ok(GetGraphRelationshipsResult {
             root: map_node(&neighborhood.root),

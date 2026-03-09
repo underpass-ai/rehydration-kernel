@@ -4,6 +4,7 @@ use rehydration_domain::{
 };
 
 use crate::ApplicationError;
+use crate::queries::ordered_neighborhood::ordered_neighborhood;
 
 #[derive(Debug, Clone)]
 pub struct NodeCentricProjectionReader<G, D> {
@@ -35,6 +36,7 @@ where
             return Ok(None);
         };
 
+        let neighborhood = ordered_neighborhood(neighborhood);
         let node_details = load_node_details(&self.detail_reader, &neighborhood).await?;
         let root_node_id = CaseId::new(root_node_id)?;
         let role = Role::new(role)?;
