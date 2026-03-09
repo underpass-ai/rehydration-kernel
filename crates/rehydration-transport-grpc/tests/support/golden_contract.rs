@@ -9,9 +9,9 @@ use rehydration_proto::fleet_context_v1::{
 use crate::support::seed_data::{
     BUILD_PHASE, DECISION_DETAIL, DECISION_ID, DECISION_KIND, DECISION_LABEL, DECISION_STATUS,
     DECISION_SUMMARY, DECISION_TITLE, DEVELOPER_ROLE, HAS_TASK_RELATION, RECORDS_RELATION,
-    REHYDRATE_TIMELINE_EVENTS, ROOT_CREATED_BY, ROOT_DETAIL, ROOT_DETAIL_REVISION, ROOT_LABEL,
-    ROOT_NODE_ID, ROOT_NODE_KIND, ROOT_PLAN_ID, ROOT_STATUS, ROOT_SUMMARY, ROOT_TITLE, TASK_ID,
-    TASK_KIND, TASK_LABEL, TASK_PRIORITY, TASK_ROLE, TASK_STATUS, TASK_SUMMARY, TASK_TITLE,
+    ROOT_CREATED_BY, ROOT_DETAIL, ROOT_DETAIL_REVISION, ROOT_LABEL, ROOT_NODE_ID, ROOT_NODE_KIND,
+    ROOT_PLAN_ID, ROOT_STATUS, ROOT_SUMMARY, ROOT_TITLE, TASK_ID, TASK_KIND, TASK_LABEL,
+    TASK_PRIORITY, TASK_ROLE, TASK_STATUS, TASK_SUMMARY, TASK_TITLE,
 };
 
 pub(crate) fn expected_get_context_response() -> GetContextResponse {
@@ -31,6 +31,7 @@ pub(crate) fn expected_get_context_response() -> GetContextResponse {
 
 pub(crate) fn expected_rehydrate_session_response(
     generated_at_ms: i64,
+    timeline_events: i32,
 ) -> RehydrateSessionResponse {
     RehydrateSessionResponse {
         case_id: ROOT_NODE_ID.to_string(),
@@ -82,7 +83,7 @@ pub(crate) fn expected_rehydrate_session_response(
             decisions: 1,
             decision_edges: 0,
             impacts: 0,
-            events: REHYDRATE_TIMELINE_EVENTS,
+            events: timeline_events,
             roles: vec![DEVELOPER_ROLE.to_string()],
         }),
     }

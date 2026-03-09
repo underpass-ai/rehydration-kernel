@@ -348,21 +348,20 @@ async fn compatibility_service_routes_update_context() {
 }
 
 #[tokio::test]
-async fn compatibility_service_routes_graph_relationships() {
+async fn compatibility_service_rejects_missing_graph_relationship_root() {
     let service = compatibility_service();
 
-    let response = service
+    let error = service
         .get_graph_relationships(Request::new(CompatibilityGetGraphRelationshipsRequest {
             node_id: "node-123".to_string(),
             node_type: "Story".to_string(),
             depth: 7,
         }))
         .await
-        .expect("compatibility graph relationships should succeed")
-        .into_inner();
+        .expect_err("compatibility graph relationships should reject missing nodes");
 
-    assert!(response.success);
-    assert_eq!(response.node.expect("node").id, "node-123");
+    assert_eq!(error.code(), tonic::Code::InvalidArgument);
+    assert_eq!(error.message(), "Node not found: node-123");
 }
 
 #[tokio::test]

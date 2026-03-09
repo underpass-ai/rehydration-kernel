@@ -187,6 +187,8 @@ Current implementation state:
 - `RehydrateSession`: routed and covered
 - `GetGraphRelationships`: routed and covered
 - `ValidateScope`: routed and covered
+- read-path golden tests: implemented
+- DTO parity audit: completed
 
 Deliverables:
 
@@ -201,6 +203,12 @@ Exit gate:
 - read-path golden tests pass
 - external DTOs match the frozen contract
 - no core module adopts external legacy nouns
+
+Current blocker after audit:
+
+- `GetContext` request semantics still underfit the Python baseline for
+  `phase`, `subtask_id`, and `token_budget`
+- `RehydrateSession.ttl_seconds` is not yet propagated to snapshot persistence
 
 ### Phase 3: Async NATS Parity
 
@@ -289,7 +297,6 @@ Keep Phase 2 focused on read-path parity, not on more internal refactor.
 
 The next implementation cut should produce:
 
-1. read-path golden tests for all externally implemented RPCs
-2. parity review of external DTO rendering against the Phase 0 freeze
-3. explicit decision on whether any remaining read drift stays in Phase 2 or must move to Phase 3
-4. close the remaining Phase 2 contract gaps before starting async NATS parity
+1. close `GetContext` request-semantic parity at the compatibility edge
+2. decide and implement the `ttl_seconds` strategy for snapshot persistence
+3. only then start async NATS parity
