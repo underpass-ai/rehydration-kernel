@@ -52,10 +52,10 @@ Status values:
 | --- | --- | --- | --- | --- | --- |
 | planning consumed subjects | six `planning.*` subjects | absent | missing | add compatibility consumers | Phase 3 |
 | orchestration consumed subjects | `orchestration.deliberation.completed`, `orchestration.task.dispatched` | absent | missing | add compatibility consumers | Phase 3 |
-| async request subjects | `context.update.request`, `context.rehydrate.request` | compatibility consumer implemented with subject routing and request handling | partial | wire the consumer into runtime JetStream setup | Phase 3 |
-| async response subjects | `context.update.response`, `context.rehydrate.response` | compatibility envelope publication implemented | partial | wire the publisher into runtime JetStream setup | Phase 3 |
-| context-updated event | `context.events.updated` | compatibility publisher and envelope publication implemented | partial | wire the publisher into UpdateContext and orchestration runtime paths | Phase 3 |
-| request wrapper | required `EventEnvelope` | compatibility parser enforces required envelope and object payload | partial | keep parity and wire to runtime subscriptions | Phase 3 |
+| async request subjects | `context.update.request`, `context.rehydrate.request` | compatibility consumer implemented and wired through JetStream runtime | match | keep parity covered by runtime integration tests | Phase 3 |
+| async response subjects | `context.update.response`, `context.rehydrate.response` | compatibility envelope publication implemented and wired through JetStream runtime | match | keep parity covered by runtime integration tests | Phase 3 |
+| context-updated event | `context.events.updated` | compatibility publisher implemented and proven against a real NATS runtime, but not yet invoked from every frozen emission path | partial | wire the publisher into UpdateContext and orchestration runtime paths | Phase 3 |
+| request wrapper | required `EventEnvelope` | compatibility parser enforces the required envelope and is wired into runtime subscriptions | match | keep parity covered by runtime integration tests | Phase 3 |
 | current internal subjects | not part of external contract | `graph.node.materialized`, `node.detail.materialized` | diverged | keep as internal projection traffic only | Phase 1 |
 
 ## Behavioral Parity
@@ -76,8 +76,8 @@ Status values:
 | `GRPC_PORT` default | `50054` | different bootstrap surface | diverged | add compatibility config mapping | Phase 1 |
 | `NEO4J_PASSWORD` required | yes | graph access exists, but not under the same public config surface | partial | preserve fail-fast behavior | Phase 1 |
 | `REDIS_HOST` and `REDIS_PORT` defaults | `redis`, `6379` | current config differs | diverged | add compatibility env mapping | Phase 1 |
-| `NATS_URL` default | `nats://nats:4222` | current config differs | diverged | add compatibility env mapping | Phase 1 |
-| `ENABLE_NATS` behavior | parsed as bool; startup fails if false | external NATS service not implemented yet | missing | preserve fail-fast behavior when compatibility shell is enabled | Phase 1 |
+| `NATS_URL` default | `nats://nats:4222` | compatibility NATS config preserves the frozen default | match | keep parity at the compatibility edge | Phase 3 |
+| `ENABLE_NATS` behavior | parsed as bool; startup fails if false | compatibility NATS config preserves the bool parse and server startup fails fast when disabled | match | keep parity at the compatibility edge | Phase 3 |
 | scopes YAML fallback | missing or invalid file -> empty config | current scope path differs | diverged | preserve or document intentional deviation before rollout | Phase 1 |
 
 ## Internal Architecture Position

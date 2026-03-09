@@ -240,6 +240,8 @@ Current implementation state:
 - `context.update.response`: envelope publication implemented
 - `context.rehydrate.response`: envelope publication implemented
 - `context.events.updated`: publisher and frozen envelope publication implemented
+- compatibility JetStream runtime wiring implemented for request consumers and publication sink
+- compatibility NATS config implemented with `NATS_URL` default and `ENABLE_NATS` fail-fast behavior
 - required `EventEnvelope` parsing and validation implemented at the NATS edge
 - golden tests cover:
   - valid request -> publish reply + `ack`
@@ -247,12 +249,14 @@ Current implementation state:
   - invalid envelope -> `ack` and drop
   - non-object payload -> `ack` and drop
   - post-parse service failure -> `nak`
+  - runtime JetStream request -> response over a real NATS container
+  - runtime `context.updated` publication over a real NATS container
 
 Remaining Phase 3 work:
 
 - planning compatibility consumers
 - orchestration compatibility consumers
-- runtime JetStream wiring for the external compatibility consumer and publisher
+- wiring `context.events.updated` into the compatibility write-path and orchestration triggers that emit it in the frozen baseline
 
 Exit gate:
 
@@ -312,10 +316,10 @@ Exit gate:
 
 ## Immediate Next Slice
 
-Move to Phase 3 and keep the work at the compatibility edge.
+Stay in Phase 3 and finish the remaining external NATS consumers.
 
 The next implementation cut should produce:
 
-1. implement `context.update.request` and `context.rehydrate.request`
-2. preserve `EventEnvelope` parsing, validation, and correlation behavior
-3. prove `ack` or `nak` semantics with async golden tests
+1. planning compatibility consumers
+2. orchestration compatibility consumers
+3. parity tests for their publication or `ack` or `nak` behavior without expanding the adapter into a god file
