@@ -10,7 +10,7 @@ use rehydration_ports::{
     ProjectionWriter,
 };
 use rehydration_proto::fleet_context_v1::{
-    GetContextRequest, GetGraphRelationshipsRequest, RehydrateSessionRequest,
+    GetContextRequest, GetGraphRelationshipsRequest, RehydrateSessionRequest, ValidateScopeRequest,
     context_service_client::ContextServiceClient,
 };
 
@@ -85,6 +85,26 @@ async fn compatibility_get_context_and_graph_relationships_use_real_projection_d
     assert_eq!(graph_relationships.node.expect("root node").id, "story-123");
     assert_eq!(graph_relationships.neighbors.len(), 2);
     assert_eq!(graph_relationships.relationships.len(), 2);
+
+    let validate_scope = client
+        .validate_scope(ValidateScopeRequest {
+            role: "developer".to_string(),
+            phase: "BUILD".to_string(),
+            provided_scopes: vec![
+                "CASE_HEADER".to_string(),
+                "PLAN_HEADER".to_string(),
+                "SUBTASKS_ROLE".to_string(),
+                "DECISIONS_RELEVANT_ROLE".to_string(),
+                "DEPS_RELEVANT".to_string(),
+            ],
+        })
+        .await?
+        .into_inner();
+
+    assert!(validate_scope.allowed);
+    assert!(validate_scope.missing.is_empty());
+    assert!(validate_scope.extra.is_empty());
+    assert_eq!(validate_scope.reason, "All scopes are allowed");
 
     stop_server(server).await?;
     Ok(())

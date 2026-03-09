@@ -366,17 +366,35 @@ async fn compatibility_service_routes_graph_relationships() {
 }
 
 #[tokio::test]
-async fn compatibility_service_returns_unimplemented_for_placeholder_rpcs() {
+async fn compatibility_service_validates_scope_via_external_contract() {
     let service = compatibility_service();
 
     let validate_scope = service
         .validate_scope(Request::new(CompatibilityValidateScopeRequest {
-            role: "DEV".to_string(),
+            role: "developer".to_string(),
             phase: "BUILD".to_string(),
-            provided_scopes: vec!["graph".to_string()],
+            provided_scopes: vec![
+                "CASE_HEADER".to_string(),
+                "PLAN_HEADER".to_string(),
+                "SUBTASKS_ROLE".to_string(),
+                "DECISIONS_RELEVANT_ROLE".to_string(),
+                "DEPS_RELEVANT".to_string(),
+            ],
         }))
         .await
-        .expect_err("validate scope should be unimplemented");
+        .expect("validate scope should succeed")
+        .into_inner();
+
+    assert!(validate_scope.allowed);
+    assert!(validate_scope.missing.is_empty());
+    assert!(validate_scope.extra.is_empty());
+    assert_eq!(validate_scope.reason, "All scopes are allowed");
+}
+
+#[tokio::test]
+async fn compatibility_service_returns_unimplemented_for_remaining_placeholder_rpcs() {
+    let service = compatibility_service();
+
     let create_story = service
         .create_story(Request::new(CompatibilityCreateStoryRequest {
             story_id: "story-1".to_string(),
@@ -426,7 +444,6 @@ async fn compatibility_service_returns_unimplemented_for_placeholder_rpcs() {
         .await
         .expect_err("transition phase should be unimplemented");
 
-    assert_eq!(validate_scope.code(), tonic::Code::Unimplemented);
     assert_eq!(create_story.code(), tonic::Code::Unimplemented);
     assert_eq!(create_task.code(), tonic::Code::Unimplemented);
     assert_eq!(add_decision.code(), tonic::Code::Unimplemented);

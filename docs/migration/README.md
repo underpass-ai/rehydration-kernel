@@ -16,7 +16,8 @@ Phase 0 baseline:
 Phase 0 status:
 
 - complete
-- next milestone: `Phase 1 - Compatibility Shell`
+- `Phase 1 - Compatibility Shell`: complete
+- next milestone: `Phase 2 - Read-Path Parity`
 
 Historical internal substrate plan:
 
