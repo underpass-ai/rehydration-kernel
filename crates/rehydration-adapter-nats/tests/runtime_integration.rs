@@ -10,7 +10,7 @@ use rehydration_application::{
 };
 use serde_json::{Value, json};
 use testcontainers::core::IntoContainerPort;
-use tokio::time::timeout;
+use tokio::time::{sleep, timeout};
 use tokio_stream::StreamExt;
 
 mod support;
@@ -193,7 +193,7 @@ async fn runtime_naks_failed_requests_and_stops_with_consumer_error() {
         .await
         .expect("nats port should resolve");
     let url = format!("nats://127.0.0.1:{port}");
-    let runtime = NatsCompatibilityRuntime::connect(&url, ErroringService)
+    let runtime = connect_runtime_with_retry(&url, || ErroringService)
         .await
         .expect("runtime should connect");
     let runtime_handle = tokio::spawn(runtime.run());
@@ -256,7 +256,31 @@ async fn start_runtime() -> Result<
         .get_host_port_ipv4(NATS_INTERNAL_PORT.tcp())
         .await?;
     let url = format!("nats://127.0.0.1:{port}");
-    let runtime = NatsCompatibilityRuntime::connect(&url, seeded_service()).await?;
+    let runtime = connect_runtime_with_retry(&url, seeded_service).await?;
 
     Ok((container, url, runtime))
+}
+
+async fn connect_runtime_with_retry<S, F>(
+    url: &str,
+    factory: F,
+) -> Result<NatsCompatibilityRuntime<S>, NatsRuntimeError>
+where
+    S: ContextAsyncService + Send + Sync + 'static,
+    F: Fn() -> S,
+{
+    let mut last_error: Option<NatsRuntimeError> = None;
+
+    for _ in 0..30 {
+        match NatsCompatibilityRuntime::connect(url, factory()).await {
+            Ok(runtime) => return Ok(runtime),
+            Err(NatsRuntimeError::Connection(error)) => {
+                last_error = Some(NatsRuntimeError::Connection(error));
+                sleep(Duration::from_secs(1)).await;
+            }
+            Err(error) => return Err(error),
+        }
+    }
+
+    Err(last_error.expect("at least one runtime connection attempt should fail"))
 }
