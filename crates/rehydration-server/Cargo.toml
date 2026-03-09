@@ -13,6 +13,7 @@ rehydration-adapter-neo4j.workspace = true
 rehydration-adapter-valkey.workspace = true
 rehydration-application.workspace = true
 rehydration-config.workspace = true
+rehydration-domain.workspace = true
 rehydration-observability.workspace = true
 rehydration-transport-grpc.workspace = true
 rehydration-transport-http-admin.workspace = true

@@ -5,10 +5,10 @@ use std::time::{Duration, SystemTime};
 use rehydration_application::{
     AcceptedVersion, AdminCommandApplicationService, AdminQueryApplicationService,
     ApplicationError, BundleAssembler, BundleSnapshotResult, CommandApplicationService,
-    GetGraphRelationshipsResult, GetProjectionStatusResult, GetRehydrationDiagnosticsResult,
-    GraphNodeView, GraphRelationshipView, ProjectionStatusView, QueryApplicationService,
-    RehydrateSessionResult, RehydrationDiagnosticView, ReplayModeSelection,
-    ReplayProjectionOutcome,
+    GetContextQuery, GetGraphRelationshipsResult, GetProjectionStatusResult,
+    GetRehydrationDiagnosticsResult, GraphNodeView, GraphRelationshipView, ProjectionStatusView,
+    QueryApplicationService, RehydrateSessionResult, RehydrationDiagnosticView,
+    ReplayModeSelection, ReplayProjectionOutcome,
 };
 use rehydration_domain::{
     BundleMetadata, BundleNode, BundleNodeDetail, BundleRelationship, CaseId,
@@ -107,6 +107,53 @@ fn describe_mentions_bind_address() {
     assert_eq!(server.bootstrap_request().root_node_id, "bootstrap-node");
     let descriptor_set = std::hint::black_box(server.descriptor_set());
     assert!(!descriptor_set.is_empty());
+}
+
+#[tokio::test]
+async fn grpc_server_application_accessors_return_callable_services() {
+    let config = rehydration_config::AppConfig {
+        service_name: "rehydration-kernel".to_string(),
+        grpc_bind: "127.0.0.1:50054".to_string(),
+        admin_bind: "127.0.0.1:8080".to_string(),
+        graph_uri: "neo4j://localhost:7687".to_string(),
+        detail_uri: "redis://localhost:6379".to_string(),
+        snapshot_uri: "redis://localhost:6379".to_string(),
+        events_subject_prefix: "rehydration".to_string(),
+    };
+    let server = GrpcServer::new(
+        config,
+        EmptyGraphNeighborhoodReader,
+        EmptyNodeDetailReader,
+        NoopSnapshotStore,
+    );
+
+    let get_context = server
+        .query_application()
+        .get_context(GetContextQuery {
+            root_node_id: "node-123".to_string(),
+            role: "developer".to_string(),
+            requested_scopes: vec!["graph".to_string()],
+            render_options: Default::default(),
+        })
+        .await
+        .expect("query application should respond");
+    assert_eq!(get_context.bundle.root_node_id().as_str(), "node-123");
+
+    let update = server
+        .command_application()
+        .update_context(rehydration_application::UpdateContextCommand {
+            root_node_id: "node-123".to_string(),
+            role: "developer".to_string(),
+            work_item_id: String::new(),
+            changes: Vec::new(),
+            expected_revision: None,
+            expected_content_hash: None,
+            idempotency_key: None,
+            requested_by: None,
+            persist_snapshot: false,
+        })
+        .expect("command application should respond");
+    assert_eq!(update.accepted_version.revision, 1);
 }
 
 #[tokio::test]

@@ -2,6 +2,7 @@ mod compatibility;
 mod consumer;
 mod error;
 mod payload_decoding;
+mod runtime;
 mod subject_routing;
 
 #[cfg(test)]
@@ -13,3 +14,4 @@ pub use compatibility::{
 };
 pub use consumer::NatsProjectionConsumer;
 pub use error::NatsConsumerError;
+pub use runtime::{JetStreamPublicationSink, NatsCompatibilityRuntime, NatsRuntimeError};

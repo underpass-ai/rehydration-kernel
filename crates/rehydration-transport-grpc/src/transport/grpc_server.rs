@@ -100,6 +100,14 @@ where
         CommandGrpcService::new(Arc::clone(&self.command_application))
     }
 
+    pub fn query_application(&self) -> Arc<QueryApplicationService<G, D, S>> {
+        Arc::clone(&self.query_application)
+    }
+
+    pub fn command_application(&self) -> Arc<CommandApplicationService> {
+        Arc::clone(&self.command_application)
+    }
+
     pub fn admin_service(&self) -> AdminGrpcService<G, D> {
         AdminGrpcService::new(
             Arc::clone(&self.admin_query_application),
