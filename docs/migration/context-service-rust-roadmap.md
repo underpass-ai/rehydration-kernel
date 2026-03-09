@@ -41,10 +41,14 @@ boundary contract.
 - split Valkey adapter
 - split NATS adapter
 - split gRPC transport
+- external `fleet.context.v1` proto package
+- compatibility shell at the gRPC edge
+- explicit request, response, and status mapping modules
+- container-backed compatibility integration tests
 - green repo quality gates
 
 That means the next milestone is not another core refactor.
-The next milestone is the compatibility shell.
+The next milestone is read-path parity at the external boundary.
 
 ## Status by Stream
 
@@ -65,7 +69,7 @@ gap.
 
 ### Stream B: External contract compatibility
 
-Status: `phase 0 complete, phase 1 next`
+Status: `phase 0 complete, phase 1 complete, phase 2 in progress`
 
 Frozen in Phase 0:
 
@@ -76,6 +80,16 @@ Frozen in Phase 0:
 - compatibility matrix
 - golden test catalog
 - reuse boundary
+
+Delivered in Phase 1:
+
+- compatibility proto generation for `fleet.context.v1`
+- compatibility transport facade
+- focused RPC modules
+- focused request mapping modules
+- focused response mapping modules
+- boundary status mapping
+- container-backed integration coverage for the implemented compatibility flows
 
 ### Stream C: Rollout and shadow mode
 
@@ -109,7 +123,7 @@ Exit gate: complete
 
 ### Phase 1: Compatibility Shell
 
-Status: `next`
+Status: `complete`
 
 Goal:
 
@@ -139,9 +153,22 @@ Exit gate:
 - boundary error mapping is proven by tests
 - the shell routes requests into the current node-centric application layer
 
+Delivered:
+
+- `fleet.context.v1` proto package and generation flow
+- compatibility gRPC facade
+- focused request mapping modules
+- focused response mapping modules
+- status mapping for implemented and placeholder RPCs
+- transport tests for compatibility routing
+- container-backed compatibility integration tests for:
+  - `GetContext`
+  - `GetGraphRelationships`
+  - `RehydrateSession`
+
 ### Phase 2: Read-Path Parity
 
-Status: `pending`
+Status: `in progress`
 
 Goal:
 
@@ -153,6 +180,13 @@ Scope:
 - `RehydrateSession`
 - `ValidateScope`
 - `GetGraphRelationships`
+
+Current implementation state:
+
+- `GetContext`: routed and covered
+- `RehydrateSession`: routed and covered
+- `GetGraphRelationships`: routed and covered
+- `ValidateScope`: routed and covered
 
 Deliverables:
 
@@ -251,11 +285,11 @@ Exit gate:
 
 ## Immediate Next Slice
 
-Start Phase 1 with the compatibility shell, not with more internal refactor.
+Keep Phase 2 focused on read-path parity, not on more internal refactor.
 
-The first implementation cut should produce:
+The next implementation cut should produce:
 
-1. external package and service scaffolding for `fleet.context.v1`
-2. focused edge DTO modules
-3. error mapping parity at the boundary
-4. tests that prove the compatibility shell boots without polluting the core
+1. read-path golden tests for all externally implemented RPCs
+2. parity review of external DTO rendering against the Phase 0 freeze
+3. explicit decision on whether any remaining read drift stays in Phase 2 or must move to Phase 3
+4. close the remaining Phase 2 contract gaps before starting async NATS parity

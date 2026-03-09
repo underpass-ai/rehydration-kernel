@@ -110,11 +110,19 @@ async fn grpc_server_supports_query_command_and_admin_roundtrip() {
         .validate_scope(CompatibilityValidateScopeRequest {
             role: "developer".to_string(),
             phase: "BUILD".to_string(),
-            provided_scopes: vec!["graph".to_string()],
+            provided_scopes: vec![
+                "CASE_HEADER".to_string(),
+                "PLAN_HEADER".to_string(),
+                "SUBTASKS_ROLE".to_string(),
+                "DECISIONS_RELEVANT_ROLE".to_string(),
+                "DEPS_RELEVANT".to_string(),
+            ],
         })
         .await
-        .expect_err("placeholder compatibility rpc should be unimplemented");
-    assert_eq!(validate_scope.code(), tonic::Code::Unimplemented);
+        .expect("compatibility validate scope should respond")
+        .into_inner();
+    assert!(validate_scope.allowed);
+    assert_eq!(validate_scope.reason, "All scopes are allowed");
 
     let get_context = query_client
         .get_context(GetContextRequest {

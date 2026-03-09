@@ -69,7 +69,7 @@ where
         &self,
         request: Request<ValidateScopeRequest>,
     ) -> Result<Response<ValidateScopeResponse>, Status> {
-        rpc::validate_scope::handle(request).await
+        rpc::validate_scope::handle(self, request).await
     }
 
     async fn create_story(
