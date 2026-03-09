@@ -210,7 +210,7 @@ Exit gate:
 
 ### Phase 3: Async NATS Parity
 
-Status: `pending`
+Status: `in progress`
 
 Goal:
 
@@ -232,6 +232,27 @@ Deliverables:
 - request or reply correlation
 - `ack` or `nak` parity
 - publish envelope parity
+
+Current implementation state:
+
+- `context.update.request`: compatibility consumer implemented
+- `context.rehydrate.request`: compatibility consumer implemented
+- `context.update.response`: envelope publication implemented
+- `context.rehydrate.response`: envelope publication implemented
+- `context.events.updated`: publisher and frozen envelope publication implemented
+- required `EventEnvelope` parsing and validation implemented at the NATS edge
+- golden tests cover:
+  - valid request -> publish reply + `ack`
+  - invalid JSON -> `ack` and drop
+  - invalid envelope -> `ack` and drop
+  - non-object payload -> `ack` and drop
+  - post-parse service failure -> `nak`
+
+Remaining Phase 3 work:
+
+- planning compatibility consumers
+- orchestration compatibility consumers
+- runtime JetStream wiring for the external compatibility consumer and publisher
 
 Exit gate:
 

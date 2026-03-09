@@ -1547,6 +1547,9 @@ name = "rehydration-adapter-nats"
 version = "0.1.0"
 dependencies = [
  "rehydration-application",
+ "rehydration-domain",
+ "rehydration-testkit",
+ "serde",
  "serde_json",
  "tokio",
 ]
