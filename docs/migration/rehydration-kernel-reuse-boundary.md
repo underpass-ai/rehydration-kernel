@@ -1,61 +1,84 @@
 # Rehydration Kernel Reuse Boundary
 
-This note defines what can be reused from the current workspace while keeping
-the repo purely node-centric.
+This note defines what from this repo can be reused in the Context Service Rust
+migration without allowing the internal kernel contract to become the external
+service contract by accident.
 
-## Internal model invariant
+## Boundary rule
 
-The core model for this repo is:
+This repo is allowed to remain internally node-centric.
 
-- one root node
-- neighboring nodes
-- relationships
-- extended node detail from Valkey
-- rendering derived from that graph neighborhood
-
-Anything outside that model is adapter detail, not domain truth.
-
-## Crate classification
-
-| Crate / artifact | Classification | Why | Reuse rule |
-| --- | --- | --- | --- |
-| `crates/rehydration-adapter-neo4j` | reusable with adaptation | graph neighborhood loading is aligned with the target core | reuse graph-query patterns directly |
-| `crates/rehydration-adapter-valkey` | reusable with adaptation | node-detail storage is aligned, snapshot shape is not yet | reuse node-detail path directly, adapt snapshot path |
-| `crates/rehydration-adapter-nats` | reusable with adaptation | eventing shape is useful, but keep only node-centric subjects | reuse consumer structure |
-| `crates/rehydration-application` | reusable with adaptation | layering is good, but current query output is still hybrid | reuse orchestration patterns, refactor bundle flow |
-| `crates/rehydration-domain` | reusable with adaptation | graph-side concepts are good, bundle shape is still hybrid | reuse graph concepts, replace bundle model |
-| `crates/rehydration-ports` | reusable with adaptation | port-first design is good | keep and rename only when needed |
-| `crates/rehydration-testkit` | reusable with adaptation | harness style is useful | rebuild fixtures around graph-native bundles |
-| `crates/rehydration-config` | reusable with adaptation | config loading exists | reuse structure only |
-| `crates/rehydration-observability` | reusable with adaptation | bootstrap hook exists | extend it without changing domain boundaries |
-| `crates/rehydration-proto` | reusable with adaptation | generation plumbing is useful, current bundle shape is not | regenerate after proto refactor |
-| `crates/rehydration-transport-grpc` | reusable with adaptation | service plumbing is useful, pack mapping is not | reuse server structure, replace mapping |
-| `crates/rehydration-transport-http-admin` | reusable with adaptation | isolated admin transport is fine | keep isolated from the core |
-| `crates/rehydration-server` | reusable with adaptation | composition root is useful | keep after refactoring the bundle path |
-| `api/proto/underpass/rehydration/kernel/v1alpha1/*` | reusable with adaptation | package and node-centric orientation are fine, bundle shape is not | refactor messages, keep node-centric naming |
-| `api/asyncapi/context-projection.v1alpha1.yaml` | reusable with adaptation | node-centric subjects are aligned | keep if still needed after bundle refactor |
+The migration must reuse internal architecture and implementation patterns from
+this repo, but it must not reuse the current public `underpass.rehydration`
+contract as the external Context Service boundary.
 
 ## Safe reuse
 
-- crate layout
-- port and adapter separation
-- graph query adapters
-- node detail adapters
-- explicit mapping style
+These pieces are good candidates for direct reuse or light adaptation.
 
-## Reuse only after refactor
+| Crate / area | Classification | Reuse rule |
+| --- | --- | --- |
+| `crates/rehydration-domain` | reusable with adaptation | keep graph-native core concepts; do not expose them directly as `fleet.context.v1` |
+| `crates/rehydration-application` | reusable with adaptation | keep small use cases and query or command boundaries; add edge mappers outside the core |
+| `crates/rehydration-adapter-neo4j` | reusable with adaptation | reuse graph neighborhood and write adapter patterns |
+| `crates/rehydration-adapter-valkey` | reusable with adaptation | reuse extended node detail and snapshot patterns where compatible |
+| `crates/rehydration-adapter-nats` | reusable with adaptation | reuse modular consumer and publisher structure, not the current subject set as public truth |
+| `crates/rehydration-ports` | reusable with adaptation | keep port ownership explicit and small |
+| `crates/rehydration-testkit` | reusable with adaptation | reuse harness structure, rebuild fixtures around the external contract |
+| `crates/rehydration-config` | reusable with adaptation | keep config loading patterns, not the current env surface as public truth |
+| `crates/rehydration-observability` | reusable with adaptation | reuse directly |
+| `crates/rehydration-server` | reusable with adaptation | reuse as composition root pattern |
 
-- current bundle model
-- current snapshot serialization
-- current gRPC bundle mapping
-- current diagnostics derivation
+## Reuse only behind compatibility adapters
 
-## Do not treat as truth
+These areas are useful internally but must not leak through the external
+boundary unchanged.
 
-- any hybrid pack-shaped output
-- any synthetic semantic object invented from sections
+| Area | Why |
+| --- | --- |
+| `api/proto/underpass/rehydration/kernel/v1alpha1/*` | wrong package and service surface for the external contract |
+| `crates/rehydration-transport-grpc` | transport plumbing is useful, but the public service and message shapes diverge |
+| `api/asyncapi/context-projection.v1alpha1.yaml` | useful for internal projection eventing, not for the external Context Service subjects |
+| graph-native bundle responses | good internal output, wrong external response contract |
+
+## Do not treat as source of truth
+
+The migration must not treat any of the following as the external source of
+truth:
+
+- `underpass.rehydration.kernel.v1alpha1`
+- `root_node_id` as a public replacement for `story_id` or `case_id`
+- current internal NATS subjects:
+  - `graph.node.materialized`
+  - `node.detail.materialized`
+- current bundle transport model as a replacement for `PromptBlocks` or
+  `RoleContextPack`
+
+## Required compatibility pattern
+
+The safe pattern for the migration is:
+
+1. external request arrives in `fleet.context.v1` or on external NATS subjects
+2. compatibility mapper converts it to internal node-centric inputs
+3. internal core executes using graph-native models
+4. compatibility mapper renders the external response contract
+
+This pattern is also a structural rule:
+
+- no god compatibility adapter
+- no transport file that owns multiple unrelated mappings
+- separate files for DTOs, request mappers, response mappers, handlers, and
+  subject routers
+- domain stays free of external legacy nouns
 
 ## Consequence
 
-The next implementation slice should harvest what already works on the
-graph-neighborhood side and remove the remaining hybrid semantic layer.
+Future work should prefer:
+
+- reusing internal domain, adapters, and testing patterns
+- adding compatibility modules at the edge
+
+Future work should avoid:
+
+- changing the internal node-centric core to imitate the external legacy shape
+- exposing current kernel transport packages as the public Context Service API

@@ -1,83 +1,140 @@
-# Node-Centric Golden Tests
+# Context Service Golden Tests
 
-This catalog defines the minimum golden tests for the node-centric rehydration
-model in this repo.
+This catalog defines the minimum golden tests required to preserve the frozen
+external Context Service contract while the Rust implementation stays
+internally node-centric.
 
 ## Principles
 
-1. Compare public behavior, not implementation details.
-2. Keep the core language node-centric.
-3. Validate graph neighborhood, relationships, and Valkey detail explicitly.
-4. Do not introduce fixtures based on external domain nouns.
+1. Assert only externally observable behavior.
+2. Keep internal graph-native DTOs out of golden assertions.
+3. Normalize only what the baseline proves to be nondeterministic.
+4. Use the Python service as the oracle until the Rust compatibility shell is
+   fully trusted.
 
-## Exact-match areas
+## Oracle Sources
 
-- `root_node_id`
-- root node payload
-- neighbor node payloads
-- relationship payloads
-- node detail payloads
-- role-specific filtering results
-- rendered section ordering when intentionally defined
+Baseline evidence must come from one of these sources:
 
-## Allowed normalization
+- `specs/fleet/context/v1/context.proto`
+- `services/context/README.md`
+- Python unit tests under `services/context/tests/unit/`
+- Python unit tests under `core/context/tests/unit/`
+
+If a rule is not proven by one of those sources, it must be treated as
+unfrozen and explicitly documented before being added to a golden assertion.
+
+## Exact-Match Fields
+
+These must match exactly unless the baseline proves otherwise:
+
+- RPC names and message field names
+- `story_id`, `case_id`, `task_id`, `subtask_id`
+- `ContextChange.entity_type`
+- `ContextChange.payload`
+- `PromptBlocks`
+- `packs` keys and nested public fields
+- NATS subjects
+- `EventEnvelope.event_type`
+
+## Allowed Normalization
+
+Allowed:
 
 - timestamps
 - generated-at values
-- revision counters when built from controlled test seeds
+- correlation IDs
+- idempotency keys
+- ordering only when the Python baseline is explicitly unstable
 
-## Required gRPC fixtures
+Not allowed:
 
-| Fixture ID | Surface | Scenario | Compare |
+- renaming fields
+- collapsing `PromptBlocks` into one string
+- replacing external `packs` with internal bundle DTOs
+- changing envelope `event_type`
+
+## Required gRPC Golden Tests
+
+| Fixture ID | RPC | Scenario | Oracle | Compare |
+| --- | --- | --- | --- | --- |
+| `grpc-get-context-basic` | `GetContext` | valid identifier, role, phase | proto plus baseline servicer tests | `context`, `token_count`, `scopes`, `version`, `blocks` |
+| `grpc-get-context-subtask-focus` | `GetContext` | request includes `subtask_id` | baseline service behavior | subtask-focused response shape |
+| `grpc-get-context-internal-error` | `GetContext` | internal failure path | servicer tests | gRPC status and externally visible error behavior |
+| `grpc-update-context-basic` | `UpdateContext` | valid `changes` list | proto plus baseline tests | `version`, `hash`, `warnings` |
+| `grpc-rehydrate-session-basic` | `RehydrateSession` | one case, multiple roles | proto plus baseline service behavior | `case_id`, `generated_at_ms`, `packs`, `stats` |
+| `grpc-validate-scope-allowed` | `ValidateScope` | valid scopes | proto plus baseline tests | `allowed`, `missing`, `extra`, `reason` |
+| `grpc-validate-scope-rejected` | `ValidateScope` | invalid scopes | proto plus baseline tests | `allowed`, `missing`, `extra`, `reason` |
+| `grpc-create-story-basic` | `CreateStory` | valid create request | proto | `context_id`, `story_id`, `current_phase` |
+| `grpc-create-task-basic` | `CreateTask` | valid create request | proto | `task_id`, `story_id`, `status` |
+| `grpc-add-project-decision-basic` | `AddProjectDecision` | valid create request | proto | `decision_id` |
+| `grpc-transition-phase-basic` | `TransitionPhase` | valid phase transition | proto | `story_id`, `current_phase`, `transitioned_at` |
+| `grpc-get-graph-relationships-basic` | `GetGraphRelationships` | valid `node_id`, `node_type`, `depth=2` | proto plus use-case and servicer tests | `node`, `neighbors`, `relationships`, `success`, `message` |
+| `grpc-get-graph-relationships-depth-clamp` | `GetGraphRelationships` | request `depth=5` | source plus tests | effective depth clamped to `3` |
+| `grpc-get-graph-relationships-invalid-node-type` | `GetGraphRelationships` | invalid node type | servicer tests | `INVALID_ARGUMENT` |
+
+## Required Async NATS Golden Tests
+
+| Fixture ID | Subject | Scenario | Oracle | Verify |
+| --- | --- | --- | --- | --- |
+| `nats-update-request-valid-envelope` | `context.update.request` | valid envelope and payload | handler tests | servicer invoked, response published, message acked |
+| `nats-update-request-invalid-json` | `context.update.request` | invalid JSON | handler tests | message acked and dropped |
+| `nats-update-request-invalid-envelope` | `context.update.request` | missing required envelope fields | handler tests | message acked and dropped |
+| `nats-update-request-payload-not-object` | `context.update.request` | payload is not an object | handler tests | message acked and dropped |
+| `nats-update-request-servicer-error` | `context.update.request` | servicer sets error on internal context | handler tests | message nacked |
+| `nats-rehydrate-request-valid-envelope` | `context.rehydrate.request` | valid envelope and payload | handler tests | servicer invoked, response published, message acked |
+| `nats-rehydrate-request-invalid-envelope` | `context.rehydrate.request` | invalid envelope | handler tests | message acked and dropped |
+| `nats-rehydrate-request-servicer-error` | `context.rehydrate.request` | servicer sets error on internal context | handler tests | message nacked |
+
+## Required Publish-Path Golden Tests
+
+| Fixture ID | Subject | Oracle | Verify |
 | --- | --- | --- | --- |
-| `grpc-get-context-root-only` | `GetContext` | root node with no neighbors | root node, empty neighbors, rendered root summary |
-| `grpc-get-context-with-neighbors` | `GetContext` | root node plus related nodes and node details | nodes, relationships, details, rendered ordering |
-| `grpc-get-context-missing-root` | `GetContext` | root node absent | placeholder or empty bundle behavior |
-| `grpc-rehydrate-session-single-role` | `RehydrateSession` | one role over one graph neighborhood | bundle content and metadata |
-| `grpc-rehydrate-session-multi-role` | `RehydrateSession` | multiple roles over same graph neighborhood | same graph source with role-specific rendering/filtering |
-| `grpc-validate-scope` | `ValidateScope` | allowed and disallowed scope sets | allowed flag and diagnostics |
-| `grpc-update-context-basic` | `UpdateContext` | graph-compatible update request | accepted version and warnings behavior |
-| `grpc-graph-relationships-basic` | `GetGraphRelationships` | graph query depth within range | root, neighbors, relationships |
-| `grpc-graph-relationships-depth-clamp` | `GetGraphRelationships` | requested depth above limit | clamp behavior |
+| `nats-publish-update-response` | `context.update.response` | adapter tests | subject, `event_type=context.update.response`, payload family |
+| `nats-publish-rehydrate-response` | `context.rehydrate.response` | adapter tests | subject, `event_type=context.rehydrate.response`, payload family |
+| `nats-publish-context-updated` | `context.events.updated` | adapter tests | subject, `event_type=context.updated`, payload family |
 
-## Required event fixtures
+## Required Configuration Golden Tests
 
-| Fixture ID | Subject | Scenario | Verify |
+| Fixture ID | Surface | Oracle | Verify |
 | --- | --- | --- | --- |
-| `nats-graph-node-materialized` | `graph.node.materialized` | valid graph node payload | graph node written to projection path |
-| `nats-graph-node-invalid-payload` | `graph.node.materialized` | malformed payload | rejection behavior |
-| `nats-node-detail-materialized` | `node.detail.materialized` | valid node detail payload | Valkey detail write path |
-| `nats-node-detail-invalid-payload` | `node.detail.materialized` | malformed payload | rejection behavior |
+| `config-defaults` | env config adapter | config adapter tests | documented defaults |
+| `config-missing-neo4j-password` | startup config | config adapter tests | fail-fast |
+| `config-invalid-redis-port` | startup config | config adapter tests | fail-fast |
+| `config-enable-nats-false` | startup | server and config tests | parses false, startup rejects it |
+| `config-missing-scopes-yaml` | scope loading | server tests | empty config fallback |
+| `config-invalid-scopes-yaml` | scope loading | server tests | empty config fallback |
 
-## Required persistence fixtures
+## Implementation Order
 
-| Fixture ID | Surface | Scenario | Verify |
-| --- | --- | --- | --- |
-| `valkey-node-detail-roundtrip` | node detail store | save and load one node detail | payload equality |
-| `snapshot-roundtrip-graph-bundle` | snapshot store | save and load one graph-native bundle | graph bundle equality |
-| `neo4j-root-neighborhood` | graph reader | root plus neighbors and relations | full neighborhood reconstruction |
+Add golden tests in this order:
 
-## Fixture data requirements
+1. compatibility transport boot and error mapping
+2. read RPCs
+3. `GetGraphRelationships` parity and depth clamp
+4. async NATS request and reply
+5. write RPCs
+6. startup and configuration parity
 
-### Neo4j
+## Phase Gates
 
-- one root node
-- several related nodes
-- at least two relationship types
-- one sparse neighborhood and one dense neighborhood
+Phase 1 is not complete until:
 
-### Valkey
+- compatibility transport boots with the external package and service names
+- error-mapping golden tests exist for the compatibility surface
 
-- extended detail for root node
-- extended detail for at least one neighbor
-- one node without detail to verify sparse enrichment
+Phase 2 is not complete until:
 
-## Acceptance set
+- read-side golden tests pass
+- `GetGraphRelationships` parity tests pass
+- external response DTOs match the frozen contract
 
-Before implementation is considered ready, the workspace should pass:
+Phase 3 is not complete until:
 
-- all gRPC fixtures above
-- all event fixtures above
-- node detail roundtrip
-- snapshot roundtrip for graph-native bundles
-- graph neighborhood integration test
+- each async request subject has at least one valid and one invalid golden test
+- publish-path envelope tests pass
+
+Phase 4 is not complete until:
+
+- all write-path golden tests pass
+- response publication parity is verified for write flows

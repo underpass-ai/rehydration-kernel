@@ -1642,12 +1642,17 @@ dependencies = [
 name = "rehydration-transport-grpc"
 version = "0.1.0"
 dependencies = [
+ "neo4rs",
  "prost-types",
+ "rehydration-adapter-neo4j",
+ "rehydration-adapter-valkey",
  "rehydration-application",
  "rehydration-config",
  "rehydration-domain",
  "rehydration-ports",
  "rehydration-proto",
+ "serde_json",
+ "testcontainers",
  "tokio",
  "tokio-stream",
  "tonic",
