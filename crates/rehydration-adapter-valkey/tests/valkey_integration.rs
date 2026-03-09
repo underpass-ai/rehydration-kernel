@@ -3,6 +3,7 @@ use std::error::Error;
 use rehydration_adapter_valkey::{ValkeyNodeDetailStore, ValkeySnapshotStore};
 use rehydration_domain::{
     BundleMetadata, BundleNode, BundleNodeDetail, CaseId, RehydrationBundle, Role,
+    SnapshotSaveOptions,
 };
 use rehydration_ports::{
     NodeDetailProjection, NodeDetailReader, ProjectionMutation, ProjectionWriter, SnapshotStore,
@@ -114,6 +115,62 @@ async fn save_bundle_persists_snapshot_in_valkey() -> Result<(), Box<dyn Error +
         RespValue::Integer(value) => {
             assert!((1..=120).contains(&value));
         }
+        other => panic!("expected integer TTL response, got {other:?}"),
+    }
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn save_bundle_respects_request_ttl_override() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let container = GenericImage::new("docker.io/valkey/valkey", "8.1.5-alpine")
+        .with_exposed_port(VALKEY_INTERNAL_PORT.tcp())
+        .with_wait_for(WaitFor::message_on_stdout("Ready to accept connections"))
+        .start()
+        .await?;
+
+    let host = container.get_host().await?;
+    let port = container.get_host_port_ipv4(VALKEY_INTERNAL_PORT).await?;
+    let address = format!("{host}:{port}");
+
+    let store = ValkeySnapshotStore::new(format!(
+        "redis://{address}?key_prefix=rehydration:it&ttl_seconds=120"
+    ))?;
+    let case_id = CaseId::new("node-123")?;
+    let role = Role::new("reviewer")?;
+    let bundle = RehydrationBundle::new(
+        case_id.clone(),
+        role.clone(),
+        BundleNode::new(
+            case_id.as_str(),
+            "capability",
+            format!("Node {}", case_id.as_str()),
+            "expanded context",
+            "ACTIVE",
+            vec!["projection-node".to_string()],
+            std::collections::BTreeMap::new(),
+        ),
+        Vec::new(),
+        Vec::new(),
+        vec![BundleNodeDetail::new(
+            case_id.as_str(),
+            "expanded context",
+            "abc123",
+            7,
+        )],
+        BundleMetadata {
+            revision: 7,
+            content_hash: "abc123".to_string(),
+            generator_version: "integration-test".to_string(),
+        },
+    )?;
+
+    store
+        .save_bundle_with_options(&bundle, SnapshotSaveOptions::new(Some(15)))
+        .await?;
+
+    match send_command(&address, &["TTL", "rehydration:it:node-123:reviewer"]).await? {
+        RespValue::Integer(value) => assert!((1..=15).contains(&value)),
         other => panic!("expected integer TTL response, got {other:?}"),
     }
 

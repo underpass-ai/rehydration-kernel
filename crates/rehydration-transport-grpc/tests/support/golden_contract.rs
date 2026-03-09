@@ -12,21 +12,72 @@ use crate::support::seed_data::{
     ROOT_CREATED_BY, ROOT_DETAIL, ROOT_DETAIL_REVISION, ROOT_LABEL, ROOT_NODE_ID, ROOT_NODE_KIND,
     ROOT_PLAN_ID, ROOT_STATUS, ROOT_SUMMARY, ROOT_TITLE, TASK_ID, TASK_KIND, TASK_LABEL,
     TASK_PRIORITY, TASK_ROLE, TASK_STATUS, TASK_SUMMARY, TASK_TITLE,
+    allowed_validate_scope_request_scopes,
 };
 
 pub(crate) fn expected_get_context_response() -> GetContextResponse {
     let context = expected_rendered_context();
+    let scopes = sorted_build_scopes();
     GetContextResponse {
         context: context.clone(),
         token_count: context.split_whitespace().count() as i32,
-        scopes: Vec::new(),
+        scopes: scopes.clone(),
         version: "rev-1".to_string(),
         blocks: Some(PromptBlocks {
             system: format!("role={DEVELOPER_ROLE}"),
             context,
-            tools: String::new(),
+            tools: format!("active_scopes={}", scopes.join(",")),
         }),
     }
+}
+
+pub(crate) fn expected_focused_get_context_response() -> GetContextResponse {
+    let context = [
+        format!("Node {ROOT_TITLE} ({ROOT_NODE_KIND}): {ROOT_SUMMARY}"),
+        format!("Node {TASK_TITLE} ({TASK_KIND}): {TASK_SUMMARY}"),
+        format!("Node {DECISION_TITLE} ({DECISION_KIND}): {DECISION_SUMMARY}"),
+        format!("Relationship {ROOT_NODE_ID} --{HAS_TASK_RELATION}--> {TASK_ID}"),
+        format!("Relationship {ROOT_NODE_ID} --{RECORDS_RELATION}--> {DECISION_ID}"),
+        format!("Detail {ROOT_NODE_ID} [rev {ROOT_DETAIL_REVISION}]: {ROOT_DETAIL}"),
+        format!("Detail {DECISION_ID} [rev 3]: {DECISION_DETAIL}"),
+    ]
+    .join("\n\n");
+    let scopes = sorted_build_scopes();
+
+    GetContextResponse {
+        context: context.clone(),
+        token_count: context.split_whitespace().count() as i32,
+        scopes: scopes.clone(),
+        version: "rev-1".to_string(),
+        blocks: Some(PromptBlocks {
+            system: format!("role={DEVELOPER_ROLE}"),
+            context,
+            tools: format!("active_scopes={}", scopes.join(",")),
+        }),
+    }
+}
+
+pub(crate) fn expected_budgeted_get_context_response() -> GetContextResponse {
+    let context = format!("Node {ROOT_TITLE} ({ROOT_NODE_KIND}): {ROOT_SUMMARY}");
+    let scopes = sorted_build_scopes();
+
+    GetContextResponse {
+        context: context.clone(),
+        token_count: context.split_whitespace().count() as i32,
+        scopes: scopes.clone(),
+        version: "rev-1".to_string(),
+        blocks: Some(PromptBlocks {
+            system: format!("role={DEVELOPER_ROLE}"),
+            context,
+            tools: format!("active_scopes={}", scopes.join(",")),
+        }),
+    }
+}
+
+fn sorted_build_scopes() -> Vec<String> {
+    let mut scopes = allowed_validate_scope_request_scopes();
+    scopes.sort();
+    scopes
 }
 
 pub(crate) fn expected_rehydrate_session_response(

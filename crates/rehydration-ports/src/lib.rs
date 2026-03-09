@@ -5,5 +5,5 @@ pub use rehydration_domain::{
     GraphNeighborhoodReader, NodeDetailProjection, NodeDetailReader, NodeNeighborhood,
     NodeProjection, NodeRelationProjection, PortError, ProcessedEventStore, ProjectionCheckpoint,
     ProjectionCheckpointStore, ProjectionMutation, ProjectionWriter, RehydrationBundle,
-    RehydrationStats, Role, SnapshotStore,
+    RehydrationStats, Role, SnapshotSaveOptions, SnapshotStore,
 };

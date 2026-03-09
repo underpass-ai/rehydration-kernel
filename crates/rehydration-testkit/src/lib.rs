@@ -4,7 +4,7 @@ use std::sync::Arc;
 use rehydration_domain::{
     GraphNeighborhoodReader, NodeDetailProjection, NodeDetailReader, NodeNeighborhood, PortError,
     ProcessedEventStore, ProjectionCheckpoint, ProjectionCheckpointStore, ProjectionMutation,
-    ProjectionWriter, RehydrationBundle, SnapshotStore,
+    ProjectionWriter, RehydrationBundle, SnapshotSaveOptions, SnapshotStore,
 };
 use tokio::sync::Mutex;
 
@@ -149,7 +149,11 @@ impl ProjectionCheckpointStore for InMemoryProjectionCheckpointStore {
 pub struct NoopSnapshotStore;
 
 impl SnapshotStore for NoopSnapshotStore {
-    async fn save_bundle(&self, _bundle: &RehydrationBundle) -> Result<(), PortError> {
+    async fn save_bundle_with_options(
+        &self,
+        _bundle: &RehydrationBundle,
+        _options: SnapshotSaveOptions,
+    ) -> Result<(), PortError> {
         Ok(())
     }
 }

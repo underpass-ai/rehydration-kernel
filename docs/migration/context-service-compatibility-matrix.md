@@ -16,22 +16,22 @@ Status values:
 | --- | --- | --- | --- | --- | --- |
 | package name | `fleet.context.v1` | `underpass.rehydration.kernel.v1alpha1` | diverged | add compatibility proto package and transport shell | Phase 1 |
 | service shape | one `ContextService` | three services: query, command, admin | diverged | expose one compatibility service at the edge | Phase 1 |
-| read RPC family | `GetContext`, `RehydrateSession`, `ValidateScope`, `GetGraphRelationships` | spread across query and admin services | partial | compose compatibility facade over current use cases | Phase 2 |
+| read RPC family | `GetContext`, `RehydrateSession`, `ValidateScope`, `GetGraphRelationships` | compatibility facade routes the frozen read RPCs over the node-centric application layer | match | keep parity with golden tests and parity report | Phase 2 |
 | write RPC family | `UpdateContext`, `CreateStory`, `CreateTask`, `AddProjectDecision`, `TransitionPhase` | only `UpdateContext` exists in current public transport | partial | add missing command paths and edge mapping | Phase 4 |
 
 ## RPC Coverage
 
 | RPC | External source of truth | Current repo state | Status | Required action | Target phase |
 | --- | --- | --- | --- | --- | --- |
-| `GetContext` | required | present with different request and response DTOs | partial | build edge request and response mapping | Phase 2 |
+| `GetContext` | required | implemented on compatibility shell with focused request and response mapping | match | keep phase, focus, and budget semantics at the edge | Phase 2 |
 | `UpdateContext` | required | present with different field names | partial | preserve external field names and semantics at boundary | Phase 4 |
-| `RehydrateSession` | required | present with graph-native response model | partial | render external `packs` response at edge | Phase 2 |
-| `ValidateScope` | required | present with different vocabulary and result shape | partial | implement explicit compatibility mapper | Phase 2 |
+| `RehydrateSession` | required | implemented on compatibility shell with external `packs` rendering and snapshot TTL propagation | match | keep snapshot TTL and timeline defaults frozen at the edge | Phase 2 |
+| `ValidateScope` | required | implemented on compatibility shell with compatibility vocabulary and result mapping | match | keep compatibility scope catalog at the edge | Phase 2 |
 | `CreateStory` | required | absent | missing | add compatibility command path | Phase 4 |
 | `CreateTask` | required | absent | missing | add compatibility command path | Phase 4 |
 | `AddProjectDecision` | required | absent | missing | add compatibility command path | Phase 4 |
 | `TransitionPhase` | required | absent | missing | add compatibility command path | Phase 4 |
-| `GetGraphRelationships` | required | present on admin surface, not compatibility surface | partial | expose on compatibility shell with exact parity rules | Phase 2 |
+| `GetGraphRelationships` | required | implemented on compatibility shell with parity validation rules | match | keep depth clamp and invalid or missing node handling frozen | Phase 2 |
 
 ## Boundary Naming and DTO Shape
 
@@ -41,10 +41,10 @@ Status values:
 | task focus identifiers | `task_id`, `subtask_id` | `work_item_id` or no direct equivalent | diverged | keep external names at edge and map internally | Phase 1 |
 | update entity field | `entity_type` | `entity_kind` | diverged | preserve external field name | Phase 1 |
 | update payload field | `payload` | `payload_json` | diverged | preserve external field name | Phase 1 |
-| `GetContextResponse` | `context`, `token_count`, `scopes`, `version`, `blocks` | graph-native bundle and rendered structures | diverged | add compatibility response renderer | Phase 2 |
-| `RehydrateSessionResponse` | `case_id`, `generated_at_ms`, `packs`, `stats` | bundle snapshot oriented response | diverged | add compatibility pack renderer | Phase 2 |
-| `PromptBlocks` | public message | not exposed | missing | define edge DTO only | Phase 2 |
-| `RoleContextPack` | public message | not exposed | missing | define edge DTO only | Phase 2 |
+| `GetContextResponse` | `context`, `token_count`, `scopes`, `version`, `blocks` | compatibility renderer maps graph-native result into frozen external DTO | match | keep parity proven by golden tests | Phase 2 |
+| `RehydrateSessionResponse` | `case_id`, `generated_at_ms`, `packs`, `stats` | compatibility renderer maps graph-native result into frozen external DTO | match | keep parity proven by golden tests | Phase 2 |
+| `PromptBlocks` | public message | exposed only on compatibility shell | match | keep edge-only DTO | Phase 2 |
+| `RoleContextPack` | public message | exposed only on compatibility shell | match | keep edge-only DTO | Phase 2 |
 
 ## NATS Contract
 
@@ -62,7 +62,7 @@ Status values:
 
 | Surface | External source of truth | Current repo state | Status | Required action | Target phase |
 | --- | --- | --- | --- | --- | --- |
-| `GetGraphRelationships.depth` | clamp to `1..3` | no equivalent clamp on current public path | diverged | implement clamp in compatibility shell | Phase 2 |
+| `GetGraphRelationships.depth` | clamp to `1..3` | compatibility shell clamps to the frozen bounds | match | keep parity covered by tests | Phase 2 |
 | validation error mapping | `INVALID_ARGUMENT` in tested paths | current transport uses internal status mapping | partial | freeze boundary error mapping | Phase 1 |
 | unexpected error mapping | `INTERNAL` in tested paths | current transport uses repo-local mapping | partial | align compatibility surface | Phase 1 |
 | invalid inbound async JSON | `ack` and drop | no handler | missing | preserve exact behavior | Phase 3 |

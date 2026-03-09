@@ -48,7 +48,7 @@ boundary contract.
 - green repo quality gates
 
 That means the next milestone is not another core refactor.
-The next milestone is read-path parity at the external boundary.
+The next milestone is async parity at the external boundary.
 
 ## Status by Stream
 
@@ -69,7 +69,7 @@ gap.
 
 ### Stream B: External contract compatibility
 
-Status: `phase 0 complete, phase 1 complete, phase 2 in progress`
+Status: `phase 0 complete, phase 1 complete, phase 2 complete`
 
 Frozen in Phase 0:
 
@@ -168,7 +168,7 @@ Delivered:
 
 ### Phase 2: Read-Path Parity
 
-Status: `in progress`
+Status: `complete`
 
 Goal:
 
@@ -189,6 +189,10 @@ Current implementation state:
 - `ValidateScope`: routed and covered
 - read-path golden tests: implemented
 - DTO parity audit: completed
+- `GetContext.phase`: mapped to compatibility scope expectations
+- `GetContext.subtask_id`: mapped to node-centric focus rendering
+- `GetContext.token_budget`: enforced as render budget hint
+- `RehydrateSession.ttl_seconds`: defaulted and propagated to snapshot persistence
 
 Deliverables:
 
@@ -203,12 +207,6 @@ Exit gate:
 - read-path golden tests pass
 - external DTOs match the frozen contract
 - no core module adopts external legacy nouns
-
-Current blocker after audit:
-
-- `GetContext` request semantics still underfit the Python baseline for
-  `phase`, `subtask_id`, and `token_budget`
-- `RehydrateSession.ttl_seconds` is not yet propagated to snapshot persistence
 
 ### Phase 3: Async NATS Parity
 
@@ -293,10 +291,10 @@ Exit gate:
 
 ## Immediate Next Slice
 
-Keep Phase 2 focused on read-path parity, not on more internal refactor.
+Move to Phase 3 and keep the work at the compatibility edge.
 
 The next implementation cut should produce:
 
-1. close `GetContext` request-semantic parity at the compatibility edge
-2. decide and implement the `ttl_seconds` strategy for snapshot persistence
-3. only then start async NATS parity
+1. implement `context.update.request` and `context.rehydrate.request`
+2. preserve `EventEnvelope` parsing, validation, and correlation behavior
+3. prove `ack` or `nak` semantics with async golden tests

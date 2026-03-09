@@ -18,7 +18,8 @@ Phase 0 status:
 
 - complete
 - `Phase 1 - Compatibility Shell`: complete
-- next milestone: `Phase 2 - Read-Path Parity`
+- `Phase 2 - Read-Path Parity`: complete
+- next milestone: `Phase 3 - Async NATS Parity`
 
 Historical internal substrate plan:
 

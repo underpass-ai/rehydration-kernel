@@ -14,7 +14,7 @@ pub use projection::{
 };
 pub use repositories::{
     GraphNeighborhoodReader, NodeDetailReader, PortError, ProcessedEventStore,
-    ProjectionCheckpointStore, ProjectionWriter, SnapshotStore,
+    ProjectionCheckpointStore, ProjectionWriter, SnapshotSaveOptions, SnapshotStore,
 };
 pub use value_objects::{BundleMetadata, CaseId, Role};
 

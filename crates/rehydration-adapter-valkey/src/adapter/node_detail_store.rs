@@ -32,7 +32,7 @@ impl ValkeyNodeDetailStore {
     }
 
     async fn execute_set_command(&self, key: &str, payload: &str) -> Result<(), PortError> {
-        execute_set_command(&self.endpoint, key, payload).await
+        execute_set_command(&self.endpoint, key, payload, None).await
     }
 
     async fn execute_get_command(&self, key: &str) -> Result<Option<String>, PortError> {

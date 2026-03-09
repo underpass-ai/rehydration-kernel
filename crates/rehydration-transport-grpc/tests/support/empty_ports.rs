@@ -1,6 +1,6 @@
 use rehydration_domain::{
     GraphNeighborhoodReader, NodeDetailProjection, NodeDetailReader, NodeNeighborhood, PortError,
-    RehydrationBundle, SnapshotStore,
+    RehydrationBundle, SnapshotSaveOptions, SnapshotStore,
 };
 
 pub(crate) struct EmptyGraphNeighborhoodReader;
@@ -28,7 +28,11 @@ impl NodeDetailReader for EmptyNodeDetailReader {
 pub(crate) struct NoopSnapshotStore;
 
 impl SnapshotStore for NoopSnapshotStore {
-    async fn save_bundle(&self, _bundle: &RehydrationBundle) -> Result<(), PortError> {
+    async fn save_bundle_with_options(
+        &self,
+        _bundle: &RehydrationBundle,
+        _options: SnapshotSaveOptions,
+    ) -> Result<(), PortError> {
         Ok(())
     }
 }
