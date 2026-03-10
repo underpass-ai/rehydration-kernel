@@ -3,6 +3,14 @@
 This matrix compares the external Context Service contract frozen in Phase 0
 against the current `main` branch of this repo.
 
+Direction update:
+
+- rows that refer to `swe-ai-fleet` legacy transport remain here for migration
+  visibility
+- future implementation of those legacy-specific adapters should happen in
+  `swe-ai-fleet`, not in this repo
+- this repo should stay node-centric and generic
+
 Status values:
 
 - `match`
@@ -50,11 +58,11 @@ Status values:
 
 | Surface | External source of truth | Current repo state | Status | Required action | Target phase |
 | --- | --- | --- | --- | --- | --- |
-| planning consumed subjects | six `planning.*` subjects | absent | missing | add compatibility consumers | Phase 3 |
-| orchestration consumed subjects | `orchestration.deliberation.completed`, `orchestration.task.dispatched` | absent | missing | add compatibility consumers | Phase 3 |
+| planning consumed subjects | six `planning.*` subjects | intentionally absent from the generic kernel | missing | implement in `swe-ai-fleet` anti-corruption layer, not here | swe-ai-fleet integration |
+| orchestration consumed subjects | `orchestration.deliberation.completed`, `orchestration.task.dispatched` | intentionally absent from the generic kernel | missing | implement in `swe-ai-fleet` anti-corruption layer, not here | swe-ai-fleet integration |
 | async request subjects | `context.update.request`, `context.rehydrate.request` | compatibility consumer implemented and wired through JetStream runtime | match | keep parity covered by runtime integration tests | Phase 3 |
 | async response subjects | `context.update.response`, `context.rehydrate.response` | compatibility envelope publication implemented and wired through JetStream runtime | match | keep parity covered by runtime integration tests | Phase 3 |
-| context-updated event | `context.events.updated` | compatibility publisher implemented and proven against a real NATS runtime, but not yet invoked from every frozen emission path | partial | wire the publisher into UpdateContext and orchestration runtime paths | Phase 3 |
+| context-updated event | `context.events.updated` | compatibility publisher implemented and proven against a real NATS runtime | match | keep generic publication support in the kernel; emit any fleet-specific triggers from `swe-ai-fleet` | Phase 3 |
 | request wrapper | required `EventEnvelope` | compatibility parser enforces the required envelope and is wired into runtime subscriptions | match | keep parity covered by runtime integration tests | Phase 3 |
 | current internal subjects | not part of external contract | `graph.node.materialized`, `node.detail.materialized` | diverged | keep as internal projection traffic only | Phase 1 |
 
@@ -89,12 +97,11 @@ Status values:
 
 ## Closeout
 
-Phase 0 shows that this repo is ahead on internal architecture and behind on
-external compatibility.
+The migration direction is now inverted:
 
-The next slice is therefore not another internal refactor.
-The next slice is the compatibility shell for:
+- `rehydration-kernel` stays generic and node-centric
+- `swe-ai-fleet` owns legacy compatibility and subject translation
 
-- `fleet.context.v1`
-- external NATS subjects and envelopes
-- external status mapping and config behavior
+The next slice is therefore not more fleet-specific transport inside this repo.
+The next slice is freezing and documenting the node-centric boundary so another
+system can integrate without contaminating the kernel.

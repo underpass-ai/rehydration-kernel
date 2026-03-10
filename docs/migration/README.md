@@ -5,6 +5,7 @@ Migration plans, parity reports, and shadow-mode notes will live here.
 Primary roadmap:
 
 - `context-service-rust-roadmap.md`
+- `swe-ai-fleet-node-centric-integration-strategy.md`
 
 Phase 0 baseline:
 
@@ -19,8 +20,8 @@ Phase 0 status:
 - complete
 - `Phase 1 - Compatibility Shell`: complete
 - `Phase 2 - Read-Path Parity`: complete
-- `Phase 3 - Async NATS Parity`: in progress
-- next milestone: close the remaining external planning and orchestration NATS consumers
+- `Phase 3 - Async NATS Parity`: complete for kernel-owned generic subjects
+- next milestone: move legacy compatibility into `swe-ai-fleet` via the node-centric integration strategy
 
 Historical internal substrate plan:
 
