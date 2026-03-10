@@ -49,6 +49,7 @@ boundary contract.
 - contract CI with `buf breaking`, naming policy, and AsyncAPI checks
 - reference ProtoJSON and async event fixtures backed by contract tests
 - agentic integration e2e with a runtime-driven basic agent
+- event-driven agentic trigger e2e from `context.bundle.generated`
 - runtime integration reference for external consumers
 - runnable runtime reference client outside tests
 - green repo quality gates
@@ -129,11 +130,14 @@ Delivered after Phase 3 hardening:
 - conformance tests that prove the fixtures remain aligned with the contract
 - runtime-oriented end-to-end proof that a generic agent can consume the kernel
   and drive tool execution through a runtime contract
+- event-driven end-to-end proof that `context.bundle.generated` can trigger the
+  same generic agent flow
 - runtime integration reference spec and example payloads for external consumers
 
 See:
 
 - [`kernel-agentic-integration-e2e.md`](./kernel-agentic-integration-e2e.md)
+- [`kernel-agentic-event-trigger-e2e.md`](./kernel-agentic-event-trigger-e2e.md)
 - [`kernel-runtime-integration-reference.md`](./kernel-runtime-integration-reference.md)
 
 ### Stream C: Rollout and shadow mode
@@ -377,6 +381,7 @@ The kernel-side contract hardening milestone now provides:
 4. contract CI that protects the generic boundary
 5. reference fixtures that external consumers can adopt directly
 6. a runnable runtime reference client outside the test harness
+7. an event-driven trigger proof from `context.bundle.generated`
 
 The next implementation cut that still belongs in this repo should be optional
 kernel developer experience work, not more fleet-specific compatibility.
@@ -386,4 +391,5 @@ Artifacts now available:
 - [`kernel-node-centric-integration-contract.md`](./kernel-node-centric-integration-contract.md)
 - [`swe-ai-fleet-node-centric-integration-strategy.md`](./swe-ai-fleet-node-centric-integration-strategy.md)
 - [`swe-ai-fleet-integration-checklist.md`](./swe-ai-fleet-integration-checklist.md)
+- [`kernel-agentic-event-trigger-e2e.md`](./kernel-agentic-event-trigger-e2e.md)
 - [`kernel-runtime-integration-reference.md`](./kernel-runtime-integration-reference.md)
