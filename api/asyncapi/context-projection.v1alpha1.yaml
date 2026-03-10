@@ -175,13 +175,13 @@ components:
     ContextBundleGeneratedData:
       type: object
       required:
-        - case_id
+        - root_node_id
         - roles
         - revision
         - content_hash
         - projection_watermark
       properties:
-        case_id:
+        root_node_id:
           type: string
         roles:
           type: array
