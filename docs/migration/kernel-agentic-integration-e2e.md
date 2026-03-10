@@ -31,15 +31,16 @@ The suite proves two runtime modes:
 The test infrastructure is split into small files:
 
 - runtime-agnostic agent logic:
-  - [`basic_context_agent.rs`](../../crates/rehydration-transport-grpc/tests/support/basic_context_agent.rs)
+  - [`basic_context_agent.rs`](../../crates/rehydration-transport-grpc/src/agentic_reference/basic_context_agent.rs)
 - kernel fixture and projection seeding:
   - [`agentic_fixture.rs`](../../crates/rehydration-transport-grpc/tests/support/agentic_fixture.rs)
   - [`generic_seed_data.rs`](../../crates/rehydration-transport-grpc/tests/support/generic_seed_data.rs)
   - [`projection_runtime.rs`](../../crates/rehydration-transport-grpc/tests/support/projection_runtime.rs)
 - runtime abstractions and implementations:
   - [`runtime_workspace.rs`](../../crates/rehydration-transport-grpc/tests/support/runtime_workspace.rs)
-  - [`underpass_runtime_client.rs`](../../crates/rehydration-transport-grpc/tests/support/underpass_runtime_client.rs)
+  - [`runtime_http_client.rs`](../../crates/rehydration-transport-grpc/src/agentic_reference/runtime_http_client.rs)
   - [`fake_underpass_runtime.rs`](../../crates/rehydration-transport-grpc/tests/support/fake_underpass_runtime.rs)
+  - [`main.rs`](../../crates/rehydration-transport-grpc/src/bin/runtime_reference_client/main.rs)
 
 ## What The E2E Proves
 
@@ -102,11 +103,17 @@ This milestone does not yet prove:
 The current HTTP runtime proof should be treated as a contract-shape adapter,
 not as a claim that the sibling runtime is already integrated end to end.
 
+The repository also exposes that same flow as a runnable reference client
+outside `tests/`, so external runtimes can copy the integration shape without
+depending on the e2e harness.
+
 ## Next Follow-Up If We Stay In This Repo
 
 The next kernel-side agentic slice would be one of these:
 
-- publish a small runtime integration reference spec for external consumers
-- add example client code for a runtime process outside test code
 - add an end-to-end example that consumes the published
   `context.bundle.generated` event as a runtime trigger
+
+The runtime integration reference slice is now documented in:
+
+- [`kernel-runtime-integration-reference.md`](./kernel-runtime-integration-reference.md)

@@ -9,6 +9,7 @@ Primary roadmap:
 - `swe-ai-fleet-integration-checklist.md`
 - `kernel-node-centric-integration-contract.md`
 - `kernel-agentic-integration-e2e.md`
+- `kernel-runtime-integration-reference.md`
 
 Phase 0 baseline:
 
@@ -26,6 +27,8 @@ Phase 0 status:
 - `Phase 3 - Async NATS Parity`: complete for kernel-owned generic subjects
 - kernel contract freeze, contract CI, and reference fixtures: complete
 - generic agentic integration proof: complete
+- runtime integration reference for external consumers: complete
+- runnable runtime reference client outside tests: complete
 - next milestone outside the kernel: implement the `swe-ai-fleet` adapter using the node-centric integration strategy and checklist
 
 Historical internal substrate plan:

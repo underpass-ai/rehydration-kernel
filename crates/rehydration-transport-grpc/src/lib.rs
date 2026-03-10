@@ -1,3 +1,4 @@
+pub mod agentic_reference;
 mod transport;
 
 pub use transport::{

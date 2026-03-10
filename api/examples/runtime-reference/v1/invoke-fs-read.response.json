@@ -1,0 +1,4 @@
+{
+  "tool_name": "fs.read",
+  "output": "# Context Summary\n\nRoot: Billing API\nFocus: Retry failed settlement calls\n"
+}

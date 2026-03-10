@@ -1,0 +1,16 @@
+{
+  "tools": [
+    {
+      "name": "fs.write",
+      "requires_approval": true
+    },
+    {
+      "name": "fs.read",
+      "requires_approval": false
+    },
+    {
+      "name": "fs.list",
+      "requires_approval": false
+    }
+  ]
+}
