@@ -4,6 +4,10 @@ pub(crate) mod agentic_debug;
 pub(crate) mod agentic_fixture;
 #[path = "../support/containers.rs"]
 pub(crate) mod containers;
+#[path = "../support/context_bundle_generated_event.rs"]
+pub(crate) mod context_bundle_generated_event;
+#[path = "../support/event_driven_runtime_trigger.rs"]
+pub(crate) mod event_driven_runtime_trigger;
 #[path = "../support/fake_underpass_runtime.rs"]
 pub(crate) mod fake_underpass_runtime;
 #[path = "../support/generic_seed_data.rs"]

@@ -107,13 +107,8 @@ The repository also exposes that same flow as a runnable reference client
 outside `tests/`, so external runtimes can copy the integration shape without
 depending on the e2e harness.
 
-## Next Follow-Up If We Stay In This Repo
+The async follow-up is now also implemented and documented in:
 
-The next kernel-side agentic slice would be one of these:
-
-- add an end-to-end example that consumes the published
-  `context.bundle.generated` event as a runtime trigger
-
-The runtime integration reference slice is now documented in:
+- [`kernel-agentic-event-trigger-e2e.md`](./kernel-agentic-event-trigger-e2e.md)
 
 - [`kernel-runtime-integration-reference.md`](./kernel-runtime-integration-reference.md)

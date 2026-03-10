@@ -212,10 +212,12 @@ The current E2E proves:
 - an agent can derive focus from graph structure
 - an agent can drive tool execution from rendered context plus node detail
 - a session-tools-invoke runtime shape is enough for a basic integration
+- the same agent flow can be triggered from `context.bundle.generated`
 
 See:
 
 - [`kernel-agentic-integration-e2e.md`](./kernel-agentic-integration-e2e.md)
+- [`kernel-agentic-event-trigger-e2e.md`](./kernel-agentic-event-trigger-e2e.md)
 
 ## What It Does Not Yet Freeze
 
@@ -227,6 +229,7 @@ This reference does not yet freeze:
 - streaming outputs
 - tool cancellation
 - richer approval workflows
-- event-driven runtime triggers from `context.bundle.generated`
+- a runtime-owned standard for subscribing, checkpointing, or retrying
+  `context.bundle.generated`
 
 Those should be added only when they are proven necessary by a real consumer.

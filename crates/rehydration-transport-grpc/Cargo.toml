@@ -42,3 +42,8 @@ required-features = ["container-tests"]
 name = "agentic_integration"
 path = "tests/agentic_integration.rs"
 required-features = ["container-tests"]
+
+[[test]]
+name = "agentic_event_integration"
+path = "tests/agentic_event_integration.rs"
+required-features = ["container-tests"]

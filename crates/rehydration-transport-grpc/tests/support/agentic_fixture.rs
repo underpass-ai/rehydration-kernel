@@ -32,6 +32,7 @@ pub(crate) struct AgenticFixture {
     _nats: testcontainers::ContainerAsync<GenericImage>,
     projection_runtime: RunningProjectionRuntime,
     server: RunningGrpcServer,
+    nats_url: String,
     query_client: ContextQueryServiceClient<Channel>,
     admin_client: ContextAdminServiceClient<Channel>,
 }
@@ -65,8 +66,9 @@ impl AgenticFixture {
             "redis://{valkey_host}:{valkey_port}?key_prefix=rehydration:snapshot&ttl_seconds=120"
         ))?;
 
+        let nats_url = format!("nats://127.0.0.1:{nats_port}");
         let projection_runtime = RunningProjectionRuntime::start(
-            &format!("nats://127.0.0.1:{nats_port}"),
+            &nats_url,
             "rehydration",
             graph_store.clone(),
             detail_store.clone(),
@@ -86,7 +88,7 @@ impl AgenticFixture {
         let query_client = ContextQueryServiceClient::new(channel.clone());
         let admin_client = ContextAdminServiceClient::new(channel);
 
-        let publisher = connect_with_retry(&format!("nats://127.0.0.1:{nats_port}")).await?;
+        let publisher = connect_with_retry(&nats_url).await?;
         publish_projection_events(&publisher).await?;
         debug_log("projection seed events published");
         wait_for_context_ready(query_client.clone()).await?;
@@ -98,6 +100,7 @@ impl AgenticFixture {
             _nats: nats,
             projection_runtime,
             server,
+            nats_url,
             query_client,
             admin_client,
         })
@@ -109,6 +112,10 @@ impl AgenticFixture {
 
     pub(crate) fn admin_client(&self) -> ContextAdminServiceClient<Channel> {
         self.admin_client.clone()
+    }
+
+    pub(crate) fn nats_url(&self) -> &str {
+        &self.nats_url
     }
 
     pub(crate) async fn shutdown(self) -> Result<(), Box<dyn Error + Send + Sync>> {
