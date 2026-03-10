@@ -15,3 +15,7 @@ preferred integration contract for a new product.
 The contract gate validates that this boundary stays free of product-specific
 legacy nouns and remains aligned with the descriptor tests in
 `rehydration-proto`.
+
+Reference event fixtures live under:
+
+- [`api/examples/kernel/v1alpha1/async`](/home/tirso/ai/developents/rehydration-kernel/api/examples/kernel/v1alpha1/async)

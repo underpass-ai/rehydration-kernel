@@ -9,6 +9,7 @@ cd "${ROOT_DIR}"
 TARGETS=(
   "api/proto/underpass/rehydration/kernel/v1alpha1"
   "api/asyncapi/context-projection.v1alpha1.yaml"
+  "api/examples/kernel/v1alpha1"
 )
 
 LEGACY_PATTERN='\bcase_id\b|\bstory_id\b|\btask_id\b|\bepic\b|\bproject\b|planning\.|orchestration\.'

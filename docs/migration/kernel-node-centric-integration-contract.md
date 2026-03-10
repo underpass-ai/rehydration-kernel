@@ -129,6 +129,7 @@ This contract is backed by:
 
 - proto definitions under [`api/proto/underpass/rehydration/kernel/v1alpha1`](/home/tirso/ai/developents/rehydration-kernel/api/proto/underpass/rehydration/kernel/v1alpha1)
 - async definitions under [`api/asyncapi/context-projection.v1alpha1.yaml`](/home/tirso/ai/developents/rehydration-kernel/api/asyncapi/context-projection.v1alpha1.yaml)
+- reference fixtures under [`api/examples/kernel/v1alpha1`](/home/tirso/ai/developents/rehydration-kernel/api/examples/kernel/v1alpha1)
 - descriptor and contract tests in [`crates/rehydration-proto/src/kernel_contract_tests.rs`](/home/tirso/ai/developents/rehydration-kernel/crates/rehydration-proto/src/kernel_contract_tests.rs) and [`crates/rehydration-proto/src/asyncapi_contract_tests.rs`](/home/tirso/ai/developents/rehydration-kernel/crates/rehydration-proto/src/asyncapi_contract_tests.rs)
 
 ## Exit Condition

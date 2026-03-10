@@ -1,0 +1,44 @@
+{
+  "root": {
+    "nodeId": "node:task:retry-handler",
+    "nodeKind": "task",
+    "title": "Retry failed settlement calls",
+    "summary": "Implements bounded retries with backoff.",
+    "status": "in_progress",
+    "labels": [
+      "payments",
+      "resilience"
+    ],
+    "properties": {
+      "owner": "team-payments"
+    }
+  },
+  "neighbors": [
+    {
+      "nodeId": "node:workspace:billing-api",
+      "nodeKind": "workspace",
+      "title": "Billing API",
+      "summary": "Rust service responsible for payment processing flows.",
+      "status": "active",
+      "labels": [
+        "rust",
+        "backend"
+      ],
+      "properties": {
+        "language": "rust",
+        "service": "billing-api"
+      }
+    }
+  ],
+  "relationships": [
+    {
+      "sourceNodeId": "node:workspace:billing-api",
+      "targetNodeId": "node:task:retry-handler",
+      "relationshipType": "contains",
+      "properties": {
+        "weight": "primary"
+      }
+    }
+  ],
+  "observedAt": "2026-03-10T10:20:00Z"
+}

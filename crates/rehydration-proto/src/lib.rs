@@ -24,3 +24,5 @@ mod asyncapi_contract_tests;
 mod compatibility_contract_tests;
 #[cfg(test)]
 mod kernel_contract_tests;
+#[cfg(test)]
+mod reference_fixture_contract_tests;
