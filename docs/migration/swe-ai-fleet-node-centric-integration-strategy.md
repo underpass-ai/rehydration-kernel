@@ -318,6 +318,10 @@ To make the migration operational, `swe-ai-fleet` should create and maintain:
 - one drift dashboard for mismatched reads, publish failures, and stale detail
   rates
 
+Seed artifact in this repo:
+
+- [`swe-ai-fleet-integration-checklist.md`](./swe-ai-fleet-integration-checklist.md)
+
 ## What This Repo Should Do Next
 
 This repo should now focus on:
