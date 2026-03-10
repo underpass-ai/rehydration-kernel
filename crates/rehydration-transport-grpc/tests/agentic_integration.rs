@@ -4,7 +4,7 @@ mod agentic_support;
 
 use agentic_support::agentic_debug::debug_log;
 use agentic_support::agentic_fixture::AgenticFixture;
-use agentic_support::basic_context_agent::{BasicContextAgent, SUMMARY_PATH};
+use agentic_support::basic_context_agent::{AgentRequest, BasicContextAgent, SUMMARY_PATH};
 use agentic_support::fake_underpass_runtime::FakeUnderpassRuntime;
 use agentic_support::generic_seed_data::{
     FOCUS_DETAIL, FOCUS_NODE_ID, FOCUS_TITLE, ROOT_NODE_ID, ROOT_NODE_KIND, ROOT_TITLE,
@@ -22,7 +22,10 @@ async fn basic_agent_uses_kernel_context_to_drive_runtime_actions() {
     let mut agent = BasicContextAgent::new(fixture.query_client(), fixture.admin_client(), runtime);
 
     let execution = agent
-        .execute(ROOT_NODE_ID, ROOT_NODE_KIND)
+        .execute(AgentRequest::reference_defaults(
+            ROOT_NODE_ID,
+            ROOT_NODE_KIND,
+        ))
         .await
         .expect("agent should complete with kernel context");
 
@@ -59,7 +62,10 @@ async fn basic_agent_uses_underpass_runtime_contract_with_kernel_context() {
     let mut agent = BasicContextAgent::new(fixture.query_client(), fixture.admin_client(), runtime);
 
     let execution = agent
-        .execute(ROOT_NODE_ID, ROOT_NODE_KIND)
+        .execute(AgentRequest::reference_defaults(
+            ROOT_NODE_ID,
+            ROOT_NODE_KIND,
+        ))
         .await
         .expect("agent should complete with runtime http contract");
 

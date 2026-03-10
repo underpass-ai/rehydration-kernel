@@ -1,0 +1,7 @@
+{
+  "args": {
+    "path": "context-summary.md",
+    "content": "# Context Summary\n\nRoot: Billing API\nFocus: Retry failed settlement calls\n"
+  },
+  "approved": true
+}

@@ -1,38 +1,14 @@
 use std::collections::BTreeMap;
-use std::error::Error;
 use std::io;
 use std::sync::{Arc, Mutex};
 
 use serde_json::Value;
 
+pub(crate) use rehydration_transport_grpc::agentic_reference::{
+    AgentRuntime, RuntimeResult, ToolDescriptor, ToolInvocation,
+};
+
 use crate::agentic_support::agentic_debug::debug_log_value;
-
-pub(crate) type RuntimeResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ToolDescriptor {
-    pub(crate) name: String,
-    pub(crate) requires_approval: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ToolInvocation {
-    pub(crate) tool_name: String,
-    pub(crate) output: String,
-}
-
-pub(crate) trait AgentRuntime {
-    fn list_tools(
-        &self,
-    ) -> impl std::future::Future<Output = RuntimeResult<Vec<ToolDescriptor>>> + Send;
-
-    fn invoke(
-        &self,
-        tool_name: &str,
-        args: Value,
-        approved: bool,
-    ) -> impl std::future::Future<Output = RuntimeResult<ToolInvocation>> + Send;
-}
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct RecordingRuntime {
