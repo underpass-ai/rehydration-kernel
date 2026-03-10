@@ -70,6 +70,7 @@ Those concerns belong in an anti-corruption layer inside `swe-ai-fleet`.
 See:
 
 - [`swe-ai-fleet-node-centric-integration-strategy.md`](./swe-ai-fleet-node-centric-integration-strategy.md)
+- [`swe-ai-fleet-integration-checklist.md`](./swe-ai-fleet-integration-checklist.md)
 
 ## Status by Stream
 
@@ -350,3 +351,8 @@ The next implementation cut should produce:
 1. a frozen node-centric integration contract for external consumers
 2. the strategic integration document for `swe-ai-fleet`
 3. a migration checklist for moving legacy compatibility out of this repo
+
+Artifacts now available:
+
+- [`swe-ai-fleet-node-centric-integration-strategy.md`](./swe-ai-fleet-node-centric-integration-strategy.md)
+- [`swe-ai-fleet-integration-checklist.md`](./swe-ai-fleet-integration-checklist.md)
