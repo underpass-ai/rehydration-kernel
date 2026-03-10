@@ -30,8 +30,12 @@ Validation entrypoints:
 ```bash
 cd api
 buf lint
+
+cd ..
+bash scripts/ci/contract-gate.sh
 ```
 
 Rust code generation will be handled in the application build with
 `tonic-build`. `buf` is used here to keep the contracts linted and ready for
-breaking-change checks.
+breaking-change checks. The contract gate also freezes the generic boundary
+against product-specific nouns and runs the proto descriptor tests.

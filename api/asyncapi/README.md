@@ -11,3 +11,7 @@ It documents:
 This AsyncAPI contract is the generic kernel-owned async boundary.
 Legacy compatibility subjects used during migration should not be treated as the
 preferred integration contract for a new product.
+
+The contract gate validates that this boundary stays free of product-specific
+legacy nouns and remains aligned with the descriptor tests in
+`rehydration-proto`.
