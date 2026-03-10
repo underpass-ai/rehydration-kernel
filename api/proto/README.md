@@ -24,6 +24,7 @@ Compatibility note:
 Reference:
 
 - [`docs/migration/kernel-node-centric-integration-contract.md`](/home/tirso/ai/developents/rehydration-kernel/docs/migration/kernel-node-centric-integration-contract.md)
+- [`api/examples/kernel/v1alpha1/grpc`](/home/tirso/ai/developents/rehydration-kernel/api/examples/kernel/v1alpha1/grpc)
 
 Validation entrypoints:
 
@@ -38,4 +39,5 @@ bash scripts/ci/contract-gate.sh
 Rust code generation will be handled in the application build with
 `tonic-build`. `buf` is used here to keep the contracts linted and ready for
 breaking-change checks. The contract gate also freezes the generic boundary
-against product-specific nouns and runs the proto descriptor tests.
+against product-specific nouns, validates the reference fixtures, and runs the
+proto descriptor tests.

@@ -1,0 +1,15 @@
+{
+  "event_id": "evt-node-detail-4242",
+  "correlation_id": "corr-4242",
+  "causation_id": "cause-4242",
+  "occurred_at": "2026-03-10T10:31:00Z",
+  "aggregate_id": "node:task:retry-handler",
+  "aggregate_type": "node_detail",
+  "schema_version": "v1alpha1",
+  "data": {
+    "node_id": "node:task:retry-handler",
+    "detail": "The retry handler wraps settlement calls with capped exponential backoff and alerting hooks.",
+    "content_hash": "sha256:retry-handler-v3",
+    "revision": 7
+  }
+}

@@ -23,7 +23,8 @@ Phase 0 status:
 - `Phase 1 - Compatibility Shell`: complete
 - `Phase 2 - Read-Path Parity`: complete
 - `Phase 3 - Async NATS Parity`: complete for kernel-owned generic subjects
-- next milestone: implement the `swe-ai-fleet` adapter using the node-centric integration strategy and checklist
+- kernel contract freeze, contract CI, and reference fixtures: complete
+- next milestone outside the kernel: implement the `swe-ai-fleet` adapter using the node-centric integration strategy and checklist
 
 Historical internal substrate plan:
 

@@ -45,11 +45,14 @@ boundary contract.
 - compatibility shell at the gRPC edge
 - explicit request, response, and status mapping modules
 - container-backed compatibility integration tests
+- frozen node-centric kernel contract
+- contract CI with `buf breaking`, naming policy, and AsyncAPI checks
+- reference ProtoJSON and async event fixtures backed by contract tests
 - green repo quality gates
 
-That means the next milestone is not another core refactor.
-The next milestone is freezing and documenting how external products should
-adapt to the node-centric boundary.
+That means the next milestone inside this repo is not another core refactor.
+The kernel-side milestone is freezing, validating, and exemplifying the
+node-centric boundary so external products can adapt to it safely.
 
 ## Direction Update
 
@@ -113,6 +116,14 @@ Delivered in Phase 1:
 - focused response mapping modules
 - boundary status mapping
 - container-backed integration coverage for the implemented compatibility flows
+
+Delivered after Phase 3 hardening:
+
+- frozen node-centric kernel integration contract
+- contract gate with `buf lint`, `buf breaking`, and boundary naming policy
+- AsyncAPI contract checks for generic kernel-owned subjects
+- reference fixtures for ProtoJSON requests or responses and async events
+- conformance tests that prove the fixtures remain aligned with the contract
 
 ### Stream C: Rollout and shadow mode
 
@@ -347,11 +358,16 @@ Exit gate:
 
 Do not add `planning.*` or `orchestration.*` consumers here.
 
-The next implementation cut should produce:
+The kernel-side contract hardening milestone now provides:
 
 1. a frozen node-centric integration contract for external consumers
-2. the strategic integration document for `swe-ai-fleet`
+2. a strategic integration document for `swe-ai-fleet`
 3. a migration checklist for moving legacy compatibility out of this repo
+4. contract CI that protects the generic boundary
+5. reference fixtures that external consumers can adopt directly
+
+The next implementation cut that still belongs in this repo should be optional
+kernel developer experience work, not more fleet-specific compatibility.
 
 Artifacts now available:
 

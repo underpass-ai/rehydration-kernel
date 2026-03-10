@@ -1,0 +1,31 @@
+{
+  "event_id": "evt-graph-node-4242",
+  "correlation_id": "corr-4242",
+  "causation_id": "cause-4242",
+  "occurred_at": "2026-03-10T10:30:00Z",
+  "aggregate_id": "node:workspace:billing-api",
+  "aggregate_type": "node",
+  "schema_version": "v1alpha1",
+  "data": {
+    "node_id": "node:workspace:billing-api",
+    "node_kind": "workspace",
+    "title": "Billing API",
+    "summary": "Rust service responsible for payment processing flows.",
+    "status": "active",
+    "labels": [
+      "rust",
+      "backend"
+    ],
+    "properties": {
+      "language": "rust",
+      "service": "billing-api"
+    },
+    "related_nodes": [
+      {
+        "node_id": "node:task:retry-handler",
+        "node_kind": "task",
+        "relation_type": "contains"
+      }
+    ]
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "event_id": "evt-context-bundle-4242",
+  "correlation_id": "corr-4242",
+  "causation_id": "cause-4242",
+  "occurred_at": "2026-03-10T10:32:00Z",
+  "aggregate_id": "node:workspace:billing-api",
+  "aggregate_type": "bundle",
+  "schema_version": "v1alpha1",
+  "data": {
+    "root_node_id": "node:workspace:billing-api",
+    "roles": [
+      "implementer",
+      "reviewer"
+    ],
+    "revision": 42,
+    "content_hash": "sha256:bundle-v42",
+    "projection_watermark": "evt-4242"
+  }
+}
