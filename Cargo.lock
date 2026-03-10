@@ -1866,8 +1866,10 @@ dependencies = [
 name = "rehydration-transport-grpc"
 version = "0.1.0"
 dependencies = [
+ "async-nats",
  "neo4rs",
  "prost-types",
+ "rehydration-adapter-nats",
  "rehydration-adapter-neo4j",
  "rehydration-adapter-valkey",
  "rehydration-application",
@@ -1875,6 +1877,8 @@ dependencies = [
  "rehydration-domain",
  "rehydration-ports",
  "rehydration-proto",
+ "rehydration-testkit",
+ "serde",
  "serde_json",
  "testcontainers",
  "tokio",

@@ -23,13 +23,22 @@ tokio.workspace = true
 tokio-stream.workspace = true
 
 [dev-dependencies]
+async-nats = "0.39.0"
 neo4rs.workspace = true
+rehydration-adapter-nats.workspace = true
 rehydration-adapter-neo4j.workspace = true
 rehydration-adapter-valkey.workspace = true
+serde.workspace = true
+rehydration-testkit.workspace = true
 serde_json.workspace = true
 testcontainers = "0.24.0"
 
 [[test]]
 name = "compatibility_integration"
 path = "tests/compatibility_integration.rs"
+required-features = ["container-tests"]
+
+[[test]]
+name = "agentic_integration"
+path = "tests/agentic_integration.rs"
 required-features = ["container-tests"]

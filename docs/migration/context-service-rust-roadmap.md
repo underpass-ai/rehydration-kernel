@@ -48,6 +48,7 @@ boundary contract.
 - frozen node-centric kernel contract
 - contract CI with `buf breaking`, naming policy, and AsyncAPI checks
 - reference ProtoJSON and async event fixtures backed by contract tests
+- agentic integration e2e with a runtime-driven basic agent
 - green repo quality gates
 
 That means the next milestone inside this repo is not another core refactor.
@@ -124,6 +125,12 @@ Delivered after Phase 3 hardening:
 - AsyncAPI contract checks for generic kernel-owned subjects
 - reference fixtures for ProtoJSON requests or responses and async events
 - conformance tests that prove the fixtures remain aligned with the contract
+- runtime-oriented end-to-end proof that a generic agent can consume the kernel
+  and drive tool execution through a runtime contract
+
+See:
+
+- [`kernel-agentic-integration-e2e.md`](./kernel-agentic-integration-e2e.md)
 
 ### Stream C: Rollout and shadow mode
 
