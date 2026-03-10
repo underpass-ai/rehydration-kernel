@@ -48,7 +48,28 @@ boundary contract.
 - green repo quality gates
 
 That means the next milestone is not another core refactor.
-The next milestone is async parity at the external boundary.
+The next milestone is freezing and documenting how external products should
+adapt to the node-centric boundary.
+
+## Direction Update
+
+From this point forward, `swe-ai-fleet`-specific compatibility should move out
+of this repo.
+
+This repo should not keep expanding with:
+
+- `planning.*`
+- `orchestration.*`
+- `story`
+- `task`
+- `project`
+- other fleet-specific nouns
+
+Those concerns belong in an anti-corruption layer inside `swe-ai-fleet`.
+
+See:
+
+- [`swe-ai-fleet-node-centric-integration-strategy.md`](./swe-ai-fleet-node-centric-integration-strategy.md)
 
 ## Status by Stream
 
@@ -69,7 +90,7 @@ gap.
 
 ### Stream B: External contract compatibility
 
-Status: `phase 0 complete, phase 1 complete, phase 2 complete`
+Status: `phase 0 complete, phase 1 complete, phase 2 complete, phase 3 complete for kernel-owned boundary`
 
 Frozen in Phase 0:
 
@@ -210,7 +231,7 @@ Exit gate:
 
 ### Phase 3: Async NATS Parity
 
-Status: `in progress`
+Status: `complete for kernel-owned boundary`
 
 Goal:
 
@@ -252,11 +273,8 @@ Current implementation state:
   - runtime JetStream request -> response over a real NATS container
   - runtime `context.updated` publication over a real NATS container
 
-Remaining Phase 3 work:
-
-- planning compatibility consumers
-- orchestration compatibility consumers
-- wiring `context.events.updated` into the compatibility write-path and orchestration triggers that emit it in the frozen baseline
+Remaining work previously associated with fleet-specific subjects is now
+externalized to `swe-ai-fleet`.
 
 Exit gate:
 
@@ -264,34 +282,43 @@ Exit gate:
 - envelope behavior matches the baseline
 - public subjects are implemented without turning the NATS adapter into a god file
 
-### Phase 4: Write-Path Parity
+Status note: complete for this repo
 
-Status: `pending`
+Delivered:
+
+- request or reply parity for kernel-owned async subjects
+- real JetStream runtime wiring
+- container-backed runtime integration coverage
+- `context.events.updated` publication support at the kernel edge
+
+### Phase 4: swe-ai-fleet Integration Adapter
+
+Status: `pending and external to this repo`
 
 Goal:
 
-- support the external write API while keeping the core node-centric
+- adapt `swe-ai-fleet` legacy concepts to the node-centric kernel contract
 
 Scope:
 
-- `UpdateContext`
-- `CreateStory`
-- `CreateTask`
-- `AddProjectDecision`
-- `TransitionPhase`
+- fleet-side request mapping
+- fleet-side response mapping
+- fleet-side async bridge
+- fleet-side subject translation
+- fleet-side shadow comparison
 
 Deliverables:
 
-- focused compatibility commands and mappers
-- write-path response parity
-- response publication parity where applicable
-- golden tests for all write RPCs
+- anti-corruption layer in `swe-ai-fleet`
+- mapping matrix from legacy nouns to node-centric structures
+- shadow comparison harness in `swe-ai-fleet`
+- fleet-owned rollout switches
 
 Exit gate:
 
-- write-path golden tests pass
-- event publication parity is verified
-- no external write DTO leaks into the domain core
+- no fleet-specific nouns are added to kernel domain or transport
+- `swe-ai-fleet` can call the kernel through a narrow adapter
+- legacy-to-node-centric drift is measurable outside this repo
 
 ### Phase 5: Rollout
 
@@ -316,10 +343,10 @@ Exit gate:
 
 ## Immediate Next Slice
 
-Stay in Phase 3 and finish the remaining external NATS consumers.
+Do not add `planning.*` or `orchestration.*` consumers here.
 
 The next implementation cut should produce:
 
-1. planning compatibility consumers
-2. orchestration compatibility consumers
-3. parity tests for their publication or `ack` or `nak` behavior without expanding the adapter into a god file
+1. a frozen node-centric integration contract for external consumers
+2. the strategic integration document for `swe-ai-fleet`
+3. a migration checklist for moving legacy compatibility out of this repo
