@@ -69,6 +69,7 @@ Those concerns belong in an anti-corruption layer inside `swe-ai-fleet`.
 
 See:
 
+- [`kernel-node-centric-integration-contract.md`](./kernel-node-centric-integration-contract.md)
 - [`swe-ai-fleet-node-centric-integration-strategy.md`](./swe-ai-fleet-node-centric-integration-strategy.md)
 - [`swe-ai-fleet-integration-checklist.md`](./swe-ai-fleet-integration-checklist.md)
 
@@ -354,5 +355,6 @@ The next implementation cut should produce:
 
 Artifacts now available:
 
+- [`kernel-node-centric-integration-contract.md`](./kernel-node-centric-integration-contract.md)
 - [`swe-ai-fleet-node-centric-integration-strategy.md`](./swe-ai-fleet-node-centric-integration-strategy.md)
 - [`swe-ai-fleet-integration-checklist.md`](./swe-ai-fleet-integration-checklist.md)

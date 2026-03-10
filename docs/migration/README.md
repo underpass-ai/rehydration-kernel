@@ -7,6 +7,7 @@ Primary roadmap:
 - `context-service-rust-roadmap.md`
 - `swe-ai-fleet-node-centric-integration-strategy.md`
 - `swe-ai-fleet-integration-checklist.md`
+- `kernel-node-centric-integration-contract.md`
 
 Phase 0 baseline:
 
