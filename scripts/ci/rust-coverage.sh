@@ -36,5 +36,6 @@ run_container_coverage_test rehydration-adapter-valkey valkey_integration
 run_container_coverage_test rehydration-adapter-neo4j neo4j_integration
 run_container_coverage_test rehydration-adapter-nats runtime_integration
 run_container_coverage_test rehydration-transport-grpc compatibility_integration
+run_container_coverage_test rehydration-transport-grpc agentic_integration
 
 cargo llvm-cov report --locked --lcov --output-path target/llvm-cov/lcov.info
