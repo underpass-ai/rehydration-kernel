@@ -12,13 +12,14 @@ OS="linux"
 ARCH="amd64"
 ARCHIVE="helm-${HELM_VERSION}-${OS}-${ARCH}.tar.gz"
 BASE_URL="https://get.helm.sh"
+HTTPS_ONLY_PROTOCOL="=https"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "${TMP_DIR}"' EXIT
 
 # Restrict redirects to HTTPS so package download cannot be downgraded in transit.
-curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
+curl --fail --silent --show-error --location --proto "${HTTPS_ONLY_PROTOCOL}" --proto-redir "${HTTPS_ONLY_PROTOCOL}" \
   "${BASE_URL}/${ARCHIVE}" -o "${TMP_DIR}/${ARCHIVE}"
-curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
+curl --fail --silent --show-error --location --proto "${HTTPS_ONLY_PROTOCOL}" --proto-redir "${HTTPS_ONLY_PROTOCOL}" \
   "${BASE_URL}/${ARCHIVE}.sha256sum" -o "${TMP_DIR}/${ARCHIVE}.sha256sum"
 
 (
