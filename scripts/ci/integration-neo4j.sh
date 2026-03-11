@@ -13,4 +13,5 @@ cargo test \
   --test neo4j_integration \
   --locked \
   -- \
-  --nocapture
+  --nocapture \
+  --test-threads=1

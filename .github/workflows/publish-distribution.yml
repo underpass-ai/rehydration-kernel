@@ -1,0 +1,110 @@
+name: publish-distribution
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+env:
+  IMAGE_NAME: ghcr.io/underpass-ai/rehydration-kernel
+  CHART_NAME: rehydration-kernel
+  CHART_REGISTRY: oci://ghcr.io/underpass-ai/charts
+  CHART_PATH: charts/rehydration-kernel
+
+jobs:
+  publish-image:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@988b5a0280414f521da01fcc63a27aeeb4b104db
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract image metadata
+        id: meta
+        uses: docker/metadata-action@8956f6d38b8d6f514cf8ad6f0d57c6034d2f2f88
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=branch
+            type=ref,event=tag
+            type=sha,format=short,prefix=sha-
+
+      - name: Build and push image
+        uses: docker/build-push-action@5176d65f5c500ec39e68a6f64f0f19a6e7b87f2a
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  publish-helm-chart:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Install Helm
+        run: bash scripts/ci/install-helm.sh
+
+      - name: Lint chart
+        run: bash scripts/ci/helm-lint.sh
+
+      - name: Compute chart version
+        id: chart-version
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="0.1.0-main.${GITHUB_RUN_NUMBER}"
+          fi
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+
+      - name: Prepare packaged chart
+        shell: bash
+        run: |
+          mkdir -p dist/chart
+          cp -R "${CHART_PATH}" "dist/chart/${CHART_NAME}"
+          sed -i "s/^version: .*/version: ${VERSION}/" "dist/chart/${CHART_NAME}/Chart.yaml"
+          sed -i "s/^appVersion: .*/appVersion: \"${APP_VERSION}\"/" "dist/chart/${CHART_NAME}/Chart.yaml"
+          helm package "dist/chart/${CHART_NAME}" --destination dist
+        env:
+          VERSION: ${{ steps.chart-version.outputs.version }}
+          APP_VERSION: ${{ github.sha }}
+
+      - name: Log in to GitHub Container Registry for Helm
+        shell: bash
+        run: |
+          echo "${TOKEN}" | helm registry login ghcr.io --username "${ACTOR}" --password-stdin
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+
+      - name: Push Helm chart
+        shell: bash
+        run: |
+          helm push "dist/${CHART_NAME}-${VERSION}.tgz" "${CHART_REGISTRY}"
+        env:
+          VERSION: ${{ steps.chart-version.outputs.version }}

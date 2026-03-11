@@ -283,6 +283,36 @@ jobs:
       - name: Run event-driven agentic integration tests
         run: bash scripts/ci/integration-agentic-event-context.sh
 
+  container-image:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Verify Docker
+        run: docker version
+
+      - name: Build container image
+        run: bash scripts/ci/container-image.sh
+
+  helm-chart:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Install Helm
+        run: bash scripts/ci/install-helm.sh
+
+      - name: Lint Helm chart
+        run: bash scripts/ci/helm-lint.sh
+
   sonarcloud:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
@@ -298,6 +328,8 @@ jobs:
       - integration-agentic-context
       - integration-agentic-rehydration
       - integration-agentic-event-context
+      - container-image
+      - helm-chart
     permissions:
       contents: read
       pull-requests: read

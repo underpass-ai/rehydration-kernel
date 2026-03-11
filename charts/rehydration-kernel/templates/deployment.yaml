@@ -1,0 +1,100 @@
+{{- include "rehydration-kernel.validateValues" . }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "rehydration-kernel.fullname" . }}
+  labels:
+    {{- include "rehydration-kernel.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "rehydration-kernel.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "rehydration-kernel.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "rehydration-kernel.serviceAccountName" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: rehydration-kernel
+          image: "{{ include "rehydration-kernel.image" . }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - name: grpc
+              containerPort: {{ .Values.service.grpcPort }}
+              protocol: TCP
+          env:
+            - name: REHYDRATION_SERVICE_NAME
+              value: {{ .Values.config.serviceName | quote }}
+            - name: REHYDRATION_GRPC_BIND
+              value: {{ .Values.config.grpcBind | quote }}
+            - name: REHYDRATION_ADMIN_BIND
+              value: {{ .Values.config.adminBind | quote }}
+            - name: REHYDRATION_EVENTS_PREFIX
+              value: {{ .Values.config.eventsPrefix | quote }}
+            - name: ENABLE_NATS
+              value: {{ .Values.config.enableNats | quote }}
+            {{- if .Values.secrets.existingSecret }}
+            - name: REHYDRATION_GRAPH_URI
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.existingSecret | quote }}
+                  key: {{ .Values.secrets.keys.graphUri | quote }}
+            - name: REHYDRATION_DETAIL_URI
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.existingSecret | quote }}
+                  key: {{ .Values.secrets.keys.detailUri | quote }}
+            - name: REHYDRATION_SNAPSHOT_URI
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.existingSecret | quote }}
+                  key: {{ .Values.secrets.keys.snapshotUri | quote }}
+            - name: NATS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.existingSecret | quote }}
+                  key: {{ .Values.secrets.keys.natsUrl | quote }}
+            {{- else if .Values.development.allowInlineConnections }}
+            - name: REHYDRATION_GRAPH_URI
+              value: {{ .Values.connections.graphUri | quote }}
+            - name: REHYDRATION_DETAIL_URI
+              value: {{ .Values.connections.detailUri | quote }}
+            - name: REHYDRATION_SNAPSHOT_URI
+              value: {{ .Values.connections.snapshotUri | quote }}
+            - name: NATS_URL
+              value: {{ .Values.connections.natsUrl | quote }}
+            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

@@ -1,1 +1,4 @@
 /target
+/CONTEXT_SERVICE_RUST_MIGRATION_PLAN.md
+/rollout-*.jsonl
+/to-delete-when-finish-the-standalone-extraction/

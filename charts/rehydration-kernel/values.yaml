@@ -1,0 +1,68 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/underpass-ai/rehydration-kernel
+  pullPolicy: IfNotPresent
+  tag: ""
+  digest: ""
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
+
+service:
+  type: ClusterIP
+  grpcPort: 50054
+
+config:
+  serviceName: rehydration-kernel
+  grpcBind: 0.0.0.0:50054
+  adminBind: 0.0.0.0:8080
+  eventsPrefix: rehydration
+  enableNats: false
+
+connections:
+  graphUri: ""
+  detailUri: ""
+  snapshotUri: ""
+  natsUrl: ""
+
+secrets:
+  existingSecret: ""
+  keys:
+    graphUri: graphUri
+    detailUri: detailUri
+    snapshotUri: snapshotUri
+    natsUrl: natsUrl
+
+development:
+  allowMutableImageTags: false
+  allowInlineConnections: false
+
+resources: {}
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+extraEnv: []
