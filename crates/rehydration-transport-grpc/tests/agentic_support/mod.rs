@@ -1,5 +1,6 @@
 #[path = "../support/agentic_debug.rs"]
 pub(crate) mod agentic_debug;
+#[allow(dead_code)]
 #[path = "../support/agentic_fixture.rs"]
 pub(crate) mod agentic_fixture;
 #[path = "../support/containers.rs"]
@@ -16,3 +17,7 @@ pub(crate) mod nats_container;
 pub(crate) mod projection_runtime;
 #[path = "../support/runtime_workspace.rs"]
 pub(crate) mod runtime_workspace;
+#[path = "../support/starship_mission_agent.rs"]
+pub(crate) mod starship_mission_agent;
+#[path = "../support/starship_seed_data.rs"]
+pub(crate) mod starship_seed_data;
