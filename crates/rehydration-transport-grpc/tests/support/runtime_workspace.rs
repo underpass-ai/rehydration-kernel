@@ -13,6 +13,14 @@ use crate::agentic_support::agentic_debug::debug_log_value;
 #[derive(Debug, Clone, Default)]
 pub(crate) struct RecordingRuntime {
     files: Arc<Mutex<BTreeMap<String, String>>>,
+    invocations: Arc<Mutex<Vec<RecordedInvocation>>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RecordedInvocation {
+    pub(crate) tool_name: String,
+    pub(crate) path: Option<String>,
+    pub(crate) approved: bool,
 }
 
 impl RecordingRuntime {
@@ -21,6 +29,21 @@ impl RecordingRuntime {
             io::Error::other(format!("recording runtime lock poisoned: {error}"))
         })?;
         Ok(files.get(path).cloned())
+    }
+
+    pub(crate) fn invocations(&self) -> RuntimeResult<Vec<RecordedInvocation>> {
+        let invocations = self.invocations.lock().map_err(|error| {
+            io::Error::other(format!("recording runtime lock poisoned: {error}"))
+        })?;
+        Ok(invocations.clone())
+    }
+
+    pub(crate) fn clear_invocations(&self) -> RuntimeResult<()> {
+        let mut invocations = self.invocations.lock().map_err(|error| {
+            io::Error::other(format!("recording runtime lock poisoned: {error}"))
+        })?;
+        invocations.clear();
+        Ok(())
     }
 }
 
@@ -50,6 +73,20 @@ impl AgentRuntime for RecordingRuntime {
         approved: bool,
     ) -> RuntimeResult<ToolInvocation> {
         debug_log_value("recording runtime invoke", tool_name);
+        let path = args
+            .get("path")
+            .and_then(Value::as_str)
+            .map(ToString::to_string);
+        let mut invocations = self.invocations.lock().map_err(|error| {
+            io::Error::other(format!("recording runtime lock poisoned: {error}"))
+        })?;
+        invocations.push(RecordedInvocation {
+            tool_name: tool_name.to_string(),
+            path,
+            approved,
+        });
+        drop(invocations);
+
         match tool_name {
             "fs.write" => {
                 if !approved {

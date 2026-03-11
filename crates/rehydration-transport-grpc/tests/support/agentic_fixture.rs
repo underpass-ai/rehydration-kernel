@@ -1,6 +1,8 @@
 use std::error::Error;
+use std::future::Future;
 use std::time::Duration;
 
+use async_nats::Client;
 use rehydration_adapter_neo4j::Neo4jProjectionStore;
 use rehydration_adapter_valkey::{ValkeyNodeDetailStore, ValkeySnapshotStore};
 use rehydration_proto::v1alpha1::{
@@ -38,7 +40,23 @@ pub(crate) struct AgenticFixture {
 }
 
 impl AgenticFixture {
+    #[allow(dead_code)]
     pub(crate) async fn start() -> Result<Self, Box<dyn Error + Send + Sync>> {
+        Self::start_with_seed(ROOT_NODE_ID, FOCUS_NODE_ID, |publisher| async move {
+            publish_projection_events(&publisher).await
+        })
+        .await
+    }
+
+    pub(crate) async fn start_with_seed<F, Fut>(
+        root_node_id: &str,
+        focus_node_id: &str,
+        seed_projection: F,
+    ) -> Result<Self, Box<dyn Error + Send + Sync>>
+    where
+        F: FnOnce(Client) -> Fut,
+        Fut: Future<Output = Result<(), Box<dyn Error + Send + Sync>>>,
+    {
         debug_log("starting agentic fixture");
         let neo4j = start_neo4j_container().await?;
         let valkey = start_valkey_container().await?;
@@ -89,9 +107,9 @@ impl AgenticFixture {
         let admin_client = ContextAdminServiceClient::new(channel);
 
         let publisher = connect_with_retry(&nats_url).await?;
-        publish_projection_events(&publisher).await?;
+        seed_projection(publisher.clone()).await?;
         debug_log("projection seed events published");
-        wait_for_context_ready(query_client.clone()).await?;
+        wait_for_context_ready(query_client.clone(), root_node_id, focus_node_id).await?;
         debug_log("context became ready");
 
         Ok(Self {
@@ -130,16 +148,18 @@ impl AgenticFixture {
 
 async fn wait_for_context_ready(
     mut query_client: ContextQueryServiceClient<Channel>,
+    root_node_id: &str,
+    focus_node_id: &str,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let mut last_error: Option<Box<dyn Error + Send + Sync>> = None;
 
     for _ in 0..40 {
         match query_client
             .get_context(GetContextRequest {
-                root_node_id: ROOT_NODE_ID.to_string(),
+                root_node_id: root_node_id.to_string(),
                 role: "implementer".to_string(),
                 phase: Phase::Build as i32,
-                work_item_id: FOCUS_NODE_ID.to_string(),
+                work_item_id: focus_node_id.to_string(),
                 token_budget: 1200,
                 requested_scopes: vec!["implementation".to_string()],
                 render_format: BundleRenderFormat::Structured as i32,
@@ -150,7 +170,7 @@ async fn wait_for_context_ready(
             Ok(response) => {
                 let response = response.into_inner();
                 if let Some(bundle) = response.bundle
-                    && bundle.root_node_id == ROOT_NODE_ID
+                    && bundle.root_node_id == root_node_id
                     && bundle
                         .bundles
                         .first()
