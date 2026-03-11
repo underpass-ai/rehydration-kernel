@@ -20,6 +20,9 @@ resolver = "3"
 edition = "2024"
 rust-version = "1.90"
 version = "0.1.0"
+license = "Apache-2.0"
+description = "Node-centric context rehydration engine for agentic systems"
+repository = "https://github.com/underpass-ai/rehydration-kernel"
 
 [workspace.dependencies]
 neo4rs = "0.8.0"

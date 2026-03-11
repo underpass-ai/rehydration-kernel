@@ -1,73 +1,99 @@
 # Rehydration Kernel
 
-Deterministic context rehydration for agentic systems.
+Node-centric context rehydration for agentic systems.
 
-## Status
+## What This Repo Is
 
-Initial Rust workspace scaffold for the extraction of the context rehydration
-capability into an independent repository.
+`rehydration-kernel` is a generic context engine built around four public
+concepts:
 
-## Workspace
+- root node
+- neighbor nodes
+- relationships
+- extended node detail
 
-- `api/proto`: gRPC contracts.
-- `api/asyncapi`: event contracts.
-- `crates/rehydration-domain`: domain model and invariants.
-- `crates/rehydration-ports`: stable application-facing traits.
-- `crates/rehydration-application`: use cases, query/admin/command
-  orchestration, and application DTOs.
-- `crates/rehydration-proto`: generated protobuf and gRPC stubs.
-- `crates/rehydration-transport-grpc`: tonic gRPC transport for query, command,
-  and admin services.
-- `crates/rehydration-transport-http-admin`: admin transport placeholder.
-- `crates/rehydration-adapter-*`: infrastructure adapters.
-- `crates/rehydration-server`: composition root and async tonic bootstrap.
-- `crates/rehydration-testkit`: in-memory testing helpers.
+The kernel does not own product-specific nouns. Integrating products are
+expected to map their own domain language to this graph model at the edge.
 
-## Toolchain
+## Current Status
 
-The repo is pinned to Rust `1.90.0` through `rust-toolchain.toml`.
+This repo is functionally complete for the kernel-owned migration scope.
 
-## API Contracts
+What is already in place:
 
-The first API split is defined under
-`api/proto/underpass/rehydration/kernel/v1alpha1` with:
+- graph-native domain and application layers
+- split Neo4j, Valkey, NATS, and gRPC adapters
+- frozen node-centric gRPC and async contracts
+- contract CI with `buf breaking`, AsyncAPI checks, and boundary naming policy
+- container-backed integration tests
+- agentic end-to-end proofs:
+  - pull-driven runtime flow
+  - event-driven runtime trigger flow
+- runtime integration reference docs and runnable client example
 
-- `ContextQueryService`
-- `ContextCommandService`
-- `ContextAdminService`
+What is intentionally out of scope for this repo:
 
-Rust stubs are generated at build time by `tonic-build` inside
-`crates/rehydration-proto`.
+- `swe-ai-fleet` legacy noun modeling
+- `planning.*` or `orchestration.*` consumers
+- product-side shadow mode implementation
+- rollout and rollback logic
 
-The server bootstrap currently exposes all three gRPC services through `tonic`.
-Query, admin, and command flows are already mediated by dedicated application
-services, while the core domain logic behind those flows is still being ported.
-The Valkey snapshot adapter now writes real RESP `SET` commands over TCP with a
-stable JSON payload, and the Neo4j adapter has been hardened to avoid
-manufacturing synthetic bundles from infrastructure. The first real Neo4j read
-path now loads `RoleContextPackProjection` roots linked to `CaseHeader`,
-`PlanHeader`, `WorkItem`, `Decision`, `DecisionRelation`, `TaskImpact`, and
-`Milestone` projection nodes.
+## Architecture
 
-The event-driven projection foundation is node-centric by design. Inbound
-projection events no longer model `project`, `epic`, `story`, or `task`
-concepts directly; they model:
+Non-negotiable repo rules:
 
-- graph nodes plus their relations;
-- expanded per-node detail materialized into Valkey by `node_id`;
-- deterministic idempotency and per-consumer checkpoints.
+- DDD first
+- hexagonal boundaries
+- no god objects
+- no god files
+- one main concept per file
+- one use case per file
 
-The first real projection write path is now split the same way:
+Internal core language:
 
-- Neo4j persists normalized graph nodes and node-to-node relations.
-- Valkey persists expanded node detail keyed by `node_id`.
-- `RoutingProjectionWriter` fans projection mutations out to those stores.
+- root node
+- neighbor nodes
+- relationships
+- node details in Valkey
 
-The current gRPC query path still reads the earlier `RoleContextPackProjection`
-model. Migrating query assembly to the node-centric graph is the next step; the
-new write path is in place without pretending that migration is already done.
+## Contracts
+
+Primary public artifacts:
+
+- gRPC proto:
+  - [`api/proto/underpass/rehydration/kernel/v1alpha1`](./api/proto/underpass/rehydration/kernel/v1alpha1)
+- async contract:
+  - [`api/asyncapi/context-projection.v1alpha1.yaml`](./api/asyncapi/context-projection.v1alpha1.yaml)
+- contract examples:
+  - [`api/examples/README.md`](./api/examples/README.md)
+- runtime integration reference:
+  - [`docs/migration/kernel-runtime-integration-reference.md`](./docs/migration/kernel-runtime-integration-reference.md)
+
+Historical migration and handoff docs live under [`docs/migration`](./docs/migration).
+They are useful for adopters, but they do not redefine the kernel domain.
+
+## Repo Layout
+
+- `api/proto`: gRPC contracts
+- `api/asyncapi`: async contracts
+- `api/examples`: canonical request, response, and event fixtures
+- `crates/rehydration-domain`: domain model and invariants
+- `crates/rehydration-ports`: application-facing ports
+- `crates/rehydration-application`: use cases and orchestration
+- `crates/rehydration-adapter-*`: infrastructure adapters
+- `crates/rehydration-transport-*`: transport boundaries
+- `crates/rehydration-server`: composition root
+- `crates/rehydration-testkit`: testing helpers
+- `scripts/ci`: local quality and integration gates
+- `docs/migration`: closeout, handoff, and integration strategy docs
 
 ## Quickstart
+
+Toolchain:
+
+- Rust `1.90.0`, pinned in [`rust-toolchain.toml`](./rust-toolchain.toml)
+
+Core checks:
 
 ```bash
 cargo fmt --all
@@ -75,54 +101,102 @@ cargo check --workspace
 cargo test --workspace
 ```
 
+Repository gate:
+
 ```bash
-scripts/ci/quality-gate.sh
+bash scripts/ci/quality-gate.sh
 ```
+
+Focused contract gate:
+
+```bash
+bash scripts/ci/contract-gate.sh
+```
+
+Container-backed integration targets:
 
 ```bash
 bash scripts/ci/integration-valkey.sh
+bash scripts/ci/integration-neo4j.sh
+bash scripts/ci/integration-nats-compatibility.sh
+bash scripts/ci/integration-grpc-compatibility.sh
+bash scripts/ci/integration-agentic-context.sh
+bash scripts/ci/integration-agentic-event-context.sh
 ```
+
+Container image build check:
 
 ```bash
-CONTAINER_RUNTIME=docker bash scripts/ci/integration-valkey.sh
-CONTAINER_RUNTIME=podman bash scripts/ci/integration-valkey.sh
-CONTAINER_RUNTIME=docker bash scripts/ci/integration-neo4j.sh
-CONTAINER_RUNTIME=podman bash scripts/ci/integration-neo4j.sh
+bash scripts/ci/container-image.sh
 ```
 
-The container-backed integration targets use `testcontainers` and are intentionally
-separated from `cargo test --workspace` so unit checks stay fast and
-container-backed tests remain explicit.
+The script uses `docker` when available and falls back to `podman`. Override
+with `CONTAINER_RUNTIME=docker` or `CONTAINER_RUNTIME=podman` if you need to
+force one runtime.
 
-Container runtime bootstrap for local integration tests lives in
-`scripts/ci/testcontainers-runtime.sh`, so individual integration scripts only
-need to source that setup and run their target.
+Helm chart lint:
 
-Local runtime selection works like this:
+```bash
+bash scripts/ci/helm-lint.sh
+```
 
-- `auto`: prefer `Docker`; if it is unavailable, fall back to `Podman`.
-- `docker`: require a working Docker daemon.
-- `podman`: use a Docker-compatible Podman socket, first from the standard user
-  socket, then by trying `podman.socket`, and finally by launching a temporary
-  `podman system service`. In this mode the script exports
-  `TESTCONTAINERS_RYUK_DISABLED=true`.
+## Public Readiness Notes
 
-GitHub Actions stays on Docker for the repository CI path.
+If you are integrating another product with this kernel, start here:
 
-For Neo4j-backed local runs, `REHYDRATION_GRAPH_URI` may include credentials,
-for example `neo4j://neo4j:<password>@localhost:7687`.
+- [`docs/migration/kernel-node-centric-integration-contract.md`](./docs/migration/kernel-node-centric-integration-contract.md)
+- [`docs/migration/kernel-runtime-integration-reference.md`](./docs/migration/kernel-runtime-integration-reference.md)
+- [`docs/migration/kernel-repo-closeout.md`](./docs/migration/kernel-repo-closeout.md)
 
-## SonarCloud
+If you are integrating `swe-ai-fleet`, the handoff docs are:
 
-The GitHub Actions CI includes a `sonarcloud` job wired for Rust LCOV coverage.
-It is configured for:
+- [`docs/migration/swe-ai-fleet-node-centric-integration-strategy.md`](./docs/migration/swe-ai-fleet-node-centric-integration-strategy.md)
+- [`docs/migration/swe-ai-fleet-shadow-mode-spec.md`](./docs/migration/swe-ai-fleet-shadow-mode-spec.md)
+- [`docs/migration/swe-ai-fleet-integration-checklist.md`](./docs/migration/swe-ai-fleet-integration-checklist.md)
 
-- organization `underpass-ai-swe-ai-fleet`
-- project key `underpass-ai_rehydration-kernel`
+## Runtime And Deployment Ecosystem
 
-To enable the scan, configure:
+This repo owns the kernel code, contracts, and integration proofs.
 
-- repository secret `SONAR_TOKEN`
+Operational packaging may live in sibling repos that consume the kernel. In the
+current ecosystem that includes a sibling runtime capable of:
 
-If the secret is absent, the job exits cleanly with a skip notice instead of
-failing the whole pipeline.
+- publishing container artifacts to GitHub Container Registry
+- running under Docker Compose
+- running on Kubernetes through Helm
+
+That deployment packaging is intentionally kept outside the kernel repo when it
+belongs to the runtime or product layer rather than to the kernel itself.
+
+See:
+
+- [`docs/operations/README.md`](./docs/operations/README.md)
+- [`docs/operations/deployment-boundary.md`](./docs/operations/deployment-boundary.md)
+- [`docs/operations/container-image.md`](./docs/operations/container-image.md)
+
+## Standalone Container Image
+
+The kernel now owns a standalone OCI image intended for external download and
+evaluation.
+
+Planned public location:
+
+- `ghcr.io/underpass-ai/rehydration-kernel`
+
+Typical pull:
+
+```bash
+docker pull ghcr.io/underpass-ai/rehydration-kernel:latest
+```
+
+See [`docs/operations/container-image.md`](./docs/operations/container-image.md)
+for environment variables, tags, and usage.
+
+Helm chart:
+
+- source chart: [`charts/rehydration-kernel`](./charts/rehydration-kernel)
+- planned OCI location: `oci://ghcr.io/underpass-ai/charts/rehydration-kernel`
+
+## License
+
+Apache-2.0. See [`LICENSE`](./LICENSE).

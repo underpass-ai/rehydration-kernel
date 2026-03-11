@@ -45,10 +45,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     );
 
     tokio::try_join!(async { grpc_server.run().await }, async {
-        compatibility_runtime
-            .run()
-            .await
-            .map_err(|error| Box::new(error) as Box<dyn std::error::Error + Send + Sync>)
+        compatibility_runtime.run().await
     })?;
 
     Ok(())

@@ -142,9 +142,15 @@ See:
 
 ### Stream C: Rollout and shadow mode
 
-Status: `not started`
+Status: `specified, implementation external`
 
-Missing:
+Specified here:
+
+- shadow comparison model
+- rollout gates
+- rollback expectations
+
+Missing in an integrating product:
 
 - dual-run strategy
 - shadow comparison harness
@@ -350,7 +356,7 @@ Exit gate:
 
 ### Phase 5: Rollout
 
-Status: `pending`
+Status: `specified, implementation external`
 
 Goal:
 
@@ -368,6 +374,11 @@ Exit gate:
 - shadow comparisons are within accepted drift
 - rollback is exercised
 - production cutover checklist is signed off
+
+Supporting docs:
+
+- [`kernel-repo-closeout.md`](./kernel-repo-closeout.md)
+- [`swe-ai-fleet-shadow-mode-spec.md`](./swe-ai-fleet-shadow-mode-spec.md)
 
 ## Immediate Next Slice
 
@@ -389,7 +400,9 @@ kernel developer experience work, not more fleet-specific compatibility.
 Artifacts now available:
 
 - [`kernel-node-centric-integration-contract.md`](./kernel-node-centric-integration-contract.md)
+- [`kernel-repo-closeout.md`](./kernel-repo-closeout.md)
 - [`swe-ai-fleet-node-centric-integration-strategy.md`](./swe-ai-fleet-node-centric-integration-strategy.md)
+- [`swe-ai-fleet-shadow-mode-spec.md`](./swe-ai-fleet-shadow-mode-spec.md)
 - [`swe-ai-fleet-integration-checklist.md`](./swe-ai-fleet-integration-checklist.md)
 - [`kernel-agentic-event-trigger-e2e.md`](./kernel-agentic-event-trigger-e2e.md)
 - [`kernel-runtime-integration-reference.md`](./kernel-runtime-integration-reference.md)

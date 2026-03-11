@@ -1,0 +1,11 @@
+1. Get the gRPC service endpoint:
+
+   kubectl get svc {{ include "rehydration-kernel.fullname" . }}
+
+2. Override connection settings for Neo4j, Valkey, and optional NATS through:
+
+   - values under `connections`
+   - or `secrets.existingSecret` for credential-bearing URIs
+
+3. The chart deploys the standalone kernel service. Product adapters and
+   product-specific event bridges stay outside this chart.
