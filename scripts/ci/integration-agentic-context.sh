@@ -13,4 +13,5 @@ cargo test \
   --test agentic_integration \
   --locked \
   -- \
-  --nocapture
+  --nocapture \
+  --test-threads=1

@@ -8,196 +8,221 @@ use rehydration_ports::{
     GraphNeighborhoodReader, NodeProjection, NodeRelationProjection, ProjectionMutation,
     ProjectionWriter,
 };
-use testcontainers::{GenericImage, ImageExt, core::IntoContainerPort, runners::AsyncRunner};
-use tokio::time::sleep;
+use testcontainers::{
+    GenericImage, ImageExt,
+    core::{IntoContainerPort, WaitFor},
+    runners::AsyncRunner,
+};
+use tokio::time::{sleep, timeout};
 
 const NEO4J_INTERNAL_PORT: u16 = 7687;
 const NEO4J_IMAGE: &str = "docker.io/neo4j";
 const NEO4J_TAG: &str = "5.26.0-community";
 const NEO4J_PASSWORD: &str = "underpass-test-password";
+const TEST_TIMEOUT: Duration = Duration::from_secs(45);
+const CONNECT_RETRY_ATTEMPTS: usize = 15;
+const CONNECT_RETRY_DELAY: Duration = Duration::from_secs(1);
 
 #[tokio::test]
 async fn load_neighborhood_reads_root_and_related_nodes() -> Result<(), Box<dyn Error + Send + Sync>>
 {
-    let container = GenericImage::new(NEO4J_IMAGE, NEO4J_TAG)
-        .with_exposed_port(NEO4J_INTERNAL_PORT.tcp())
-        .with_env_var("NEO4J_AUTH", format!("neo4j/{NEO4J_PASSWORD}"))
-        .start()
-        .await?;
+    run_with_timeout(async {
+        let container = start_neo4j_container().await?;
+        let host = container.get_host().await?;
+        let port = container.get_host_port_ipv4(NEO4J_INTERNAL_PORT).await?;
+        let graph =
+            connect_with_retry(format!("neo4j://{host}:{port}"), "neo4j", NEO4J_PASSWORD).await?;
+        graph.run(query("MATCH (n) DETACH DELETE n")).await?;
 
-    let host = container.get_host().await?;
-    let port = container.get_host_port_ipv4(NEO4J_INTERNAL_PORT).await?;
-    let graph =
-        connect_with_retry(format!("neo4j://{host}:{port}"), "neo4j", NEO4J_PASSWORD).await?;
-    graph.run(query("MATCH (n) DETACH DELETE n")).await?;
+        let store =
+            Neo4jProjectionReader::new(format!("neo4j://neo4j:{NEO4J_PASSWORD}@{host}:{port}"))?;
+        store
+            .apply_mutations(vec![
+                ProjectionMutation::UpsertNode(NodeProjection {
+                    node_id: "node-root".to_string(),
+                    node_kind: "capability".to_string(),
+                    title: "Projection kernel".to_string(),
+                    summary: "Root summary".to_string(),
+                    status: "ACTIVE".to_string(),
+                    labels: vec!["projection".to_string()],
+                    properties: BTreeMap::from([
+                        ("created_by".to_string(), "planner".to_string()),
+                        ("token_budget_hint".to_string(), "8192".to_string()),
+                    ]),
+                }),
+                ProjectionMutation::UpsertNode(NodeProjection {
+                    node_id: "decision-1".to_string(),
+                    node_kind: "decision".to_string(),
+                    title: "Adopt CQRS".to_string(),
+                    summary: "Decision summary".to_string(),
+                    status: "ACCEPTED".to_string(),
+                    labels: vec!["decision".to_string()],
+                    properties: BTreeMap::from([("owner".to_string(), "architect".to_string())]),
+                }),
+                ProjectionMutation::UpsertNode(NodeProjection {
+                    node_id: "task-1".to_string(),
+                    node_kind: "node".to_string(),
+                    title: "Move query side".to_string(),
+                    summary: "Task summary".to_string(),
+                    status: "READY".to_string(),
+                    labels: vec!["work-item".to_string()],
+                    properties: BTreeMap::from([("priority".to_string(), "5".to_string())]),
+                }),
+                ProjectionMutation::UpsertNodeRelation(NodeRelationProjection {
+                    source_node_id: "node-root".to_string(),
+                    target_node_id: "decision-1".to_string(),
+                    relation_type: "records".to_string(),
+                }),
+                ProjectionMutation::UpsertNodeRelation(NodeRelationProjection {
+                    source_node_id: "task-1".to_string(),
+                    target_node_id: "node-root".to_string(),
+                    relation_type: "depends_on".to_string(),
+                }),
+            ])
+            .await?;
 
-    let store =
-        Neo4jProjectionReader::new(format!("neo4j://neo4j:{NEO4J_PASSWORD}@{host}:{port}"))?;
-    store
-        .apply_mutations(vec![
-            ProjectionMutation::UpsertNode(NodeProjection {
-                node_id: "node-root".to_string(),
-                node_kind: "capability".to_string(),
-                title: "Projection kernel".to_string(),
-                summary: "Root summary".to_string(),
-                status: "ACTIVE".to_string(),
-                labels: vec!["projection".to_string()],
-                properties: BTreeMap::from([
-                    ("created_by".to_string(), "planner".to_string()),
-                    ("token_budget_hint".to_string(), "8192".to_string()),
-                ]),
-            }),
-            ProjectionMutation::UpsertNode(NodeProjection {
-                node_id: "decision-1".to_string(),
-                node_kind: "decision".to_string(),
-                title: "Adopt CQRS".to_string(),
-                summary: "Decision summary".to_string(),
-                status: "ACCEPTED".to_string(),
-                labels: vec!["decision".to_string()],
-                properties: BTreeMap::from([("owner".to_string(), "architect".to_string())]),
-            }),
-            ProjectionMutation::UpsertNode(NodeProjection {
-                node_id: "task-1".to_string(),
-                node_kind: "node".to_string(),
-                title: "Move query side".to_string(),
-                summary: "Task summary".to_string(),
-                status: "READY".to_string(),
-                labels: vec!["work-item".to_string()],
-                properties: BTreeMap::from([("priority".to_string(), "5".to_string())]),
-            }),
-            ProjectionMutation::UpsertNodeRelation(NodeRelationProjection {
-                source_node_id: "node-root".to_string(),
-                target_node_id: "decision-1".to_string(),
-                relation_type: "records".to_string(),
-            }),
-            ProjectionMutation::UpsertNodeRelation(NodeRelationProjection {
-                source_node_id: "task-1".to_string(),
-                target_node_id: "node-root".to_string(),
-                relation_type: "depends_on".to_string(),
-            }),
-        ])
-        .await?;
+        let neighborhood = store
+            .load_neighborhood("node-root")
+            .await?
+            .expect("seeded neighborhood should load");
 
-    let neighborhood = store
-        .load_neighborhood("node-root")
-        .await?
-        .expect("seeded neighborhood should load");
+        assert_eq!(neighborhood.root.node_id, "node-root");
+        assert_eq!(neighborhood.root.title, "Projection kernel");
+        assert_eq!(neighborhood.root.properties["created_by"], "planner");
+        assert_eq!(neighborhood.neighbors.len(), 2);
+        assert!(
+            neighborhood
+                .neighbors
+                .iter()
+                .any(|node| node.node_id == "decision-1" && node.node_kind == "decision")
+        );
+        assert!(
+            neighborhood
+                .neighbors
+                .iter()
+                .any(|node| node.node_id == "task-1" && node.status == "READY")
+        );
+        assert_eq!(neighborhood.relations.len(), 2);
+        assert!(neighborhood.relations.iter().any(|relation| {
+            relation.source_node_id == "node-root"
+                && relation.target_node_id == "decision-1"
+                && relation.relation_type == "records"
+        }));
+        assert!(neighborhood.relations.iter().any(|relation| {
+            relation.source_node_id == "task-1"
+                && relation.target_node_id == "node-root"
+                && relation.relation_type == "depends_on"
+        }));
 
-    assert_eq!(neighborhood.root.node_id, "node-root");
-    assert_eq!(neighborhood.root.title, "Projection kernel");
-    assert_eq!(neighborhood.root.properties["created_by"], "planner");
-    assert_eq!(neighborhood.neighbors.len(), 2);
-    assert!(
-        neighborhood
-            .neighbors
-            .iter()
-            .any(|node| node.node_id == "decision-1" && node.node_kind == "decision")
-    );
-    assert!(
-        neighborhood
-            .neighbors
-            .iter()
-            .any(|node| node.node_id == "task-1" && node.status == "READY")
-    );
-    assert_eq!(neighborhood.relations.len(), 2);
-    assert!(neighborhood.relations.iter().any(|relation| {
-        relation.source_node_id == "node-root"
-            && relation.target_node_id == "decision-1"
-            && relation.relation_type == "records"
-    }));
-    assert!(neighborhood.relations.iter().any(|relation| {
-        relation.source_node_id == "task-1"
-            && relation.target_node_id == "node-root"
-            && relation.relation_type == "depends_on"
-    }));
-
-    Ok(())
+        Ok(())
+    })
+    .await
 }
 
 #[tokio::test]
 async fn apply_mutations_persists_generic_nodes_and_relations()
 -> Result<(), Box<dyn Error + Send + Sync>> {
-    let container = GenericImage::new(NEO4J_IMAGE, NEO4J_TAG)
-        .with_exposed_port(NEO4J_INTERNAL_PORT.tcp())
-        .with_env_var("NEO4J_AUTH", format!("neo4j/{NEO4J_PASSWORD}"))
-        .start()
-        .await?;
+    run_with_timeout(async {
+        let container = start_neo4j_container().await?;
+        let host = container.get_host().await?;
+        let port = container.get_host_port_ipv4(NEO4J_INTERNAL_PORT).await?;
+        let graph =
+            connect_with_retry(format!("neo4j://{host}:{port}"), "neo4j", NEO4J_PASSWORD).await?;
+        graph.run(query("MATCH (n) DETACH DELETE n")).await?;
 
-    let host = container.get_host().await?;
-    let port = container.get_host_port_ipv4(NEO4J_INTERNAL_PORT).await?;
-    let graph =
-        connect_with_retry(format!("neo4j://{host}:{port}"), "neo4j", NEO4J_PASSWORD).await?;
-    graph.run(query("MATCH (n) DETACH DELETE n")).await?;
+        let store =
+            Neo4jProjectionReader::new(format!("neo4j://neo4j:{NEO4J_PASSWORD}@{host}:{port}"))?;
+        store
+            .apply_mutations(vec![
+                ProjectionMutation::UpsertNode(NodeProjection {
+                    node_id: "node-123".to_string(),
+                    node_kind: "capability".to_string(),
+                    title: "Projection consumer foundation".to_string(),
+                    summary: "Node centric projection input".to_string(),
+                    status: "ACTIVE".to_string(),
+                    labels: vec!["projection".to_string(), "foundation".to_string()],
+                    properties: BTreeMap::from([("phase".to_string(), "build".to_string())]),
+                }),
+                ProjectionMutation::UpsertNodeRelation(NodeRelationProjection {
+                    source_node_id: "node-123".to_string(),
+                    target_node_id: "node-122".to_string(),
+                    relation_type: "depends_on".to_string(),
+                }),
+            ])
+            .await?;
 
-    let store =
-        Neo4jProjectionReader::new(format!("neo4j://neo4j:{NEO4J_PASSWORD}@{host}:{port}"))?;
-    store
-        .apply_mutations(vec![
-            ProjectionMutation::UpsertNode(NodeProjection {
-                node_id: "node-123".to_string(),
-                node_kind: "capability".to_string(),
-                title: "Projection consumer foundation".to_string(),
-                summary: "Node centric projection input".to_string(),
-                status: "ACTIVE".to_string(),
-                labels: vec!["projection".to_string(), "foundation".to_string()],
-                properties: BTreeMap::from([("phase".to_string(), "build".to_string())]),
-            }),
-            ProjectionMutation::UpsertNodeRelation(NodeRelationProjection {
-                source_node_id: "node-123".to_string(),
-                target_node_id: "node-122".to_string(),
-                relation_type: "depends_on".to_string(),
-            }),
-        ])
-        .await?;
-
-    let node_row = single_row(
-        &graph,
-        query(
-            "
+        let node_row = single_row(
+            &graph,
+            query(
+                "
 MATCH (node:ProjectionNode {node_id: $node_id})
 RETURN node.node_kind AS node_kind,
        node.title AS title,
        node.status AS status,
        node.node_labels AS node_labels,
        node.properties_json AS properties_json
-            ",
+                ",
+            )
+            .param("node_id", "node-123"),
         )
-        .param("node_id", "node-123"),
-    )
-    .await?;
+        .await?;
 
-    let relation_row = single_row(
-        &graph,
-        query(
-            "
+        let relation_row = single_row(
+            &graph,
+            query(
+                "
 MATCH (:ProjectionNode {node_id: $source_node_id})-[edge:RELATED_TO {relation_type: $relation_type}]->(:ProjectionNode {node_id: $target_node_id})
 RETURN count(edge) AS edge_count
-            ",
+                ",
+            )
+            .param("source_node_id", "node-123")
+            .param("target_node_id", "node-122")
+            .param("relation_type", "depends_on"),
         )
-        .param("source_node_id", "node-123")
-        .param("target_node_id", "node-122")
-        .param("relation_type", "depends_on"),
-    )
-    .await?;
+        .await?;
 
-    let node_kind: String = node_row.get("node_kind")?;
-    let title: String = node_row.get("title")?;
-    let status: String = node_row.get("status")?;
-    let node_labels: Vec<String> = node_row.get("node_labels")?;
-    let properties_json: String = node_row.get("properties_json")?;
-    let edge_count: i64 = relation_row.get("edge_count")?;
+        let node_kind: String = node_row.get("node_kind")?;
+        let title: String = node_row.get("title")?;
+        let status: String = node_row.get("status")?;
+        let node_labels: Vec<String> = node_row.get("node_labels")?;
+        let properties_json: String = node_row.get("properties_json")?;
+        let edge_count: i64 = relation_row.get("edge_count")?;
 
-    assert_eq!(node_kind, "capability");
-    assert_eq!(title, "Projection consumer foundation");
-    assert_eq!(status, "ACTIVE");
-    assert_eq!(
-        node_labels,
-        vec!["projection".to_string(), "foundation".to_string()]
-    );
-    assert!(properties_json.contains("\"phase\":\"build\""));
-    assert_eq!(edge_count, 1);
+        assert_eq!(node_kind, "capability");
+        assert_eq!(title, "Projection consumer foundation");
+        assert_eq!(status, "ACTIVE");
+        assert_eq!(
+            node_labels,
+            vec!["projection".to_string(), "foundation".to_string()]
+        );
+        assert!(properties_json.contains("\"phase\":\"build\""));
+        assert_eq!(edge_count, 1);
 
-    Ok(())
+        Ok(())
+    })
+    .await
+}
+
+async fn run_with_timeout<F>(future: F) -> Result<(), Box<dyn Error + Send + Sync>>
+where
+    F: std::future::Future<Output = Result<(), Box<dyn Error + Send + Sync>>>,
+{
+    timeout(TEST_TIMEOUT, future).await.map_err(|_| {
+        std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            format!("neo4j integration test exceeded {:?}", TEST_TIMEOUT),
+        )
+    })?
+}
+
+async fn start_neo4j_container()
+-> Result<testcontainers::ContainerAsync<GenericImage>, Box<dyn Error + Send + Sync>> {
+    Ok(GenericImage::new(NEO4J_IMAGE, NEO4J_TAG)
+        .with_exposed_port(NEO4J_INTERNAL_PORT.tcp())
+        .with_wait_for(WaitFor::seconds(5))
+        .with_env_var("NEO4J_AUTH", format!("neo4j/{NEO4J_PASSWORD}"))
+        .start()
+        .await?)
 }
 
 async fn connect_with_retry(
@@ -207,12 +232,12 @@ async fn connect_with_retry(
 ) -> Result<Graph, Box<dyn Error + Send + Sync>> {
     let mut last_error: Option<Box<dyn Error + Send + Sync>> = None;
 
-    for _ in 0..30 {
+    for _ in 0..CONNECT_RETRY_ATTEMPTS {
         match Graph::new(&uri, user, password).await {
             Ok(graph) => return Ok(graph),
             Err(error) => {
                 last_error = Some(Box::new(error));
-                sleep(Duration::from_secs(1)).await;
+                sleep(CONNECT_RETRY_DELAY).await;
             }
         }
     }

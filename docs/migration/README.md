@@ -35,6 +35,8 @@ Phase 0 status:
 - runnable runtime reference client outside tests: complete
 - repo closeout and handoff to integrating products: complete
 - shadow mode specification for `swe-ai-fleet`: complete as documentation
+- deferred kernel maintenance milestone: consolidate the integration harness
+  and reduce CI runtime before the next major growth phase
 - next milestone outside the kernel: implement the `swe-ai-fleet` adapter using the node-centric integration strategy and checklist
 
 Historical internal substrate plan:

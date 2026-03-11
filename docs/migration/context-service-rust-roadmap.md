@@ -58,6 +58,41 @@ That means the next milestone inside this repo is not another core refactor.
 The kernel-side milestone is freezing, validating, and exemplifying the
 node-centric boundary so external products can adapt to it safely.
 
+## Deferred Kernel Maintenance Milestone
+
+Status: `planned, not started`
+
+Title:
+
+- integration harness consolidation and CI runtime reduction
+
+Why it exists:
+
+- the container-backed CI is reliable enough for release work, but still too
+  expensive and too duplicated to treat as a long-term steady state
+- `compatibility_integration` in particular is functionally healthy but too
+  slow for a PR-gated suite
+
+Scope:
+
+- consolidate duplicated testcontainers helpers for Neo4j, Valkey, and NATS
+- reduce repeated fixture startup across container-backed integration targets
+- separate smoke integration from heavier full integration where it improves
+  feedback time without weakening release confidence
+- keep explicit time budgets and failure messages for infrastructure readiness
+
+Non-goals:
+
+- no product-domain changes
+- no compatibility-surface changes
+- no broad test rewrite unless it directly reduces runtime or flakiness
+
+Exit gate:
+
+- integration helpers are shared instead of forked
+- the slowest PR-gated integration target has a materially lower runtime
+- container-backed failures surface with deterministic timeout messages
+
 ## Direction Update
 
 From this point forward, `swe-ai-fleet`-specific compatibility should move out

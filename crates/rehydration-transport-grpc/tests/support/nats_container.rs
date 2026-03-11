@@ -2,30 +2,53 @@ use std::error::Error;
 use std::time::Duration;
 
 use async_nats::Client;
-use testcontainers::{GenericImage, ImageExt, core::IntoContainerPort, runners::AsyncRunner};
-use tokio::time::sleep;
+use testcontainers::{
+    GenericImage, ImageExt,
+    core::{IntoContainerPort, WaitFor},
+    runners::AsyncRunner,
+};
+use tokio::time::{sleep, timeout};
 
 use crate::agentic_support::agentic_debug::{debug_log, debug_log_value};
 
 pub(crate) const NATS_IMAGE: &str = "docker.io/nats";
 pub(crate) const NATS_TAG: &str = "2.10-alpine";
 pub(crate) const NATS_INTERNAL_PORT: u16 = 4222;
+const NATS_STARTUP_WAIT: Duration = Duration::from_secs(2);
+const CONNECT_RETRY_ATTEMPTS: usize = 15;
+const CONNECT_RETRY_DELAY: Duration = Duration::from_secs(1);
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
 
 pub(crate) async fn start_nats_container()
 -> Result<testcontainers::ContainerAsync<GenericImage>, Box<dyn Error + Send + Sync>> {
     debug_log("starting nats container");
     Ok(GenericImage::new(NATS_IMAGE, NATS_TAG)
         .with_exposed_port(NATS_INTERNAL_PORT.tcp())
+        .with_wait_for(WaitFor::seconds(NATS_STARTUP_WAIT.as_secs()))
         .with_cmd(vec!["-js"])
         .start()
         .await?)
 }
 
 pub(crate) async fn connect_with_retry(url: &str) -> Result<Client, Box<dyn Error + Send + Sync>> {
+    timeout(CONNECT_TIMEOUT, connect_with_retry_inner(url.to_string()))
+        .await
+        .map_err(|_| {
+            std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                format!(
+                    "nats connection did not become ready within {:?}",
+                    CONNECT_TIMEOUT
+                ),
+            )
+        })?
+}
+
+async fn connect_with_retry_inner(url: String) -> Result<Client, Box<dyn Error + Send + Sync>> {
     let mut last_error: Option<Box<dyn Error + Send + Sync>> = None;
 
-    for _ in 0..30 {
-        match async_nats::connect(url).await {
+    for _ in 0..CONNECT_RETRY_ATTEMPTS {
+        match async_nats::connect(&url).await {
             Ok(client) => {
                 debug_log_value("connected to nats", url);
                 return Ok(client);
@@ -33,7 +56,7 @@ pub(crate) async fn connect_with_retry(url: &str) -> Result<Client, Box<dyn Erro
             Err(error) => {
                 debug_log_value("nats connect retry error", &error);
                 last_error = Some(Box::new(error));
-                sleep(Duration::from_secs(1)).await;
+                sleep(CONNECT_RETRY_DELAY).await;
             }
         }
     }
