@@ -110,6 +110,13 @@ The kernel also ships a standalone Helm chart:
 - source: [`charts/rehydration-kernel`](../../charts/rehydration-kernel)
 - OCI target: `oci://ghcr.io/underpass-ai/charts/rehydration-kernel`
 
+Security posture of the chart:
+
+- it does not default to `latest`
+- it expects `secrets.existingSecret` for backend URIs in non-development installs
+- inline `connections.*` are reserved for development-only overrides such as
+  [`values.dev.yaml`](../../charts/rehydration-kernel/values.dev.yaml)
+
 Local validation:
 
 ```bash

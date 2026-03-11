@@ -197,6 +197,14 @@ Helm chart:
 - source chart: [`charts/rehydration-kernel`](./charts/rehydration-kernel)
 - planned OCI location: `oci://ghcr.io/underpass-ai/charts/rehydration-kernel`
 
+The default chart values are intentionally secure:
+
+- no implicit `latest` image tag
+- no inline backend URIs by default
+- production-style installs should use `image.digest` or a pinned tag plus `secrets.existingSecret`
+
+For local evaluation only, use [`values.dev.yaml`](./charts/rehydration-kernel/values.dev.yaml).
+
 ## License
 
 Apache-2.0. See [`LICENSE`](./LICENSE).

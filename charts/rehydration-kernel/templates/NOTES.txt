@@ -2,10 +2,21 @@
 
    kubectl get svc {{ include "rehydration-kernel.fullname" . }}
 
-2. Override connection settings for Neo4j, Valkey, and optional NATS through:
+2. Provide an immutable image reference for non-development installs:
 
+   - set `image.digest`
+   - or set `image.tag` to a non-`latest` value
+
+3. Provide connection settings through a secret for non-development installs:
+
+   - set `secrets.existingSecret`
+   - keys default to `graphUri`, `detailUri`, `snapshotUri`, and `natsUrl`
+
+4. Development-only installs may override this through:
+
+   - `development.allowMutableImageTags=true`
+   - `development.allowInlineConnections=true`
    - values under `connections`
-   - or `secrets.existingSecret` for credential-bearing URIs
 
-3. The chart deploys the standalone kernel service. Product adapters and
+5. The chart deploys the standalone kernel service. Product adapters and
    product-specific event bridges stay outside this chart.

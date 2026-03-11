@@ -1,3 +1,4 @@
+{{- include "rehydration-kernel.validateValues" . }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -30,7 +31,7 @@ spec:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
         - name: rehydration-kernel
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          image: "{{ include "rehydration-kernel.image" . }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
@@ -70,7 +71,7 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.secrets.existingSecret | quote }}
                   key: {{ .Values.secrets.keys.natsUrl | quote }}
-            {{- else }}
+            {{- else if .Values.development.allowInlineConnections }}
             - name: REHYDRATION_GRAPH_URI
               value: {{ .Values.connections.graphUri | quote }}
             - name: REHYDRATION_DETAIL_URI

@@ -39,3 +39,41 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- default "default" .Values.serviceAccount.name -}}
 {{- end -}}
 {{- end -}}
+
+{{- define "rehydration-kernel.validateValues" -}}
+{{- $tag := default "" .Values.image.tag -}}
+{{- $digest := default "" .Values.image.digest -}}
+{{- $allowMutableTags := default false .Values.development.allowMutableImageTags -}}
+{{- $allowInlineConnections := default false .Values.development.allowInlineConnections -}}
+{{- if and (eq $tag "") (eq $digest "") -}}
+{{- fail "set image.tag or image.digest; the chart no longer defaults to latest" -}}
+{{- end -}}
+{{- if and (eq $digest "") (eq $tag "latest") (not $allowMutableTags) -}}
+{{- fail "image.tag=latest requires development.allowMutableImageTags=true" -}}
+{{- end -}}
+{{- if and (eq (default "" .Values.secrets.existingSecret) "") (not $allowInlineConnections) -}}
+{{- fail "set secrets.existingSecret for connection URIs or explicitly enable development.allowInlineConnections=true" -}}
+{{- end -}}
+{{- if $allowInlineConnections -}}
+{{- if eq (default "" .Values.connections.graphUri) "" -}}
+{{- fail "connections.graphUri is required when development.allowInlineConnections=true" -}}
+{{- end -}}
+{{- if eq (default "" .Values.connections.detailUri) "" -}}
+{{- fail "connections.detailUri is required when development.allowInlineConnections=true" -}}
+{{- end -}}
+{{- if eq (default "" .Values.connections.snapshotUri) "" -}}
+{{- fail "connections.snapshotUri is required when development.allowInlineConnections=true" -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "rehydration-kernel.image" -}}
+{{- $repository := .Values.image.repository -}}
+{{- $tag := default "" .Values.image.tag -}}
+{{- $digest := default "" .Values.image.digest -}}
+{{- if ne $digest "" -}}
+{{- printf "%s@%s" $repository $digest -}}
+{{- else -}}
+{{- printf "%s:%s" $repository $tag -}}
+{{- end -}}
+{{- end -}}
