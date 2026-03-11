@@ -8,10 +8,6 @@ on:
       - "v*"
   workflow_dispatch:
 
-permissions:
-  contents: read
-  packages: write
-
 env:
   IMAGE_NAME: ghcr.io/underpass-ai/rehydration-kernel
   CHART_NAME: rehydration-kernel
@@ -22,6 +18,9 @@ jobs:
   publish-image:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
@@ -59,6 +58,9 @@ jobs:
   publish-helm-chart:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
