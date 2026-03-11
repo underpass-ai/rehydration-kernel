@@ -15,8 +15,11 @@ BASE_URL="https://get.helm.sh"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "${TMP_DIR}"' EXIT
 
-curl -fsSL "${BASE_URL}/${ARCHIVE}" -o "${TMP_DIR}/${ARCHIVE}"
-curl -fsSL "${BASE_URL}/${ARCHIVE}.sha256sum" -o "${TMP_DIR}/${ARCHIVE}.sha256sum"
+# Restrict redirects to HTTPS so package download cannot be downgraded in transit.
+curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
+  "${BASE_URL}/${ARCHIVE}" -o "${TMP_DIR}/${ARCHIVE}"
+curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
+  "${BASE_URL}/${ARCHIVE}.sha256sum" -o "${TMP_DIR}/${ARCHIVE}.sha256sum"
 
 (
   cd "${TMP_DIR}"
