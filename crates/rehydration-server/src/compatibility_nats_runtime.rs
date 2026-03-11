@@ -134,4 +134,56 @@ mod tests {
 
         assert_eq!(runtime.describe(), "nats compatibility runtime disabled");
     }
+
+    #[tokio::test]
+    async fn disabled_runtime_run_returns_ok() {
+        let runtime = super::CompatibilityRuntime::<
+            rehydration_adapter_nats::ContextAsyncApplication<
+                EmptyGraphNeighborhoodReader,
+                EmptyNodeDetailReader,
+                NoopSnapshotStore,
+            >,
+        >::Disabled;
+
+        runtime
+            .run()
+            .await
+            .expect("disabled runtime should not fail when run");
+    }
+
+    #[tokio::test]
+    async fn enabled_runtime_surfaces_connection_errors() {
+        let grpc_server = GrpcServer::new(
+            AppConfig {
+                service_name: "rehydration-kernel".to_string(),
+                grpc_bind: "127.0.0.1:50054".to_string(),
+                admin_bind: "127.0.0.1:8080".to_string(),
+                graph_uri: "neo4j://localhost:7687".to_string(),
+                detail_uri: "redis://localhost:6379".to_string(),
+                snapshot_uri: "redis://localhost:6379".to_string(),
+                events_subject_prefix: "rehydration".to_string(),
+            },
+            EmptyGraphNeighborhoodReader,
+            EmptyNodeDetailReader,
+            NoopSnapshotStore,
+        );
+
+        let error = match connect_compatibility_runtime(
+            &grpc_server,
+            &rehydration_config::CompatibilityNatsConfig {
+                url: "nats://127.0.0.1:1".to_string(),
+                enabled: true,
+            },
+        )
+        .await
+        {
+            Ok(_) => panic!("invalid nats endpoint should fail when runtime is enabled"),
+            Err(error) => error,
+        };
+
+        assert!(
+            error.to_string().contains("connection"),
+            "unexpected error: {error}"
+        );
+    }
 }
