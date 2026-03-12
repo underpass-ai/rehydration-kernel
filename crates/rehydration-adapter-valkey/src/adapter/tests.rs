@@ -175,6 +175,19 @@ fn processed_event_store_uses_dedicated_default_prefix() {
 }
 
 #[test]
+fn processed_event_store_rejects_invalid_runtime_state_uri() {
+    let error = ValkeyProcessedEventStore::new("http://cache.internal")
+        .expect_err("unsupported schemes must fail");
+
+    assert_eq!(
+        error,
+        rehydration_ports::PortError::InvalidState(
+            "unsupported processed event scheme `http`".to_string()
+        )
+    );
+}
+
+#[test]
 fn projection_checkpoint_store_uses_dedicated_default_prefix() {
     let store = ValkeyProjectionCheckpointStore::new("redis://cache.internal")
         .expect("projection checkpoint uri should be accepted");
@@ -182,6 +195,19 @@ fn projection_checkpoint_store_uses_dedicated_default_prefix() {
     assert_eq!(
         store.checkpoint_key("projection-consumer", "graph.node.materialized"),
         "rehydration:projection-checkpoint:projection-consumer:graph.node.materialized"
+    );
+}
+
+#[test]
+fn projection_checkpoint_store_rejects_invalid_runtime_state_uri() {
+    let error = ValkeyProjectionCheckpointStore::new("http://cache.internal")
+        .expect_err("unsupported schemes must fail");
+
+    assert_eq!(
+        error,
+        rehydration_ports::PortError::InvalidState(
+            "unsupported projection checkpoint scheme `http`".to_string()
+        )
     );
 }
 

@@ -109,6 +109,27 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn disabled_projection_runtime_run_is_a_noop() {
+        let runtime = connect_projection_runtime(
+            &ProjectionRuntimeConfig {
+                nats_url: "nats://127.0.0.1:4222".to_string(),
+                enabled: false,
+                runtime_state_uri: "redis://127.0.0.1:6379".to_string(),
+            },
+            "rehydration",
+            NoopProjectionWriter,
+            NoopProjectionWriter,
+        )
+        .await
+        .expect("disabled projection runtime should still allow startup");
+
+        runtime
+            .run()
+            .await
+            .expect("disabled runtime should not fail");
+    }
+
+    #[tokio::test]
     async fn enabled_projection_runtime_surfaces_connection_errors() {
         let error = match connect_projection_runtime(
             &ProjectionRuntimeConfig {
@@ -128,6 +149,32 @@ mod tests {
 
         assert!(
             error.to_string().contains("connection"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn enabled_projection_runtime_rejects_invalid_runtime_state_uri() {
+        let error = match connect_projection_runtime(
+            &ProjectionRuntimeConfig {
+                nats_url: "nats://127.0.0.1:4222".to_string(),
+                enabled: true,
+                runtime_state_uri: "http://127.0.0.1:6379".to_string(),
+            },
+            "rehydration",
+            NoopProjectionWriter,
+            NoopProjectionWriter,
+        )
+        .await
+        {
+            Ok(_) => panic!("invalid valkey uri should fail before connecting to nats"),
+            Err(error) => error,
+        };
+
+        assert!(
+            error
+                .to_string()
+                .contains("unsupported processed event scheme"),
             "unexpected error: {error}"
         );
     }
