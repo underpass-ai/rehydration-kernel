@@ -97,7 +97,7 @@ where
             Ok(node_id) => node_id,
             Err(error) => {
                 debug_log("falling back to deterministic step selection after invalid LLM output");
-                debug_log_value("llm selection error", &error.to_string());
+                debug_log_value("llm selection error", error.to_string());
                 deterministic_current_step_node_id(&response.neighbors)?
             }
         };

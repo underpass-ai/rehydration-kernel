@@ -14,6 +14,15 @@ use crate::starship_demo::{
     StarshipDemoProviderSummary, StarshipDemoSummary, StarshipRuntimeMode, StarshipScenario,
 };
 
+struct DemoExecutionContext<R> {
+    query_client: ContextQueryServiceClient<tonic::transport::Channel>,
+    admin_client: ContextAdminServiceClient<tonic::transport::Channel>,
+    runtime: R,
+    llm: LlmPlanner,
+    request: LlmStarshipMissionRequest,
+    provider: StarshipDemoProviderSummary,
+}
+
 pub async fn run_starship_demo(
     config: StarshipDemoConfig,
 ) -> Result<StarshipDemoSummary, Box<dyn std::error::Error + Send + Sync>> {
@@ -45,12 +54,14 @@ pub async fn run_starship_demo(
                 &config,
                 &scenario,
                 &publisher,
-                query_client,
-                admin_client,
-                runtime,
-                llm,
-                request,
-                provider,
+                DemoExecutionContext {
+                    query_client,
+                    admin_client,
+                    runtime,
+                    llm,
+                    request,
+                    provider,
+                },
             )
             .await
         }
@@ -66,12 +77,14 @@ pub async fn run_starship_demo(
                 &config,
                 &scenario,
                 &publisher,
-                query_client,
-                admin_client,
-                runtime,
-                llm,
-                request,
-                provider,
+                DemoExecutionContext {
+                    query_client,
+                    admin_client,
+                    runtime,
+                    llm,
+                    request,
+                    provider,
+                },
             )
             .await
         }
@@ -82,16 +95,20 @@ async fn run_with_runtime<R>(
     config: &StarshipDemoConfig,
     scenario: &StarshipScenario,
     publisher: &async_nats::Client,
-    query_client: ContextQueryServiceClient<tonic::transport::Channel>,
-    admin_client: ContextAdminServiceClient<tonic::transport::Channel>,
-    runtime: R,
-    llm: LlmPlanner,
-    request: LlmStarshipMissionRequest,
-    provider: StarshipDemoProviderSummary,
+    context: DemoExecutionContext<R>,
 ) -> Result<StarshipDemoSummary, Box<dyn std::error::Error + Send + Sync>>
 where
     R: AgentRuntime + Clone,
 {
+    let DemoExecutionContext {
+        query_client,
+        admin_client,
+        runtime,
+        llm,
+        request,
+        provider,
+    } = context;
+
     let mut phase_one_agent = LlmStarshipMissionAgent::new(
         query_client.clone(),
         admin_client.clone(),

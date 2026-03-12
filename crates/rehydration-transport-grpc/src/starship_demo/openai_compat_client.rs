@@ -229,18 +229,17 @@ where
                 .and_then(|value| value.strip_suffix("```"))
                 .map(str::trim)
         })
+        && let Ok(value) = serde_json::from_str::<T>(fenced)
     {
-        if let Ok(value) = serde_json::from_str::<T>(fenced) {
-            return Ok(value);
-        }
+        return Ok(value);
     }
 
-    if let Some(start) = trimmed.find('{') {
-        if let Some(end) = trimmed.rfind('}') {
-            let slice = &trimmed[start..=end];
-            if let Ok(value) = serde_json::from_str::<T>(slice) {
-                return Ok(value);
-            }
+    if let Some(start) = trimmed.find('{')
+        && let Some(end) = trimmed.rfind('}')
+    {
+        let slice = &trimmed[start..=end];
+        if let Ok(value) = serde_json::from_str::<T>(slice) {
+            return Ok(value);
         }
     }
 
@@ -285,7 +284,8 @@ mod tests {
     #[test]
     fn parse_json_only_accepts_plain_json() {
         let parsed: Selection =
-            parse_json_only("{\"selected_step_node_id\":\"node:work_item:one\"}").unwrap();
+            parse_json_only("{\"selected_step_node_id\":\"node:work_item:one\"}")
+                .expect("plain JSON should parse");
         assert_eq!(
             parsed,
             Selection {
@@ -304,7 +304,8 @@ I should choose the in-progress step.
 {"selected_step_node_id":"node:work_item:two"}
 "#;
 
-        let parsed: Selection = parse_json_only(content).unwrap();
+        let parsed: Selection =
+            parse_json_only(content).expect("thinking blocks should be stripped before parsing");
         assert_eq!(
             parsed,
             Selection {
