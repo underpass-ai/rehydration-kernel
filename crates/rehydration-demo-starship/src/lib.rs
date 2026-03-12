@@ -11,6 +11,7 @@ mod projection_contract;
 mod runtime_contract;
 mod runtime_http_client;
 mod scenario;
+mod starship_runtime_tools;
 
 pub use anthropic_client::AnthropicClient;
 pub use demo_config::{StarshipDemoConfig, StarshipRuntimeMode};
@@ -32,4 +33,10 @@ pub use scenario::{
     STARSHIP_TEST_PATH, STATUS_COMMAND_PATH, STEP_ONE_DETAIL, STEP_ONE_NODE_ID, STEP_ONE_TITLE,
     STEP_TWO_DETAIL, STEP_TWO_NODE_ID, STEP_TWO_TITLE, StarshipScenario,
     publish_initial_projection_events, publish_resume_projection_events,
+};
+pub use starship_runtime_tools::{
+    STARSHIP_LIST_TOOL, STARSHIP_READ_CAPTAINS_LOG_TOOL, STARSHIP_READ_SCAN_TOOL,
+    STARSHIP_WRITE_CAPTAINS_LOG_TOOL, STARSHIP_WRITE_REPAIR_TOOL, STARSHIP_WRITE_ROUTE_TOOL,
+    STARSHIP_WRITE_SCAN_TOOL, STARSHIP_WRITE_STATE_TOOL, STARSHIP_WRITE_STATUS_TOOL,
+    STARSHIP_WRITE_TEST_TOOL,
 };

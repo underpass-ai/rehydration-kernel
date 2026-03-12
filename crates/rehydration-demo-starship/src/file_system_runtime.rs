@@ -6,6 +6,9 @@ use serde_json::Value;
 use crate::demo_config::DEFAULT_STARSHIP_WORKSPACE_DIR;
 use crate::logging::debug_log_value;
 use crate::runtime_contract::{AgentRuntime, RuntimeResult, ToolDescriptor, ToolInvocation};
+use crate::starship_runtime_tools::{
+    STARSHIP_LIST_TOOL, all_supported_tools, is_read_tool, is_write_tool, path_for_tool_name,
+};
 use crate::{
     CAPTAINS_LOG_PATH, REPAIR_COMMAND_PATH, ROUTE_COMMAND_PATH, SCAN_COMMAND_PATH,
     STARSHIP_STATE_PATH, STARSHIP_TEST_PATH, STATUS_COMMAND_PATH,
@@ -48,20 +51,13 @@ impl Default for FileSystemRuntime {
 
 impl AgentRuntime for FileSystemRuntime {
     async fn list_tools(&self) -> RuntimeResult<Vec<ToolDescriptor>> {
-        Ok(vec![
-            ToolDescriptor {
-                name: "fs.write".to_string(),
-                requires_approval: true,
-            },
-            ToolDescriptor {
-                name: "fs.read".to_string(),
-                requires_approval: false,
-            },
-            ToolDescriptor {
-                name: "fs.list".to_string(),
-                requires_approval: false,
-            },
-        ])
+        Ok(all_supported_tools()
+            .into_iter()
+            .map(|name| ToolDescriptor {
+                name: name.to_string(),
+                requires_approval: is_write_tool(name),
+            })
+            .collect())
     }
 
     async fn invoke(
@@ -72,16 +68,25 @@ impl AgentRuntime for FileSystemRuntime {
     ) -> RuntimeResult<ToolInvocation> {
         debug_log_value("filesystem runtime invoke", tool_name);
         match tool_name {
-            "fs.write" => {
+            STARSHIP_LIST_TOOL => {
+                let mut files = known_workspace_files(&self.workspace_dir);
+                files.sort();
+
+                Ok(ToolInvocation {
+                    tool_name: tool_name.to_string(),
+                    output: files.join("\n"),
+                })
+            }
+            _ if is_write_tool(tool_name) => {
                 if !approved {
                     return Err(io::Error::new(
                         io::ErrorKind::PermissionDenied,
-                        "fs.write requires approval",
+                        format!("{tool_name} requires approval"),
                     )
                     .into());
                 }
 
-                let path = StarshipWorkspacePath::from_args(&args, "path")?;
+                let path = StarshipWorkspacePath::from_tool_name(tool_name)?;
                 let content = json_string_arg(&args, "content")?;
                 let absolute_path = path.resolve_for_write(&self.workspace_dir);
                 if let Some(parent) = absolute_path.parent() {
@@ -94,8 +99,8 @@ impl AgentRuntime for FileSystemRuntime {
                     output: format!("wrote {}", path.display()),
                 })
             }
-            "fs.read" => {
-                let path = StarshipWorkspacePath::from_args(&args, "path")?;
+            _ if is_read_tool(tool_name) => {
+                let path = StarshipWorkspacePath::from_tool_name(tool_name)?;
                 let absolute_path = path.resolve_existing(&self.workspace_dir)?;
                 let content = std::fs::read_to_string(&absolute_path).map_err(|error| {
                     io::Error::new(
@@ -110,15 +115,6 @@ impl AgentRuntime for FileSystemRuntime {
                 Ok(ToolInvocation {
                     tool_name: tool_name.to_string(),
                     output: content,
-                })
-            }
-            "fs.list" => {
-                let mut files = known_workspace_files(&self.workspace_dir);
-                files.sort();
-
-                Ok(ToolInvocation {
-                    tool_name: tool_name.to_string(),
-                    output: files.join("\n"),
                 })
             }
             _ => Err(io::Error::new(
@@ -150,23 +146,18 @@ enum StarshipWorkspacePath {
 }
 
 impl StarshipWorkspacePath {
-    fn from_args(args: &Value, key: &str) -> RuntimeResult<Self> {
-        let raw = json_string_arg(args, key)?;
-        Self::parse(&raw)
-    }
-
-    fn parse(raw: &str) -> RuntimeResult<Self> {
-        match raw {
-            SCAN_COMMAND_PATH => Ok(Self::ScanCommand),
-            REPAIR_COMMAND_PATH => Ok(Self::RepairCommand),
-            ROUTE_COMMAND_PATH => Ok(Self::RouteCommand),
-            STATUS_COMMAND_PATH => Ok(Self::StatusCommand),
-            STARSHIP_STATE_PATH => Ok(Self::StateFile),
-            STARSHIP_TEST_PATH => Ok(Self::TestFile),
-            CAPTAINS_LOG_PATH => Ok(Self::CaptainsLog),
+    fn from_tool_name(tool_name: &str) -> RuntimeResult<Self> {
+        match path_for_tool_name(tool_name) {
+            Some(SCAN_COMMAND_PATH) => Ok(Self::ScanCommand),
+            Some(REPAIR_COMMAND_PATH) => Ok(Self::RepairCommand),
+            Some(ROUTE_COMMAND_PATH) => Ok(Self::RouteCommand),
+            Some(STATUS_COMMAND_PATH) => Ok(Self::StatusCommand),
+            Some(STARSHIP_STATE_PATH) => Ok(Self::StateFile),
+            Some(STARSHIP_TEST_PATH) => Ok(Self::TestFile),
+            Some(CAPTAINS_LOG_PATH) => Ok(Self::CaptainsLog),
             _ => Err(io::Error::new(
                 io::ErrorKind::PermissionDenied,
-                format!("path `{raw}` is not allowed in the Starship demo workspace"),
+                format!("tool `{tool_name}` is not allowed in the Starship demo workspace"),
             )
             .into()),
         }
@@ -237,6 +228,9 @@ mod tests {
 
     use super::{FileSystemRuntime, StarshipWorkspacePath};
     use crate::runtime_contract::AgentRuntime;
+    use crate::starship_runtime_tools::{
+        STARSHIP_LIST_TOOL, STARSHIP_READ_SCAN_TOOL, STARSHIP_WRITE_SCAN_TOOL,
+    };
 
     #[tokio::test]
     async fn runtime_writes_reads_and_lists_files() {
@@ -251,9 +245,8 @@ mod tests {
 
         runtime
             .invoke(
-                "fs.write",
+                STARSHIP_WRITE_SCAN_TOOL,
                 json!({
-                    "path": "src/commands/scan.rs",
                     "content": "pub fn scan() {}",
                 }),
                 true,
@@ -262,13 +255,13 @@ mod tests {
             .expect("write should succeed");
 
         let file = runtime
-            .invoke("fs.read", json!({ "path": "src/commands/scan.rs" }), false)
+            .invoke(STARSHIP_READ_SCAN_TOOL, json!({}), false)
             .await
             .expect("read should succeed");
         assert!(file.output.contains("scan"));
 
         let listing = runtime
-            .invoke("fs.list", json!({ "path": "." }), false)
+            .invoke(STARSHIP_LIST_TOOL, json!({}), false)
             .await
             .expect("list should succeed");
         assert!(listing.output.contains("src/commands/scan.rs"));
@@ -289,9 +282,8 @@ mod tests {
 
         let error = runtime
             .invoke(
-                "fs.write",
+                "starship.fs.write.unknown",
                 json!({
-                    "path": "../outside.txt",
                     "content": "nope",
                 }),
                 true,
@@ -299,7 +291,7 @@ mod tests {
             .await
             .expect_err("parent traversal must be rejected");
 
-        assert!(error.to_string().contains("not allowed"));
+        assert!(error.to_string().contains("unsupported tool"));
     }
 
     #[tokio::test]
@@ -314,32 +306,26 @@ mod tests {
         let runtime = FileSystemRuntime::new_for_test(&workspace);
 
         let error = runtime
-            .invoke(
-                "fs.read",
-                json!({
-                    "path": "/tmp/escape.txt",
-                }),
-                false,
-            )
+            .invoke("starship.fs.read.unknown", json!({}), false)
             .await
             .expect_err("absolute paths must be rejected");
 
+        assert!(error.to_string().contains("unsupported tool"));
+    }
+
+    #[test]
+    fn workspace_relative_path_rejects_unknown_tools() {
+        let error = StarshipWorkspacePath::from_tool_name("starship.fs.write.unknown")
+            .expect_err("unknown tool must be rejected");
+
         assert!(error.to_string().contains("not allowed"));
     }
 
     #[test]
-    fn workspace_relative_path_rejects_escape_components() {
-        let error = StarshipWorkspacePath::parse("../outside.txt")
-            .expect_err("parent traversal must be rejected");
-
-        assert!(error.to_string().contains("not allowed"));
-    }
-
-    #[test]
-    fn workspace_path_accepts_known_starship_deliverables() {
+    fn workspace_path_accepts_known_starship_tools() {
         assert_eq!(
-            StarshipWorkspacePath::parse("src/commands/scan.rs")
-                .expect("known deliverable should be accepted")
+            StarshipWorkspacePath::from_tool_name(STARSHIP_WRITE_SCAN_TOOL)
+                .expect("known tool should be accepted")
                 .display(),
             "src/commands/scan.rs"
         );

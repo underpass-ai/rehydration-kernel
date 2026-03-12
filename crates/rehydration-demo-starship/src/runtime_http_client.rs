@@ -7,6 +7,9 @@ use tokio::net::TcpStream;
 
 use crate::logging::{debug_log, debug_log_value};
 use crate::runtime_contract::{AgentRuntime, RuntimeResult, ToolDescriptor, ToolInvocation};
+use crate::starship_runtime_tools::{
+    STARSHIP_LIST_TOOL, all_supported_tools, is_write_tool, path_for_tool_name,
+};
 
 #[derive(Clone)]
 pub struct UnderpassRuntimeClient {
@@ -41,15 +44,14 @@ impl UnderpassRuntimeClient {
 impl AgentRuntime for UnderpassRuntimeClient {
     async fn list_tools(&self) -> RuntimeResult<Vec<ToolDescriptor>> {
         debug_log("runtime client list_tools");
-        let response: ToolsResponse =
+        let _response: Value =
             send_json_request(&self.authority, "GET", &self.tools_path(), &json!({})).await?;
 
-        Ok(response
-            .tools
+        Ok(all_supported_tools()
             .into_iter()
-            .map(|tool| ToolDescriptor {
-                name: tool.name,
-                requires_approval: tool.requires_approval,
+            .map(|name| ToolDescriptor {
+                name: name.to_string(),
+                requires_approval: is_write_tool(name),
             })
             .collect())
     }
@@ -61,16 +63,20 @@ impl AgentRuntime for UnderpassRuntimeClient {
         approved: bool,
     ) -> RuntimeResult<ToolInvocation> {
         debug_log_value("runtime client invoke", tool_name);
+        let (runtime_tool_name, runtime_args) = translate_runtime_request(tool_name, args)?;
         let response: InvokeToolResponse = send_json_request(
             &self.authority,
             "POST",
-            &self.invoke_path(tool_name),
-            &InvokeToolRequest { args, approved },
+            &self.invoke_path(runtime_tool_name),
+            &InvokeToolRequest {
+                args: runtime_args,
+                approved,
+            },
         )
         .await?;
 
         Ok(ToolInvocation {
-            tool_name: response.tool_name,
+            tool_name: tool_name.to_string(),
             output: response.output,
         })
     }
@@ -81,17 +87,6 @@ struct CreateSessionResponse {
     session_id: String,
 }
 
-#[derive(Debug, Deserialize)]
-struct ToolsResponse {
-    tools: Vec<ToolDescriptorResponse>,
-}
-
-#[derive(Debug, Deserialize)]
-struct ToolDescriptorResponse {
-    name: String,
-    requires_approval: bool,
-}
-
 #[derive(Debug, Serialize)]
 struct InvokeToolRequest {
     args: Value,
@@ -100,8 +95,30 @@ struct InvokeToolRequest {
 
 #[derive(Debug, Deserialize)]
 struct InvokeToolResponse {
-    tool_name: String,
     output: String,
+}
+
+fn translate_runtime_request(tool_name: &str, args: Value) -> RuntimeResult<(&'static str, Value)> {
+    if tool_name == STARSHIP_LIST_TOOL {
+        return Ok(("fs.list", json!({})));
+    }
+
+    if let Some(path) = path_for_tool_name(tool_name) {
+        if is_write_tool(tool_name) {
+            let content = args.get("content").and_then(Value::as_str).ok_or_else(|| {
+                io::Error::new(io::ErrorKind::InvalidInput, "missing string arg `content`")
+            })?;
+            return Ok(("fs.write", json!({ "path": path, "content": content })));
+        }
+
+        return Ok(("fs.read", json!({ "path": path })));
+    }
+
+    Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        format!("unsupported runtime tool `{tool_name}`"),
+    )
+    .into())
 }
 
 fn extract_authority(base_url: &str) -> io::Result<String> {

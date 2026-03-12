@@ -10,6 +10,9 @@ use tonic::transport::Channel;
 
 use crate::logging::{debug_log, debug_log_value};
 use crate::runtime_contract::{AgentRuntime, RuntimeResult};
+use crate::starship_runtime_tools::{
+    STARSHIP_LIST_TOOL, read_tool_name_for_deliverable, write_tool_name_for_deliverable,
+};
 use crate::{CAPTAINS_LOG_PATH, LlmPlanner};
 
 use super::execution::LlmStarshipMissionExecution;
@@ -110,7 +113,7 @@ where
 
         let listed_files = self
             .runtime
-            .invoke("fs.list", json!({ "path": "." }), false)
+            .invoke(STARSHIP_LIST_TOOL, json!({}), false)
             .await?
             .output;
 
@@ -164,9 +167,8 @@ where
 
             self.runtime
                 .invoke(
-                    "fs.write",
+                    write_tool_name_for_deliverable(deliverable)?,
                     json!({
-                        "path": deliverable,
                         "content": generated.content,
                     }),
                     true,
@@ -178,7 +180,11 @@ where
         let captains_log = if should_read_captains_log(&written_paths) {
             Some(
                 self.runtime
-                    .invoke("fs.read", json!({ "path": CAPTAINS_LOG_PATH }), false)
+                    .invoke(
+                        read_tool_name_for_deliverable(CAPTAINS_LOG_PATH)?,
+                        json!({}),
+                        false,
+                    )
                     .await?
                     .output,
             )
