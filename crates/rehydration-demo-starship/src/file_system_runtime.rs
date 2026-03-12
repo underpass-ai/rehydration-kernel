@@ -81,43 +81,136 @@ impl AgentRuntime for FileSystemRuntime {
                 })
             }
             STARSHIP_WRITE_SCAN_TOOL => {
-                self.write_known_file(tool_name, SCAN_COMMAND_PATH, &args, approved)
+                ensure_approved(tool_name, approved)?;
+                let content = json_string_arg(&args, "content")?;
+                let absolute_path = self.workspace_dir.join(SCAN_COMMAND_PATH);
+                if let Some(parent) = absolute_path.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                std::fs::write(&absolute_path, content)?;
+
+                Ok(ToolInvocation {
+                    tool_name: tool_name.to_string(),
+                    output: format!("wrote {SCAN_COMMAND_PATH}"),
+                })
             }
             STARSHIP_WRITE_REPAIR_TOOL => {
-                self.write_known_file(tool_name, REPAIR_COMMAND_PATH, &args, approved)
+                ensure_approved(tool_name, approved)?;
+                let content = json_string_arg(&args, "content")?;
+                let absolute_path = self.workspace_dir.join(REPAIR_COMMAND_PATH);
+                if let Some(parent) = absolute_path.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                std::fs::write(&absolute_path, content)?;
+
+                Ok(ToolInvocation {
+                    tool_name: tool_name.to_string(),
+                    output: format!("wrote {REPAIR_COMMAND_PATH}"),
+                })
             }
             STARSHIP_WRITE_ROUTE_TOOL => {
-                self.write_known_file(tool_name, ROUTE_COMMAND_PATH, &args, approved)
+                ensure_approved(tool_name, approved)?;
+                let content = json_string_arg(&args, "content")?;
+                let absolute_path = self.workspace_dir.join(ROUTE_COMMAND_PATH);
+                if let Some(parent) = absolute_path.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                std::fs::write(&absolute_path, content)?;
+
+                Ok(ToolInvocation {
+                    tool_name: tool_name.to_string(),
+                    output: format!("wrote {ROUTE_COMMAND_PATH}"),
+                })
             }
             STARSHIP_WRITE_STATUS_TOOL => {
-                self.write_known_file(tool_name, STATUS_COMMAND_PATH, &args, approved)
+                ensure_approved(tool_name, approved)?;
+                let content = json_string_arg(&args, "content")?;
+                let absolute_path = self.workspace_dir.join(STATUS_COMMAND_PATH);
+                if let Some(parent) = absolute_path.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                std::fs::write(&absolute_path, content)?;
+
+                Ok(ToolInvocation {
+                    tool_name: tool_name.to_string(),
+                    output: format!("wrote {STATUS_COMMAND_PATH}"),
+                })
             }
             STARSHIP_WRITE_STATE_TOOL => {
-                self.write_known_file(tool_name, STARSHIP_STATE_PATH, &args, approved)
+                ensure_approved(tool_name, approved)?;
+                let content = json_string_arg(&args, "content")?;
+                let absolute_path = self.workspace_dir.join(STARSHIP_STATE_PATH);
+                if let Some(parent) = absolute_path.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                std::fs::write(&absolute_path, content)?;
+
+                Ok(ToolInvocation {
+                    tool_name: tool_name.to_string(),
+                    output: format!("wrote {STARSHIP_STATE_PATH}"),
+                })
             }
             STARSHIP_WRITE_TEST_TOOL => {
-                self.write_known_file(tool_name, STARSHIP_TEST_PATH, &args, approved)
+                ensure_approved(tool_name, approved)?;
+                let content = json_string_arg(&args, "content")?;
+                let absolute_path = self.workspace_dir.join(STARSHIP_TEST_PATH);
+                if let Some(parent) = absolute_path.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                std::fs::write(&absolute_path, content)?;
+
+                Ok(ToolInvocation {
+                    tool_name: tool_name.to_string(),
+                    output: format!("wrote {STARSHIP_TEST_PATH}"),
+                })
             }
             STARSHIP_WRITE_CAPTAINS_LOG_TOOL => {
-                self.write_known_file(tool_name, CAPTAINS_LOG_PATH, &args, approved)
-            }
-            STARSHIP_READ_SCAN_TOOL => self.read_known_file(tool_name, SCAN_COMMAND_PATH),
-            STARSHIP_READ_CAPTAINS_LOG_TOOL => self.read_known_file(tool_name, CAPTAINS_LOG_PATH),
-            _ if is_write_tool(tool_name) => {
-                if !approved {
-                    return Err(io::Error::new(
-                        io::ErrorKind::PermissionDenied,
-                        format!("{tool_name} requires approval"),
-                    )
-                    .into());
+                ensure_approved(tool_name, approved)?;
+                let content = json_string_arg(&args, "content")?;
+                let absolute_path = self.workspace_dir.join(CAPTAINS_LOG_PATH);
+                if let Some(parent) = absolute_path.parent() {
+                    std::fs::create_dir_all(parent)?;
                 }
+                std::fs::write(&absolute_path, content)?;
 
-                Err(io::Error::new(
-                    io::ErrorKind::PermissionDenied,
-                    format!("tool `{tool_name}` is not allowed in the Starship demo workspace"),
-                )
-                .into())
+                Ok(ToolInvocation {
+                    tool_name: tool_name.to_string(),
+                    output: format!("wrote {CAPTAINS_LOG_PATH}"),
+                })
             }
+            STARSHIP_READ_SCAN_TOOL => {
+                let absolute_path = self.workspace_dir.join(SCAN_COMMAND_PATH);
+                let content = std::fs::read_to_string(&absolute_path).map_err(|error| {
+                    io::Error::new(
+                        error.kind(),
+                        format!("failed to read `{SCAN_COMMAND_PATH}` from workspace: {error}"),
+                    )
+                })?;
+
+                Ok(ToolInvocation {
+                    tool_name: tool_name.to_string(),
+                    output: content,
+                })
+            }
+            STARSHIP_READ_CAPTAINS_LOG_TOOL => {
+                let absolute_path = self.workspace_dir.join(CAPTAINS_LOG_PATH);
+                let content = std::fs::read_to_string(&absolute_path).map_err(|error| {
+                    io::Error::new(
+                        error.kind(),
+                        format!("failed to read `{CAPTAINS_LOG_PATH}` from workspace: {error}"),
+                    )
+                })?;
+
+                Ok(ToolInvocation {
+                    tool_name: tool_name.to_string(),
+                    output: content,
+                })
+            }
+            _ if is_write_tool(tool_name) => Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                format!("tool `{tool_name}` is not allowed in the Starship demo workspace"),
+            )
+            .into()),
             _ => Err(io::Error::new(
                 io::ErrorKind::Unsupported,
                 format!("unsupported tool `{tool_name}`"),
@@ -164,52 +257,15 @@ fn json_string_arg(args: &Value, key: &str) -> RuntimeResult<String> {
         })
 }
 
-impl FileSystemRuntime {
-    fn write_known_file(
-        &self,
-        tool_name: &str,
-        relative_path: &'static str,
-        args: &Value,
-        approved: bool,
-    ) -> RuntimeResult<ToolInvocation> {
-        if !approved {
-            return Err(io::Error::new(
-                io::ErrorKind::PermissionDenied,
-                format!("{tool_name} requires approval"),
-            )
-            .into());
-        }
-
-        let content = json_string_arg(args, "content")?;
-        let absolute_path = resolve_known_path(&self.workspace_dir, relative_path);
-        if let Some(parent) = absolute_path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        std::fs::write(&absolute_path, content)?;
-
-        Ok(ToolInvocation {
-            tool_name: tool_name.to_string(),
-            output: format!("wrote {relative_path}"),
-        })
-    }
-
-    fn read_known_file(
-        &self,
-        tool_name: &str,
-        relative_path: &'static str,
-    ) -> RuntimeResult<ToolInvocation> {
-        let absolute_path = resolve_known_path(&self.workspace_dir, relative_path);
-        let content = std::fs::read_to_string(&absolute_path).map_err(|error| {
-            io::Error::new(
-                error.kind(),
-                format!("failed to read `{relative_path}` from workspace: {error}",),
-            )
-        })?;
-
-        Ok(ToolInvocation {
-            tool_name: tool_name.to_string(),
-            output: content,
-        })
+fn ensure_approved(tool_name: &str, approved: bool) -> RuntimeResult<()> {
+    if approved {
+        Ok(())
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!("{tool_name} requires approval"),
+        )
+        .into())
     }
 }
 
