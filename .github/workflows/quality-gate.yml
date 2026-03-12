@@ -433,7 +433,8 @@ jobs:
             const ref = context.payload.pull_request.head.sha;
             const requiredChecks = new Map([
               ["SonarCloud Code Analysis", "success"],
-              ["CodeQL", "success"],
+              ["Analyze (actions)", "success"],
+              ["Analyze (rust)", "success"],
             ]);
 
             const deadline = Date.now() + (10 * 60 * 1000);
