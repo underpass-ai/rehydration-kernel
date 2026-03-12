@@ -86,13 +86,6 @@ pub fn is_write_tool(tool_name: &str) -> bool {
     )
 }
 
-pub fn is_read_tool(tool_name: &str) -> bool {
-    matches!(
-        tool_name,
-        STARSHIP_READ_SCAN_TOOL | STARSHIP_READ_CAPTAINS_LOG_TOOL
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::{

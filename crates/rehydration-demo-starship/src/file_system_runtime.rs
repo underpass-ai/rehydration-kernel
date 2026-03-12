@@ -7,7 +7,10 @@ use crate::demo_config::DEFAULT_STARSHIP_WORKSPACE_DIR;
 use crate::logging::debug_log_value;
 use crate::runtime_contract::{AgentRuntime, RuntimeResult, ToolDescriptor, ToolInvocation};
 use crate::starship_runtime_tools::{
-    STARSHIP_LIST_TOOL, all_supported_tools, is_read_tool, is_write_tool, path_for_tool_name,
+    STARSHIP_LIST_TOOL, STARSHIP_READ_CAPTAINS_LOG_TOOL, STARSHIP_READ_SCAN_TOOL,
+    STARSHIP_WRITE_CAPTAINS_LOG_TOOL, STARSHIP_WRITE_REPAIR_TOOL, STARSHIP_WRITE_ROUTE_TOOL,
+    STARSHIP_WRITE_SCAN_TOOL, STARSHIP_WRITE_STATE_TOOL, STARSHIP_WRITE_STATUS_TOOL,
+    STARSHIP_WRITE_TEST_TOOL, all_supported_tools, is_write_tool,
 };
 use crate::{
     CAPTAINS_LOG_PATH, REPAIR_COMMAND_PATH, ROUTE_COMMAND_PATH, SCAN_COMMAND_PATH,
@@ -77,6 +80,29 @@ impl AgentRuntime for FileSystemRuntime {
                     output: files.join("\n"),
                 })
             }
+            STARSHIP_WRITE_SCAN_TOOL => {
+                self.write_known_file(tool_name, SCAN_COMMAND_PATH, &args, approved)
+            }
+            STARSHIP_WRITE_REPAIR_TOOL => {
+                self.write_known_file(tool_name, REPAIR_COMMAND_PATH, &args, approved)
+            }
+            STARSHIP_WRITE_ROUTE_TOOL => {
+                self.write_known_file(tool_name, ROUTE_COMMAND_PATH, &args, approved)
+            }
+            STARSHIP_WRITE_STATUS_TOOL => {
+                self.write_known_file(tool_name, STATUS_COMMAND_PATH, &args, approved)
+            }
+            STARSHIP_WRITE_STATE_TOOL => {
+                self.write_known_file(tool_name, STARSHIP_STATE_PATH, &args, approved)
+            }
+            STARSHIP_WRITE_TEST_TOOL => {
+                self.write_known_file(tool_name, STARSHIP_TEST_PATH, &args, approved)
+            }
+            STARSHIP_WRITE_CAPTAINS_LOG_TOOL => {
+                self.write_known_file(tool_name, CAPTAINS_LOG_PATH, &args, approved)
+            }
+            STARSHIP_READ_SCAN_TOOL => self.read_known_file(tool_name, SCAN_COMMAND_PATH),
+            STARSHIP_READ_CAPTAINS_LOG_TOOL => self.read_known_file(tool_name, CAPTAINS_LOG_PATH),
             _ if is_write_tool(tool_name) => {
                 if !approved {
                     return Err(io::Error::new(
@@ -86,36 +112,11 @@ impl AgentRuntime for FileSystemRuntime {
                     .into());
                 }
 
-                let path = StarshipWorkspacePath::from_tool_name(tool_name)?;
-                let content = json_string_arg(&args, "content")?;
-                let absolute_path = path.resolve_for_write(&self.workspace_dir);
-                if let Some(parent) = absolute_path.parent() {
-                    std::fs::create_dir_all(parent)?;
-                }
-                std::fs::write(&absolute_path, content)?;
-
-                Ok(ToolInvocation {
-                    tool_name: tool_name.to_string(),
-                    output: format!("wrote {}", path.display()),
-                })
-            }
-            _ if is_read_tool(tool_name) => {
-                let path = StarshipWorkspacePath::from_tool_name(tool_name)?;
-                let absolute_path = path.resolve_existing(&self.workspace_dir)?;
-                let content = std::fs::read_to_string(&absolute_path).map_err(|error| {
-                    io::Error::new(
-                        error.kind(),
-                        format!(
-                            "failed to read `{}` from workspace: {error}",
-                            path.display()
-                        ),
-                    )
-                })?;
-
-                Ok(ToolInvocation {
-                    tool_name: tool_name.to_string(),
-                    output: content,
-                })
+                Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    format!("tool `{tool_name}` is not allowed in the Starship demo workspace"),
+                )
+                .into())
             }
             _ => Err(io::Error::new(
                 io::ErrorKind::Unsupported,
@@ -127,84 +128,27 @@ impl AgentRuntime for FileSystemRuntime {
 }
 
 fn known_workspace_files(workspace_root: &Path) -> Vec<String> {
-    StarshipWorkspacePath::all()
+    known_workspace_paths()
         .into_iter()
-        .filter(|path| path.resolve_existing(workspace_root).is_ok())
-        .map(|path| path.display().to_string())
+        .filter(|path| resolve_known_path(workspace_root, path).is_file())
+        .map(ToString::to_string)
         .collect()
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum StarshipWorkspacePath {
-    ScanCommand,
-    RepairCommand,
-    RouteCommand,
-    StatusCommand,
-    StateFile,
-    TestFile,
-    CaptainsLog,
+fn known_workspace_paths() -> [&'static str; 7] {
+    [
+        SCAN_COMMAND_PATH,
+        REPAIR_COMMAND_PATH,
+        ROUTE_COMMAND_PATH,
+        STATUS_COMMAND_PATH,
+        STARSHIP_STATE_PATH,
+        STARSHIP_TEST_PATH,
+        CAPTAINS_LOG_PATH,
+    ]
 }
 
-impl StarshipWorkspacePath {
-    fn from_tool_name(tool_name: &str) -> RuntimeResult<Self> {
-        match path_for_tool_name(tool_name) {
-            Some(SCAN_COMMAND_PATH) => Ok(Self::ScanCommand),
-            Some(REPAIR_COMMAND_PATH) => Ok(Self::RepairCommand),
-            Some(ROUTE_COMMAND_PATH) => Ok(Self::RouteCommand),
-            Some(STATUS_COMMAND_PATH) => Ok(Self::StatusCommand),
-            Some(STARSHIP_STATE_PATH) => Ok(Self::StateFile),
-            Some(STARSHIP_TEST_PATH) => Ok(Self::TestFile),
-            Some(CAPTAINS_LOG_PATH) => Ok(Self::CaptainsLog),
-            _ => Err(io::Error::new(
-                io::ErrorKind::PermissionDenied,
-                format!("tool `{tool_name}` is not allowed in the Starship demo workspace"),
-            )
-            .into()),
-        }
-    }
-
-    fn all() -> [Self; 7] {
-        [
-            Self::ScanCommand,
-            Self::RepairCommand,
-            Self::RouteCommand,
-            Self::StatusCommand,
-            Self::StateFile,
-            Self::TestFile,
-            Self::CaptainsLog,
-        ]
-    }
-
-    fn display(self) -> &'static str {
-        match self {
-            Self::ScanCommand => SCAN_COMMAND_PATH,
-            Self::RepairCommand => REPAIR_COMMAND_PATH,
-            Self::RouteCommand => ROUTE_COMMAND_PATH,
-            Self::StatusCommand => STATUS_COMMAND_PATH,
-            Self::StateFile => STARSHIP_STATE_PATH,
-            Self::TestFile => STARSHIP_TEST_PATH,
-            Self::CaptainsLog => CAPTAINS_LOG_PATH,
-        }
-    }
-
-    fn resolve_for_write(self, workspace_root: &Path) -> PathBuf {
-        workspace_root.join(self.display())
-    }
-
-    fn resolve_existing(self, workspace_root: &Path) -> io::Result<PathBuf> {
-        let path = self.resolve_for_write(workspace_root);
-        if path.exists() {
-            Ok(path)
-        } else {
-            Err(io::Error::new(
-                io::ErrorKind::NotFound,
-                format!(
-                    "file `{}` does not exist in the Starship demo workspace",
-                    self.display()
-                ),
-            ))
-        }
-    }
+fn resolve_known_path(workspace_root: &Path, relative_path: &'static str) -> PathBuf {
+    workspace_root.join(relative_path)
 }
 
 fn json_string_arg(args: &Value, key: &str) -> RuntimeResult<String> {
@@ -220,27 +164,80 @@ fn json_string_arg(args: &Value, key: &str) -> RuntimeResult<String> {
         })
 }
 
+impl FileSystemRuntime {
+    fn write_known_file(
+        &self,
+        tool_name: &str,
+        relative_path: &'static str,
+        args: &Value,
+        approved: bool,
+    ) -> RuntimeResult<ToolInvocation> {
+        if !approved {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                format!("{tool_name} requires approval"),
+            )
+            .into());
+        }
+
+        let content = json_string_arg(args, "content")?;
+        let absolute_path = resolve_known_path(&self.workspace_dir, relative_path);
+        if let Some(parent) = absolute_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(&absolute_path, content)?;
+
+        Ok(ToolInvocation {
+            tool_name: tool_name.to_string(),
+            output: format!("wrote {relative_path}"),
+        })
+    }
+
+    fn read_known_file(
+        &self,
+        tool_name: &str,
+        relative_path: &'static str,
+    ) -> RuntimeResult<ToolInvocation> {
+        let absolute_path = resolve_known_path(&self.workspace_dir, relative_path);
+        let content = std::fs::read_to_string(&absolute_path).map_err(|error| {
+            io::Error::new(
+                error.kind(),
+                format!("failed to read `{relative_path}` from workspace: {error}",),
+            )
+        })?;
+
+        Ok(ToolInvocation {
+            tool_name: tool_name.to_string(),
+            output: content,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use serde_json::json;
 
-    use super::{FileSystemRuntime, StarshipWorkspacePath};
+    use super::{FileSystemRuntime, resolve_known_path};
     use crate::runtime_contract::AgentRuntime;
     use crate::starship_runtime_tools::{
         STARSHIP_LIST_TOOL, STARSHIP_READ_SCAN_TOOL, STARSHIP_WRITE_SCAN_TOOL,
     };
 
-    #[tokio::test]
-    async fn runtime_writes_reads_and_lists_files() {
-        let workspace = std::env::temp_dir().join(format!(
+    fn unique_workspace_dir() -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
             "rehydration-starship-runtime-{}",
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .expect("clock should work")
-                .as_millis()
-        ));
+                .as_nanos()
+        ))
+    }
+
+    #[tokio::test]
+    async fn runtime_writes_reads_and_lists_files() {
+        let workspace = unique_workspace_dir();
         let runtime = FileSystemRuntime::new_for_test(&workspace);
 
         runtime
@@ -271,13 +268,7 @@ mod tests {
 
     #[tokio::test]
     async fn runtime_rejects_parent_traversal_paths() {
-        let workspace = std::env::temp_dir().join(format!(
-            "rehydration-starship-runtime-{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("clock should work")
-                .as_millis()
-        ));
+        let workspace = unique_workspace_dir();
         let runtime = FileSystemRuntime::new_for_test(&workspace);
 
         let error = runtime
@@ -296,13 +287,7 @@ mod tests {
 
     #[tokio::test]
     async fn runtime_rejects_absolute_paths() {
-        let workspace = std::env::temp_dir().join(format!(
-            "rehydration-starship-runtime-{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("clock should work")
-                .as_millis()
-        ));
+        let workspace = unique_workspace_dir();
         let runtime = FileSystemRuntime::new_for_test(&workspace);
 
         let error = runtime
@@ -313,21 +298,25 @@ mod tests {
         assert!(error.to_string().contains("unsupported tool"));
     }
 
-    #[test]
-    fn workspace_relative_path_rejects_unknown_tools() {
-        let error = StarshipWorkspacePath::from_tool_name("starship.fs.write.unknown")
-            .expect_err("unknown tool must be rejected");
+    #[tokio::test]
+    async fn known_workspace_paths_resolve_existing_files() {
+        let workspace = unique_workspace_dir();
+        let runtime = FileSystemRuntime::new_for_test(&workspace);
 
-        assert!(error.to_string().contains("not allowed"));
-    }
+        runtime
+            .invoke(
+                STARSHIP_WRITE_SCAN_TOOL,
+                json!({
+                    "content": "pub fn scan() {}",
+                }),
+                true,
+            )
+            .await
+            .expect("write should succeed");
 
-    #[test]
-    fn workspace_path_accepts_known_starship_tools() {
-        assert_eq!(
-            StarshipWorkspacePath::from_tool_name(STARSHIP_WRITE_SCAN_TOOL)
-                .expect("known tool should be accepted")
-                .display(),
-            "src/commands/scan.rs"
-        );
+        let path = resolve_known_path(runtime.workspace_dir(), "src/commands/scan.rs");
+        assert!(path.exists());
+
+        std::fs::remove_dir_all(workspace).expect("workspace cleanup should succeed");
     }
 }
