@@ -21,6 +21,14 @@ impl FileSystemRuntime {
     pub fn workspace_dir(&self) -> &Path {
         &self.workspace_dir
     }
+
+    fn workspace_root(&self) -> io::Result<PathBuf> {
+        if self.workspace_dir.exists() {
+            self.workspace_dir.canonicalize()
+        } else {
+            Ok(self.workspace_dir.clone())
+        }
+    }
 }
 
 impl AgentRuntime for FileSystemRuntime {
@@ -58,9 +66,10 @@ impl AgentRuntime for FileSystemRuntime {
                     .into());
                 }
 
-                let path = json_string_arg(&args, "path")?;
+                let path = WorkspaceRelativePath::from_args(&args, "path")?;
                 let content = json_string_arg(&args, "content")?;
-                let absolute_path = resolve_workspace_path(&self.workspace_dir, &path)?;
+                let workspace_root = self.workspace_root()?;
+                let absolute_path = path.resolve_for_write(&workspace_root)?;
                 if let Some(parent) = absolute_path.parent() {
                     std::fs::create_dir_all(parent)?;
                 }
@@ -68,16 +77,20 @@ impl AgentRuntime for FileSystemRuntime {
 
                 Ok(ToolInvocation {
                     tool_name: tool_name.to_string(),
-                    output: format!("wrote {path}"),
+                    output: format!("wrote {}", path.display()),
                 })
             }
             "fs.read" => {
-                let path = json_string_arg(&args, "path")?;
-                let absolute_path = resolve_workspace_path(&self.workspace_dir, &path)?;
+                let path = WorkspaceRelativePath::from_args(&args, "path")?;
+                let workspace_root = self.workspace_root()?;
+                let absolute_path = path.resolve_existing(&workspace_root)?;
                 let content = std::fs::read_to_string(&absolute_path).map_err(|error| {
                     io::Error::new(
                         error.kind(),
-                        format!("failed to read `{path}` from workspace: {error}"),
+                        format!(
+                            "failed to read `{}` from workspace: {error}",
+                            path.display()
+                        ),
                     )
                 })?;
 
@@ -128,6 +141,64 @@ fn collect_files(root: &Path, current: &Path, files: &mut Vec<String>) -> io::Re
     Ok(())
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct WorkspaceRelativePath {
+    value: PathBuf,
+}
+
+impl WorkspaceRelativePath {
+    fn from_args(args: &Value, key: &str) -> RuntimeResult<Self> {
+        let raw = json_string_arg(args, key)?;
+        Self::parse(raw)
+    }
+
+    fn parse(raw: String) -> RuntimeResult<Self> {
+        let candidate = PathBuf::from(&raw);
+        if candidate.as_os_str().is_empty() {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, "path cannot be empty").into());
+        }
+
+        for component in candidate.components() {
+            match component {
+                Component::Normal(_) | Component::CurDir => {}
+                Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::PermissionDenied,
+                        format!("path `{raw}` escapes the workspace"),
+                    )
+                    .into());
+                }
+            }
+        }
+
+        Ok(Self { value: candidate })
+    }
+
+    fn display(&self) -> String {
+        self.value.to_string_lossy().into_owned()
+    }
+
+    fn resolve_for_write(&self, workspace_root: &Path) -> io::Result<PathBuf> {
+        let path = workspace_root.join(&self.value);
+        if let Some(parent) = path.parent() {
+            let parent = if parent.exists() {
+                parent.canonicalize()?
+            } else {
+                canonicalize_parent_chain(parent, workspace_root)?
+            };
+            ensure_within_root(workspace_root, &parent)?;
+        }
+        Ok(path)
+    }
+
+    fn resolve_existing(&self, workspace_root: &Path) -> io::Result<PathBuf> {
+        let path = workspace_root.join(&self.value);
+        let canonical = path.canonicalize()?;
+        ensure_within_root(workspace_root, &canonical)?;
+        Ok(canonical)
+    }
+}
+
 fn json_string_arg(args: &Value, key: &str) -> RuntimeResult<String> {
     args.get(key)
         .and_then(Value::as_str)
@@ -141,28 +212,40 @@ fn json_string_arg(args: &Value, key: &str) -> RuntimeResult<String> {
         })
 }
 
-fn resolve_workspace_path(root: &Path, relative_path: &str) -> io::Result<PathBuf> {
-    let candidate = Path::new(relative_path);
-    if candidate.as_os_str().is_empty() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "path cannot be empty",
-        ));
+fn ensure_within_root(workspace_root: &Path, path: &Path) -> io::Result<()> {
+    if path.starts_with(workspace_root) {
+        Ok(())
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!("path `{}` escapes the workspace", path.to_string_lossy()),
+        ))
+    }
+}
+
+fn canonicalize_parent_chain(path: &Path, workspace_root: &Path) -> io::Result<PathBuf> {
+    if path == workspace_root {
+        return Ok(workspace_root.to_path_buf());
     }
 
-    for component in candidate.components() {
-        match component {
-            Component::Normal(_) | Component::CurDir => {}
-            Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
-                return Err(io::Error::new(
-                    io::ErrorKind::PermissionDenied,
-                    format!("path `{relative_path}` escapes the workspace"),
-                ));
-            }
-        }
+    if path.exists() {
+        return path.canonicalize();
     }
 
-    Ok(root.join(candidate))
+    let parent = path.parent().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!("path `{}` escapes the workspace", path.to_string_lossy()),
+        )
+    })?;
+    let canonical_parent = canonicalize_parent_chain(parent, workspace_root)?;
+    let final_component = path.file_name().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!("path `{}` escapes the workspace", path.to_string_lossy()),
+        )
+    })?;
+    Ok(canonical_parent.join(final_component))
 }
 
 #[cfg(test)]
@@ -171,7 +254,7 @@ mod tests {
 
     use serde_json::json;
 
-    use super::FileSystemRuntime;
+    use super::{FileSystemRuntime, WorkspaceRelativePath};
     use crate::runtime_contract::AgentRuntime;
 
     #[tokio::test]
@@ -259,6 +342,14 @@ mod tests {
             )
             .await
             .expect_err("absolute paths must be rejected");
+
+        assert!(error.to_string().contains("escapes the workspace"));
+    }
+
+    #[test]
+    fn workspace_relative_path_rejects_escape_components() {
+        let error = WorkspaceRelativePath::parse("../outside.txt".to_string())
+            .expect_err("parent traversal must be rejected");
 
         assert!(error.to_string().contains("escapes the workspace"));
     }
