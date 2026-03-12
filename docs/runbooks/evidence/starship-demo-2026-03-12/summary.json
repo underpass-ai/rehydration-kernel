@@ -1,0 +1,27 @@
+{
+  "run_id": "starship-demo-1773281681-bszz7-1773281685431",
+  "root_node_id": "node:mission:repair-the-starship:starship-demo-1773281681-bszz7-1773281685431",
+  "workspace_dir": "/workspace-demo",
+  "provider": {
+    "llm_provider": "vllm",
+    "runtime_mode": "filesystem"
+  },
+  "phase_one": {
+    "step_node_id": "node:work_item:stabilize-sensors-and-hull:starship-demo-1773281681-bszz7-1773281685431",
+    "written_paths": [
+      "src/commands/scan.rs",
+      "src/commands/repair.rs",
+      "state/starship-state.json"
+    ]
+  },
+  "phase_two": {
+    "step_node_id": "node:work_item:plot-route-and-report-status:starship-demo-1773281681-bszz7-1773281685431",
+    "written_paths": [
+      "src/commands/route.rs",
+      "src/commands/status.rs",
+      "tests/starship_cli.rs",
+      "captains-log.md"
+    ]
+  },
+  "captains_log": "# Captain's Log: Starship Repair Mission\n\n**Date:** 23rd October, 2123\n**Location:** Orbiting the derelict vessel *Odyssey*\n**Mission Status:** Phase 2 - Plotting Route and Reporting Status\n\n## Log Entry\n\nThe *Odyssey* has been stabilized following the successful completion of Phase 1. Sensors are now operational, and critical systems have been repaired. The ship's state has been saved to *state/starship-state.json* for future reference.\n\n### Current Ship Status:\n- **Hull Integrity:** 85% restored\n- **Power Systems:** 90% functional\n- **Navigation Systems:** Fully operational\n- **Life Support:** Stable\n\n### Next Steps:\n1. **Plot Route:** Determine the optimal course to the nearest space station for further repairs and supplies.\n2. **Report Status:** Provide an updated status report to the mission control on Earth.\n3. **Prepare for Departure:** Ensure all systems are ready for the journey ahead.\n\n## Command Implementation\n- Implemented `route` command to calculate the optimal path.\n- Developed `status` command to display the ship's current condition.\n- Added unit tests for both commands to ensure reliability.\n\n## Challenges Encountered\n- Initial navigation calculations required calibration of the ship's sensors.\n- Ensuring the status command provided accurate and up-to-date information required integration with the ship's state file.\n\n## Lessons Learned\n- Collaboration between the engineering and navigation teams was crucial for successful route planning.\n- Regular status updates helped in maintaining situational awareness and making informed decisions.\n\n## Conclusion\nThe *Odyssey* is now in a stable condition, and we are ready to proceed with the next phase of the mission. The crew remains vigilant and prepared for any challenges that may arise during our journey to the space station.\n\n**Captain's Note:** Keep the ship's systems monitored closely. The success of this mission depends on our ability to maintain operational readiness throughout the journey.\n\n---\n\n**End of Log Entry**\n\n"
+}

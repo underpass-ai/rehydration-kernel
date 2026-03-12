@@ -52,6 +52,8 @@ boundary contract.
 - event-driven agentic trigger e2e from `context.bundle.generated`
 - runtime integration reference for external consumers
 - runnable runtime reference client outside tests
+- Starship rehydration demo harness with real LLM provider support and captured
+  evidence from internal-network cluster execution
 - green repo quality gates
 
 That means the next milestone inside this repo is not another core refactor.
@@ -92,6 +94,36 @@ Exit gate:
 - integration helpers are shared instead of forked
 - the slowest PR-gated integration target has a materially lower runtime
 - container-backed failures surface with deterministic timeout messages
+
+## Strategic LLM Milestone
+
+Status: `planned`
+
+Title:
+
+- LLM response determinism and reasoning-safe interaction model
+
+Why it exists:
+
+- the Starship demo proved that provider behavior can drift even when the
+  transport request is nominally "JSON"
+- the future integrating product cannot rely on markdown-fence parsing and raw
+  `message.content`
+- this repo needs a state-of-the-art interaction contract for reasoning models
+  before more agentic surface area is added
+
+Scope:
+
+- provider-neutral response envelope
+- schema-first contract registry for agentic tasks
+- tool-first interaction where providers support it
+- reasoning-safe consumption model
+- explicit validation and repair pipeline
+- malformed-response evaluation corpus
+
+Reference:
+
+- [`llm-response-determinism-strategy.md`](./llm-response-determinism-strategy.md)
 
 ## Direction Update
 
@@ -190,6 +222,48 @@ Missing in an integrating product:
 - dual-run strategy
 - shadow comparison harness
 - canary and rollback procedure
+
+## Demo Milestone
+
+Status: `complete`
+
+Title:
+
+- Starship rehydration demo harness
+
+Purpose:
+
+- show the product story with a real runtime and a real model endpoint
+- exercise the kernel through internal network paths only
+- capture failures and improvements before adapting external products
+
+Important classification:
+
+- this milestone is a demo
+- it is not a PR-gated e2e release gate
+- it exists to demonstrate behavior and expose improvement areas
+
+Next follow-up:
+
+- Neo4j verification is complete for the captured run:
+  - run-scoped nodes and relationships were found as expected
+- Valkey verification is still pending for a rerun:
+  - the follow-up query found `DBSIZE=0` and no `rehydration:*` keys in the
+    kernel deployment that was checked
+  - the demo Job used image `starship-demo-20260312-020201`, while the live
+    kernel deployment queried still ran `starship-demo-20260312-015959`
+  - rerun after redeploying the newer image before calling the full
+    persistence path proven
+- do not treat coherent `vllm` output alone as sufficient evidence
+- the copied `swe-ai-fleet` LLM parser is weaker than the hardened demo path:
+  - it strips markdown fences only
+  - it does not strip `<think>...</think>`
+  - it has no retry or repair pass for malformed JSON
+
+Evidence:
+
+- [`../runbooks/starship-rehydration-demo.md`](../runbooks/starship-rehydration-demo.md)
+- [`../runbooks/evidence/starship-demo-2026-03-12/README.md`](../runbooks/evidence/starship-demo-2026-03-12/README.md)
 
 ## Phase Roadmap
 
