@@ -13,6 +13,7 @@ Primary roadmap:
 - `kernel-agentic-integration-e2e.md`
 - `kernel-agentic-event-trigger-e2e.md`
 - `kernel-runtime-integration-reference.md`
+- `llm-response-determinism-strategy.md`
 
 Phase 0 baseline:
 
@@ -33,6 +34,12 @@ Phase 0 status:
 - event-driven agentic trigger proof: complete
 - runtime integration reference for external consumers: complete
 - runnable runtime reference client outside tests: complete
+- Starship rehydration demo harness: complete as a demo milestone, not as a
+  PR-gated e2e
+  - Neo4j persistence verified for the captured run
+  - Valkey persistence still requires a rerun after redeploying the newer
+    kernel image used by the successful demo Job
+- LLM response determinism strategy: planned and documented
 - repo closeout and handoff to integrating products: complete
 - shadow mode specification for `swe-ai-fleet`: complete as documentation
 - deferred kernel maintenance milestone: consolidate the integration harness

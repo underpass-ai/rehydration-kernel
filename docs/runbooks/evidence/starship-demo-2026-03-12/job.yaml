@@ -1,0 +1,104 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"batch/v1","kind":"Job","metadata":{"annotations":{},"name":"starship-demo-1773281681","namespace":"underpass-runtime"},"spec":{"backoffLimit":0,"template":{"spec":{"containers":[{"command":["/usr/local/bin/starship-demo-runner"],"env":[{"name":"KERNEL_GRPC_ENDPOINT","value":"http://rehydration-kernel:50054"},{"name":"NATS_URL","value":"nats://nats:4222"},{"name":"STARSHIP_RUNTIME_MODE","value":"filesystem"},{"name":"STARSHIP_WORKSPACE_DIR","value":"/workspace-demo"},{"name":"STARSHIP_RESET_WORKSPACE","value":"true"},{"name":"LLM_PROVIDER","value":"vllm"},{"name":"AGENTIC_E2E_DEBUG","value":"true"},{"name":"VLLM_BASE_URL","value":"http://vllm-server:8000"},{"name":"VLLM_MODEL","value":"Qwen/Qwen3-8B"}],"image":"ghcr.io/underpass-ai/rehydration-kernel:starship-demo-20260312-020201","imagePullPolicy":"Always","name":"starship-demo","volumeMounts":[{"mountPath":"/workspace-demo","name":"workspace"}]}],"imagePullSecrets":[{"name":"ghcr-pull"}],"restartPolicy":"Never","securityContext":{"fsGroup":999,"runAsGroup":999,"runAsNonRoot":true,"runAsUser":999,"seccompProfile":{"type":"RuntimeDefault"}},"volumes":[{"emptyDir":{},"name":"workspace"}]}},"ttlSecondsAfterFinished":3600}}
+  creationTimestamp: "2026-03-12T02:14:42Z"
+  generation: 1
+  labels:
+    batch.kubernetes.io/controller-uid: 49457907-9460-4a1a-9f77-5dc1a58dc6ef
+    batch.kubernetes.io/job-name: starship-demo-1773281681
+    controller-uid: 49457907-9460-4a1a-9f77-5dc1a58dc6ef
+    job-name: starship-demo-1773281681
+  name: starship-demo-1773281681
+  namespace: underpass-runtime
+  resourceVersion: "14675981"
+  uid: 49457907-9460-4a1a-9f77-5dc1a58dc6ef
+spec:
+  backoffLimit: 0
+  completionMode: NonIndexed
+  completions: 1
+  manualSelector: false
+  parallelism: 1
+  podReplacementPolicy: TerminatingOrFailed
+  selector:
+    matchLabels:
+      batch.kubernetes.io/controller-uid: 49457907-9460-4a1a-9f77-5dc1a58dc6ef
+  suspend: false
+  template:
+    metadata:
+      labels:
+        batch.kubernetes.io/controller-uid: 49457907-9460-4a1a-9f77-5dc1a58dc6ef
+        batch.kubernetes.io/job-name: starship-demo-1773281681
+        controller-uid: 49457907-9460-4a1a-9f77-5dc1a58dc6ef
+        job-name: starship-demo-1773281681
+    spec:
+      containers:
+      - command:
+        - /usr/local/bin/starship-demo-runner
+        env:
+        - name: KERNEL_GRPC_ENDPOINT
+          value: http://rehydration-kernel:50054
+        - name: NATS_URL
+          value: nats://nats:4222
+        - name: STARSHIP_RUNTIME_MODE
+          value: filesystem
+        - name: STARSHIP_WORKSPACE_DIR
+          value: /workspace-demo
+        - name: STARSHIP_RESET_WORKSPACE
+          value: "true"
+        - name: LLM_PROVIDER
+          value: vllm
+        - name: AGENTIC_E2E_DEBUG
+          value: "true"
+        - name: VLLM_BASE_URL
+          value: http://vllm-server:8000
+        - name: VLLM_MODEL
+          value: Qwen/Qwen3-8B
+        image: ghcr.io/underpass-ai/rehydration-kernel:starship-demo-20260312-020201
+        imagePullPolicy: Always
+        name: starship-demo
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /workspace-demo
+          name: workspace
+      dnsPolicy: ClusterFirst
+      imagePullSecrets:
+      - name: ghcr-pull
+      restartPolicy: Never
+      schedulerName: default-scheduler
+      securityContext:
+        fsGroup: 999
+        runAsGroup: 999
+        runAsNonRoot: true
+        runAsUser: 999
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - emptyDir: {}
+        name: workspace
+  ttlSecondsAfterFinished: 3600
+status:
+  completionTime: "2026-03-12T02:16:17Z"
+  conditions:
+  - lastProbeTime: "2026-03-12T02:16:17Z"
+    lastTransitionTime: "2026-03-12T02:16:17Z"
+    message: Reached expected number of succeeded pods
+    reason: CompletionsReached
+    status: "True"
+    type: SuccessCriteriaMet
+  - lastProbeTime: "2026-03-12T02:16:17Z"
+    lastTransitionTime: "2026-03-12T02:16:17Z"
+    message: Reached expected number of succeeded pods
+    reason: CompletionsReached
+    status: "True"
+    type: Complete
+  ready: 0
+  startTime: "2026-03-12T02:14:42Z"
+  succeeded: 1
+  terminating: 0
+  uncountedTerminatedPods: {}

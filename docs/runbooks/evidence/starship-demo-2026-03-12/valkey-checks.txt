@@ -1,0 +1,28 @@
+Kernel deployment image observed during verification:
+
+ghcr.io/underpass-ai/rehydration-kernel:starship-demo-20260312-015959
+
+Valkey checks executed against:
+
+- namespace: underpass-runtime
+- pod: valkey-c6df6497d-96k69
+- cli: /usr/local/bin/valkey-cli
+
+Observed results:
+
+- DBSIZE => 0
+- SCAN rehydration:* => no keys returned
+- GET rehydration:node-detail:node:work_item:stabilize-sensors-and-hull:starship-demo-1773281681-bszz7-1773281685431 => nil
+- GET rehydration:node-detail:node:work_item:plot-route-and-report-status:starship-demo-1773281681-bszz7-1773281685431 => nil
+- GET rehydration:projection-checkpoint:context-projection-graph-node-materialized:REHYDRATION_PROJECTION_REHYDRATION => nil
+- GET rehydration:projection-checkpoint:context-projection-node-detail-materialized:REHYDRATION_PROJECTION_REHYDRATION => nil
+
+Interpretation:
+
+- this verification did not find node details, processed-event state, or
+  projection checkpoints in Valkey for the successful demo run
+- the most likely operational explanation is an image mismatch during the demo:
+  the Starship Job used tag `starship-demo-20260312-020201`, while the live
+  kernel deployment being queried still ran `starship-demo-20260312-015959`
+- the Valkey path therefore remains unproven until the kernel is redeployed
+  with the newer image and the demo is rerun
