@@ -2,7 +2,7 @@ use std::io;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-const DEFAULT_STARSHIP_WORKSPACE_DIR: &str = "/workspace-demo";
+pub const DEFAULT_STARSHIP_WORKSPACE_DIR: &str = "/workspace-demo";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StarshipRuntimeMode {

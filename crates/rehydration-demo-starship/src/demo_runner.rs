@@ -50,7 +50,7 @@ pub async fn run_starship_demo(
 
     match config.runtime_mode {
         StarshipRuntimeMode::FileSystem => {
-            let runtime = FileSystemRuntime::new(&config.workspace_dir);
+            let runtime = FileSystemRuntime::new();
             run_with_runtime(
                 &config,
                 &scenario,

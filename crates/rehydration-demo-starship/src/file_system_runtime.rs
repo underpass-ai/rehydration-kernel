@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
+use crate::demo_config::DEFAULT_STARSHIP_WORKSPACE_DIR;
 use crate::logging::debug_log_value;
 use crate::runtime_contract::{AgentRuntime, RuntimeResult, ToolDescriptor, ToolInvocation};
 use crate::{
@@ -16,11 +17,12 @@ pub struct FileSystemRuntime {
 }
 
 impl FileSystemRuntime {
-    pub fn new(workspace_dir: impl Into<PathBuf>) -> Self {
-        Self::try_new(workspace_dir).expect("workspace directory should be valid")
+    pub fn new() -> Self {
+        Self::try_new(DEFAULT_STARSHIP_WORKSPACE_DIR)
+            .expect("default demo workspace directory should be valid")
     }
 
-    pub fn try_new(workspace_dir: impl Into<PathBuf>) -> io::Result<Self> {
+    fn try_new(workspace_dir: impl Into<PathBuf>) -> io::Result<Self> {
         let workspace_dir = workspace_dir.into();
         std::fs::create_dir_all(&workspace_dir)?;
         Ok(Self {
@@ -28,8 +30,19 @@ impl FileSystemRuntime {
         })
     }
 
+    #[cfg(test)]
+    pub fn new_for_test(workspace_dir: impl Into<PathBuf>) -> Self {
+        Self::try_new(workspace_dir).expect("test workspace directory should be valid")
+    }
+
     pub fn workspace_dir(&self) -> &Path {
         &self.workspace_dir
+    }
+}
+
+impl Default for FileSystemRuntime {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -234,7 +247,7 @@ mod tests {
                 .expect("clock should work")
                 .as_millis()
         ));
-        let runtime = FileSystemRuntime::new(&workspace);
+        let runtime = FileSystemRuntime::new_for_test(&workspace);
 
         runtime
             .invoke(
@@ -272,7 +285,7 @@ mod tests {
                 .expect("clock should work")
                 .as_millis()
         ));
-        let runtime = FileSystemRuntime::new(&workspace);
+        let runtime = FileSystemRuntime::new_for_test(&workspace);
 
         let error = runtime
             .invoke(
@@ -298,7 +311,7 @@ mod tests {
                 .expect("clock should work")
                 .as_millis()
         ));
-        let runtime = FileSystemRuntime::new(&workspace);
+        let runtime = FileSystemRuntime::new_for_test(&workspace);
 
         let error = runtime
             .invoke(

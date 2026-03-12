@@ -270,7 +270,7 @@ mod tests {
                 .expect("client should build"),
         );
         let workspace = temp_workspace();
-        let runtime = FileSystemRuntime::new(&workspace);
+        let runtime = FileSystemRuntime::new_for_test(&workspace);
         let request = LlmStarshipMissionRequest::reference_defaults("node:mission:root", "mission");
         let (query_client, admin_client) =
             spawn_services(query_response(step.clone()), graph_response(step.clone())).await;
@@ -327,7 +327,7 @@ mod tests {
             .expect("client should build"),
         );
         let workspace = temp_workspace();
-        let runtime = FileSystemRuntime::new(&workspace);
+        let runtime = FileSystemRuntime::new_for_test(&workspace);
         let request = LlmStarshipMissionRequest::reference_defaults("node:mission:root", "mission");
         let (query_client, admin_client) = spawn_services(
             query_response(in_progress.clone()),
