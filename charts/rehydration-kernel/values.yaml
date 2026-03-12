@@ -20,6 +20,8 @@ podLabels: {}
 
 podSecurityContext:
   runAsNonRoot: true
+  runAsUser: 999
+  runAsGroup: 999
   seccompProfile:
     type: RuntimeDefault
 
@@ -40,11 +42,13 @@ config:
   adminBind: 0.0.0.0:8080
   eventsPrefix: rehydration
   enableNats: false
+  enableProjectionNats: true
 
 connections:
   graphUri: ""
   detailUri: ""
   snapshotUri: ""
+  runtimeStateUri: ""
   natsUrl: ""
 
 secrets:
@@ -53,6 +57,7 @@ secrets:
     graphUri: graphUri
     detailUri: detailUri
     snapshotUri: snapshotUri
+    runtimeStateUri: runtimeStateUri
     natsUrl: natsUrl
 
 development:

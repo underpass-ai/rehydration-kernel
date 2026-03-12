@@ -10,7 +10,7 @@
 3. Provide connection settings through a secret for non-development installs:
 
    - set `secrets.existingSecret`
-   - keys default to `graphUri`, `detailUri`, `snapshotUri`, and `natsUrl`
+   - keys default to `graphUri`, `detailUri`, `snapshotUri`, `runtimeStateUri`, and `natsUrl`
 
 4. Development-only installs may override this through:
 
