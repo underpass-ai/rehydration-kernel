@@ -433,9 +433,9 @@ jobs:
             const ref = context.payload.pull_request.head.sha;
             const requiredChecks = new Map([
               ["SonarCloud Code Analysis", "success"],
-              ["Analyze (actions)", "success"],
-              ["Analyze (rust)", "success"],
+              ["CodeQL", "success"],
             ]);
+            const codeQlAnalysisChecks = ["Analyze (actions)", "Analyze (rust)"];
 
             const deadline = Date.now() + (10 * 60 * 1000);
             const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -456,9 +456,23 @@ jobs:
               const pending = [];
               const failures = [];
 
+              for (const analysisName of codeQlAnalysisChecks) {
+                const analysisState = states.get(analysisName);
+                if (!analysisState || analysisState.status !== "completed") {
+                  pending.push(analysisName);
+                } else if (analysisState.conclusion !== "success") {
+                  failures.push(`${analysisName}=${analysisState.conclusion}`);
+                }
+              }
+
               for (const [name, expectedConclusion] of requiredChecks.entries()) {
                 const state = states.get(name);
                 if (!state || state.status !== "completed") {
+                  pending.push(name);
+                  continue;
+                }
+
+                if (name === "CodeQL" && state.conclusion === "neutral") {
                   pending.push(name);
                   continue;
                 }
