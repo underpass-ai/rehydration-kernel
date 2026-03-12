@@ -18,7 +18,7 @@ kernel and future integrating products should interact with:
 
 ## Why This Matters
 
-The Starship demo already exposed the real problem:
+Recent provider-integration work already exposed the real problem:
 
 - a model can return valid JSON in one call and `{}` in the next
 - a model can mix `<think>...</think>` with the final answer
@@ -74,7 +74,7 @@ Rules:
 
 A lot of parse fragility comes from prompts that ask for too much in one shot.
 
-The Starship demo already confirmed the better pattern:
+Recent provider-integration work already confirmed the better pattern:
 
 - use one selector schema for "what step is current"
 - use one content schema for "write this single file"
@@ -130,7 +130,7 @@ Without that, parser quality cannot be improved safely.
 
 ### What is already better in this repo
 
-The Starship demo path already moved in the right direction:
+The current hardened integration path already moved in the right direction:
 
 - strips `<think>...</think>` in OpenAI-compatible responses
 - retries once with a repair prompt when JSON is invalid
@@ -358,7 +358,7 @@ contracts.
 
 Exit gate:
 
-- Starship selectors and single-file generation run through declared schemas
+- selectors and single-file generation run through declared schemas
 
 ### Milestone 3: Tool-first reasoning interactions
 
@@ -399,11 +399,12 @@ Exit gate:
    return it.
 2. Replace the Anthropic "first text block wins" path with block-aware
    extraction and schema-first handling.
-3. Add an explicit schema contract for Starship step selection and for single
-   file generation.
+3. Add an explicit schema contract for step selection and single-file
+   generation.
 4. Add a semantic validator layer that rejects empty-but-valid JSON payloads.
 5. Capture raw provider responses and validation outcomes in structured logs.
-6. Add a malformed-response corpus to tests before expanding more demos.
+6. Add a malformed-response corpus to tests before expanding more agentic
+   scenarios.
 
 ## Non-Negotiable Rules
 

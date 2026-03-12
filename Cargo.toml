@@ -3,7 +3,6 @@ members = [
     "crates/rehydration-adapter-nats",
     "crates/rehydration-adapter-neo4j",
     "crates/rehydration-adapter-valkey",
-    "crates/rehydration-demo-starship",
     "crates/rehydration-application",
     "crates/rehydration-config",
     "crates/rehydration-domain",
@@ -32,7 +31,6 @@ rehydration-adapter-neo4j = { path = "crates/rehydration-adapter-neo4j" }
 rehydration-adapter-valkey = { path = "crates/rehydration-adapter-valkey" }
 rehydration-application = { path = "crates/rehydration-application" }
 rehydration-config = { path = "crates/rehydration-config" }
-rehydration-demo-starship = { path = "crates/rehydration-demo-starship" }
 rehydration-domain = { path = "crates/rehydration-domain" }
 rehydration-observability = { path = "crates/rehydration-observability" }
 rehydration-ports = { path = "crates/rehydration-ports" }

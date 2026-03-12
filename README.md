@@ -124,26 +124,6 @@ bash scripts/ci/integration-agentic-context.sh
 bash scripts/ci/integration-agentic-event-context.sh
 ```
 
-Starship rehydration demo:
-
-```bash
-bash scripts/demo/run-starship-demo-smoke.sh
-```
-
-Starship rehydration demo with persistent log:
-
-```bash
-bash scripts/demo/run-starship-demo-debug.sh /tmp/starship-rehydration-debug.log
-```
-
-Manual real-vLLM starship run:
-
-```bash
-VLLM_BASE_URL=http://127.0.0.1:8000 \
-VLLM_MODEL=<your-model-name> \
-bash scripts/demo/run-starship-demo-real-llm.sh
-```
-
 For deployed kernels, the generic projection runtime is enabled separately from
 legacy compatibility NATS and persists its own state in Valkey through
 `REHYDRATION_RUNTIME_STATE_URI`.
@@ -197,7 +177,6 @@ See:
 - [`docs/operations/README.md`](./docs/operations/README.md)
 - [`docs/operations/deployment-boundary.md`](./docs/operations/deployment-boundary.md)
 - [`docs/operations/container-image.md`](./docs/operations/container-image.md)
-- [`docs/runbooks/starship-rehydration-demo.md`](./docs/runbooks/starship-rehydration-demo.md)
 
 ## Standalone Container Image
 

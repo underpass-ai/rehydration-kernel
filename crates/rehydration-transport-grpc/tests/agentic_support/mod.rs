@@ -3,8 +3,6 @@ pub(crate) mod agentic_debug;
 #[allow(dead_code)]
 #[path = "../support/agentic_fixture.rs"]
 pub(crate) mod agentic_fixture;
-#[path = "../support/anthropic_client.rs"]
-pub(crate) mod anthropic_client;
 #[path = "../support/containers.rs"]
 pub(crate) mod containers;
 #[path = "../support/fake_underpass_runtime.rs"]
@@ -13,19 +11,9 @@ pub(crate) mod fake_underpass_runtime;
 pub(crate) mod generic_seed_data;
 #[path = "../support/grpc_runtime.rs"]
 pub(crate) mod grpc_runtime;
-#[path = "../support/llm_planner.rs"]
-pub(crate) mod llm_planner;
-#[path = "../support/llm_starship_agent.rs"]
-pub(crate) mod llm_starship_agent;
 #[path = "../support/nats_container.rs"]
 pub(crate) mod nats_container;
-#[path = "../support/openai_compat_client.rs"]
-pub(crate) mod openai_compat_client;
 #[path = "../support/projection_runtime.rs"]
 pub(crate) mod projection_runtime;
 #[path = "../support/runtime_workspace.rs"]
 pub(crate) mod runtime_workspace;
-#[path = "../support/starship_mission_agent.rs"]
-pub(crate) mod starship_mission_agent;
-#[path = "../support/starship_seed_data.rs"]
-pub(crate) mod starship_seed_data;

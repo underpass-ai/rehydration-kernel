@@ -31,7 +31,6 @@ neo4rs.workspace = true
 rehydration-adapter-nats.workspace = true
 rehydration-adapter-neo4j.workspace = true
 rehydration-adapter-valkey.workspace = true
-rehydration-demo-starship.workspace = true
 rehydration-testkit.workspace = true
 testcontainers = "0.24.0"
 

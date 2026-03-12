@@ -12,8 +12,7 @@ COPY crates ./crates
 
 RUN cargo build --locked --release \
     -p rehydration-server --bin rehydration-server \
-    -p rehydration-transport-grpc --bin runtime_reference_client \
-    -p rehydration-demo-starship --bin starship_demo_runner
+    -p rehydration-transport-grpc --bin runtime_reference_client
 
 FROM debian:bookworm-slim
 
@@ -24,7 +23,6 @@ RUN apt-get update \
 
 COPY --from=builder /workspace/target/release/rehydration-server /usr/local/bin/rehydration-server
 COPY --from=builder /workspace/target/release/runtime_reference_client /usr/local/bin/runtime-reference-client
-COPY --from=builder /workspace/target/release/starship_demo_runner /usr/local/bin/starship-demo-runner
 
 ENV REHYDRATION_SERVICE_NAME=rehydration-kernel \
     REHYDRATION_GRPC_BIND=0.0.0.0:50054 \

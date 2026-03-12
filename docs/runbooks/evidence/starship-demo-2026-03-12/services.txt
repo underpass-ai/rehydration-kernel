@@ -1,5 +1,0 @@
-NAME                 TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)     AGE    SELECTOR
-rehydration-kernel   ClusterIP   10.107.105.11    <none>        50054/TCP   75m    app.kubernetes.io/instance=rehydration-kernel,app.kubernetes.io/name=rehydration-kernel
-nats                 ClusterIP   10.110.183.111   <none>        4222/TCP    2d9h   app=nats
-valkey               ClusterIP   10.98.66.40      <none>        6379/TCP    2d9h   app=valkey
-vllm-server          ClusterIP   10.105.239.15    <none>        8000/TCP    2d6h   app=vllm-server
