@@ -50,6 +50,8 @@ spec:
               value: {{ .Values.config.eventsPrefix | quote }}
             - name: ENABLE_NATS
               value: {{ .Values.config.enableNats | quote }}
+            - name: ENABLE_PROJECTION_NATS
+              value: {{ .Values.config.enableProjectionNats | quote }}
             {{- if .Values.secrets.existingSecret }}
             - name: REHYDRATION_GRAPH_URI
               valueFrom:
@@ -66,6 +68,11 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.secrets.existingSecret | quote }}
                   key: {{ .Values.secrets.keys.snapshotUri | quote }}
+            - name: REHYDRATION_RUNTIME_STATE_URI
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.existingSecret | quote }}
+                  key: {{ .Values.secrets.keys.runtimeStateUri | quote }}
             - name: NATS_URL
               valueFrom:
                 secretKeyRef:
@@ -78,6 +85,8 @@ spec:
               value: {{ .Values.connections.detailUri | quote }}
             - name: REHYDRATION_SNAPSHOT_URI
               value: {{ .Values.connections.snapshotUri | quote }}
+            - name: REHYDRATION_RUNTIME_STATE_URI
+              value: {{ .Values.connections.runtimeStateUri | quote }}
             - name: NATS_URL
               value: {{ .Values.connections.natsUrl | quote }}
             {{- end }}

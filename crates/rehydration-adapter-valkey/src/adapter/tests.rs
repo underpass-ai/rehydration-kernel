@@ -1,4 +1,5 @@
 use std::str;
+use std::time::{Duration, UNIX_EPOCH};
 
 use rehydration_domain::{
     BundleMetadata, BundleNode, BundleNodeDetail, CaseId, RehydrationBundle, Role,
@@ -10,8 +11,14 @@ use serde_json::{Value, json};
 use super::endpoint::{parse_authority, parse_optional_port, split_uri};
 use super::node_detail_serialization::serialize_node_detail;
 use super::node_detail_store::ValkeyNodeDetailStore;
+use super::processed_event_store::ValkeyProcessedEventStore;
+use super::projection_checkpoint_serialization::{
+    deserialize_projection_checkpoint, serialize_projection_checkpoint,
+};
+use super::projection_checkpoint_store::ValkeyProjectionCheckpointStore;
 use super::resp::{RespValue, encode_set_command, map_valkey_response};
 use super::snapshot_store::ValkeySnapshotStore;
+use rehydration_ports::ProjectionCheckpoint;
 
 #[test]
 fn snapshot_store_encodes_a_resp_set_command() {
@@ -154,6 +161,50 @@ fn node_detail_store_uses_dedicated_default_prefix() {
         store.detail_key("node-123"),
         "rehydration:node-detail:node-123"
     );
+}
+
+#[test]
+fn processed_event_store_uses_dedicated_default_prefix() {
+    let store = ValkeyProcessedEventStore::new("redis://cache.internal")
+        .expect("processed event uri should be accepted");
+
+    assert_eq!(
+        store.processed_event_key("projection-consumer", "event-123"),
+        "rehydration:processed-event:projection-consumer:event-123"
+    );
+}
+
+#[test]
+fn projection_checkpoint_store_uses_dedicated_default_prefix() {
+    let store = ValkeyProjectionCheckpointStore::new("redis://cache.internal")
+        .expect("projection checkpoint uri should be accepted");
+
+    assert_eq!(
+        store.checkpoint_key("projection-consumer", "graph.node.materialized"),
+        "rehydration:projection-checkpoint:projection-consumer:graph.node.materialized"
+    );
+}
+
+#[test]
+fn projection_checkpoint_serialization_roundtrip_is_stable() {
+    let checkpoint = ProjectionCheckpoint {
+        consumer_name: "projection-consumer".to_string(),
+        stream_name: "graph.node.materialized".to_string(),
+        last_subject: "rehydration.graph.node.materialized".to_string(),
+        last_event_id: "event-123".to_string(),
+        last_correlation_id: "corr-123".to_string(),
+        last_occurred_at: "2026-03-12T00:00:00Z".to_string(),
+        processed_events: 4,
+        updated_at: UNIX_EPOCH + Duration::from_millis(1234),
+    };
+
+    let payload =
+        serialize_projection_checkpoint(&checkpoint).expect("checkpoint should serialize");
+    let decoded = deserialize_projection_checkpoint(&payload)
+        .expect("checkpoint should deserialize")
+        .expect("checkpoint should be present");
+
+    assert_eq!(decoded, checkpoint);
 }
 
 #[test]

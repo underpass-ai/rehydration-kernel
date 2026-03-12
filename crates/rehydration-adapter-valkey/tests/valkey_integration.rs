@@ -1,12 +1,17 @@
 use std::error::Error;
+use std::time::{Duration, UNIX_EPOCH};
 
-use rehydration_adapter_valkey::{ValkeyNodeDetailStore, ValkeySnapshotStore};
+use rehydration_adapter_valkey::{
+    ValkeyNodeDetailStore, ValkeyProcessedEventStore, ValkeyProjectionCheckpointStore,
+    ValkeySnapshotStore,
+};
 use rehydration_domain::{
     BundleMetadata, BundleNode, BundleNodeDetail, CaseId, RehydrationBundle, Role,
     SnapshotSaveOptions,
 };
 use rehydration_ports::{
-    NodeDetailProjection, NodeDetailReader, ProjectionMutation, ProjectionWriter, SnapshotStore,
+    NodeDetailProjection, NodeDetailReader, ProcessedEventStore, ProjectionCheckpoint,
+    ProjectionCheckpointStore, ProjectionMutation, ProjectionWriter, SnapshotStore,
 };
 use serde_json::{Value, json};
 use testcontainers::{
@@ -219,6 +224,108 @@ async fn node_detail_roundtrip_reads_expanded_detail_from_valkey()
     match ttl {
         RespValue::Integer(value) => assert!((1..=120).contains(&value)),
         other => panic!("expected integer TTL response, got {other:?}"),
+    }
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn processed_event_store_roundtrip_uses_real_valkey()
+-> Result<(), Box<dyn Error + Send + Sync>> {
+    let container = GenericImage::new("docker.io/valkey/valkey", "8.1.5-alpine")
+        .with_exposed_port(VALKEY_INTERNAL_PORT.tcp())
+        .with_wait_for(WaitFor::message_on_stdout("Ready to accept connections"))
+        .start()
+        .await?;
+
+    let host = container.get_host().await?;
+    let port = container.get_host_port_ipv4(VALKEY_INTERNAL_PORT).await?;
+    let address = format!("{host}:{port}");
+
+    let store = ValkeyProcessedEventStore::new(format!(
+        "redis://{address}?key_prefix=rehydration:processed"
+    ))?;
+
+    assert!(
+        !store
+            .has_processed("projection-consumer", "event-123")
+            .await?
+    );
+
+    store
+        .record_processed("projection-consumer", "event-123")
+        .await?;
+
+    assert!(
+        store
+            .has_processed("projection-consumer", "event-123")
+            .await?
+    );
+
+    match send_command(
+        &address,
+        &["GET", "rehydration:processed:projection-consumer:event-123"],
+    )
+    .await?
+    {
+        RespValue::BulkString(Some(value)) => assert_eq!(value, "1"),
+        other => panic!("expected processed event marker, got {other:?}"),
+    }
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn projection_checkpoint_store_roundtrip_uses_real_valkey()
+-> Result<(), Box<dyn Error + Send + Sync>> {
+    let container = GenericImage::new("docker.io/valkey/valkey", "8.1.5-alpine")
+        .with_exposed_port(VALKEY_INTERNAL_PORT.tcp())
+        .with_wait_for(WaitFor::message_on_stdout("Ready to accept connections"))
+        .start()
+        .await?;
+
+    let host = container.get_host().await?;
+    let port = container.get_host_port_ipv4(VALKEY_INTERNAL_PORT).await?;
+    let address = format!("{host}:{port}");
+
+    let store = ValkeyProjectionCheckpointStore::new(format!(
+        "redis://{address}?key_prefix=rehydration:checkpoint"
+    ))?;
+
+    let checkpoint = ProjectionCheckpoint {
+        consumer_name: "projection-consumer".to_string(),
+        stream_name: "graph.node.materialized".to_string(),
+        last_subject: "rehydration.graph.node.materialized".to_string(),
+        last_event_id: "event-456".to_string(),
+        last_correlation_id: "corr-456".to_string(),
+        last_occurred_at: "2026-03-12T00:00:00Z".to_string(),
+        processed_events: 5,
+        updated_at: UNIX_EPOCH + Duration::from_secs(2),
+    };
+
+    store.save_checkpoint(checkpoint.clone()).await?;
+
+    let loaded = store
+        .load_checkpoint("projection-consumer", "graph.node.materialized")
+        .await?
+        .expect("checkpoint should exist");
+    assert_eq!(loaded, checkpoint);
+
+    match send_command(
+        &address,
+        &[
+            "GET",
+            "rehydration:checkpoint:projection-consumer:graph.node.materialized",
+        ],
+    )
+    .await?
+    {
+        RespValue::BulkString(Some(payload)) => {
+            let value: Value = serde_json::from_str(&payload)?;
+            assert_eq!(value["last_event_id"], "event-456");
+            assert_eq!(value["processed_events"], 5);
+        }
+        other => panic!("expected checkpoint payload, got {other:?}"),
     }
 
     Ok(())

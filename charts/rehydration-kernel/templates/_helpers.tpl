@@ -64,6 +64,9 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- if eq (default "" .Values.connections.snapshotUri) "" -}}
 {{- fail "connections.snapshotUri is required when development.allowInlineConnections=true" -}}
 {{- end -}}
+{{- if eq (default "" .Values.connections.runtimeStateUri) "" -}}
+{{- fail "connections.runtimeStateUri is required when development.allowInlineConnections=true" -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
 

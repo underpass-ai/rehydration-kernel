@@ -3,6 +3,9 @@ use rehydration_ports::PortError;
 pub(crate) const DEFAULT_PORT: u16 = 6379;
 pub(crate) const DEFAULT_KEY_PREFIX: &str = "rehydration:snapshot";
 pub(crate) const DEFAULT_NODE_DETAIL_KEY_PREFIX: &str = "rehydration:node-detail";
+pub(crate) const DEFAULT_PROCESSED_EVENT_KEY_PREFIX: &str = "rehydration:processed-event";
+pub(crate) const DEFAULT_PROJECTION_CHECKPOINT_KEY_PREFIX: &str =
+    "rehydration:projection-checkpoint";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ValkeyEndpoint {

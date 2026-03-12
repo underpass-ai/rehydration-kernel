@@ -1,5 +1,7 @@
 use std::env;
 
+use crate::env_bool::parse_bool_env;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompatibilityNatsConfig {
     pub url: String,
@@ -15,24 +17,11 @@ impl CompatibilityNatsConfig {
     }
 }
 
-fn parse_bool_env(name: &str, default: bool) -> bool {
-    let Ok(value) = env::var(name) else {
-        return default;
-    };
-
-    parse_bool_value(&value)
-}
-
-fn parse_bool_value(value: &str) -> bool {
-    matches!(
-        value.trim().to_ascii_lowercase().as_str(),
-        "true" | "1" | "yes" | "on"
-    )
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{CompatibilityNatsConfig, parse_bool_value};
+    use crate::env_bool::parse_bool_value;
+
+    use super::CompatibilityNatsConfig;
 
     #[test]
     fn defaults_match_external_compatibility_contract() {
