@@ -10,6 +10,7 @@ use crate::agentic_reference::runtime_contract::{
     AgentRuntime, RuntimeResult, ToolDescriptor, ToolInvocation,
 };
 
+#[derive(Clone)]
 pub struct UnderpassRuntimeClient {
     authority: String,
     session_id: String,

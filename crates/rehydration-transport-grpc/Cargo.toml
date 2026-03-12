@@ -12,12 +12,14 @@ default = []
 container-tests = []
 
 [dependencies]
+async-nats = "0.39.0"
 rehydration-application.workspace = true
 rehydration-config.workspace = true
 rehydration-domain.workspace = true
 rehydration-ports.workspace = true
 rehydration-proto.workspace = true
 prost-types.workspace = true
+reqwest = { version = "0.12.24", default-features = false, features = ["json", "rustls-tls"] }
 serde.workspace = true
 serde_json.workspace = true
 tonic.workspace = true
@@ -25,7 +27,6 @@ tokio.workspace = true
 tokio-stream.workspace = true
 
 [dev-dependencies]
-async-nats = "0.39.0"
 neo4rs.workspace = true
 rehydration-adapter-nats.workspace = true
 rehydration-adapter-neo4j.workspace = true

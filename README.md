@@ -124,6 +124,10 @@ bash scripts/ci/integration-agentic-context.sh
 bash scripts/ci/integration-agentic-event-context.sh
 ```
 
+For deployed kernels, the generic projection runtime is enabled separately from
+legacy compatibility NATS and persists its own state in Valkey through
+`REHYDRATION_RUNTIME_STATE_URI`.
+
 Container image build check:
 
 ```bash

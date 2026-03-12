@@ -110,15 +110,4 @@ depending on the e2e harness.
 The async follow-up is now also implemented and documented in:
 
 - [`kernel-agentic-event-trigger-e2e.md`](./kernel-agentic-event-trigger-e2e.md)
-
 - [`kernel-runtime-integration-reference.md`](./kernel-runtime-integration-reference.md)
-
-The repository also exposes a narrative demo scenario, `Repair The Starship`,
-as a reusable rehydration challenge runbook:
-
-- [`../runbooks/starship-rehydration-demo.md`](../runbooks/starship-rehydration-demo.md)
-
-That Starship flow is intentionally classified as a demo harness, not as a
-PR-gated end-to-end test. It is used to demonstrate the product story and to
-surface failures and improvement opportunities against real runtime and model
-backends.

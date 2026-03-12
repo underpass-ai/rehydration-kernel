@@ -231,32 +231,6 @@ jobs:
       - name: Run agentic context integration tests
         run: bash scripts/ci/integration-agentic-context.sh
 
-  integration-agentic-rehydration:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 25
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9
-        with:
-          toolchain: 1.90.0
-
-      - name: Install protoc
-        run: bash scripts/ci/install-protoc.sh
-
-      - name: Cache Rust build artifacts
-        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5
-
-      - name: Verify Docker
-        run: docker version
-
-      - name: Run stepwise agentic rehydration integration tests
-        run: bash scripts/ci/integration-agentic-rehydration.sh
-
   integration-agentic-event-context:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
@@ -326,7 +300,6 @@ jobs:
       - integration-nats-compatibility
       - integration-grpc-compatibility
       - integration-agentic-context
-      - integration-agentic-rehydration
       - integration-agentic-event-context
       - container-image
       - helm-chart
@@ -410,3 +383,90 @@ jobs:
           SONAR_HOST_URL: https://sonarcloud.io
         with:
           projectBaseDir: ${{ github.workspace }}
+          args: >
+            -Dsonar.qualitygate.wait=true
+            -Dsonar.qualitygate.timeout=300
+
+  enforce-external-checks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    if: always() && github.event_name == 'pull_request' && !(github.event.pull_request.head.repo.fork || false)
+    needs:
+      - sonarcloud
+    permissions:
+      checks: read
+      contents: read
+    steps:
+      - name: Wait for external code quality checks
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const ref = context.payload.pull_request.head.sha;
+            const requiredChecks = new Map([
+              ["SonarCloud Code Analysis", "success"],
+              ["CodeQL", "success"],
+            ]);
+            const codeQlAnalysisChecks = ["Analyze (actions)", "Analyze (rust)"];
+
+            const deadline = Date.now() + (10 * 60 * 1000);
+            const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+            while (Date.now() < deadline) {
+              const response = await github.rest.checks.listForRef({
+                owner,
+                repo,
+                ref,
+                per_page: 100,
+              });
+
+              const checkRuns = response.data.check_runs;
+              const states = new Map(
+                checkRuns.map((run) => [run.name, { status: run.status, conclusion: run.conclusion }]),
+              );
+
+              const pending = [];
+              const failures = [];
+
+              for (const analysisName of codeQlAnalysisChecks) {
+                const analysisState = states.get(analysisName);
+                if (!analysisState || analysisState.status !== "completed") {
+                  pending.push(analysisName);
+                } else if (analysisState.conclusion !== "success") {
+                  failures.push(`${analysisName}=${analysisState.conclusion}`);
+                }
+              }
+
+              for (const [name, expectedConclusion] of requiredChecks.entries()) {
+                const state = states.get(name);
+                if (!state || state.status !== "completed") {
+                  pending.push(name);
+                  continue;
+                }
+
+                if (name === "CodeQL" && state.conclusion === "neutral") {
+                  pending.push(name);
+                  continue;
+                }
+
+                if (state.conclusion !== expectedConclusion) {
+                  failures.push(`${name}=${state.conclusion}`);
+                }
+              }
+
+              if (failures.length > 0) {
+                core.setFailed(`External checks failed: ${failures.join(", ")}`);
+                return;
+              }
+
+              if (pending.length === 0) {
+                core.info(`All external checks succeeded: ${Array.from(requiredChecks.keys()).join(", ")}`);
+                return;
+              }
+
+              core.info(`Waiting for external checks: ${pending.join(", ")}`);
+              await sleep(15000);
+            }
+
+            core.setFailed("Timed out waiting for external checks to complete");

@@ -10,7 +10,9 @@ COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
 COPY api ./api
 COPY crates ./crates
 
-RUN cargo build --locked --release -p rehydration-server
+RUN cargo build --locked --release \
+    -p rehydration-server --bin rehydration-server \
+    -p rehydration-transport-grpc --bin runtime_reference_client
 
 FROM debian:bookworm-slim
 
@@ -20,6 +22,7 @@ RUN apt-get update \
     && useradd --system --create-home --home-dir /home/rehydration --shell /usr/sbin/nologin rehydration
 
 COPY --from=builder /workspace/target/release/rehydration-server /usr/local/bin/rehydration-server
+COPY --from=builder /workspace/target/release/runtime_reference_client /usr/local/bin/runtime-reference-client
 
 ENV REHYDRATION_SERVICE_NAME=rehydration-kernel \
     REHYDRATION_GRPC_BIND=0.0.0.0:50054 \

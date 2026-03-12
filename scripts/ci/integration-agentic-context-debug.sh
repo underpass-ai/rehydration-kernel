@@ -11,12 +11,12 @@ mkdir -p "$(dirname "${LOG_PATH}")"
 cd "${ROOT_DIR}"
 . "${ROOT_DIR}/scripts/ci/testcontainers-runtime.sh"
 
-export AGENTIC_E2E_DEBUG=1
+export AGENTIC_DEBUG=1
 
 {
-  echo "[agentic-e2e-debug] log_path=${LOG_PATH}"
-  echo "[agentic-e2e-debug] cwd=${ROOT_DIR}"
-  echo "[agentic-e2e-debug] started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  echo "[agentic-debug] log_path=${LOG_PATH}"
+  echo "[agentic-debug] cwd=${ROOT_DIR}"
+  echo "[agentic-debug] started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
   cargo test \
     -p rehydration-transport-grpc \
@@ -27,5 +27,5 @@ export AGENTIC_E2E_DEBUG=1
     --nocapture \
     --test-threads=1
 
-  echo "[agentic-e2e-debug] finished_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  echo "[agentic-debug] finished_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 } 2>&1 | tee -a "${LOG_PATH}"

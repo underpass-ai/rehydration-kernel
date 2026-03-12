@@ -79,8 +79,8 @@ pub(crate) fn context_bundle_generated_subject() -> String {
 fn bundle_generated_event(roles: &[&str]) -> ContextBundleGeneratedEventPayload {
     ContextBundleGeneratedEventPayload {
         event_id: "evt-context-bundle-agentic".to_string(),
-        correlation_id: "corr-agentic-e2e".to_string(),
-        causation_id: "cause-agentic-e2e".to_string(),
+        correlation_id: "corr-agentic-runtime".to_string(),
+        causation_id: "cause-agentic-runtime".to_string(),
         occurred_at: "2026-03-10T12:05:00Z".to_string(),
         aggregate_id: ROOT_NODE_ID.to_string(),
         aggregate_type: "bundle".to_string(),

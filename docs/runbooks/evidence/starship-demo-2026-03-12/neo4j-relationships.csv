@@ -1,4 +1,0 @@
-source,relation_type,target
-"node:mission:repair-the-starship:starship-demo-1773281681-bszz7-1773281685431","contains","node:work_item:plot-route-and-report-status:starship-demo-1773281681-bszz7-1773281685431"
-"node:mission:repair-the-starship:starship-demo-1773281681-bszz7-1773281685431","contains","node:work_item:stabilize-sensors-and-hull:starship-demo-1773281681-bszz7-1773281685431"
-"node:mission:repair-the-starship:starship-demo-1773281681-bszz7-1773281685431","depends_on","node:dependency:navigation-core:starship-demo-1773281681-bszz7-1773281685431"
