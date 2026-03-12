@@ -410,3 +410,75 @@ jobs:
           SONAR_HOST_URL: https://sonarcloud.io
         with:
           projectBaseDir: ${{ github.workspace }}
+          args: >
+            -Dsonar.qualitygate.wait=true
+            -Dsonar.qualitygate.timeout=300
+
+  enforce-external-checks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    if: github.event_name == 'pull_request' && !(github.event.pull_request.head.repo.fork || false)
+    needs:
+      - sonarcloud
+    permissions:
+      checks: read
+      contents: read
+    steps:
+      - name: Wait for external code quality checks
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const ref = context.payload.pull_request.head.sha;
+            const requiredChecks = new Map([
+              ["SonarCloud Code Analysis", "success"],
+              ["CodeQL", "success"],
+            ]);
+
+            const deadline = Date.now() + (10 * 60 * 1000);
+            const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+            while (Date.now() < deadline) {
+              const response = await github.rest.checks.listForRef({
+                owner,
+                repo,
+                ref,
+                per_page: 100,
+              });
+
+              const checkRuns = response.data.check_runs;
+              const states = new Map(
+                checkRuns.map((run) => [run.name, { status: run.status, conclusion: run.conclusion }]),
+              );
+
+              const pending = [];
+              const failures = [];
+
+              for (const [name, expectedConclusion] of requiredChecks.entries()) {
+                const state = states.get(name);
+                if (!state || state.status !== "completed") {
+                  pending.push(name);
+                  continue;
+                }
+
+                if (state.conclusion !== expectedConclusion) {
+                  failures.push(`${name}=${state.conclusion}`);
+                }
+              }
+
+              if (failures.length > 0) {
+                core.setFailed(`External checks failed: ${failures.join(", ")}`);
+                return;
+              }
+
+              if (pending.length === 0) {
+                core.info(`All external checks succeeded: ${Array.from(requiredChecks.keys()).join(", ")}`);
+                return;
+              }
+
+              core.info(`Waiting for external checks: ${pending.join(", ")}`);
+              await sleep(15000);
+            }
+
+            core.setFailed("Timed out waiting for external checks to complete");
