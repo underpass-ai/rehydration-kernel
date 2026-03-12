@@ -4,11 +4,13 @@ const DEBUG_FLAG_ENV: &str = "AGENTIC_DEBUG";
 const LEGACY_DEBUG_FLAG_ENV: &str = "AGENTIC_E2E_DEBUG";
 
 pub(crate) fn debug_enabled() -> bool {
-    [DEBUG_FLAG_ENV, LEGACY_DEBUG_FLAG_ENV].into_iter().any(|name| {
-        std::env::var(name)
-            .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
-            .unwrap_or(false)
-    })
+    [DEBUG_FLAG_ENV, LEGACY_DEBUG_FLAG_ENV]
+        .into_iter()
+        .any(|name| {
+            std::env::var(name)
+                .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+                .unwrap_or(false)
+        })
 }
 
 pub(crate) fn debug_log(message: impl AsRef<str>) {

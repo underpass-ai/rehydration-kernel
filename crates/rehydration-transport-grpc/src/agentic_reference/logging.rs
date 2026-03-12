@@ -16,11 +16,13 @@ pub(crate) fn debug_log_value(label: &str, value: impl std::fmt::Display) {
 }
 
 fn debug_enabled() -> bool {
-    [DEBUG_FLAG_ENV, LEGACY_DEBUG_FLAG_ENV].into_iter().any(|name| {
-        std::env::var(name)
-            .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
-            .unwrap_or(false)
-    })
+    [DEBUG_FLAG_ENV, LEGACY_DEBUG_FLAG_ENV]
+        .into_iter()
+        .any(|name| {
+            std::env::var(name)
+                .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+                .unwrap_or(false)
+        })
 }
 
 fn format_log_line(message: &str) -> String {
