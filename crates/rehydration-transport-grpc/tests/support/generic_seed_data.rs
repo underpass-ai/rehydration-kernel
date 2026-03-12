@@ -148,8 +148,8 @@ fn focus_detail_event() -> NodeDetailMaterializedEvent {
 fn base_envelope(event_id: &str, aggregate_id: &str, aggregate_type: &str) -> ProjectionEnvelope {
     ProjectionEnvelope {
         event_id: event_id.to_string(),
-        correlation_id: "corr-agentic-e2e".to_string(),
-        causation_id: "cause-agentic-e2e".to_string(),
+        correlation_id: "corr-agentic-runtime".to_string(),
+        causation_id: "cause-agentic-runtime".to_string(),
         occurred_at: "2026-03-10T12:00:00Z".to_string(),
         aggregate_id: aggregate_id.to_string(),
         aggregate_type: aggregate_type.to_string(),

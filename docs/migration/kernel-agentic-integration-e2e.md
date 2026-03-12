@@ -119,6 +119,6 @@ as a reusable rehydration challenge runbook:
 - [`../runbooks/starship-rehydration-demo.md`](../runbooks/starship-rehydration-demo.md)
 
 That Starship flow is intentionally classified as a demo harness, not as a
-PR-gated end-to-end test. It is used to demonstrate the product story and to
+PR-gated verification test. It is used to demonstrate the product story and to
 surface failures and improvement opportunities against real runtime and model
 backends.

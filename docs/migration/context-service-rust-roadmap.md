@@ -240,7 +240,7 @@ Purpose:
 Important classification:
 
 - this milestone is a demo
-- it is not a PR-gated e2e release gate
+- it is not a PR-gated verification gate
 - it exists to demonstrate behavior and expose improvement areas
 
 Next follow-up:

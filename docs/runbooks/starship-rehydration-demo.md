@@ -2,13 +2,13 @@
 
 ## Goal
 
-Run the `Repair The Starship` end-to-end scenario as a reproducible demo of
+Run the `Repair The Starship` scenario as a reproducible demo of
 stepwise rehydration.
 
 Important classification:
 
 - this flow is a demo harness
-- this is not a PR-gated e2e test
+- this is not a PR-gated verification test
 - we keep it to show the product story, reveal failure modes, and drive
   improvements in the real integration path
 
@@ -59,13 +59,13 @@ It should not be treated as a hard release gate.
 Normal run:
 
 ```bash
-bash scripts/ci/integration-starship-rehydration.sh
+bash scripts/demo/run-starship-demo-smoke.sh
 ```
 
 Debug run with persistent log:
 
 ```bash
-bash scripts/ci/integration-starship-rehydration-debug.sh /tmp/starship-rehydration-debug.log
+bash scripts/demo/run-starship-demo-debug.sh /tmp/starship-rehydration-debug.log
 ```
 
 If no path is provided, the debug script writes to:
@@ -142,12 +142,12 @@ export OPENAI_API_KEY=<token-if-required>
 Manual execution:
 
 ```bash
-bash scripts/ci/manual-vllm-starship-rehydration.sh
+bash scripts/demo/run-starship-demo-real-llm.sh
 ```
 
-This path runs the ignored test target:
+This path runs the ignored demo target:
 
-- `vllm_starship_rehydration_integration`
+- `starship_real_llm_demo`
 
 It is intentionally not part of default CI because it depends on a live model
 server.

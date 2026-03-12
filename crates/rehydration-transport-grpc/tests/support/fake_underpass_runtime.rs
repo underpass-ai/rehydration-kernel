@@ -12,7 +12,7 @@ use tokio::sync::oneshot;
 use crate::agentic_support::agentic_debug::debug_log_value;
 use crate::agentic_support::runtime_workspace::ToolDescriptor;
 
-const SESSION_ID: &str = "session-agentic-e2e";
+const SESSION_ID: &str = "session-agentic-runtime";
 
 #[derive(Clone, Default)]
 struct RuntimeState {

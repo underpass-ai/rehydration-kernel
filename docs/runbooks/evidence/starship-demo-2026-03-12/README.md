@@ -6,7 +6,7 @@ This folder stores the evidence captured from the first successful in-cluster
 Classification:
 
 - this is a product demo harness
-- this is not a PR-gated end-to-end test
+- this is not a PR-gated verification test
 - its purpose is to demonstrate the node-centric flow and expose integration
   weaknesses that should later be hardened
 

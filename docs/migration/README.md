@@ -35,7 +35,7 @@ Phase 0 status:
 - runtime integration reference for external consumers: complete
 - runnable runtime reference client outside tests: complete
 - Starship rehydration demo harness: complete as a demo milestone, not as a
-  PR-gated e2e
+  PR-gated verification target
   - Neo4j persistence verified for the captured run
   - Valkey persistence still requires a rerun after redeploying the newer
     kernel image used by the successful demo Job
