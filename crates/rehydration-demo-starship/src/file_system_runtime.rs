@@ -1,10 +1,14 @@
 use std::io;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
 use crate::logging::debug_log_value;
 use crate::runtime_contract::{AgentRuntime, RuntimeResult, ToolDescriptor, ToolInvocation};
+use crate::{
+    CAPTAINS_LOG_PATH, REPAIR_COMMAND_PATH, ROUTE_COMMAND_PATH, SCAN_COMMAND_PATH,
+    STARSHIP_STATE_PATH, STARSHIP_TEST_PATH, STATUS_COMMAND_PATH,
+};
 
 #[derive(Debug, Clone)]
 pub struct FileSystemRuntime {
@@ -13,21 +17,19 @@ pub struct FileSystemRuntime {
 
 impl FileSystemRuntime {
     pub fn new(workspace_dir: impl Into<PathBuf>) -> Self {
-        Self {
-            workspace_dir: workspace_dir.into(),
-        }
+        Self::try_new(workspace_dir).expect("workspace directory should be valid")
+    }
+
+    pub fn try_new(workspace_dir: impl Into<PathBuf>) -> io::Result<Self> {
+        let workspace_dir = workspace_dir.into();
+        std::fs::create_dir_all(&workspace_dir)?;
+        Ok(Self {
+            workspace_dir: workspace_dir.canonicalize()?,
+        })
     }
 
     pub fn workspace_dir(&self) -> &Path {
         &self.workspace_dir
-    }
-
-    fn workspace_root(&self) -> io::Result<PathBuf> {
-        if self.workspace_dir.exists() {
-            self.workspace_dir.canonicalize()
-        } else {
-            Ok(self.workspace_dir.clone())
-        }
     }
 }
 
@@ -66,10 +68,9 @@ impl AgentRuntime for FileSystemRuntime {
                     .into());
                 }
 
-                let path = WorkspaceRelativePath::from_args(&args, "path")?;
+                let path = StarshipWorkspacePath::from_args(&args, "path")?;
                 let content = json_string_arg(&args, "content")?;
-                let workspace_root = self.workspace_root()?;
-                let absolute_path = path.resolve_for_write(&workspace_root)?;
+                let absolute_path = path.resolve_for_write(&self.workspace_dir);
                 if let Some(parent) = absolute_path.parent() {
                     std::fs::create_dir_all(parent)?;
                 }
@@ -81,9 +82,8 @@ impl AgentRuntime for FileSystemRuntime {
                 })
             }
             "fs.read" => {
-                let path = WorkspaceRelativePath::from_args(&args, "path")?;
-                let workspace_root = self.workspace_root()?;
-                let absolute_path = path.resolve_existing(&workspace_root)?;
+                let path = StarshipWorkspacePath::from_args(&args, "path")?;
+                let absolute_path = path.resolve_existing(&self.workspace_dir)?;
                 let content = std::fs::read_to_string(&absolute_path).map_err(|error| {
                     io::Error::new(
                         error.kind(),
@@ -100,8 +100,7 @@ impl AgentRuntime for FileSystemRuntime {
                 })
             }
             "fs.list" => {
-                let mut files = Vec::new();
-                collect_files(&self.workspace_dir, &self.workspace_dir, &mut files)?;
+                let mut files = known_workspace_files(&self.workspace_dir);
                 files.sort();
 
                 Ok(ToolInvocation {
@@ -118,84 +117,89 @@ impl AgentRuntime for FileSystemRuntime {
     }
 }
 
-fn collect_files(root: &Path, current: &Path, files: &mut Vec<String>) -> io::Result<()> {
-    if !current.exists() {
-        return Ok(());
-    }
-
-    for entry in std::fs::read_dir(current)? {
-        let entry = entry?;
-        let path = entry.path();
-        if path.is_dir() {
-            collect_files(root, &path, files)?;
-            continue;
-        }
-        let relative = path
-            .strip_prefix(root)
-            .map_err(io::Error::other)?
-            .to_string_lossy()
-            .replace('\\', "/");
-        files.push(relative);
-    }
-
-    Ok(())
+fn known_workspace_files(workspace_root: &Path) -> Vec<String> {
+    StarshipWorkspacePath::all()
+        .into_iter()
+        .filter(|path| path.resolve_existing(workspace_root).is_ok())
+        .map(|path| path.display().to_string())
+        .collect()
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct WorkspaceRelativePath {
-    value: PathBuf,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StarshipWorkspacePath {
+    ScanCommand,
+    RepairCommand,
+    RouteCommand,
+    StatusCommand,
+    StateFile,
+    TestFile,
+    CaptainsLog,
 }
 
-impl WorkspaceRelativePath {
+impl StarshipWorkspacePath {
     fn from_args(args: &Value, key: &str) -> RuntimeResult<Self> {
         let raw = json_string_arg(args, key)?;
-        Self::parse(raw)
+        Self::parse(&raw)
     }
 
-    fn parse(raw: String) -> RuntimeResult<Self> {
-        let candidate = PathBuf::from(&raw);
-        if candidate.as_os_str().is_empty() {
-            return Err(io::Error::new(io::ErrorKind::InvalidInput, "path cannot be empty").into());
+    fn parse(raw: &str) -> RuntimeResult<Self> {
+        match raw {
+            SCAN_COMMAND_PATH => Ok(Self::ScanCommand),
+            REPAIR_COMMAND_PATH => Ok(Self::RepairCommand),
+            ROUTE_COMMAND_PATH => Ok(Self::RouteCommand),
+            STATUS_COMMAND_PATH => Ok(Self::StatusCommand),
+            STARSHIP_STATE_PATH => Ok(Self::StateFile),
+            STARSHIP_TEST_PATH => Ok(Self::TestFile),
+            CAPTAINS_LOG_PATH => Ok(Self::CaptainsLog),
+            _ => Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                format!("path `{raw}` is not allowed in the Starship demo workspace"),
+            )
+            .into()),
         }
+    }
 
-        for component in candidate.components() {
-            match component {
-                Component::Normal(_) | Component::CurDir => {}
-                Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
-                    return Err(io::Error::new(
-                        io::ErrorKind::PermissionDenied,
-                        format!("path `{raw}` escapes the workspace"),
-                    )
-                    .into());
-                }
-            }
+    fn all() -> [Self; 7] {
+        [
+            Self::ScanCommand,
+            Self::RepairCommand,
+            Self::RouteCommand,
+            Self::StatusCommand,
+            Self::StateFile,
+            Self::TestFile,
+            Self::CaptainsLog,
+        ]
+    }
+
+    fn display(self) -> &'static str {
+        match self {
+            Self::ScanCommand => SCAN_COMMAND_PATH,
+            Self::RepairCommand => REPAIR_COMMAND_PATH,
+            Self::RouteCommand => ROUTE_COMMAND_PATH,
+            Self::StatusCommand => STATUS_COMMAND_PATH,
+            Self::StateFile => STARSHIP_STATE_PATH,
+            Self::TestFile => STARSHIP_TEST_PATH,
+            Self::CaptainsLog => CAPTAINS_LOG_PATH,
         }
-
-        Ok(Self { value: candidate })
     }
 
-    fn display(&self) -> String {
-        self.value.to_string_lossy().into_owned()
+    fn resolve_for_write(self, workspace_root: &Path) -> PathBuf {
+        workspace_root.join(self.display())
     }
 
-    fn resolve_for_write(&self, workspace_root: &Path) -> io::Result<PathBuf> {
-        let path = workspace_root.join(&self.value);
-        if let Some(parent) = path.parent() {
-            let parent = if parent.exists() {
-                parent.canonicalize()?
-            } else {
-                canonicalize_parent_chain(parent, workspace_root)?
-            };
-            ensure_within_root(workspace_root, &parent)?;
+    fn resolve_existing(self, workspace_root: &Path) -> io::Result<PathBuf> {
+        let path = self.resolve_for_write(workspace_root);
+        if path.exists() {
+            Ok(path)
+        } else {
+            Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                format!(
+                    "file `{}` does not exist in the Starship demo workspace",
+                    self.display()
+                ),
+            ))
         }
-        Ok(path)
-    }
-
-    fn resolve_existing(&self, workspace_root: &Path) -> io::Result<PathBuf> {
-        let path = workspace_root.join(&self.value);
-        let canonical = path.canonicalize()?;
-        ensure_within_root(workspace_root, &canonical)?;
-        Ok(canonical)
     }
 }
 
@@ -212,49 +216,13 @@ fn json_string_arg(args: &Value, key: &str) -> RuntimeResult<String> {
         })
 }
 
-fn ensure_within_root(workspace_root: &Path, path: &Path) -> io::Result<()> {
-    if path.starts_with(workspace_root) {
-        Ok(())
-    } else {
-        Err(io::Error::new(
-            io::ErrorKind::PermissionDenied,
-            format!("path `{}` escapes the workspace", path.to_string_lossy()),
-        ))
-    }
-}
-
-fn canonicalize_parent_chain(path: &Path, workspace_root: &Path) -> io::Result<PathBuf> {
-    if path == workspace_root {
-        return Ok(workspace_root.to_path_buf());
-    }
-
-    if path.exists() {
-        return path.canonicalize();
-    }
-
-    let parent = path.parent().ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::PermissionDenied,
-            format!("path `{}` escapes the workspace", path.to_string_lossy()),
-        )
-    })?;
-    let canonical_parent = canonicalize_parent_chain(parent, workspace_root)?;
-    let final_component = path.file_name().ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::PermissionDenied,
-            format!("path `{}` escapes the workspace", path.to_string_lossy()),
-        )
-    })?;
-    Ok(canonical_parent.join(final_component))
-}
-
 #[cfg(test)]
 mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use serde_json::json;
 
-    use super::{FileSystemRuntime, WorkspaceRelativePath};
+    use super::{FileSystemRuntime, StarshipWorkspacePath};
     use crate::runtime_contract::AgentRuntime;
 
     #[tokio::test]
@@ -318,7 +286,7 @@ mod tests {
             .await
             .expect_err("parent traversal must be rejected");
 
-        assert!(error.to_string().contains("escapes the workspace"));
+        assert!(error.to_string().contains("not allowed"));
     }
 
     #[tokio::test]
@@ -343,14 +311,24 @@ mod tests {
             .await
             .expect_err("absolute paths must be rejected");
 
-        assert!(error.to_string().contains("escapes the workspace"));
+        assert!(error.to_string().contains("not allowed"));
     }
 
     #[test]
     fn workspace_relative_path_rejects_escape_components() {
-        let error = WorkspaceRelativePath::parse("../outside.txt".to_string())
+        let error = StarshipWorkspacePath::parse("../outside.txt")
             .expect_err("parent traversal must be rejected");
 
-        assert!(error.to_string().contains("escapes the workspace"));
+        assert!(error.to_string().contains("not allowed"));
+    }
+
+    #[test]
+    fn workspace_path_accepts_known_starship_deliverables() {
+        assert_eq!(
+            StarshipWorkspacePath::parse("src/commands/scan.rs")
+                .expect("known deliverable should be accepted")
+                .display(),
+            "src/commands/scan.rs"
+        );
     }
 }

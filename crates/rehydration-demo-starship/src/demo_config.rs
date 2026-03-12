@@ -2,6 +2,8 @@ use std::io;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+const DEFAULT_STARSHIP_WORKSPACE_DIR: &str = "/workspace-demo";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StarshipRuntimeMode {
     FileSystem,
@@ -37,16 +39,12 @@ impl StarshipDemoConfig {
             "http://rehydration-kernel:50054",
         );
         let nats_url = lookup_or_default(&lookup, "NATS_URL", "nats://nats:4222");
-        let workspace_dir = PathBuf::from(lookup_or_default(
-            &lookup,
-            "STARSHIP_WORKSPACE_DIR",
-            "/workspace-demo",
-        ));
         let runtime_mode = parse_runtime_mode(&lookup_or_default(
             &lookup,
             "STARSHIP_RUNTIME_MODE",
             "filesystem",
         ))?;
+        let workspace_dir = parse_workspace_dir(&lookup, runtime_mode)?;
         let runtime_base_url = lookup("RUNTIME_BASE_URL").filter(|value| !value.trim().is_empty());
         if runtime_mode == StarshipRuntimeMode::Http && runtime_base_url.is_none() {
             return Err(io::Error::new(
@@ -84,6 +82,29 @@ where
     F: Fn(&str) -> Option<String>,
 {
     lookup(key).unwrap_or_else(|| default_value.to_string())
+}
+
+fn parse_workspace_dir<F>(lookup: &F, runtime_mode: StarshipRuntimeMode) -> io::Result<PathBuf>
+where
+    F: Fn(&str) -> Option<String>,
+{
+    let workspace_dir = lookup_or_default(
+        lookup,
+        "STARSHIP_WORKSPACE_DIR",
+        DEFAULT_STARSHIP_WORKSPACE_DIR,
+    );
+    if runtime_mode == StarshipRuntimeMode::FileSystem
+        && workspace_dir != DEFAULT_STARSHIP_WORKSPACE_DIR
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "STARSHIP_WORKSPACE_DIR must be `{DEFAULT_STARSHIP_WORKSPACE_DIR}` in filesystem mode"
+            ),
+        ));
+    }
+
+    Ok(PathBuf::from(workspace_dir))
 }
 
 fn parse_runtime_mode(value: &str) -> io::Result<StarshipRuntimeMode> {
@@ -192,5 +213,18 @@ mod tests {
             .expect_err("http runtime should require base url");
 
         assert!(error.to_string().contains("RUNTIME_BASE_URL"));
+    }
+
+    #[test]
+    fn config_rejects_custom_workspace_dir_in_filesystem_mode() {
+        let env = BTreeMap::from([(
+            "STARSHIP_WORKSPACE_DIR".to_string(),
+            "/tmp/custom-demo".to_string(),
+        )]);
+
+        let error = StarshipDemoConfig::from_lookup(|key| env.get(key).cloned())
+            .expect_err("filesystem mode should reject custom workspace dir");
+
+        assert!(error.to_string().contains("STARSHIP_WORKSPACE_DIR"));
     }
 }
