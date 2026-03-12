@@ -10,7 +10,7 @@ use crate::starship_demo::openai_compat_client::parse_json_only;
 
 const ANTHROPIC_VERSION: &str = "2023-06-01";
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct AnthropicClient {
     http_client: reqwest::Client,
     base_url: String,
@@ -19,20 +19,17 @@ pub struct AnthropicClient {
 
 impl AnthropicClient {
     pub fn from_env() -> io::Result<Self> {
-        let api_key = std::env::var("ANTHROPIC_API_KEY").map_err(|_| {
-            io::Error::new(
-                io::ErrorKind::NotFound,
-                "missing ANTHROPIC_API_KEY environment variable",
-            )
-        })?;
-        let model = std::env::var("ANTHROPIC_MODEL").map_err(|_| {
-            io::Error::new(
-                io::ErrorKind::NotFound,
-                "missing ANTHROPIC_MODEL environment variable",
-            )
-        })?;
-        let base_url = std::env::var("ANTHROPIC_BASE_URL")
-            .unwrap_or_else(|_| "https://api.anthropic.com".to_string());
+        Self::from_lookup(|key| std::env::var(key).ok())
+    }
+
+    pub(crate) fn from_lookup<F>(lookup: F) -> io::Result<Self>
+    where
+        F: Fn(&str) -> Option<String>,
+    {
+        let api_key = lookup_required(&lookup, "ANTHROPIC_API_KEY")?;
+        let model = lookup_required(&lookup, "ANTHROPIC_MODEL")?;
+        let base_url =
+            lookup("ANTHROPIC_BASE_URL").unwrap_or_else(|| "https://api.anthropic.com".to_string());
         Self::new(base_url, model, api_key)
     }
 
@@ -119,6 +116,18 @@ fn normalize_base_url(base_url: &str) -> io::Result<String> {
     Ok(base_url.to_string())
 }
 
+fn lookup_required<F>(lookup: &F, key: &str) -> io::Result<String>
+where
+    F: Fn(&str) -> Option<String>,
+{
+    lookup(key).ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("missing {key} environment variable"),
+        )
+    })
+}
+
 fn build_http_client(api_key: &str) -> io::Result<reqwest::Client> {
     let mut headers = HeaderMap::new();
     headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
@@ -135,4 +144,121 @@ fn build_http_client(api_key: &str) -> io::Result<reqwest::Client> {
         .default_headers(headers)
         .build()
         .map_err(io::Error::other)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::{BTreeMap, VecDeque};
+    use std::sync::Arc;
+
+    use serde::Deserialize;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+    use tokio::sync::Mutex;
+
+    use super::AnthropicClient;
+
+    #[derive(Debug, Deserialize, PartialEq, Eq)]
+    struct Selection {
+        selected_step_node_id: String,
+    }
+
+    #[tokio::test]
+    async fn chat_json_parses_anthropic_text_content() {
+        let base_url = spawn_http_server(vec![(
+            200,
+            r#"{"content":[{"type":"text","text":"{\"selected_step_node_id\":\"node:work_item:anthropic\"}"}]}"#
+                .to_string(),
+        )])
+        .await;
+        let client = AnthropicClient::new(base_url, "claude-demo", "secret".to_string())
+            .expect("client should build");
+
+        let parsed: Selection = client
+            .chat_json("system", "user")
+            .await
+            .expect("response should parse");
+
+        assert_eq!(parsed.selected_step_node_id, "node:work_item:anthropic");
+    }
+
+    #[tokio::test]
+    async fn chat_json_reports_http_failures() {
+        let base_url =
+            spawn_http_server(vec![(429, r#"{"error":"rate_limited"}"#.to_string())]).await;
+        let client = AnthropicClient::new(base_url, "claude-demo", "secret".to_string())
+            .expect("client should build");
+
+        let error = client
+            .chat_json::<Selection>("system", "user")
+            .await
+            .expect_err("http failure should surface");
+
+        assert!(error.to_string().contains("anthropic request failed"));
+    }
+
+    #[test]
+    fn from_lookup_uses_default_base_url() {
+        let env = BTreeMap::from([
+            ("ANTHROPIC_API_KEY".to_string(), "secret".to_string()),
+            ("ANTHROPIC_MODEL".to_string(), "claude-3-7".to_string()),
+        ]);
+
+        let client = AnthropicClient::from_lookup(|key| env.get(key).cloned())
+            .expect("lookup config should load");
+
+        assert_eq!(client.base_url, "https://api.anthropic.com");
+        assert_eq!(client.model, "claude-3-7");
+    }
+
+    #[test]
+    fn new_rejects_invalid_base_url() {
+        let error = AnthropicClient::new("anthropic.local", "claude", "secret".to_string())
+            .expect_err("base url must be validated");
+
+        assert!(
+            error
+                .to_string()
+                .contains("must start with http:// or https://")
+        );
+    }
+
+    async fn spawn_http_server(responses: Vec<(u16, String)>) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("listener should bind");
+        let address = listener.local_addr().expect("listener should have address");
+        let responses = Arc::new(Mutex::new(VecDeque::from(responses)));
+
+        tokio::spawn({
+            let responses = Arc::clone(&responses);
+            async move {
+                loop {
+                    let (mut socket, _) =
+                        listener.accept().await.expect("connection should arrive");
+                    let responses = Arc::clone(&responses);
+                    tokio::spawn(async move {
+                        let mut buffer = vec![0; 65_536];
+                        let _ = socket.read(&mut buffer).await.expect("request should read");
+                        let (status, body) = responses
+                            .lock()
+                            .await
+                            .pop_front()
+                            .unwrap_or((500, r#"{"error":"missing test response"}"#.to_string()));
+                        let reason = if status == 200 { "OK" } else { "ERROR" };
+                        let response = format!(
+                            "HTTP/1.1 {status} {reason}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                            body.len()
+                        );
+                        socket
+                            .write_all(response.as_bytes())
+                            .await
+                            .expect("response should write");
+                    });
+                }
+            }
+        });
+
+        format!("http://{address}")
+    }
 }

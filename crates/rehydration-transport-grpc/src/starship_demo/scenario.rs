@@ -320,16 +320,27 @@ fn subject(suffix: &str) -> String {
 }
 
 fn sanitize_run_id(run_id: &str) -> String {
-    let sanitized = run_id
-        .chars()
-        .map(|character| match character {
-            'a'..='z' | 'A'..='Z' | '0'..='9' => character.to_ascii_lowercase(),
+    let mut sanitized = String::new();
+    let mut previous_was_dash = false;
+
+    for character in run_id.chars() {
+        let mapped = match character {
+            'a'..='z' | 'A'..='Z' | '0'..='9' => {
+                previous_was_dash = false;
+                sanitized.push(character.to_ascii_lowercase());
+                continue;
+            }
             '-' | '_' | ':' => '-',
             _ => '-',
-        })
-        .collect::<String>()
-        .trim_matches('-')
-        .to_string();
+        };
+
+        if !previous_was_dash {
+            sanitized.push(mapped);
+            previous_was_dash = true;
+        }
+    }
+
+    let sanitized = sanitized.trim_matches('-').to_string();
     if sanitized.is_empty() {
         "starship-demo".to_string()
     } else {
@@ -339,7 +350,11 @@ fn sanitize_run_id(run_id: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::StarshipScenario;
+    use super::{
+        CAPTAINS_LOG_PATH, ROUTE_COMMAND_PATH, SCAN_COMMAND_PATH, STARSHIP_STATE_PATH,
+        STARSHIP_TEST_PATH, STATUS_COMMAND_PATH, STEP_ONE_DETAIL, STEP_ONE_TITLE, STEP_TWO_DETAIL,
+        STEP_TWO_TITLE, StarshipScenario, sanitize_run_id, subject,
+    };
 
     #[test]
     fn dynamic_scenario_generates_distinct_ids() {
@@ -359,5 +374,79 @@ mod tests {
             scenario.step_two_node_id(),
             "node:work_item:plot-route-and-report-status"
         );
+    }
+
+    #[test]
+    fn sanitize_run_id_normalizes_unsafe_characters() {
+        assert_eq!(sanitize_run_id(" Demo Run / 42 "), "demo-run-42");
+        assert_eq!(sanitize_run_id(""), "starship-demo");
+    }
+
+    #[test]
+    fn initial_messages_include_root_step_and_detail_events() {
+        let scenario = StarshipScenario::for_run_id("demo-42");
+        let messages = scenario
+            .initial_messages()
+            .expect("initial messages should build");
+
+        assert_eq!(messages.len(), 4);
+        assert_eq!(messages[0].0, subject("graph.node.materialized"));
+        assert_eq!(messages[3].0, subject("node.detail.materialized"));
+
+        let root: serde_json::Value =
+            serde_json::from_slice(&messages[0].1).expect("root event should be json");
+        let root_data = &root["data"];
+        assert_eq!(root_data["title"], scenario.root_title());
+        assert_eq!(root_data["related_nodes"].as_array().map(Vec::len), Some(3));
+
+        let step_one: serde_json::Value =
+            serde_json::from_slice(&messages[1].1).expect("step one should be json");
+        let step_one_data = &step_one["data"];
+        assert_eq!(step_one_data["title"], STEP_ONE_TITLE);
+        assert_eq!(step_one_data["status"], "IN_PROGRESS");
+        assert_eq!(
+            step_one_data["properties"]["deliverables"],
+            [
+                SCAN_COMMAND_PATH,
+                "src/commands/repair.rs",
+                STARSHIP_STATE_PATH
+            ]
+            .join(",")
+        );
+
+        let detail_one: serde_json::Value =
+            serde_json::from_slice(&messages[3].1).expect("detail one should be json");
+        assert_eq!(detail_one["data"]["detail"], STEP_ONE_DETAIL);
+    }
+
+    #[test]
+    fn resume_messages_update_second_phase_and_detail() {
+        let scenario = StarshipScenario::for_run_id("resume");
+        let messages = scenario
+            .resume_messages()
+            .expect("resume messages should build");
+
+        assert_eq!(messages.len(), 3);
+
+        let step_two: serde_json::Value =
+            serde_json::from_slice(&messages[1].1).expect("step two should be json");
+        let step_two_data = &step_two["data"];
+        assert_eq!(step_two_data["title"], STEP_TWO_TITLE);
+        assert_eq!(step_two_data["status"], "IN_PROGRESS");
+        assert_eq!(
+            step_two_data["properties"]["deliverables"],
+            [
+                ROUTE_COMMAND_PATH,
+                STATUS_COMMAND_PATH,
+                STARSHIP_TEST_PATH,
+                CAPTAINS_LOG_PATH,
+            ]
+            .join(",")
+        );
+
+        let detail_two: serde_json::Value =
+            serde_json::from_slice(&messages[2].1).expect("detail two should be json");
+        assert_eq!(detail_two["data"]["detail"], STEP_TWO_DETAIL);
+        assert_eq!(detail_two["data"]["revision"], 2);
     }
 }

@@ -1,5 +1,5 @@
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use serde_json::Value;
 
@@ -60,7 +60,7 @@ impl AgentRuntime for FileSystemRuntime {
 
                 let path = json_string_arg(&args, "path")?;
                 let content = json_string_arg(&args, "content")?;
-                let absolute_path = self.workspace_dir.join(&path);
+                let absolute_path = resolve_workspace_path(&self.workspace_dir, &path)?;
                 if let Some(parent) = absolute_path.parent() {
                     std::fs::create_dir_all(parent)?;
                 }
@@ -73,13 +73,13 @@ impl AgentRuntime for FileSystemRuntime {
             }
             "fs.read" => {
                 let path = json_string_arg(&args, "path")?;
-                let content =
-                    std::fs::read_to_string(self.workspace_dir.join(&path)).map_err(|error| {
-                        io::Error::new(
-                            error.kind(),
-                            format!("failed to read `{path}` from workspace: {error}"),
-                        )
-                    })?;
+                let absolute_path = resolve_workspace_path(&self.workspace_dir, &path)?;
+                let content = std::fs::read_to_string(&absolute_path).map_err(|error| {
+                    io::Error::new(
+                        error.kind(),
+                        format!("failed to read `{path}` from workspace: {error}"),
+                    )
+                })?;
 
                 Ok(ToolInvocation {
                     tool_name: tool_name.to_string(),
@@ -141,6 +141,30 @@ fn json_string_arg(args: &Value, key: &str) -> RuntimeResult<String> {
         })
 }
 
+fn resolve_workspace_path(root: &Path, relative_path: &str) -> io::Result<PathBuf> {
+    let candidate = Path::new(relative_path);
+    if candidate.as_os_str().is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "path cannot be empty",
+        ));
+    }
+
+    for component in candidate.components() {
+        match component {
+            Component::Normal(_) | Component::CurDir => {}
+            Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    format!("path `{relative_path}` escapes the workspace"),
+                ));
+            }
+        }
+    }
+
+    Ok(root.join(candidate))
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -186,5 +210,56 @@ mod tests {
         assert!(listing.output.contains("src/commands/scan.rs"));
 
         std::fs::remove_dir_all(workspace).expect("workspace cleanup should succeed");
+    }
+
+    #[tokio::test]
+    async fn runtime_rejects_parent_traversal_paths() {
+        let workspace = std::env::temp_dir().join(format!(
+            "rehydration-starship-runtime-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock should work")
+                .as_millis()
+        ));
+        let runtime = FileSystemRuntime::new(&workspace);
+
+        let error = runtime
+            .invoke(
+                "fs.write",
+                json!({
+                    "path": "../outside.txt",
+                    "content": "nope",
+                }),
+                true,
+            )
+            .await
+            .expect_err("parent traversal must be rejected");
+
+        assert!(error.to_string().contains("escapes the workspace"));
+    }
+
+    #[tokio::test]
+    async fn runtime_rejects_absolute_paths() {
+        let workspace = std::env::temp_dir().join(format!(
+            "rehydration-starship-runtime-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock should work")
+                .as_millis()
+        ));
+        let runtime = FileSystemRuntime::new(&workspace);
+
+        let error = runtime
+            .invoke(
+                "fs.read",
+                json!({
+                    "path": "/tmp/escape.txt",
+                }),
+                false,
+            )
+            .await
+            .expect_err("absolute paths must be rejected");
+
+        assert!(error.to_string().contains("escapes the workspace"));
     }
 }

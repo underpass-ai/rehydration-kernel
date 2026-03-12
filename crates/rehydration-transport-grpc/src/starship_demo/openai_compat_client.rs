@@ -7,7 +7,7 @@ use serde_json::json;
 
 use crate::agentic_reference::{debug_log, debug_log_value};
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct OpenAiCompatClient {
     http_client: reqwest::Client,
     base_url: String,
@@ -16,58 +16,38 @@ pub struct OpenAiCompatClient {
 
 impl OpenAiCompatClient {
     pub fn from_env(mode: OpenAiCompatMode) -> io::Result<Self> {
+        Self::from_lookup(mode, |key| std::env::var(key).ok())
+    }
+
+    pub(crate) fn from_lookup<F>(mode: OpenAiCompatMode, lookup: F) -> io::Result<Self>
+    where
+        F: Fn(&str) -> Option<String>,
+    {
         match mode {
             OpenAiCompatMode::Vllm => {
-                let base_url = std::env::var("VLLM_BASE_URL").map_err(|_| {
-                    io::Error::new(
-                        io::ErrorKind::NotFound,
-                        "missing VLLM_BASE_URL environment variable",
-                    )
-                })?;
-                let model = std::env::var("VLLM_MODEL").map_err(|_| {
-                    io::Error::new(
-                        io::ErrorKind::NotFound,
-                        "missing VLLM_MODEL environment variable",
-                    )
-                })?;
-                let api_key = std::env::var("VLLM_API_KEY").ok();
+                let base_url = lookup_required(&lookup, "VLLM_BASE_URL")?;
+                let model = lookup_required(&lookup, "VLLM_MODEL")?;
+                let api_key = lookup("VLLM_API_KEY");
                 Self::new(base_url, model, api_key)
             }
             OpenAiCompatMode::OpenAi => {
-                let model = std::env::var("OPENAI_MODEL").map_err(|_| {
-                    io::Error::new(
-                        io::ErrorKind::NotFound,
-                        "missing OPENAI_MODEL environment variable",
-                    )
-                })?;
-                let api_key = std::env::var("OPENAI_API_KEY").map_err(|_| {
-                    io::Error::new(
-                        io::ErrorKind::NotFound,
-                        "missing OPENAI_API_KEY environment variable",
-                    )
-                })?;
-                let base_url = std::env::var("OPENAI_BASE_URL")
-                    .unwrap_or_else(|_| "https://api.openai.com".to_string());
+                let model = lookup_required(&lookup, "OPENAI_MODEL")?;
+                let api_key = lookup_required(&lookup, "OPENAI_API_KEY")?;
+                let base_url = lookup("OPENAI_BASE_URL")
+                    .unwrap_or_else(|| "https://api.openai.com".to_string());
                 Self::new(base_url, model, Some(api_key))
             }
             OpenAiCompatMode::Custom => {
-                let base_url = std::env::var("OPENAI_COMPAT_BASE_URL")
-                    .or_else(|_| std::env::var("OPENAI_BASE_URL"))
-                    .map_err(|_| {
+                let base_url = lookup("OPENAI_COMPAT_BASE_URL")
+                    .or_else(|| lookup("OPENAI_BASE_URL"))
+                    .ok_or_else(|| {
                         io::Error::new(
                             io::ErrorKind::NotFound,
                             "missing OPENAI_COMPAT_BASE_URL or OPENAI_BASE_URL environment variable",
                         )
                     })?;
-                let model = std::env::var("OPENAI_MODEL").map_err(|_| {
-                    io::Error::new(
-                        io::ErrorKind::NotFound,
-                        "missing OPENAI_MODEL environment variable",
-                    )
-                })?;
-                let api_key = std::env::var("OPENAI_API_KEY")
-                    .or_else(|_| std::env::var("OPENAI_COMPAT_API_KEY"))
-                    .ok();
+                let model = lookup_required(&lookup, "OPENAI_MODEL")?;
+                let api_key = lookup("OPENAI_API_KEY").or_else(|| lookup("OPENAI_COMPAT_API_KEY"));
                 Self::new(base_url, model, api_key)
             }
         }
@@ -195,6 +175,18 @@ fn normalize_base_url(base_url: &str) -> io::Result<String> {
     Ok(base_url.to_string())
 }
 
+fn lookup_required<F>(lookup: &F, key: &str) -> io::Result<String>
+where
+    F: Fn(&str) -> Option<String>,
+{
+    lookup(key).ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("missing {key} environment variable"),
+        )
+    })
+}
+
 fn build_http_client(api_key: Option<String>) -> io::Result<reqwest::Client> {
     let mut headers = HeaderMap::new();
     headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
@@ -273,12 +265,78 @@ fn strip_thinking_blocks(content: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::{BTreeMap, VecDeque};
+    use std::sync::Arc;
+
     use super::parse_json_only;
+    use super::{OpenAiCompatClient, OpenAiCompatMode};
     use serde::Deserialize;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+    use tokio::sync::Mutex;
 
     #[derive(Debug, Deserialize, PartialEq, Eq)]
     struct Selection {
         selected_step_node_id: String,
+    }
+
+    #[tokio::test]
+    async fn chat_json_parses_openai_compatible_response() {
+        let base_url = spawn_http_server(vec![(
+            200,
+            r#"{"choices":[{"message":{"content":"{\"selected_step_node_id\":\"node:work_item:one\"}"}}]}"#
+                .to_string(),
+        )])
+        .await;
+        let client =
+            OpenAiCompatClient::new(base_url, "demo-model", None).expect("client should build");
+
+        let parsed: Selection = client
+            .chat_json("system", "user")
+            .await
+            .expect("response should parse");
+
+        assert_eq!(parsed.selected_step_node_id, "node:work_item:one");
+    }
+
+    #[tokio::test]
+    async fn chat_json_repairs_invalid_json_response() {
+        let base_url = spawn_http_server(vec![
+            (200, r#"{"choices":[{"message":{"content":"not-json"}}]}"#.to_string()),
+            (
+                200,
+                r#"{"choices":[{"message":{"content":"{\"selected_step_node_id\":\"node:work_item:two\"}"}}]}"#
+                    .to_string(),
+            ),
+        ])
+        .await;
+        let client = OpenAiCompatClient::new(base_url, "demo-model", Some("token".to_string()))
+            .expect("client should build");
+
+        let parsed: Selection = client
+            .chat_json("system", "user")
+            .await
+            .expect("repair path should parse");
+
+        assert_eq!(parsed.selected_step_node_id, "node:work_item:two");
+    }
+
+    #[tokio::test]
+    async fn chat_json_reports_http_failures() {
+        let base_url = spawn_http_server(vec![(500, r#"{"error":"boom"}"#.to_string())]).await;
+        let client =
+            OpenAiCompatClient::new(base_url, "demo-model", None).expect("client should build");
+
+        let error = client
+            .chat_json::<Selection>("system", "user")
+            .await
+            .expect_err("http failure should surface");
+
+        assert!(
+            error
+                .to_string()
+                .contains("openai-compatible request failed")
+        );
     }
 
     #[test]
@@ -312,5 +370,119 @@ I should choose the in-progress step.
                 selected_step_node_id: "node:work_item:two".to_string(),
             }
         );
+    }
+
+    #[test]
+    fn parse_json_only_accepts_fenced_json() {
+        let content = "```json\n{\"selected_step_node_id\":\"node:work_item:fenced\"}\n```";
+
+        let parsed: Selection = parse_json_only(content).expect("fenced JSON should parse");
+
+        assert_eq!(parsed.selected_step_node_id, "node:work_item:fenced");
+    }
+
+    #[test]
+    fn parse_json_only_extracts_embedded_json_object() {
+        let content = "prefix {\"selected_step_node_id\":\"node:work_item:embedded\"} suffix";
+
+        let parsed: Selection = parse_json_only(content).expect("embedded JSON should parse");
+
+        assert_eq!(parsed.selected_step_node_id, "node:work_item:embedded");
+    }
+
+    #[test]
+    fn parse_json_only_rejects_invalid_json() {
+        let error =
+            parse_json_only::<Selection>("still not json").expect_err("invalid JSON must fail");
+
+        assert!(error.to_string().contains("not valid JSON"));
+    }
+
+    #[test]
+    fn from_lookup_supports_all_openai_compat_modes() {
+        let vllm_env = BTreeMap::from([
+            ("VLLM_BASE_URL".to_string(), "http://vllm".to_string()),
+            ("VLLM_MODEL".to_string(), "qwen".to_string()),
+        ]);
+        let vllm = OpenAiCompatClient::from_lookup(OpenAiCompatMode::Vllm, |key| {
+            vllm_env.get(key).cloned()
+        })
+        .expect("vllm config should load");
+        assert_eq!(vllm.base_url, "http://vllm");
+        assert_eq!(vllm.model, "qwen");
+
+        let openai_env = BTreeMap::from([
+            ("OPENAI_API_KEY".to_string(), "key".to_string()),
+            ("OPENAI_MODEL".to_string(), "gpt-5".to_string()),
+        ]);
+        let openai = OpenAiCompatClient::from_lookup(OpenAiCompatMode::OpenAi, |key| {
+            openai_env.get(key).cloned()
+        })
+        .expect("openai config should load");
+        assert_eq!(openai.base_url, "https://api.openai.com");
+
+        let custom_env = BTreeMap::from([
+            (
+                "OPENAI_COMPAT_BASE_URL".to_string(),
+                "https://compat.example".to_string(),
+            ),
+            ("OPENAI_MODEL".to_string(), "compat-model".to_string()),
+        ]);
+        let custom = OpenAiCompatClient::from_lookup(OpenAiCompatMode::Custom, |key| {
+            custom_env.get(key).cloned()
+        })
+        .expect("custom config should load");
+        assert_eq!(custom.base_url, "https://compat.example");
+    }
+
+    #[test]
+    fn new_rejects_invalid_base_url() {
+        let error = OpenAiCompatClient::new("localhost:8000", "model", None)
+            .expect_err("base url must be validated");
+
+        assert!(
+            error
+                .to_string()
+                .contains("must start with http:// or https://")
+        );
+    }
+
+    async fn spawn_http_server(responses: Vec<(u16, String)>) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("listener should bind");
+        let address = listener.local_addr().expect("listener should have address");
+        let responses = Arc::new(Mutex::new(VecDeque::from(responses)));
+
+        tokio::spawn({
+            let responses = Arc::clone(&responses);
+            async move {
+                loop {
+                    let (mut socket, _) =
+                        listener.accept().await.expect("connection should arrive");
+                    let responses = Arc::clone(&responses);
+                    tokio::spawn(async move {
+                        let mut buffer = vec![0; 65_536];
+                        let _ = socket.read(&mut buffer).await.expect("request should read");
+                        let (status, body) = responses
+                            .lock()
+                            .await
+                            .pop_front()
+                            .unwrap_or((500, r#"{"error":"missing test response"}"#.to_string()));
+                        let reason = if status == 200 { "OK" } else { "ERROR" };
+                        let response = format!(
+                            "HTTP/1.1 {status} {reason}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                            body.len()
+                        );
+                        socket
+                            .write_all(response.as_bytes())
+                            .await
+                            .expect("response should write");
+                    });
+                }
+            }
+        });
+
+        format!("http://{address}")
     }
 }
