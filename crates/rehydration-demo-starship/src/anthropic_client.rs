@@ -5,8 +5,8 @@ use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::json;
 
-use crate::agentic_reference::debug_log_value;
-use crate::starship_demo::openai_compat_client::parse_json_only;
+use crate::logging::debug_log_value;
+use crate::openai_compat_client::parse_json_only;
 
 const ANTHROPIC_VERSION: &str = "2023-06-01";
 

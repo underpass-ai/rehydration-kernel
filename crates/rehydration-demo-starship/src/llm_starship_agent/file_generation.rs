@@ -3,7 +3,7 @@ use std::io;
 
 use rehydration_proto::v1alpha1::GraphNode;
 
-use crate::starship_demo::CAPTAINS_LOG_PATH;
+use crate::CAPTAINS_LOG_PATH;
 
 pub fn parse_deliverables(node: &GraphNode) -> Vec<String> {
     node.properties

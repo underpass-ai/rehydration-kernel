@@ -1,5 +1,3 @@
 #![allow(unused_imports)]
 
-pub(crate) use rehydration_transport_grpc::starship_demo::{
-    OpenAiCompatClient, OpenAiCompatMode, parse_json_only,
-};
+pub(crate) use rehydration_demo_starship::{OpenAiCompatClient, OpenAiCompatMode, parse_json_only};

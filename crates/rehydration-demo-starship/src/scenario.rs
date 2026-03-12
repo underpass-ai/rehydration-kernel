@@ -1,13 +1,12 @@
 use std::collections::BTreeMap;
 use std::error::Error;
 
-use async_nats::Client;
-use rehydration_application::{
+use crate::logging::debug_log_value;
+use crate::projection_contract::{
     GraphNodeMaterializedData, GraphNodeMaterializedEvent, NodeDetailMaterializedData,
     NodeDetailMaterializedEvent, ProjectionEnvelope, RelatedNodeReference,
 };
-
-use crate::agentic_reference::debug_log_value;
+use async_nats::Client;
 
 pub const MISSION_ROOT_NODE_ID: &str = "node:mission:repair-the-starship";
 pub const MISSION_ROOT_NODE_KIND: &str = "mission";

@@ -3,7 +3,7 @@ use std::io;
 use rehydration_proto::v1alpha1::GraphNode;
 use serde_json::json;
 
-use crate::agentic_reference::RuntimeResult;
+use crate::runtime_contract::RuntimeResult;
 
 pub fn work_item_candidates(neighbors: &[GraphNode]) -> Vec<serde_json::Value> {
     neighbors

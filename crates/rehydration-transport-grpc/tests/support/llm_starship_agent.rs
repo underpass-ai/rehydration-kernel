@@ -1,5 +1,5 @@
 #![allow(unused_imports)]
 
-pub(crate) use rehydration_transport_grpc::starship_demo::{
+pub(crate) use rehydration_demo_starship::{
     LlmStarshipMissionAgent, LlmStarshipMissionExecution, LlmStarshipMissionRequest,
 };

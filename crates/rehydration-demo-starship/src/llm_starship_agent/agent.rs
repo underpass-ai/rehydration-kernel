@@ -8,8 +8,9 @@ use serde::Deserialize;
 use serde_json::json;
 use tonic::transport::Channel;
 
-use crate::agentic_reference::{AgentRuntime, RuntimeResult, debug_log, debug_log_value};
-use crate::starship_demo::LlmPlanner;
+use crate::logging::{debug_log, debug_log_value};
+use crate::runtime_contract::{AgentRuntime, RuntimeResult};
+use crate::{CAPTAINS_LOG_PATH, LlmPlanner};
 
 use super::execution::LlmStarshipMissionExecution;
 use super::file_generation::{
@@ -177,11 +178,7 @@ where
         let captains_log = if should_read_captains_log(&written_paths) {
             Some(
                 self.runtime
-                    .invoke(
-                        "fs.read",
-                        json!({ "path": crate::starship_demo::CAPTAINS_LOG_PATH }),
-                        false,
-                    )
+                    .invoke("fs.read", json!({ "path": CAPTAINS_LOG_PATH }), false)
                     .await?
                     .output,
             )
@@ -227,9 +224,9 @@ mod tests {
         GetContextRequest, GetContextResponse, GetGraphRelationshipsRequest,
         GetGraphRelationshipsResponse, GetProjectionStatusRequest, GetProjectionStatusResponse,
         GetRehydrationDiagnosticsRequest, GetRehydrationDiagnosticsResponse, GraphNode,
-        GraphRelationship, GraphRoleBundle, RehydrationBundle, RehydrateSessionRequest,
-        RehydrateSessionResponse, ReplayProjectionRequest, ReplayProjectionResponse,
-        RenderedContext, ValidateScopeRequest, ValidateScopeResponse,
+        GraphRelationship, GraphRoleBundle, RehydrateSessionRequest, RehydrateSessionResponse,
+        RehydrationBundle, RenderedContext, ReplayProjectionRequest, ReplayProjectionResponse,
+        ValidateScopeRequest, ValidateScopeResponse,
         context_admin_service_client::ContextAdminServiceClient,
         context_admin_service_server::{ContextAdminService, ContextAdminServiceServer},
         context_query_service_client::ContextQueryServiceClient,
@@ -241,9 +238,7 @@ mod tests {
     use tonic::{Request, Response, Status, transport::Server};
 
     use super::LlmStarshipMissionAgent;
-    use crate::starship_demo::{
-        FileSystemRuntime, LlmPlanner, OpenAiCompatClient, REPAIR_COMMAND_PATH,
-    };
+    use crate::{FileSystemRuntime, LlmPlanner, OpenAiCompatClient, REPAIR_COMMAND_PATH};
 
     use super::super::request::LlmStarshipMissionRequest;
 
@@ -287,7 +282,10 @@ mod tests {
             .expect("agent execution should succeed");
 
         assert_eq!(execution.selected_step_node_id, step.node_id);
-        assert_eq!(execution.written_paths, vec![REPAIR_COMMAND_PATH.to_string()]);
+        assert_eq!(
+            execution.written_paths,
+            vec![REPAIR_COMMAND_PATH.to_string()]
+        );
         assert!(execution.captains_log.is_none());
 
         let written = std::fs::read_to_string(workspace.join(REPAIR_COMMAND_PATH))
@@ -449,8 +447,12 @@ mod tests {
             .local_addr()
             .expect("listener should have address");
 
-        let query_service = FakeQueryService { response: query_response };
-        let admin_service = FakeAdminService { response: graph_response };
+        let query_service = FakeQueryService {
+            response: query_response,
+        };
+        let admin_service = FakeAdminService {
+            response: graph_response,
+        };
         tokio::spawn(async move {
             Server::builder()
                 .add_service(ContextQueryServiceServer::new(query_service))
@@ -484,7 +486,8 @@ mod tests {
             let responses = Arc::clone(&responses);
             async move {
                 loop {
-                    let (mut socket, _) = listener.accept().await.expect("connection should arrive");
+                    let (mut socket, _) =
+                        listener.accept().await.expect("connection should arrive");
                     let responses = Arc::clone(&responses);
                     tokio::spawn(async move {
                         let mut buffer = vec![0; 65_536];

@@ -1950,6 +1950,19 @@ name = "rehydration-config"
 version = "0.1.0"
 
 [[package]]
+name = "rehydration-demo-starship"
+version = "0.1.0"
+dependencies = [
+ "async-nats",
+ "rehydration-proto",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tonic",
+]
+
+[[package]]
 name = "rehydration-domain"
 version = "0.1.0"
 
@@ -2012,6 +2025,7 @@ dependencies = [
  "rehydration-adapter-valkey",
  "rehydration-application",
  "rehydration-config",
+ "rehydration-demo-starship",
  "rehydration-domain",
  "rehydration-ports",
  "rehydration-proto",

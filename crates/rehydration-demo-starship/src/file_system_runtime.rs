@@ -3,8 +3,8 @@ use std::path::{Component, Path, PathBuf};
 
 use serde_json::Value;
 
-use crate::agentic_reference::debug_log_value;
-use crate::agentic_reference::{AgentRuntime, RuntimeResult, ToolDescriptor, ToolInvocation};
+use crate::logging::debug_log_value;
+use crate::runtime_contract::{AgentRuntime, RuntimeResult, ToolDescriptor, ToolInvocation};
 
 #[derive(Debug, Clone)]
 pub struct FileSystemRuntime {
@@ -172,7 +172,7 @@ mod tests {
     use serde_json::json;
 
     use super::FileSystemRuntime;
-    use crate::agentic_reference::AgentRuntime;
+    use crate::runtime_contract::AgentRuntime;
 
     #[tokio::test]
     async fn runtime_writes_reads_and_lists_files() {

@@ -1,1 +1,1 @@
-pub(crate) use rehydration_transport_grpc::starship_demo::LlmPlanner;
+pub(crate) use rehydration_demo_starship::LlmPlanner;

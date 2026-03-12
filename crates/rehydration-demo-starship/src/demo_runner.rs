@@ -6,12 +6,13 @@ use rehydration_proto::v1alpha1::{
 };
 use tokio::time::sleep;
 
-use crate::agentic_reference::debug_log_value;
-use crate::agentic_reference::{AgentRuntime, RuntimeResult, UnderpassRuntimeClient};
-use crate::starship_demo::{
+use crate::logging::debug_log_value;
+use crate::runtime_contract::{AgentRuntime, RuntimeResult};
+use crate::{
     FileSystemRuntime, LlmPlanner, LlmStarshipMissionAgent, LlmStarshipMissionExecution,
     LlmStarshipMissionRequest, StarshipDemoConfig, StarshipDemoPhaseSummary,
     StarshipDemoProviderSummary, StarshipDemoSummary, StarshipRuntimeMode, StarshipScenario,
+    UnderpassRuntimeClient,
 };
 
 struct DemoExecutionContext<R> {

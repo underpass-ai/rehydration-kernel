@@ -5,7 +5,7 @@ use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::json;
 
-use crate::agentic_reference::{debug_log, debug_log_value};
+use crate::logging::{debug_log, debug_log_value};
 
 #[derive(Debug, Clone)]
 pub struct OpenAiCompatClient {

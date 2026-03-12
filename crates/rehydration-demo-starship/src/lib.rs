@@ -5,7 +5,11 @@ mod demo_summary;
 mod file_system_runtime;
 mod llm_planner;
 mod llm_starship_agent;
+mod logging;
 mod openai_compat_client;
+mod projection_contract;
+mod runtime_contract;
+mod runtime_http_client;
 mod scenario;
 
 pub use anthropic_client::AnthropicClient;
@@ -20,6 +24,8 @@ pub use llm_starship_agent::{
     LlmStarshipMissionAgent, LlmStarshipMissionExecution, LlmStarshipMissionRequest,
 };
 pub use openai_compat_client::{OpenAiCompatClient, OpenAiCompatMode, parse_json_only};
+pub use runtime_contract::{AgentRuntime, RuntimeResult, ToolDescriptor, ToolInvocation};
+pub use runtime_http_client::UnderpassRuntimeClient;
 pub use scenario::{
     CAPTAINS_LOG_PATH, MISSION_ROOT_NODE_ID, MISSION_ROOT_NODE_KIND, MISSION_ROOT_TITLE,
     REPAIR_COMMAND_PATH, ROUTE_COMMAND_PATH, SCAN_COMMAND_PATH, STARSHIP_STATE_PATH,

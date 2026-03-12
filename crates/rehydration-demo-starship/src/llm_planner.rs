@@ -2,8 +2,8 @@ use std::io;
 
 use serde::de::DeserializeOwned;
 
-use crate::starship_demo::anthropic_client::AnthropicClient;
-use crate::starship_demo::openai_compat_client::{OpenAiCompatClient, OpenAiCompatMode};
+use crate::anthropic_client::AnthropicClient;
+use crate::openai_compat_client::{OpenAiCompatClient, OpenAiCompatMode};
 
 #[derive(Debug, Clone)]
 pub enum LlmPlanner {
