@@ -1,0 +1,100 @@
+name: deploy-kubernetes
+
+on:
+  workflow_dispatch:
+    inputs:
+      namespace:
+        description: Kubernetes namespace
+        required: true
+        default: underpass-runtime
+        type: string
+      release:
+        description: Helm release name
+        required: true
+        default: rehydration-kernel
+        type: string
+      values_file:
+        description: Values file path relative to the repo
+        required: true
+        default: charts/rehydration-kernel/values.underpass-runtime.yaml
+        type: string
+      image_tag:
+        description: Image tag to deploy when not using a digest
+        required: false
+        default: main
+        type: string
+      image_digest:
+        description: Optional image digest to deploy instead of a tag
+        required: false
+        default: ""
+        type: string
+      helm_timeout:
+        description: Helm wait timeout
+        required: true
+        default: 10m
+        type: string
+      dry_run:
+        description: Run Helm with --dry-run=server
+        required: true
+        default: false
+        type: boolean
+      wait_for_rollout:
+        description: Wait for rollout completion
+        required: true
+        default: true
+        type: boolean
+      atomic:
+        description: Roll back automatically on failed deploys
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: kubernetes
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Install Helm
+        run: bash scripts/ci/install-helm.sh
+
+      - name: Configure kubeconfig
+        shell: bash
+        env:
+          KUBECONFIG_B64: ${{ secrets.KUBECONFIG_B64 }}
+        run: |
+          if [[ -z "${KUBECONFIG_B64}" ]]; then
+            echo "KUBECONFIG_B64 secret is required" >&2
+            exit 1
+          fi
+
+          mkdir -p "${HOME}/.kube"
+          printf '%s' "${KUBECONFIG_B64}" | base64 -d > "${HOME}/.kube/config"
+          chmod 600 "${HOME}/.kube/config"
+
+      - name: Verify cluster access
+        run: |
+          kubectl version --client
+          kubectl cluster-info
+
+      - name: Deploy Helm release
+        env:
+          RELEASE_NAME: ${{ inputs.release }}
+          NAMESPACE: ${{ inputs.namespace }}
+          VALUES_FILE: ${{ inputs.values_file }}
+          IMAGE_TAG: ${{ inputs.image_tag }}
+          IMAGE_DIGEST: ${{ inputs.image_digest }}
+          HELM_TIMEOUT: ${{ inputs.helm_timeout }}
+          WAIT_FOR_ROLLOUT: ${{ inputs.wait_for_rollout }}
+          ATOMIC_DEPLOY: ${{ inputs.atomic }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: bash scripts/ci/deploy-kubernetes.sh
