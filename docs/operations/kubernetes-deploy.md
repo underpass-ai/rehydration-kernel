@@ -54,6 +54,24 @@ That keeps the deploy path aligned with the sibling runtime environment.
 The workflow delegates to:
 
 - [`scripts/ci/deploy-kubernetes.sh`](../../scripts/ci/deploy-kubernetes.sh)
+- [`Makefile`](../../Makefile)
+
+### Make Targets
+
+- `make k8s-deploy`
+- `make k8s-dry-run`
+- `make k8s-status`
+- `make k8s-uninstall`
+
+Example:
+
+```bash
+make k8s-deploy \
+  NAMESPACE=underpass-runtime \
+  RELEASE_NAME=rehydration-kernel \
+  VALUES_FILE=charts/rehydration-kernel/values.underpass-runtime.yaml \
+  IMAGE_TAG=main
+```
 
 Example:
 
