@@ -6,6 +6,7 @@ Current contents:
 
 - [`deployment-boundary.md`](./deployment-boundary.md)
 - [`container-image.md`](./container-image.md)
+- [`kubernetes-deploy.md`](./kubernetes-deploy.md)
 
 Key rule:
 

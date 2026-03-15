@@ -132,3 +132,7 @@ Local validation:
 ```bash
 bash scripts/ci/helm-lint.sh
 ```
+
+Manual deployment via GitHub Actions is documented in:
+
+- [kubernetes-deploy.md](./kubernetes-deploy.md)
