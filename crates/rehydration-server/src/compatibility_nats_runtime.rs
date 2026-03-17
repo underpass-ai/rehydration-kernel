@@ -1,11 +1,11 @@
 use std::error::Error;
 
-use rehydration_adapter_nats::{
-    ContextAsyncApplication, NatsClientTlsConfig, NatsCompatibilityRuntime,
-};
-use rehydration_config::{CompatibilityNatsConfig, NatsTlsConfig, NatsTlsMode};
+use rehydration_adapter_nats::{ContextAsyncApplication, NatsCompatibilityRuntime};
+use rehydration_config::CompatibilityNatsConfig;
 use rehydration_domain::{GraphNeighborhoodReader, NodeDetailReader, SnapshotStore};
 use rehydration_transport_grpc::GrpcServer;
+
+use crate::nats_tls::adapter_nats_tls_config;
 
 pub enum CompatibilityRuntime<S> {
     Enabled(Box<NatsCompatibilityRuntime<S>>),
@@ -59,16 +59,6 @@ where
     .map(Box::new)
     .map(CompatibilityRuntime::Enabled)
     .map_err(|error| Box::new(error) as Box<dyn Error + Send + Sync>)
-}
-
-fn adapter_nats_tls_config(config: &NatsTlsConfig) -> NatsClientTlsConfig {
-    NatsClientTlsConfig {
-        require_tls: config.mode != NatsTlsMode::Disabled,
-        ca_path: config.ca_path.clone(),
-        cert_path: config.cert_path.clone(),
-        key_path: config.key_path.clone(),
-        tls_first: config.tls_first,
-    }
 }
 
 #[cfg(test)]

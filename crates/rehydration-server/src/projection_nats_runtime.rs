@@ -1,10 +1,12 @@
 use std::error::Error;
 
-use rehydration_adapter_nats::{NatsClientTlsConfig, NatsProjectionRuntime};
+use rehydration_adapter_nats::NatsProjectionRuntime;
 use rehydration_adapter_valkey::{ValkeyProcessedEventStore, ValkeyProjectionCheckpointStore};
 use rehydration_application::{ProjectionApplicationService, RoutingProjectionWriter};
-use rehydration_config::{NatsTlsConfig, NatsTlsMode, ProjectionRuntimeConfig};
+use rehydration_config::ProjectionRuntimeConfig;
 use rehydration_domain::ProjectionWriter;
+
+use crate::nats_tls::adapter_nats_tls_config;
 
 pub enum ProjectionRuntime<H> {
     Enabled(Box<NatsProjectionRuntime<H>>),
@@ -74,16 +76,6 @@ where
     .map(Box::new)
     .map(ProjectionRuntime::Enabled)
     .map_err(|error| Box::new(error) as Box<dyn Error + Send + Sync>)
-}
-
-fn adapter_nats_tls_config(config: &NatsTlsConfig) -> NatsClientTlsConfig {
-    NatsClientTlsConfig {
-        require_tls: config.mode != NatsTlsMode::Disabled,
-        ca_path: config.ca_path.clone(),
-        cert_path: config.cert_path.clone(),
-        key_path: config.key_path.clone(),
-        tls_first: config.tls_first,
-    }
 }
 
 #[cfg(test)]

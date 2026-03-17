@@ -1,4 +1,5 @@
 mod compatibility_nats_runtime;
+mod nats_tls;
 mod projection_nats_runtime;
 
 use rehydration_adapter_nats::NatsProjectionConsumer;

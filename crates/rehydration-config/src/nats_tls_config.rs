@@ -67,6 +67,31 @@ impl NatsTlsConfig {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct NatsEndpointConfig {
+    pub url: String,
+    pub tls: NatsTlsConfig,
+}
+
+impl NatsEndpointConfig {
+    pub(crate) fn from_lookup<F>(lookup: &F) -> io::Result<Self>
+    where
+        F: Fn(&str) -> Option<String>,
+    {
+        Ok(Self {
+            url: lookup("NATS_URL").unwrap_or_else(|| "nats://nats:4222".to_string()),
+            tls: NatsTlsConfig::from_lookup(lookup)?,
+        })
+    }
+
+    pub(crate) fn disabled() -> Self {
+        Self {
+            url: "nats://nats:4222".to_string(),
+            tls: NatsTlsConfig::disabled(),
+        }
+    }
+}
+
 fn parse_mode(value: &str) -> io::Result<NatsTlsMode> {
     match value.trim().to_ascii_lowercase().as_str() {
         "disabled" | "plaintext" => Ok(NatsTlsMode::Disabled),

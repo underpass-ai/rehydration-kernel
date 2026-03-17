@@ -1,7 +1,7 @@
 use std::env;
 use std::io;
 
-use crate::NatsTlsConfig;
+use crate::{NatsTlsConfig, nats_tls_config::NatsEndpointConfig};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompatibilityNatsConfig {
@@ -23,20 +23,24 @@ impl CompatibilityNatsConfig {
     where
         F: Fn(&str) -> Option<String>,
     {
+        let endpoint = NatsEndpointConfig::from_lookup(&lookup)?;
+
         Ok(Self {
-            url: lookup("NATS_URL").unwrap_or_else(|| "nats://nats:4222".to_string()),
+            url: endpoint.url,
             enabled: lookup("ENABLE_NATS")
                 .map(|value| crate::env_bool::parse_bool_value(&value))
                 .unwrap_or(true),
-            tls: NatsTlsConfig::from_lookup(&lookup)?,
+            tls: endpoint.tls,
         })
     }
 
     pub fn disabled() -> Self {
+        let endpoint = NatsEndpointConfig::disabled();
+
         Self {
-            url: "nats://nats:4222".to_string(),
+            url: endpoint.url,
             enabled: false,
-            tls: NatsTlsConfig::disabled(),
+            tls: endpoint.tls,
         }
     }
 }
@@ -44,8 +48,6 @@ impl CompatibilityNatsConfig {
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
-
-    use crate::env_bool::parse_bool_value;
 
     use super::CompatibilityNatsConfig;
 
@@ -91,19 +93,5 @@ mod tests {
             .expect_err("mutual NATS TLS should require client cert and key");
 
         assert!(error.to_string().contains("NATS_TLS_CERT_PATH"));
-    }
-
-    #[test]
-    fn parse_bool_value_accepts_frozen_truthy_values() {
-        for value in ["true", "TRUE", "1", " yes ", "on"] {
-            assert!(parse_bool_value(value));
-        }
-    }
-
-    #[test]
-    fn parse_bool_value_treats_other_values_as_false() {
-        for value in ["false", "0", "no", "off", ""] {
-            assert!(!parse_bool_value(value));
-        }
     }
 }
