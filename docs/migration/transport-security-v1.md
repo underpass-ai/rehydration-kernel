@@ -1,0 +1,285 @@
+# Transport Security v1
+
+Status: `planned`
+
+## Purpose
+
+Define the first transport-security milestone for `rehydration-kernel`.
+
+This milestone starts with the most important gap:
+
+- inbound gRPC transport security for the standalone kernel
+
+The goal is to make the kernel deployable in less-trusted cluster networks
+without forcing a service mesh or sidecar proxy.
+
+## Why This Matters
+
+Today the kernel is strong in:
+
+- contract discipline
+- packaging
+- CI quality gates
+- Helm deployment
+
+But it still assumes a trusted internal network at transport level.
+
+Current limitations:
+
+- gRPC server runs in plaintext
+- no client certificate validation
+- no server certificate configuration
+- Helm chart has no first-class TLS or mTLS wiring
+
+That is acceptable for internal evaluation, but not for a serious production
+posture.
+
+## Current State
+
+### Inbound gRPC
+
+Current server implementation:
+
+- [`crates/rehydration-transport-grpc/src/transport/grpc_server.rs`](../../crates/rehydration-transport-grpc/src/transport/grpc_server.rs)
+
+It uses:
+
+- `tonic::transport::Server::builder()`
+
+It does not use:
+
+- `ServerTlsConfig`
+- server certificate loading
+- client CA verification
+
+### Configuration
+
+Current app config:
+
+- [`crates/rehydration-config/src/app_config.rs`](../../crates/rehydration-config/src/app_config.rs)
+
+It exposes:
+
+- `grpc_bind`
+- `admin_bind`
+- backend URIs
+
+It does not expose:
+
+- TLS mode
+- cert path
+- key path
+- client CA path
+
+### Helm
+
+Current chart wiring:
+
+- [`charts/rehydration-kernel/templates/deployment.yaml`](../../charts/rehydration-kernel/templates/deployment.yaml)
+- [`charts/rehydration-kernel/values.yaml`](../../charts/rehydration-kernel/values.yaml)
+
+It does not support:
+
+- TLS secret mounts
+- mTLS CA mounts
+- transport mode selection
+
+## Decision
+
+Chosen direction for v1:
+
+- inbound TLS and mTLS are implemented natively in the kernel gRPC server
+- plaintext remains available as a compatibility mode
+- service mesh remains compatible, but is not required
+
+Rationale:
+
+- portability across clusters and environments
+- less coupling to platform-specific infrastructure
+- easier product packaging for external consumers
+
+## Scope
+
+In scope for v1:
+
+1. server TLS for gRPC
+2. optional client certificate validation for gRPC mTLS
+3. config model for plaintext, TLS, and mTLS modes
+4. Helm support for certificate secrets and mounts
+5. tests for plaintext, TLS, and mTLS paths
+6. operator documentation
+
+Out of scope for v1:
+
+- RBAC or authorization based on certificate identity
+- SPIFFE or SPIRE integration
+- automatic certificate rotation
+- NATS TLS
+- Valkey TLS
+- additional HTTP admin transport security
+
+Those belong to later milestones.
+
+## Security Modes
+
+### Mode 1: Plaintext
+
+Use case:
+
+- local development
+- trusted throwaway environments
+
+Behavior:
+
+- current behavior remains unchanged
+
+### Mode 2: TLS
+
+Use case:
+
+- encrypted transport without client cert requirements
+
+Behavior:
+
+- server presents certificate and key
+- clients validate server identity
+
+### Mode 3: Mutual TLS
+
+Use case:
+
+- internal production traffic where the kernel should accept only known clients
+
+Behavior:
+
+- server presents certificate and key
+- clients must present a certificate signed by a trusted CA
+- server validates client certificate chain
+
+## Proposed Config Shape
+
+New config module:
+
+- `grpc_tls_config.rs`
+
+Proposed model:
+
+- `mode = disabled | server | mutual`
+- `server_cert_path`
+- `server_key_path`
+- `client_ca_cert_path`
+
+Possible env vars:
+
+- `REHYDRATION_GRPC_TLS_MODE`
+- `REHYDRATION_GRPC_TLS_CERT_PATH`
+- `REHYDRATION_GRPC_TLS_KEY_PATH`
+- `REHYDRATION_GRPC_TLS_CLIENT_CA_PATH`
+
+Rules:
+
+- `disabled`: no TLS fields required
+- `server`: cert and key required
+- `mutual`: cert, key, and client CA required
+
+## Proposed Code Changes
+
+### Config
+
+Add:
+
+- [`crates/rehydration-config/src/grpc_tls_config.rs`](../../crates/rehydration-config/src)
+
+Update:
+
+- [`crates/rehydration-config/src/lib.rs`](../../crates/rehydration-config/src/lib.rs)
+- [`crates/rehydration-config/src/app_config.rs`](../../crates/rehydration-config/src/app_config.rs)
+
+### Server
+
+Update:
+
+- [`crates/rehydration-transport-grpc/src/transport/grpc_server.rs`](../../crates/rehydration-transport-grpc/src/transport/grpc_server.rs)
+
+Expected change:
+
+- build `Server::builder()` with `ServerTlsConfig` when TLS mode is enabled
+
+### Server Bootstrap
+
+Update:
+
+- [`crates/rehydration-server/src/main.rs`](../../crates/rehydration-server/src/main.rs)
+
+Expected change:
+
+- pass TLS config through normal bootstrap
+
+### Helm
+
+Update:
+
+- [`charts/rehydration-kernel/values.yaml`](../../charts/rehydration-kernel/values.yaml)
+- [`charts/rehydration-kernel/templates/deployment.yaml`](../../charts/rehydration-kernel/templates/deployment.yaml)
+
+Expected additions:
+
+- `tls.mode`
+- `tls.secretName`
+- mount paths for certs and CA
+- env vars for the selected mode
+
+## Test Plan
+
+Minimum required tests:
+
+1. plaintext mode still serves existing gRPC traffic
+2. TLS mode starts with valid cert and key
+3. TLS mode rejects broken cert configuration
+4. mTLS mode rejects clients without a certificate
+5. mTLS mode accepts clients signed by the trusted CA
+6. Helm renders correctly in all three modes
+
+Test categories:
+
+- unit tests for config parsing
+- integration tests for transport startup
+- targeted client/server transport tests
+- Helm render checks
+
+## Rollout Strategy
+
+Phase 1:
+
+- merge code with TLS disabled by default
+
+Phase 2:
+
+- enable server-only TLS in staging
+
+Phase 3:
+
+- enable mTLS for controlled internal clients
+
+## Risks
+
+- certificate file handling can become a source of configuration drift
+- mTLS tests will increase transport test complexity
+- operators may confuse app-level TLS with mesh-level TLS
+
+## Exit Criteria
+
+This milestone is complete when:
+
+- the kernel supports plaintext, TLS, and mTLS for gRPC
+- Helm can deploy all three modes
+- documentation explains how to configure each mode
+- the default behavior remains backward-compatible
+
+## Follow-Up Milestones
+
+After v1:
+
+1. NATS TLS and mTLS
+2. Valkey TLS via `rediss://`
+3. stronger deployment guidance for service mesh compatibility

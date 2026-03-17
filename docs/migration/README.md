@@ -14,6 +14,7 @@ Primary roadmap:
 - `kernel-agentic-event-trigger-e2e.md`
 - `kernel-runtime-integration-reference.md`
 - `llm-response-determinism-strategy.md`
+- `transport-security-v1.md`
 
 Phase 0 baseline:
 
@@ -35,6 +36,7 @@ Phase 0 status:
 - runtime integration reference for external consumers: complete
 - runnable runtime reference client outside tests: complete
 - LLM response determinism strategy: planned and documented
+- transport security v1: planned and documented
 - repo closeout and handoff to integrating products: complete
 - shadow mode specification for `swe-ai-fleet`: complete as documentation
 - deferred kernel maintenance milestone: consolidate the integration harness
