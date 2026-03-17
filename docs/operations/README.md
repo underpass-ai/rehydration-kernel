@@ -7,6 +7,7 @@ Current contents:
 - [`deployment-boundary.md`](./deployment-boundary.md)
 - [`container-image.md`](./container-image.md)
 - [`kubernetes-deploy.md`](./kubernetes-deploy.md)
+- [`kubernetes-transport-smoke.md`](./kubernetes-transport-smoke.md)
 
 Key rule:
 
