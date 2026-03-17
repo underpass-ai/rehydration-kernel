@@ -2,6 +2,8 @@ mod compatibility_nats_runtime;
 mod nats_tls;
 mod projection_nats_runtime;
 
+use std::process::ExitCode;
+
 use rehydration_adapter_nats::NatsProjectionConsumer;
 use rehydration_adapter_neo4j::Neo4jProjectionReader;
 use rehydration_adapter_valkey::{ValkeyNodeDetailStore, ValkeySnapshotStore};
@@ -14,7 +16,17 @@ use crate::compatibility_nats_runtime::connect_compatibility_runtime;
 use crate::projection_nats_runtime::connect_projection_runtime;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+async fn main() -> ExitCode {
+    match run().await {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(_error) => {
+            eprintln!("rehydration-server failed");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let config = AppConfig::try_from_env()?;
     let compatibility_nats_config = CompatibilityNatsConfig::try_from_env()?;
     let projection_runtime_config = ProjectionRuntimeConfig::try_from_env()?;
@@ -50,11 +62,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         grpc_server.bootstrap_request().role
     );
 
-    let warmup_bundle = grpc_server.warmup_bundle().await?;
-    println!(
-        "warmup bundle revision={}",
-        warmup_bundle.metadata().revision
-    );
+    let _warmup_bundle = grpc_server.warmup_bundle().await?;
 
     tokio::try_join!(
         async { grpc_server.run().await },

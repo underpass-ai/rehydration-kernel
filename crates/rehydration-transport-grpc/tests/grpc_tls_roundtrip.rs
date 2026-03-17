@@ -2,6 +2,7 @@ use std::fs;
 use std::io;
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::Once;
 
 use rehydration_config::{AppConfig, GrpcTlsConfig, GrpcTlsMode};
 use rehydration_domain::{
@@ -180,8 +181,16 @@ impl TlsFixturePaths {
     }
 }
 
+fn ensure_crypto_provider() {
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        let _ = tokio_rustls::rustls::crypto::aws_lc_rs::default_provider().install_default();
+    });
+}
+
 #[tokio::test]
 async fn grpc_server_supports_tls_roundtrip() {
+    ensure_crypto_provider();
     let tls_fixture = TlsFixturePaths::new().expect("TLS fixture files should be written");
     let running = start_server(GrpcTlsConfig {
         mode: GrpcTlsMode::Server,
@@ -213,6 +222,7 @@ async fn grpc_server_supports_tls_roundtrip() {
 
 #[tokio::test]
 async fn grpc_server_rejects_clients_without_certificate_in_mutual_mode() {
+    ensure_crypto_provider();
     let tls_fixture = TlsFixturePaths::new().expect("TLS fixture files should be written");
     let running = start_server(GrpcTlsConfig {
         mode: GrpcTlsMode::Mutual,
@@ -260,6 +270,7 @@ async fn grpc_server_rejects_clients_without_certificate_in_mutual_mode() {
 
 #[tokio::test]
 async fn grpc_server_accepts_clients_with_certificate_in_mutual_mode() {
+    ensure_crypto_provider();
     let tls_fixture = TlsFixturePaths::new().expect("TLS fixture files should be written");
     let running = start_server(GrpcTlsConfig {
         mode: GrpcTlsMode::Mutual,
