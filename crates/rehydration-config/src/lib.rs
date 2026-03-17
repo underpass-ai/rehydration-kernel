@@ -4,6 +4,7 @@ mod env_bool;
 mod grpc_tls_config;
 mod nats_tls_config;
 mod projection_runtime_config;
+mod transport_tls;
 
 pub use app_config::AppConfig;
 pub use compatibility_nats_config::CompatibilityNatsConfig;

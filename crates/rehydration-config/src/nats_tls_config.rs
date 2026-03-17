@@ -2,24 +2,9 @@ use std::io;
 use std::path::PathBuf;
 
 use crate::env_bool::parse_bool_value;
+use crate::transport_tls::{TransportTlsMode, lookup_optional_path, parse_transport_tls_mode};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum NatsTlsMode {
-    #[default]
-    Disabled,
-    Server,
-    Mutual,
-}
-
-impl NatsTlsMode {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Disabled => "disabled",
-            Self::Server => "server",
-            Self::Mutual => "mutual",
-        }
-    }
-}
+pub type NatsTlsMode = TransportTlsMode;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct NatsTlsConfig {
@@ -41,7 +26,7 @@ impl NatsTlsConfig {
     {
         let mode = lookup("NATS_TLS_MODE")
             .filter(|value| !value.trim().is_empty())
-            .map(|value| parse_mode(&value))
+            .map(|value| parse_transport_tls_mode("NATS_TLS_MODE", &value))
             .transpose()?
             .unwrap_or_default();
 
@@ -92,30 +77,6 @@ impl NatsEndpointConfig {
     }
 }
 
-fn parse_mode(value: &str) -> io::Result<NatsTlsMode> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "disabled" | "plaintext" => Ok(NatsTlsMode::Disabled),
-        "server" | "tls" => Ok(NatsTlsMode::Server),
-        "mutual" | "mtls" => Ok(NatsTlsMode::Mutual),
-        _ => Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            format!(
-                "unsupported NATS_TLS_MODE `{value}`; expected one of disabled, server, mutual"
-            ),
-        )),
-    }
-}
-
-fn lookup_optional_path<F>(lookup: &F, key: &str) -> Option<PathBuf>
-where
-    F: Fn(&str) -> Option<String>,
-{
-    lookup(key)
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-}
-
 fn validate_tls_first(mode: NatsTlsMode, tls_first: bool) -> io::Result<()> {
     if !tls_first || mode != NatsTlsMode::Disabled {
         return Ok(());
@@ -159,4 +120,79 @@ fn validate_mutual_client_cert_pair(
         io::ErrorKind::InvalidInput,
         "NATS_TLS_CERT_PATH and NATS_TLS_KEY_PATH are required when NATS_TLS_MODE=mutual",
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+    use std::path::Path;
+
+    use super::{NatsTlsConfig, NatsTlsMode};
+
+    #[test]
+    fn server_tls_mode_and_tls_first_are_loaded() {
+        let env = [
+            ("NATS_TLS_MODE", "server"),
+            ("NATS_TLS_CA_PATH", "/tmp/ca.pem"),
+            ("NATS_TLS_FIRST", "true"),
+        ]
+        .into_iter()
+        .map(|(key, value)| (key.to_string(), value.to_string()))
+        .collect::<BTreeMap<_, _>>();
+
+        let config = NatsTlsConfig::from_lookup(&|key| env.get(key).cloned())
+            .expect("TLS config should load");
+
+        assert_eq!(config.mode, NatsTlsMode::Server);
+        assert_eq!(config.ca_path.as_deref(), Some(Path::new("/tmp/ca.pem")));
+        assert!(config.tls_first);
+    }
+
+    #[test]
+    fn mutual_tls_loads_client_identity() {
+        let env = [
+            ("NATS_TLS_MODE", "mutual"),
+            ("NATS_TLS_CA_PATH", "/tmp/ca.pem"),
+            ("NATS_TLS_CERT_PATH", "/tmp/client.pem"),
+            ("NATS_TLS_KEY_PATH", "/tmp/client.key"),
+            ("NATS_TLS_FIRST", "true"),
+        ]
+        .into_iter()
+        .map(|(key, value)| (key.to_string(), value.to_string()))
+        .collect::<BTreeMap<_, _>>();
+
+        let config = NatsTlsConfig::from_lookup(&|key| env.get(key).cloned())
+            .expect("mutual TLS should load");
+
+        assert_eq!(config.mode, NatsTlsMode::Mutual);
+        assert_eq!(
+            config.cert_path.as_deref(),
+            Some(Path::new("/tmp/client.pem"))
+        );
+        assert_eq!(
+            config.key_path.as_deref(),
+            Some(Path::new("/tmp/client.key"))
+        );
+        assert!(config.tls_first);
+    }
+
+    #[test]
+    fn tls_validation_rejects_invalid_combinations() {
+        let mutual_only = [("NATS_TLS_MODE", "mutual")]
+            .into_iter()
+            .map(|(key, value)| (key.to_string(), value.to_string()))
+            .collect::<BTreeMap<_, _>>();
+        let tls_first_only = [("NATS_TLS_FIRST", "true")]
+            .into_iter()
+            .map(|(key, value)| (key.to_string(), value.to_string()))
+            .collect::<BTreeMap<_, _>>();
+
+        let mutual_error = NatsTlsConfig::from_lookup(&|key| mutual_only.get(key).cloned())
+            .expect_err("mutual TLS should require a client cert pair");
+        let tls_first_error = NatsTlsConfig::from_lookup(&|key| tls_first_only.get(key).cloned())
+            .expect_err("tls_first should require TLS mode");
+
+        assert!(mutual_error.to_string().contains("NATS_TLS_CERT_PATH"));
+        assert!(tls_first_error.to_string().contains("NATS_TLS_FIRST"));
+    }
 }
