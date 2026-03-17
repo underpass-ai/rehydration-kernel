@@ -103,6 +103,98 @@ tls:
   existingSecret: rehydration-kernel-grpc-tls
 ```
 
+## Outbound NATS TLS
+
+The chart now exposes NATS client TLS directly:
+
+- `natsTls.mode=disabled|server|mutual`
+- `natsTls.existingSecret`
+- `natsTls.mountPath`
+- `natsTls.keys.ca`
+- `natsTls.keys.cert`
+- `natsTls.keys.key`
+- `natsTls.tlsFirst`
+
+Expected secret data when using private trust or client identity:
+
+- `ca.crt`: CA certificate for the NATS server
+- `tls.crt`: client certificate for `natsTls.mode=mutual`
+- `tls.key`: client private key for `natsTls.mode=mutual`
+
+Example:
+
+```bash
+kubectl create secret generic rehydration-kernel-nats-tls \
+  -n underpass-runtime \
+  --from-file=ca.crt=nats-ca.crt \
+  --from-file=tls.crt=client.crt \
+  --from-file=tls.key=client.key
+```
+
+Example values override:
+
+```yaml
+natsTls:
+  mode: mutual
+  existingSecret: rehydration-kernel-nats-tls
+  tlsFirst: true
+  keys:
+    ca: ca.crt
+    cert: tls.crt
+    key: tls.key
+```
+
+`natsTls.mode=server` may also be used without a mounted secret when system
+trust roots are sufficient.
+
+## Outbound Valkey TLS
+
+The chart now exposes Valkey TLS material directly:
+
+- `valkeyTls.enabled=true|false`
+- `valkeyTls.existingSecret`
+- `valkeyTls.mountPath`
+- `valkeyTls.keys.ca`
+- `valkeyTls.keys.cert`
+- `valkeyTls.keys.key`
+
+Expected secret data when using private trust or client identity:
+
+- `ca.crt`: CA certificate for Valkey
+- `tls.crt`: client certificate for mutual TLS
+- `tls.key`: client private key for mutual TLS
+
+Example:
+
+```bash
+kubectl create secret generic rehydration-kernel-valkey-tls \
+  -n underpass-runtime \
+  --from-file=ca.crt=valkey-ca.crt \
+  --from-file=tls.crt=client.crt \
+  --from-file=tls.key=client.key
+```
+
+Inline connection values are rewritten automatically from `redis://` or
+`valkey://` to `rediss://` or `valkeys://`, and Helm appends the configured
+`tls_*_path` query parameters using the mounted file paths.
+
+Example values override:
+
+```yaml
+valkeyTls:
+  enabled: true
+  existingSecret: rehydration-kernel-valkey-tls
+  keys:
+    ca: ca.crt
+    cert: tls.crt
+    key: tls.key
+```
+
+If you use `secrets.existingSecret` for connection URIs, Helm cannot rewrite
+the secret-backed values. In that case, store the final `rediss://` or
+`valkeys://` URIs in the secret, including `tls_ca_path`, `tls_cert_path`, and
+`tls_key_path` query parameters that match the mounted paths.
+
 ## Notes
 
 - `dry_run=true` uses `helm --dry-run=server`

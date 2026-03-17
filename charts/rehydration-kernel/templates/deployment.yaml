@@ -64,6 +64,24 @@ spec:
               value: {{ .Values.config.enableNats | quote }}
             - name: ENABLE_PROJECTION_NATS
               value: {{ .Values.config.enableProjectionNats | quote }}
+            {{- if ne .Values.natsTls.mode "disabled" }}
+            - name: NATS_TLS_MODE
+              value: {{ .Values.natsTls.mode | quote }}
+            {{- if .Values.natsTls.tlsFirst }}
+            - name: NATS_TLS_FIRST
+              value: "true"
+            {{- end }}
+            {{- if and .Values.natsTls.existingSecret (ne .Values.natsTls.keys.ca "") }}
+            - name: NATS_TLS_CA_PATH
+              value: {{ printf "%s/%s" .Values.natsTls.mountPath .Values.natsTls.keys.ca | quote }}
+            {{- end }}
+            {{- if and .Values.natsTls.existingSecret (ne .Values.natsTls.keys.cert "") (ne .Values.natsTls.keys.key "") }}
+            - name: NATS_TLS_CERT_PATH
+              value: {{ printf "%s/%s" .Values.natsTls.mountPath .Values.natsTls.keys.cert | quote }}
+            - name: NATS_TLS_KEY_PATH
+              value: {{ printf "%s/%s" .Values.natsTls.mountPath .Values.natsTls.keys.key | quote }}
+            {{- end }}
+            {{- end }}
             {{- if .Values.secrets.existingSecret }}
             - name: REHYDRATION_GRAPH_URI
               valueFrom:
@@ -94,30 +112,54 @@ spec:
             - name: REHYDRATION_GRAPH_URI
               value: {{ .Values.connections.graphUri | quote }}
             - name: REHYDRATION_DETAIL_URI
-              value: {{ .Values.connections.detailUri | quote }}
+              value: {{ include "rehydration-kernel.inlineValkeyUri" (dict "uri" .Values.connections.detailUri "tls" .Values.valkeyTls) | quote }}
             - name: REHYDRATION_SNAPSHOT_URI
-              value: {{ .Values.connections.snapshotUri | quote }}
+              value: {{ include "rehydration-kernel.inlineValkeyUri" (dict "uri" .Values.connections.snapshotUri "tls" .Values.valkeyTls) | quote }}
             - name: REHYDRATION_RUNTIME_STATE_URI
-              value: {{ .Values.connections.runtimeStateUri | quote }}
+              value: {{ include "rehydration-kernel.inlineValkeyUri" (dict "uri" .Values.connections.runtimeStateUri "tls" .Values.valkeyTls) | quote }}
             - name: NATS_URL
               value: {{ .Values.connections.natsUrl | quote }}
             {{- end }}
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
-          {{- if ne .Values.tls.mode "disabled" }}
+          {{- if or (ne .Values.tls.mode "disabled") .Values.natsTls.existingSecret .Values.valkeyTls.existingSecret }}
           volumeMounts:
+            {{- if ne .Values.tls.mode "disabled" }}
             - name: grpc-tls
               mountPath: {{ .Values.tls.mountPath | quote }}
               readOnly: true
+            {{- end }}
+            {{- if .Values.natsTls.existingSecret }}
+            - name: nats-tls
+              mountPath: {{ .Values.natsTls.mountPath | quote }}
+              readOnly: true
+            {{- end }}
+            {{- if .Values.valkeyTls.existingSecret }}
+            - name: valkey-tls
+              mountPath: {{ .Values.valkeyTls.mountPath | quote }}
+              readOnly: true
+            {{- end }}
           {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-      {{- if ne .Values.tls.mode "disabled" }}
+      {{- if or (ne .Values.tls.mode "disabled") .Values.natsTls.existingSecret .Values.valkeyTls.existingSecret }}
       volumes:
+        {{- if ne .Values.tls.mode "disabled" }}
         - name: grpc-tls
           secret:
             secretName: {{ .Values.tls.existingSecret | quote }}
+        {{- end }}
+        {{- if .Values.natsTls.existingSecret }}
+        - name: nats-tls
+          secret:
+            secretName: {{ .Values.natsTls.existingSecret | quote }}
+        {{- end }}
+        {{- if .Values.valkeyTls.existingSecret }}
+        - name: valkey-tls
+          secret:
+            secretName: {{ .Values.valkeyTls.existingSecret | quote }}
+        {{- end }}
       {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:

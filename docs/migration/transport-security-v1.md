@@ -88,10 +88,11 @@ Current progress:
 
 - native plaintext / TLS / mTLS modes are implemented in the gRPC server
 - config envs for certificate paths are implemented
-- Helm wiring is being added in this milestone so operators can mount
-  certificate secrets without patching manifests manually
-- outbound NATS TLS configuration is being added as the next transport-security
-  slice for the event runtime
+- Helm wiring is implemented for inbound gRPC TLS and mTLS
+- outbound NATS TLS runtime configuration is implemented
+- outbound Valkey TLS and `rediss://` / `valkeys://` support are implemented
+- the current chart slice is wiring certificate mounts and operator-facing
+  values for outbound NATS and Valkey TLS
 
 ## Decision
 
@@ -117,6 +118,12 @@ In scope for v1:
 4. Helm support for certificate secrets and mounts
 5. tests for plaintext, TLS, and mTLS paths
 6. operator documentation
+
+Follow-on transport-security slices now extend this into outbound event and
+cache connections:
+
+- NATS client TLS and mTLS
+- Valkey TLS via `rediss://` and `valkeys://`
 
 Out of scope for v1:
 
