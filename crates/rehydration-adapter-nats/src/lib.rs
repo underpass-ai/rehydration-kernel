@@ -15,5 +15,6 @@ pub use compatibility::{
 pub use consumer::NatsProjectionConsumer;
 pub use error::NatsConsumerError;
 pub use runtime::{
-    JetStreamPublicationSink, NatsCompatibilityRuntime, NatsProjectionRuntime, NatsRuntimeError,
+    JetStreamPublicationSink, NatsClientTlsConfig, NatsCompatibilityRuntime, NatsProjectionRuntime,
+    NatsRuntimeError,
 };

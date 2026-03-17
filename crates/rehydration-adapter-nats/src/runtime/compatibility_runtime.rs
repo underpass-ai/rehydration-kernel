@@ -10,6 +10,7 @@ use crate::runtime::compatibility_stream::{
     REHYDRATE_REQUEST_SUBJECT, UPDATE_REQUEST_SUBJECT, ensure_rehydrate_consumer, ensure_stream,
     ensure_update_consumer,
 };
+use crate::runtime::connect_options::{NatsClientTlsConfig, connect_nats_client};
 use crate::runtime::jetstream_publication_sink::JetStreamPublicationSink;
 use crate::runtime::jetstream_request_message::JetStreamRequestMessage;
 use crate::runtime::runtime_error::NatsRuntimeError;
@@ -26,10 +27,12 @@ impl<S> NatsCompatibilityRuntime<S>
 where
     S: ContextAsyncService + Send + Sync + 'static,
 {
-    pub async fn connect(url: &str, service: S) -> Result<Self, NatsRuntimeError> {
-        let client = async_nats::connect(url)
-            .await
-            .map_err(|error| NatsRuntimeError::Connection(error.to_string()))?;
+    pub async fn connect(
+        url: &str,
+        tls: &NatsClientTlsConfig,
+        service: S,
+    ) -> Result<Self, NatsRuntimeError> {
+        let client = connect_nats_client(url, tls).await?;
         let jetstream = jetstream::new(client);
         let stream = ensure_stream(&jetstream).await?;
         let publication_sink = Arc::new(JetStreamPublicationSink::new(jetstream));

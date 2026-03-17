@@ -1,9 +1,9 @@
 use std::error::Error;
 
-use rehydration_adapter_nats::NatsProjectionRuntime;
+use rehydration_adapter_nats::{NatsClientTlsConfig, NatsProjectionRuntime};
 use rehydration_adapter_valkey::{ValkeyProcessedEventStore, ValkeyProjectionCheckpointStore};
 use rehydration_application::{ProjectionApplicationService, RoutingProjectionWriter};
-use rehydration_config::ProjectionRuntimeConfig;
+use rehydration_config::{NatsTlsConfig, NatsTlsMode, ProjectionRuntimeConfig};
 use rehydration_domain::ProjectionWriter;
 
 pub enum ProjectionRuntime<H> {
@@ -64,16 +64,31 @@ where
         checkpoint_store,
     );
 
-    NatsProjectionRuntime::connect(&config.nats_url, subject_prefix, handler)
-        .await
-        .map(Box::new)
-        .map(ProjectionRuntime::Enabled)
-        .map_err(|error| Box::new(error) as Box<dyn Error + Send + Sync>)
+    NatsProjectionRuntime::connect(
+        &config.nats_url,
+        &adapter_nats_tls_config(&config.nats_tls),
+        subject_prefix,
+        handler,
+    )
+    .await
+    .map(Box::new)
+    .map(ProjectionRuntime::Enabled)
+    .map_err(|error| Box::new(error) as Box<dyn Error + Send + Sync>)
+}
+
+fn adapter_nats_tls_config(config: &NatsTlsConfig) -> NatsClientTlsConfig {
+    NatsClientTlsConfig {
+        require_tls: config.mode != NatsTlsMode::Disabled,
+        ca_path: config.ca_path.clone(),
+        cert_path: config.cert_path.clone(),
+        key_path: config.key_path.clone(),
+        tls_first: config.tls_first,
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use rehydration_config::ProjectionRuntimeConfig;
+    use rehydration_config::{NatsTlsConfig, ProjectionRuntimeConfig};
     use rehydration_domain::{PortError, ProjectionMutation, ProjectionWriter};
 
     use super::connect_projection_runtime;
@@ -97,6 +112,7 @@ mod tests {
                 nats_url: "nats://127.0.0.1:4222".to_string(),
                 enabled: false,
                 runtime_state_uri: "redis://127.0.0.1:6379".to_string(),
+                nats_tls: NatsTlsConfig::disabled(),
             },
             "rehydration",
             NoopProjectionWriter,
@@ -115,6 +131,7 @@ mod tests {
                 nats_url: "nats://127.0.0.1:4222".to_string(),
                 enabled: false,
                 runtime_state_uri: "redis://127.0.0.1:6379".to_string(),
+                nats_tls: NatsTlsConfig::disabled(),
             },
             "rehydration",
             NoopProjectionWriter,
@@ -136,6 +153,7 @@ mod tests {
                 nats_url: "nats://127.0.0.1:1".to_string(),
                 enabled: true,
                 runtime_state_uri: "redis://127.0.0.1:6379".to_string(),
+                nats_tls: NatsTlsConfig::disabled(),
             },
             "rehydration",
             NoopProjectionWriter,
@@ -160,6 +178,7 @@ mod tests {
                 nats_url: "nats://127.0.0.1:4222".to_string(),
                 enabled: true,
                 runtime_state_uri: "http://127.0.0.1:6379".to_string(),
+                nats_tls: NatsTlsConfig::disabled(),
             },
             "rehydration",
             NoopProjectionWriter,

@@ -1,7 +1,9 @@
 use std::error::Error;
 
-use rehydration_adapter_nats::{ContextAsyncApplication, NatsCompatibilityRuntime};
-use rehydration_config::CompatibilityNatsConfig;
+use rehydration_adapter_nats::{
+    ContextAsyncApplication, NatsClientTlsConfig, NatsCompatibilityRuntime,
+};
+use rehydration_config::{CompatibilityNatsConfig, NatsTlsConfig, NatsTlsMode};
 use rehydration_domain::{GraphNeighborhoodReader, NodeDetailReader, SnapshotStore};
 use rehydration_transport_grpc::GrpcServer;
 
@@ -47,6 +49,7 @@ where
 
     NatsCompatibilityRuntime::connect(
         &config.url,
+        &adapter_nats_tls_config(&config.tls),
         ContextAsyncApplication::new(
             grpc_server.command_application(),
             grpc_server.query_application(),
@@ -58,9 +61,19 @@ where
     .map_err(|error| Box::new(error) as Box<dyn Error + Send + Sync>)
 }
 
+fn adapter_nats_tls_config(config: &NatsTlsConfig) -> NatsClientTlsConfig {
+    NatsClientTlsConfig {
+        require_tls: config.mode != NatsTlsMode::Disabled,
+        ca_path: config.ca_path.clone(),
+        cert_path: config.cert_path.clone(),
+        key_path: config.key_path.clone(),
+        tls_first: config.tls_first,
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use rehydration_config::{AppConfig, GrpcTlsConfig};
+    use rehydration_config::{AppConfig, GrpcTlsConfig, NatsTlsConfig};
     use rehydration_domain::{
         NodeDetailProjection, NodeNeighborhood, PortError, SnapshotSaveOptions,
     };
@@ -128,6 +141,7 @@ mod tests {
             &rehydration_config::CompatibilityNatsConfig {
                 url: "nats://127.0.0.1:4222".to_string(),
                 enabled: false,
+                tls: NatsTlsConfig::disabled(),
             },
         )
         .await
@@ -175,6 +189,7 @@ mod tests {
             &rehydration_config::CompatibilityNatsConfig {
                 url: "nats://127.0.0.1:1".to_string(),
                 enabled: true,
+                tls: NatsTlsConfig::disabled(),
             },
         )
         .await

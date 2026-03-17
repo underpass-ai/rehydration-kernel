@@ -7,6 +7,7 @@ use tokio_stream::StreamExt;
 use rehydration_application::ProjectionEventHandler;
 
 use crate::consumer::NatsProjectionConsumer;
+use crate::runtime::connect_options::{NatsClientTlsConfig, connect_nats_client};
 use crate::runtime::projection_stream::{
     DETAIL_SUBJECT, GRAPH_SUBJECT, ensure_detail_consumer, ensure_graph_consumer, ensure_stream,
 };
@@ -26,12 +27,11 @@ where
 {
     pub async fn connect(
         url: &str,
+        tls: &NatsClientTlsConfig,
         subject_prefix: &str,
         handler: H,
     ) -> Result<Self, NatsRuntimeError> {
-        let client = async_nats::connect(url)
-            .await
-            .map_err(|error| NatsRuntimeError::Connection(error.to_string()))?;
+        let client = connect_nats_client(url, tls).await?;
         let jetstream = jetstream::new(client);
         let stream = ensure_stream(&jetstream, subject_prefix).await?;
 

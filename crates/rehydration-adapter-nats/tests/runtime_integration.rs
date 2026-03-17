@@ -4,7 +4,8 @@ use std::error::Error;
 use std::time::Duration;
 
 use rehydration_adapter_nats::{
-    ContextAsyncService, NatsCompatibilityRuntime, NatsProjectionRuntime, NatsRuntimeError,
+    ContextAsyncService, NatsClientTlsConfig, NatsCompatibilityRuntime, NatsProjectionRuntime,
+    NatsRuntimeError,
 };
 use rehydration_application::{
     ApplicationError, ProjectionEventHandler, ProjectionHandlingRequest, ProjectionHandlingResult,
@@ -210,7 +211,11 @@ async fn runtime_processes_rehydrate_requests_and_publishes_responses() {
 async fn runtime_surfaces_connection_errors() {
     let error = timeout(
         Duration::from_secs(5),
-        NatsCompatibilityRuntime::connect("nats://127.0.0.1:1", seeded_service()),
+        NatsCompatibilityRuntime::connect(
+            "nats://127.0.0.1:1",
+            &NatsClientTlsConfig::disabled(),
+            seeded_service(),
+        ),
     )
     .await
     .expect("connect should fail before timeout")
@@ -218,6 +223,35 @@ async fn runtime_surfaces_connection_errors() {
 
     assert!(matches!(error, NatsRuntimeError::Connection(_)));
     assert!(error.to_string().contains("nats connection error"));
+}
+
+#[tokio::test]
+async fn runtime_rejects_plaintext_server_when_tls_is_required() {
+    let container = start_nats_container()
+        .await
+        .expect("container should start");
+    let port = container
+        .get_host_port_ipv4(NATS_INTERNAL_PORT.tcp())
+        .await
+        .expect("nats port should resolve");
+    let url = format!("nats://127.0.0.1:{port}");
+
+    let error = timeout(
+        Duration::from_secs(5),
+        NatsCompatibilityRuntime::connect(
+            &url,
+            &NatsClientTlsConfig {
+                require_tls: true,
+                ..NatsClientTlsConfig::disabled()
+            },
+            seeded_service(),
+        ),
+    )
+    .await
+    .expect("connect should fail before timeout")
+    .expect_err("plaintext server should not satisfy required TLS");
+
+    assert!(matches!(error, NatsRuntimeError::Connection(_)));
 }
 
 #[tokio::test]
@@ -351,6 +385,7 @@ async fn projection_runtime_surfaces_connection_errors() {
         Duration::from_secs(5),
         NatsProjectionRuntime::connect(
             "nats://127.0.0.1:1",
+            &NatsClientTlsConfig::disabled(),
             "rehydration",
             RecordingProjectionHandler::default(),
         ),
@@ -442,7 +477,9 @@ where
     let mut last_error: Option<NatsRuntimeError> = None;
 
     for _ in 0..30 {
-        match NatsCompatibilityRuntime::connect(url, factory()).await {
+        match NatsCompatibilityRuntime::connect(url, &NatsClientTlsConfig::disabled(), factory())
+            .await
+        {
             Ok(runtime) => return Ok(runtime),
             Err(NatsRuntimeError::Connection(error)) => {
                 last_error = Some(NatsRuntimeError::Connection(error));
@@ -466,7 +503,14 @@ where
     let mut last_error: Option<NatsRuntimeError> = None;
 
     for _ in 0..30 {
-        match NatsProjectionRuntime::connect(url, subject_prefix, handler.clone()).await {
+        match NatsProjectionRuntime::connect(
+            url,
+            &NatsClientTlsConfig::disabled(),
+            subject_prefix,
+            handler.clone(),
+        )
+        .await
+        {
             Ok(runtime) => return Ok(runtime),
             Err(NatsRuntimeError::Connection(error)) => {
                 last_error = Some(NatsRuntimeError::Connection(error));
