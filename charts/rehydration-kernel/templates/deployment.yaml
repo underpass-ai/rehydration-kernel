@@ -44,6 +44,18 @@ spec:
               value: {{ .Values.config.serviceName | quote }}
             - name: REHYDRATION_GRPC_BIND
               value: {{ .Values.config.grpcBind | quote }}
+            - name: REHYDRATION_GRPC_TLS_MODE
+              value: {{ .Values.tls.mode | quote }}
+            {{- if ne .Values.tls.mode "disabled" }}
+            - name: REHYDRATION_GRPC_TLS_CERT_PATH
+              value: {{ printf "%s/%s" .Values.tls.mountPath .Values.tls.keys.cert | quote }}
+            - name: REHYDRATION_GRPC_TLS_KEY_PATH
+              value: {{ printf "%s/%s" .Values.tls.mountPath .Values.tls.keys.key | quote }}
+            {{- if eq .Values.tls.mode "mutual" }}
+            - name: REHYDRATION_GRPC_TLS_CLIENT_CA_PATH
+              value: {{ printf "%s/%s" .Values.tls.mountPath .Values.tls.keys.clientCa | quote }}
+            {{- end }}
+            {{- end }}
             - name: REHYDRATION_ADMIN_BIND
               value: {{ .Values.config.adminBind | quote }}
             - name: REHYDRATION_EVENTS_PREFIX
@@ -93,8 +105,20 @@ spec:
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
+          {{- if ne .Values.tls.mode "disabled" }}
+          volumeMounts:
+            - name: grpc-tls
+              mountPath: {{ .Values.tls.mountPath | quote }}
+              readOnly: true
+          {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+      {{- if ne .Values.tls.mode "disabled" }}
+      volumes:
+        - name: grpc-tls
+          secret:
+            secretName: {{ .Values.tls.existingSecret | quote }}
+      {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

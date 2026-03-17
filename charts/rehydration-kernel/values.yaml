@@ -36,6 +36,15 @@ service:
   type: ClusterIP
   grpcPort: 50054
 
+tls:
+  mode: disabled
+  existingSecret: ""
+  mountPath: /var/run/rehydration-kernel/tls
+  keys:
+    cert: tls.crt
+    key: tls.key
+    clientCa: ca.crt
+
 config:
   serviceName: rehydration-kernel
   grpcBind: 0.0.0.0:50054

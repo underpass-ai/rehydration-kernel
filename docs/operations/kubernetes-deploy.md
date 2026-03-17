@@ -65,6 +65,44 @@ IMAGE_TAG=main \
 bash scripts/ci/deploy-kubernetes.sh
 ```
 
+## gRPC TLS and mTLS
+
+The chart now exposes inbound gRPC transport mode directly:
+
+- `tls.mode=disabled`
+- `tls.mode=server`
+- `tls.mode=mutual`
+
+When `tls.mode` is `server` or `mutual`, set:
+
+- `tls.existingSecret`
+- optionally `tls.mountPath`
+- secret keys under `tls.keys.*`
+
+Expected secret data:
+
+- `tls.crt`: server certificate
+- `tls.key`: server private key
+- `ca.crt`: client CA certificate for `tls.mode=mutual`
+
+Example:
+
+```bash
+kubectl create secret generic rehydration-kernel-grpc-tls \
+  -n underpass-runtime \
+  --from-file=tls.crt=server.crt \
+  --from-file=tls.key=server.key \
+  --from-file=ca.crt=client-ca.crt
+```
+
+Example values override:
+
+```yaml
+tls:
+  mode: mutual
+  existingSecret: rehydration-kernel-grpc-tls
+```
+
 ## Notes
 
 - `dry_run=true` uses `helm --dry-run=server`

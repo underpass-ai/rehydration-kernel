@@ -45,14 +45,35 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- $digest := default "" .Values.image.digest -}}
 {{- $allowMutableTags := default false .Values.development.allowMutableImageTags -}}
 {{- $allowInlineConnections := default false .Values.development.allowInlineConnections -}}
+{{- $grpcTlsMode := default "disabled" .Values.tls.mode -}}
 {{- if and (eq $tag "") (eq $digest "") -}}
 {{- fail "set image.tag or image.digest; the chart no longer defaults to latest" -}}
 {{- end -}}
 {{- if and (eq $digest "") (eq $tag "latest") (not $allowMutableTags) -}}
 {{- fail "image.tag=latest requires development.allowMutableImageTags=true" -}}
 {{- end -}}
+{{- if not (has $grpcTlsMode (list "disabled" "server" "mutual")) -}}
+{{- fail "tls.mode must be one of disabled, server, mutual" -}}
+{{- end -}}
 {{- if and (eq (default "" .Values.secrets.existingSecret) "") (not $allowInlineConnections) -}}
 {{- fail "set secrets.existingSecret for connection URIs or explicitly enable development.allowInlineConnections=true" -}}
+{{- end -}}
+{{- if ne $grpcTlsMode "disabled" -}}
+{{- if eq (default "" .Values.tls.existingSecret) "" -}}
+{{- fail "tls.existingSecret is required when tls.mode is server or mutual" -}}
+{{- end -}}
+{{- if eq (default "" .Values.tls.mountPath) "" -}}
+{{- fail "tls.mountPath is required when tls.mode is server or mutual" -}}
+{{- end -}}
+{{- if eq (default "" .Values.tls.keys.cert) "" -}}
+{{- fail "tls.keys.cert is required when tls.mode is server or mutual" -}}
+{{- end -}}
+{{- if eq (default "" .Values.tls.keys.key) "" -}}
+{{- fail "tls.keys.key is required when tls.mode is server or mutual" -}}
+{{- end -}}
+{{- if and (eq $grpcTlsMode "mutual") (eq (default "" .Values.tls.keys.clientCa) "") -}}
+{{- fail "tls.keys.clientCa is required when tls.mode=mutual" -}}
+{{- end -}}
 {{- end -}}
 {{- if $allowInlineConnections -}}
 {{- if eq (default "" .Values.connections.graphUri) "" -}}
