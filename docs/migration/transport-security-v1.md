@@ -1,6 +1,6 @@
 # Transport Security v1
 
-Status: `planned`
+Status: `in_progress`
 
 ## Purpose
 
@@ -83,6 +83,13 @@ It does not support:
 - TLS secret mounts
 - mTLS CA mounts
 - transport mode selection
+
+Current progress:
+
+- native plaintext / TLS / mTLS modes are implemented in the gRPC server
+- config envs for certificate paths are implemented
+- Helm wiring is being added in this milestone so operators can mount
+  certificate secrets without patching manifests manually
 
 ## Decision
 
