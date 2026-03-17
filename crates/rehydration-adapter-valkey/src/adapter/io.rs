@@ -237,8 +237,8 @@ mod tests {
     use tokio_rustls::rustls::server::WebPkiClientVerifier;
 
     use super::{
-        build_tls_client_config, ensure_crypto_provider, execute_get_command, execute_set_command,
-        load_pem_certificates, load_private_key,
+        ServerName, build_tls_client_config, ensure_crypto_provider, execute_get_command,
+        execute_set_command, load_pem_certificates, load_private_key, parse_server_name,
     };
     use crate::adapter::endpoint::{ValkeyEndpoint, ValkeyTlsConfig};
     use rehydration_ports::PortError;
@@ -281,6 +281,46 @@ mod tests {
             .expect("TLS server should stop cleanly");
     }
 
+    #[tokio::test]
+    async fn execute_commands_support_rediss_with_client_identity() {
+        let tls = TlsFixturePaths::new().expect("TLS fixture files should be written");
+        let server = spawn_tls_server(&tls, true)
+            .await
+            .expect("mutual TLS valkey server should start");
+        let endpoint = ValkeyEndpoint {
+            raw_uri: format!(
+                "rediss://localhost:{}?tls_ca_path={}&tls_cert_path={}&tls_key_path={}",
+                server.port,
+                tls.ca_cert.display(),
+                tls.client_cert.display(),
+                tls.client_key.display()
+            ),
+            host: "localhost".to_string(),
+            port: server.port,
+            key_prefix: "rehydration:test".to_string(),
+            ttl_seconds: None,
+            tls: ValkeyTlsConfig {
+                enabled: true,
+                ca_path: Some(tls.ca_cert.clone()),
+                cert_path: Some(tls.client_cert.clone()),
+                key_path: Some(tls.client_key.clone()),
+            },
+        };
+
+        execute_set_command(&endpoint, "rehydration:test:node-456", "payload", None)
+            .await
+            .expect("mutual TLS write should succeed");
+        let payload = execute_get_command(&endpoint, "rehydration:test:node-456")
+            .await
+            .expect("mutual TLS read should succeed");
+
+        assert_eq!(payload, Some("payload".to_string()));
+
+        stop_tls_server(server)
+            .await
+            .expect("TLS server should stop cleanly");
+    }
+
     #[test]
     fn tls_client_config_loads_client_identity() {
         let tls = TlsFixturePaths::new().expect("TLS fixture files should be written");
@@ -304,6 +344,69 @@ mod tests {
         };
 
         build_tls_client_config(&endpoint).expect("client identity should load");
+    }
+
+    #[test]
+    fn tls_client_config_rejects_partial_identity() {
+        let tls = TlsFixturePaths::new().expect("TLS fixture files should be written");
+        let endpoint = ValkeyEndpoint {
+            raw_uri: format!(
+                "rediss://localhost:6379?tls_ca_path={}&tls_cert_path={}",
+                tls.ca_cert.display(),
+                tls.client_cert.display(),
+            ),
+            host: "localhost".to_string(),
+            port: 6379,
+            key_prefix: "rehydration:test".to_string(),
+            ttl_seconds: None,
+            tls: ValkeyTlsConfig {
+                enabled: true,
+                ca_path: Some(tls.ca_cert.clone()),
+                cert_path: Some(tls.client_cert.clone()),
+                key_path: None,
+            },
+        };
+
+        let error = build_tls_client_config(&endpoint)
+            .expect_err("partial client identity should be rejected");
+
+        assert!(error.to_string().contains("certificate and key"));
+    }
+
+    #[test]
+    fn parse_server_name_supports_ipv6_hosts() {
+        let endpoint = ValkeyEndpoint {
+            raw_uri: "rediss://[::1]:6379".to_string(),
+            host: "[::1]".to_string(),
+            port: 6379,
+            key_prefix: "rehydration:test".to_string(),
+            ttl_seconds: None,
+            tls: ValkeyTlsConfig {
+                enabled: true,
+                ca_path: None,
+                cert_path: None,
+                key_path: None,
+            },
+        };
+
+        let server_name = parse_server_name(&endpoint).expect("IPv6 hosts should be accepted");
+
+        assert!(matches!(server_name, ServerName::IpAddress(_)));
+    }
+
+    #[test]
+    fn load_private_key_rejects_invalid_pem() {
+        let dir = tempfile::tempdir().expect("tempdir should be created");
+        let key_path = dir.path().join("client.key");
+        fs::write(&key_path, "not a private key").expect("fixture should be written");
+
+        let error = load_private_key(&key_path).expect_err("invalid PEM should fail");
+
+        let message = error.to_string();
+        assert!(
+            message.contains("unable to read valkey private key file")
+                || message.contains("does not contain a private key")
+        );
     }
 
     struct TlsFixturePaths {
