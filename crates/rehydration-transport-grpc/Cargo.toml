@@ -32,6 +32,7 @@ rehydration-adapter-nats.workspace = true
 rehydration-adapter-neo4j.workspace = true
 rehydration-adapter-valkey.workspace = true
 rehydration-testkit.workspace = true
+tempfile = "3.26.0"
 testcontainers = "0.24.0"
 
 [[test]]

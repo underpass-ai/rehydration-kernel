@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use rehydration_config::AppConfig;
+use rehydration_config::{AppConfig, GrpcTlsConfig};
 use rehydration_domain::{
     GraphNeighborhoodReader, NodeDetailProjection, NodeDetailReader, NodeNeighborhood, PortError,
     RehydrationBundle, SnapshotSaveOptions, SnapshotStore,
@@ -69,6 +69,7 @@ async fn grpc_server_supports_query_command_and_admin_roundtrip() {
         service_name: "rehydration-kernel".to_string(),
         grpc_bind: addr.to_string(),
         admin_bind: "127.0.0.1:8080".to_string(),
+        grpc_tls: GrpcTlsConfig::disabled(),
         graph_uri: "neo4j://localhost:7687".to_string(),
         detail_uri: "redis://localhost:6379".to_string(),
         snapshot_uri: "redis://localhost:6379".to_string(),

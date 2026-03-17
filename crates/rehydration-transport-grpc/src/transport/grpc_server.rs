@@ -1,5 +1,7 @@
+use std::fs;
 use std::future::{Future, pending};
 use std::net::SocketAddr;
+use std::path::Path;
 use std::sync::Arc;
 
 use rehydration_application::{
@@ -7,7 +9,7 @@ use rehydration_application::{
     CommandApplicationService, QueryApplicationService, RehydrationApplication,
     UpdateContextUseCase,
 };
-use rehydration_config::AppConfig;
+use rehydration_config::{AppConfig, GrpcTlsConfig, GrpcTlsMode};
 use rehydration_domain::{
     GraphNeighborhoodReader, NodeDetailReader, RehydrationBundle, SnapshotStore,
 };
@@ -20,7 +22,7 @@ use rehydration_proto::v1alpha1::{
 };
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
-use tonic::transport::Server;
+use tonic::transport::{Certificate, Identity, Server, ServerTlsConfig};
 
 use crate::transport::{
     AdminGrpcService, CommandGrpcService, ContextCompatibilityGrpcService, QueryGrpcService,
@@ -29,6 +31,7 @@ use crate::transport::{
 #[derive(Debug)]
 pub struct GrpcServer<G, D, S> {
     bind_addr: String,
+    grpc_tls: GrpcTlsConfig,
     query_application: Arc<QueryApplicationService<G, D, S>>,
     admin_query_application: Arc<AdminQueryApplicationService<G, D>>,
     admin_command_application: Arc<AdminCommandApplicationService>,
@@ -43,6 +46,11 @@ where
     S: SnapshotStore + Send + Sync + 'static,
 {
     pub fn new(config: AppConfig, graph_reader: G, detail_reader: D, snapshot_store: S) -> Self {
+        let AppConfig {
+            grpc_bind,
+            grpc_tls,
+            ..
+        } = config;
         let graph_reader = Arc::new(graph_reader);
         let detail_reader = Arc::new(detail_reader);
         let snapshot_store = Arc::new(snapshot_store);
@@ -50,7 +58,8 @@ where
         let update_context = Arc::new(UpdateContextUseCase::new(generator_version));
 
         Self {
-            bind_addr: config.grpc_bind,
+            bind_addr: grpc_bind,
+            grpc_tls,
             query_application: Arc::new(QueryApplicationService::new(
                 Arc::clone(&graph_reader),
                 Arc::clone(&detail_reader),
@@ -70,8 +79,10 @@ where
 
     pub fn describe(&self) -> String {
         format!(
-            "grpc transport for {} on {}",
-            self.capability_name, self.bind_addr
+            "grpc transport for {} on {} (tls={})",
+            self.capability_name,
+            self.bind_addr,
+            self.grpc_tls.mode.as_str()
         )
     }
 
@@ -142,7 +153,7 @@ where
     where
         F: Future<Output = ()> + Send + 'static,
     {
-        Server::builder()
+        self.transport_builder()?
             .add_service(ContextServiceServer::new(self.compatibility_service()))
             .add_service(ContextQueryServiceServer::new(self.query_service()))
             .add_service(ContextCommandServiceServer::new(self.command_service()))
@@ -152,4 +163,63 @@ where
 
         Ok(())
     }
+
+    fn transport_builder(&self) -> Result<Server, Box<dyn std::error::Error + Send + Sync>> {
+        let builder = Server::builder();
+
+        match self.grpc_tls.mode {
+            GrpcTlsMode::Disabled => Ok(builder),
+            GrpcTlsMode::Server | GrpcTlsMode::Mutual => builder
+                .tls_config(load_server_tls_config(&self.grpc_tls)?)
+                .map_err(|error| Box::new(error) as Box<dyn std::error::Error + Send + Sync>),
+        }
+    }
+}
+
+fn load_server_tls_config(
+    grpc_tls: &GrpcTlsConfig,
+) -> Result<ServerTlsConfig, Box<dyn std::error::Error + Send + Sync>> {
+    let cert_pem = read_required_pem(
+        grpc_tls.cert_path.as_deref(),
+        "REHYDRATION_GRPC_TLS_CERT_PATH",
+    )?;
+    let key_pem = read_required_pem(
+        grpc_tls.key_path.as_deref(),
+        "REHYDRATION_GRPC_TLS_KEY_PATH",
+    )?;
+    let identity = Identity::from_pem(cert_pem, key_pem);
+    let mut tls_config = ServerTlsConfig::new().identity(identity);
+
+    if grpc_tls.mode == GrpcTlsMode::Mutual {
+        let client_ca_pem = read_required_pem(
+            grpc_tls.client_ca_path.as_deref(),
+            "REHYDRATION_GRPC_TLS_CLIENT_CA_PATH",
+        )?;
+        tls_config = tls_config.client_ca_root(Certificate::from_pem(client_ca_pem));
+    }
+
+    Ok(tls_config)
+}
+
+fn read_required_pem(
+    path: Option<&Path>,
+    env_name: &str,
+) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
+    let path = path.ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("{env_name} must be configured when gRPC TLS is enabled"),
+        )
+    })?;
+
+    fs::read(path).map_err(|error| {
+        Box::new(std::io::Error::new(
+            error.kind(),
+            format!(
+                "failed to read {} from {}: {error}",
+                env_name,
+                path.display()
+            ),
+        )) as Box<dyn std::error::Error + Send + Sync>
+    })
 }

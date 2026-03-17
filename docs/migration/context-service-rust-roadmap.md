@@ -123,6 +123,25 @@ Reference:
 
 - [`llm-response-determinism-strategy.md`](./llm-response-determinism-strategy.md)
 
+## Strategic Security Milestone
+
+Status: `planned`
+
+Title:
+
+- Transport Security v1
+
+Why it exists:
+
+- the kernel is already strong in contract, CI, packaging, and deployment, but
+  still assumes plaintext trusted-network transport
+- production-grade standalone deployment needs first-class TLS and mTLS support
+  for gRPC
+
+Reference:
+
+- [`transport-security-v1.md`](./transport-security-v1.md)
+
 ## Direction Update
 
 From this point forward, `swe-ai-fleet`-specific compatibility should move out

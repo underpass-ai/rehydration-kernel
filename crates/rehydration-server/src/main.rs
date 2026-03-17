@@ -14,7 +14,7 @@ use crate::projection_nats_runtime::connect_projection_runtime;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let config = AppConfig::from_env();
+    let config = AppConfig::try_from_env()?;
     let compatibility_nats_config = CompatibilityNatsConfig::from_env();
     let projection_runtime_config = ProjectionRuntimeConfig::from_env();
     init_observability(&config.service_name);

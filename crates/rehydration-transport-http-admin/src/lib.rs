@@ -19,7 +19,7 @@ impl HttpAdminServer {
 
 #[cfg(test)]
 mod tests {
-    use rehydration_config::AppConfig;
+    use rehydration_config::{AppConfig, GrpcTlsConfig};
 
     use super::HttpAdminServer;
 
@@ -29,6 +29,7 @@ mod tests {
             service_name: "rehydration-kernel".to_string(),
             grpc_bind: "127.0.0.1:50054".to_string(),
             admin_bind: "127.0.0.1:8080".to_string(),
+            grpc_tls: GrpcTlsConfig::disabled(),
             graph_uri: "neo4j://localhost:7687".to_string(),
             detail_uri: "redis://localhost:6379".to_string(),
             snapshot_uri: "redis://localhost:6379".to_string(),
