@@ -123,6 +123,32 @@ fn snapshot_store_parses_valid_runtime_options() {
     assert_eq!(store.endpoint.port, 6379);
     assert_eq!(store.endpoint.key_prefix, "rehydration:it");
     assert_eq!(store.endpoint.ttl_seconds, Some(15));
+    assert!(!store.endpoint.tls.enabled);
+}
+
+#[test]
+fn snapshot_store_parses_secure_runtime_options() {
+    let store = ValkeySnapshotStore::new(
+        "rediss://cache.internal:6380?key_prefix=rehydration:tls&tls_ca_path=/tmp/ca.pem&tls_cert_path=/tmp/client.pem&tls_key_path=/tmp/client.key",
+    )
+    .expect("rediss uri should be accepted");
+
+    assert_eq!(store.endpoint.host, "cache.internal");
+    assert_eq!(store.endpoint.port, 6380);
+    assert_eq!(store.endpoint.key_prefix, "rehydration:tls");
+    assert!(store.endpoint.tls.enabled);
+    assert_eq!(
+        store.endpoint.tls.ca_path.as_deref(),
+        Some(std::path::Path::new("/tmp/ca.pem"))
+    );
+    assert_eq!(
+        store.endpoint.tls.cert_path.as_deref(),
+        Some(std::path::Path::new("/tmp/client.pem"))
+    );
+    assert_eq!(
+        store.endpoint.tls.key_path.as_deref(),
+        Some(std::path::Path::new("/tmp/client.key"))
+    );
 }
 
 #[test]
@@ -243,6 +269,11 @@ fn snapshot_store_rejects_invalid_query_options() {
         .expect_err("key prefix cannot be empty");
     let unsupported_option = ValkeySnapshotStore::new("redis://localhost:6379?database=1")
         .expect_err("unsupported options must fail");
+    let plaintext_tls = ValkeySnapshotStore::new("redis://localhost:6379?tls_ca_path=/tmp/ca.pem")
+        .expect_err("TLS options should require a secure scheme");
+    let partial_identity =
+        ValkeySnapshotStore::new("rediss://localhost:6379?tls_cert_path=/tmp/client.pem")
+            .expect_err("client identity should require a key pair");
 
     assert_eq!(
         invalid_pair,
@@ -265,6 +296,18 @@ fn snapshot_store_rejects_invalid_query_options() {
         unsupported_option,
         rehydration_ports::PortError::InvalidState(
             "unsupported snapshot uri option `database`".to_string()
+        )
+    );
+    assert_eq!(
+        plaintext_tls,
+        rehydration_ports::PortError::InvalidState(
+            "snapshot TLS options require rediss:// or valkeys://".to_string()
+        )
+    );
+    assert_eq!(
+        partial_identity,
+        rehydration_ports::PortError::InvalidState(
+            "snapshot tls_cert_path and tls_key_path must be configured together".to_string()
         )
     );
 }

@@ -1,4 +1,5 @@
 use rehydration_ports::PortError;
+use std::path::{Path, PathBuf};
 
 pub(crate) const DEFAULT_PORT: u16 = 6379;
 pub(crate) const DEFAULT_KEY_PREFIX: &str = "rehydration:snapshot";
@@ -14,6 +15,15 @@ pub(crate) struct ValkeyEndpoint {
     pub port: u16,
     pub key_prefix: String,
     pub ttl_seconds: Option<u64>,
+    pub tls: ValkeyTlsConfig,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub(crate) struct ValkeyTlsConfig {
+    pub enabled: bool,
+    pub ca_path: Option<PathBuf>,
+    pub cert_path: Option<PathBuf>,
+    pub key_path: Option<PathBuf>,
 }
 
 impl ValkeyEndpoint {
@@ -33,7 +43,8 @@ impl ValkeyEndpoint {
         }
 
         let (scheme, authority, query) = split_uri(&raw_uri, name)?;
-        if !matches!(scheme, "redis" | "valkey") {
+        let tls_enabled = matches!(scheme, "rediss" | "valkeys");
+        if !matches!(scheme, "redis" | "valkey" | "rediss" | "valkeys") {
             return Err(PortError::InvalidState(format!(
                 "unsupported {name} scheme `{scheme}`"
             )));
@@ -43,6 +54,10 @@ impl ValkeyEndpoint {
 
         let mut key_prefix = default_key_prefix.to_string();
         let mut ttl_seconds = None;
+        let mut tls = ValkeyTlsConfig {
+            enabled: tls_enabled,
+            ..ValkeyTlsConfig::default()
+        };
         if let Some(query) = query {
             for pair in query.split('&') {
                 if pair.is_empty() {
@@ -72,6 +87,9 @@ impl ValkeyEndpoint {
                         })?;
                         ttl_seconds = Some(ttl);
                     }
+                    "tls_ca_path" => tls.ca_path = Some(parse_tls_path(value, name, key)?),
+                    "tls_cert_path" => tls.cert_path = Some(parse_tls_path(value, name, key)?),
+                    "tls_key_path" => tls.key_path = Some(parse_tls_path(value, name, key)?),
                     _ => {
                         return Err(PortError::InvalidState(format!(
                             "unsupported {name} uri option `{key}`"
@@ -81,17 +99,27 @@ impl ValkeyEndpoint {
             }
         }
 
+        validate_tls_options(name, &tls)?;
+
         Ok(Self {
             raw_uri,
             host,
             port,
             key_prefix,
             ttl_seconds,
+            tls,
         })
     }
 
     pub(crate) fn address(&self) -> String {
         format!("{}:{}", self.host, self.port)
+    }
+
+    pub(crate) fn server_name(&self) -> &str {
+        self.host
+            .strip_prefix('[')
+            .and_then(|host| host.strip_suffix(']'))
+            .unwrap_or(&self.host)
     }
 }
 
@@ -175,4 +203,31 @@ pub(crate) fn parse_optional_port(
     port.parse::<u16>().map_err(|error| {
         PortError::InvalidState(format!("{name} uri contains an invalid port: {error}"))
     })
+}
+
+fn parse_tls_path(value: &str, name: &str, key: &str) -> Result<PathBuf, PortError> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Err(PortError::InvalidState(format!(
+            "{name} {key} cannot be empty"
+        )));
+    }
+
+    Ok(Path::new(trimmed).to_path_buf())
+}
+
+fn validate_tls_options(name: &str, tls: &ValkeyTlsConfig) -> Result<(), PortError> {
+    if !tls.enabled && (tls.ca_path.is_some() || tls.cert_path.is_some() || tls.key_path.is_some())
+    {
+        return Err(PortError::InvalidState(format!(
+            "{name} TLS options require rediss:// or valkeys://"
+        )));
+    }
+
+    match (&tls.cert_path, &tls.key_path) {
+        (Some(_), Some(_)) | (None, None) => Ok(()),
+        _ => Err(PortError::InvalidState(format!(
+            "{name} tls_cert_path and tls_key_path must be configured together"
+        ))),
+    }
 }
