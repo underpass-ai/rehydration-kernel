@@ -45,6 +45,25 @@ tls:
     key: tls.key
     clientCa: ca.crt
 
+natsTls:
+  mode: disabled
+  existingSecret: ""
+  mountPath: /var/run/rehydration-kernel/nats-tls
+  tlsFirst: false
+  keys:
+    ca: ""
+    cert: ""
+    key: ""
+
+valkeyTls:
+  enabled: false
+  existingSecret: ""
+  mountPath: /var/run/rehydration-kernel/valkey-tls
+  keys:
+    ca: ""
+    cert: ""
+    key: ""
+
 config:
   serviceName: rehydration-kernel
   grpcBind: 0.0.0.0:50054

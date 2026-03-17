@@ -46,6 +46,18 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- $allowMutableTags := default false .Values.development.allowMutableImageTags -}}
 {{- $allowInlineConnections := default false .Values.development.allowInlineConnections -}}
 {{- $grpcTlsMode := default "disabled" .Values.tls.mode -}}
+{{- $natsTlsMode := default "disabled" .Values.natsTls.mode -}}
+{{- $natsTlsSecret := default "" .Values.natsTls.existingSecret -}}
+{{- $natsTlsMountPath := default "" .Values.natsTls.mountPath -}}
+{{- $natsTlsCaKey := default "" .Values.natsTls.keys.ca -}}
+{{- $natsTlsCertKey := default "" .Values.natsTls.keys.cert -}}
+{{- $natsTlsKeyKey := default "" .Values.natsTls.keys.key -}}
+{{- $valkeyTlsEnabled := default false .Values.valkeyTls.enabled -}}
+{{- $valkeyTlsSecret := default "" .Values.valkeyTls.existingSecret -}}
+{{- $valkeyTlsMountPath := default "" .Values.valkeyTls.mountPath -}}
+{{- $valkeyTlsCaKey := default "" .Values.valkeyTls.keys.ca -}}
+{{- $valkeyTlsCertKey := default "" .Values.valkeyTls.keys.cert -}}
+{{- $valkeyTlsKeyKey := default "" .Values.valkeyTls.keys.key -}}
 {{- if and (eq $tag "") (eq $digest "") -}}
 {{- fail "set image.tag or image.digest; the chart no longer defaults to latest" -}}
 {{- end -}}
@@ -54,6 +66,9 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 {{- if not (has $grpcTlsMode (list "disabled" "server" "mutual")) -}}
 {{- fail "tls.mode must be one of disabled, server, mutual" -}}
+{{- end -}}
+{{- if not (has $natsTlsMode (list "disabled" "server" "mutual")) -}}
+{{- fail "natsTls.mode must be one of disabled, server, mutual" -}}
 {{- end -}}
 {{- if and (eq (default "" .Values.secrets.existingSecret) "") (not $allowInlineConnections) -}}
 {{- fail "set secrets.existingSecret for connection URIs or explicitly enable development.allowInlineConnections=true" -}}
@@ -75,6 +90,30 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- fail "tls.keys.clientCa is required when tls.mode=mutual" -}}
 {{- end -}}
 {{- end -}}
+{{- if and (ne $natsTlsMode "disabled") (eq $natsTlsSecret "") (or (ne $natsTlsCaKey "") (ne $natsTlsCertKey "") (ne $natsTlsKeyKey "")) -}}
+{{- fail "natsTls.existingSecret is required when natsTls.keys.* are configured" -}}
+{{- end -}}
+{{- if and (ne $natsTlsSecret "") (eq $natsTlsMountPath "") -}}
+{{- fail "natsTls.mountPath is required when natsTls.existingSecret is set" -}}
+{{- end -}}
+{{- if and (eq $natsTlsMode "mutual") (eq $natsTlsSecret "") -}}
+{{- fail "natsTls.existingSecret is required when natsTls.mode=mutual" -}}
+{{- end -}}
+{{- if and (eq $natsTlsMode "mutual") (or (eq $natsTlsCertKey "") (eq $natsTlsKeyKey "")) -}}
+{{- fail "natsTls.keys.cert and natsTls.keys.key are required when natsTls.mode=mutual" -}}
+{{- end -}}
+{{- if and (or (eq $natsTlsCertKey "") (eq $natsTlsKeyKey "")) (not (and (eq $natsTlsCertKey "") (eq $natsTlsKeyKey ""))) -}}
+{{- fail "natsTls.keys.cert and natsTls.keys.key must be configured together" -}}
+{{- end -}}
+{{- if and $valkeyTlsEnabled (eq $valkeyTlsSecret "") (or (ne $valkeyTlsCaKey "") (ne $valkeyTlsCertKey "") (ne $valkeyTlsKeyKey "")) -}}
+{{- fail "valkeyTls.existingSecret is required when valkeyTls.keys.* are configured" -}}
+{{- end -}}
+{{- if and (ne $valkeyTlsSecret "") (eq $valkeyTlsMountPath "") -}}
+{{- fail "valkeyTls.mountPath is required when valkeyTls.existingSecret is set" -}}
+{{- end -}}
+{{- if and (or (eq $valkeyTlsCertKey "") (eq $valkeyTlsKeyKey "")) (not (and (eq $valkeyTlsCertKey "") (eq $valkeyTlsKeyKey ""))) -}}
+{{- fail "valkeyTls.keys.cert and valkeyTls.keys.key must be configured together" -}}
+{{- end -}}
 {{- if $allowInlineConnections -}}
 {{- if eq (default "" .Values.connections.graphUri) "" -}}
 {{- fail "connections.graphUri is required when development.allowInlineConnections=true" -}}
@@ -87,6 +126,45 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 {{- if eq (default "" .Values.connections.runtimeStateUri) "" -}}
 {{- fail "connections.runtimeStateUri is required when development.allowInlineConnections=true" -}}
+{{- end -}}
+{{- if $valkeyTlsEnabled -}}
+{{- range $connection := list .Values.connections.detailUri .Values.connections.snapshotUri .Values.connections.runtimeStateUri -}}
+{{- if not (or (hasPrefix "redis://" $connection) (hasPrefix "valkey://" $connection) (hasPrefix "rediss://" $connection) (hasPrefix "valkeys://" $connection)) -}}
+{{- fail "valkeyTls.enabled requires Valkey connection URIs to use redis://, valkey://, rediss://, or valkeys:// when development.allowInlineConnections=true" -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "rehydration-kernel.inlineValkeyUri" -}}
+{{- $uri := .uri -}}
+{{- $tls := .tls -}}
+{{- if not $tls.enabled -}}
+{{- $uri -}}
+{{- else -}}
+{{- $secureUri := $uri -}}
+{{- if hasPrefix "redis://" $secureUri -}}
+{{- $secureUri = printf "rediss://%s" (trimPrefix "redis://" $secureUri) -}}
+{{- else if hasPrefix "valkey://" $secureUri -}}
+{{- $secureUri = printf "valkeys://%s" (trimPrefix "valkey://" $secureUri) -}}
+{{- end -}}
+{{- $params := list -}}
+{{- if and (ne (default "" $tls.existingSecret) "") (ne (default "" $tls.keys.ca) "") -}}
+{{- $params = append $params (printf "tls_ca_path=%s/%s" $tls.mountPath $tls.keys.ca) -}}
+{{- end -}}
+{{- if and (ne (default "" $tls.existingSecret) "") (ne (default "" $tls.keys.cert) "") (ne (default "" $tls.keys.key) "") -}}
+{{- $params = append $params (printf "tls_cert_path=%s/%s" $tls.mountPath $tls.keys.cert) -}}
+{{- $params = append $params (printf "tls_key_path=%s/%s" $tls.mountPath $tls.keys.key) -}}
+{{- end -}}
+{{- if gt (len $params) 0 -}}
+{{- if contains "?" $secureUri -}}
+{{- printf "%s&%s" $secureUri (join "&" $params) -}}
+{{- else -}}
+{{- printf "%s?%s" $secureUri (join "&" $params) -}}
+{{- end -}}
+{{- else -}}
+{{- $secureUri -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}
