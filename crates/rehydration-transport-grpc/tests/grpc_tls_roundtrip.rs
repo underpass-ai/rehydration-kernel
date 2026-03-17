@@ -1,6 +1,7 @@
 use std::fs;
 use std::io;
 use std::path::PathBuf;
+use std::process::Command;
 
 use rehydration_config::{AppConfig, GrpcTlsConfig, GrpcTlsMode};
 use rehydration_domain::{
@@ -17,12 +18,6 @@ use tokio::net::TcpListener;
 use tokio::sync::oneshot;
 use tokio::time::sleep;
 use tonic::transport::{Certificate, Channel, ClientTlsConfig, Endpoint, Identity};
-
-const CA_CERT: &str = include_str!("fixtures/tls/ca.crt");
-const SERVER_CERT: &str = include_str!("fixtures/tls/server.crt");
-const SERVER_KEY: &str = include_str!("fixtures/tls/server-key.pem");
-const CLIENT_CERT: &str = include_str!("fixtures/tls/client.crt");
-const CLIENT_KEY: &str = include_str!("fixtures/tls/client-key.pem");
 
 struct EmptyGraphNeighborhoodReader;
 
@@ -63,20 +58,124 @@ struct TlsFixturePaths {
     server_cert: PathBuf,
     server_key: PathBuf,
     client_ca: PathBuf,
+    ca_cert_pem: String,
+    client_cert_pem: String,
+    client_key_pem: String,
 }
 
 impl TlsFixturePaths {
     fn new() -> io::Result<Self> {
         let dir = tempfile::tempdir()?;
-        let server_cert = write_fixture(&dir, "server.crt", SERVER_CERT)?;
-        let server_key = write_fixture(&dir, "server.key", SERVER_KEY)?;
-        let client_ca = write_fixture(&dir, "ca.crt", CA_CERT)?;
+        let ca_key = dir.path().join("ca.key");
+        let client_ca = dir.path().join("ca.crt");
+        let server_key = dir.path().join("server.key");
+        let server_csr = dir.path().join("server.csr");
+        let server_ext = dir.path().join("server.ext");
+        let server_cert = dir.path().join("server.crt");
+        let client_key = dir.path().join("client.key");
+        let client_csr = dir.path().join("client.csr");
+        let client_ext = dir.path().join("client.ext");
+        let client_cert = dir.path().join("client.crt");
+
+        run_openssl([
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:2048",
+            "-days",
+            "3650",
+            "-nodes",
+            "-keyout",
+            &path_string(&ca_key)?,
+            "-out",
+            &path_string(&client_ca)?,
+            "-subj",
+            "/CN=rehydration-test-ca",
+        ])?;
+
+        run_openssl([
+            "req",
+            "-newkey",
+            "rsa:2048",
+            "-nodes",
+            "-keyout",
+            &path_string(&server_key)?,
+            "-out",
+            &path_string(&server_csr)?,
+            "-subj",
+            "/CN=localhost",
+            "-addext",
+            "subjectAltName=DNS:localhost,IP:127.0.0.1",
+        ])?;
+        fs::write(
+            &server_ext,
+            "[v3_req]\nsubjectAltName=DNS:localhost,IP:127.0.0.1\nextendedKeyUsage=serverAuth\n",
+        )?;
+        run_openssl([
+            "x509",
+            "-req",
+            "-in",
+            &path_string(&server_csr)?,
+            "-CA",
+            &path_string(&client_ca)?,
+            "-CAkey",
+            &path_string(&ca_key)?,
+            "-CAcreateserial",
+            "-out",
+            &path_string(&server_cert)?,
+            "-days",
+            "3650",
+            "-extfile",
+            &path_string(&server_ext)?,
+            "-extensions",
+            "v3_req",
+        ])?;
+
+        run_openssl([
+            "req",
+            "-newkey",
+            "rsa:2048",
+            "-nodes",
+            "-keyout",
+            &path_string(&client_key)?,
+            "-out",
+            &path_string(&client_csr)?,
+            "-subj",
+            "/CN=rehydration-test-client",
+        ])?;
+        fs::write(&client_ext, "[v3_req]\nextendedKeyUsage=clientAuth\n")?;
+        run_openssl([
+            "x509",
+            "-req",
+            "-in",
+            &path_string(&client_csr)?,
+            "-CA",
+            &path_string(&client_ca)?,
+            "-CAkey",
+            &path_string(&ca_key)?,
+            "-CAcreateserial",
+            "-out",
+            &path_string(&client_cert)?,
+            "-days",
+            "3650",
+            "-extfile",
+            &path_string(&client_ext)?,
+            "-extensions",
+            "v3_req",
+        ])?;
+
+        let ca_cert_pem = fs::read_to_string(&client_ca)?;
+        let client_cert_pem = fs::read_to_string(client_cert)?;
+        let client_key_pem = fs::read_to_string(client_key)?;
 
         Ok(Self {
             _dir: dir,
             server_cert,
             server_key,
             client_ca,
+            ca_cert_pem,
+            client_cert_pem,
+            client_key_pem,
         })
     }
 }
@@ -93,7 +192,7 @@ async fn grpc_server_supports_tls_roundtrip() {
     .await
     .expect("TLS server should start");
 
-    let channel = connect_tls_channel(&running.endpoint, false)
+    let channel = connect_tls_channel(&running.endpoint, &tls_fixture, false)
         .await
         .expect("TLS client should connect");
     let mut query_client = ContextQueryServiceClient::new(channel);
@@ -124,7 +223,7 @@ async fn grpc_server_rejects_clients_without_certificate_in_mutual_mode() {
     .await
     .expect("mTLS server should start");
 
-    let connection = connect_tls_channel(&running.endpoint, false).await;
+    let connection = connect_tls_channel(&running.endpoint, &tls_fixture, false).await;
     match connection {
         Ok(channel) => {
             let mut query_client = ContextQueryServiceClient::new(channel);
@@ -171,7 +270,7 @@ async fn grpc_server_accepts_clients_with_certificate_in_mutual_mode() {
     .await
     .expect("mTLS server should start");
 
-    let channel = connect_tls_channel(&running.endpoint, true)
+    let channel = connect_tls_channel(&running.endpoint, &tls_fixture, true)
         .await
         .expect("mTLS client should connect with a certificate");
     let mut query_client = ContextQueryServiceClient::new(channel);
@@ -249,13 +348,17 @@ async fn stop_server(
 
 async fn connect_tls_channel(
     endpoint: &str,
+    tls_fixture: &TlsFixturePaths,
     include_client_identity: bool,
 ) -> Result<Channel, Box<dyn std::error::Error + Send + Sync>> {
     let mut tls = ClientTlsConfig::new()
-        .ca_certificate(Certificate::from_pem(CA_CERT))
+        .ca_certificate(Certificate::from_pem(tls_fixture.ca_cert_pem.clone()))
         .domain_name("localhost");
     if include_client_identity {
-        tls = tls.identity(Identity::from_pem(CLIENT_CERT, CLIENT_KEY));
+        tls = tls.identity(Identity::from_pem(
+            tls_fixture.client_cert_pem.clone(),
+            tls_fixture.client_key_pem.clone(),
+        ));
     }
 
     let endpoint = Endpoint::from_shared(endpoint.to_string())?.tls_config(tls)?;
@@ -294,8 +397,20 @@ async fn get_context(
         .await
 }
 
-fn write_fixture(dir: &TempDir, name: &str, contents: &str) -> io::Result<PathBuf> {
-    let path = dir.path().join(name);
-    fs::write(&path, contents)?;
-    Ok(path)
+fn path_string(path: &std::path::Path) -> io::Result<String> {
+    path.to_str()
+        .map(ToString::to_string)
+        .ok_or_else(|| io::Error::other(format!("path is not valid UTF-8: {}", path.display())))
+}
+
+fn run_openssl<const N: usize>(args: [&str; N]) -> io::Result<()> {
+    let output = Command::new("openssl").args(args).output()?;
+    if output.status.success() {
+        return Ok(());
+    }
+
+    Err(io::Error::other(format!(
+        "openssl command failed: {}",
+        String::from_utf8_lossy(&output.stderr).trim()
+    )))
 }
