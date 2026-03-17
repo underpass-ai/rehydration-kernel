@@ -3,6 +3,7 @@ mod nats_tls;
 mod projection_nats_runtime;
 
 use std::process::ExitCode;
+use std::sync::Once;
 
 use rehydration_adapter_nats::NatsProjectionConsumer;
 use rehydration_adapter_neo4j::Neo4jProjectionReader;
@@ -27,6 +28,7 @@ async fn main() -> ExitCode {
 }
 
 async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    install_rustls_crypto_provider();
     let config = AppConfig::try_from_env()?;
     let compatibility_nats_config = CompatibilityNatsConfig::try_from_env()?;
     let projection_runtime_config = ProjectionRuntimeConfig::try_from_env()?;
@@ -71,4 +73,11 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     )?;
 
     Ok(())
+}
+
+fn install_rustls_crypto_provider() {
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        let _ = tokio_rustls::rustls::crypto::aws_lc_rs::default_provider().install_default();
+    });
 }

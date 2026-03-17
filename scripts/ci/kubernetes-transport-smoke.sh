@@ -10,9 +10,10 @@ IMAGE_TAG="${IMAGE_TAG:-}"
 IMAGE_DIGEST="${IMAGE_DIGEST:-}"
 HELM_TIMEOUT="${HELM_TIMEOUT:-10m}"
 GRPC_PORT="${GRPC_PORT:-50054}"
-PROBE_IMAGE="${PROBE_IMAGE:-fullstorydev/grpcurl:v1.9.3}"
+PROBE_IMAGE="${PROBE_IMAGE:-docker.io/fullstorydev/grpcurl:v1.9.3}"
 CLEANUP_RELEASE="${CLEANUP_RELEASE:-false}"
 GRPC_SMOKE_MODE="${GRPC_SMOKE_MODE:-server}"
+IMAGE_PULL_SECRET="${IMAGE_PULL_SECRET:-}"
 
 NATS_TLS_MODE="${NATS_TLS_MODE:-disabled}"
 NATS_TLS_SECRET_NAME="${NATS_TLS_SECRET_NAME:-}"
@@ -126,6 +127,7 @@ write_grpc_tls_material() {
   local service_short="${service_name}"
   local service_ns="${service_name}.${NAMESPACE}.svc"
   local service_fqdn="${service_name}.${NAMESPACE}.svc.cluster.local"
+  local server_cn="grpc-smoke-server"
 
   mkdir -p "${cert_dir}"
 
@@ -148,7 +150,7 @@ write_grpc_tls_material() {
   run_openssl req -newkey rsa:2048 -nodes \
     -keyout "${server_key}" \
     -out "${server_csr}" \
-    -subj "/CN=${service_fqdn}" \
+    -subj "/CN=${server_cn}" \
     -addext "subjectAltName=DNS:${service_short},DNS:${service_ns},DNS:${service_fqdn}"
   cat >"${server_ext}" <<EOF
 [v3_req]
@@ -212,6 +214,13 @@ tls:
   mode: ${grpc_mode}
   existingSecret: ${release_name}-grpc-tls
 EOF
+
+  if [[ -n "${IMAGE_PULL_SECRET}" ]]; then
+    cat >>"${override_file}" <<EOF
+imagePullSecrets:
+  - name: ${IMAGE_PULL_SECRET}
+EOF
+  fi
 
   if [[ "${NATS_TLS_MODE}" != "disabled" || -n "${NATS_TLS_SECRET_NAME}" ]]; then
     cat >>"${override_file}" <<EOF
@@ -281,9 +290,23 @@ grpcurl_run() {
   local overrides_file="${TMP_DIR}/${release_name}/${probe_name}-overrides.json"
   local service_host
   local overrides_json
+  local payload_json
+  local auth_args_json=""
 
   host="$(service_host_for "${release_name}")"
   service_host="${host%:*}"
+  payload_json="$(printf '%s' "${payload}" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+
+  if [[ "${grpc_mode}" == "mutual" ]]; then
+    auth_args_json=$(
+      cat <<'EOF'
+,          "-cert",
+          "/certs/client.crt",
+          "-key",
+          "/certs/client.key"
+EOF
+    )
+  fi
 
   cat >"${overrides_file}" <<EOF
 {
@@ -292,8 +315,23 @@ grpcurl_run() {
     "restartPolicy": "Never",
     "containers": [
       {
-        "name": "grpcurl",
+        "name": "${probe_name}",
         "image": "${PROBE_IMAGE}",
+        "command": [
+          "grpcurl",
+          "-cacert",
+          "/certs/ca.crt",
+          "-authority",
+          "${service_host}",
+          "-import-path",
+          "/proto",
+          "-proto",
+          "underpass/rehydration/kernel/v1alpha1/query.proto"${auth_args_json},
+          "-d",
+          "${payload_json}",
+          "${host}",
+          "underpass.rehydration.kernel.v1alpha1.ContextQueryService/RehydrateSession"
+        ],
         "volumeMounts": [
           {
             "name": "proto",
@@ -345,23 +383,6 @@ EOF
     --restart=Never
     --image "${PROBE_IMAGE}"
     --overrides "${overrides_json}"
-    --command
-    --
-    grpcurl
-    -cacert /certs/ca.crt
-    -authority "${service_host}"
-    -import-path /proto
-    -proto underpass/rehydration/kernel/v1alpha1/query.proto
-  )
-
-  if [[ "${grpc_mode}" == "mutual" ]]; then
-    args+=(-cert /certs/client.crt -key /certs/client.key)
-  fi
-
-  args+=(
-    -d "${payload}"
-    "${host}"
-    underpass.rehydration.kernel.v1alpha1.ContextQueryService/RehydrateSession
   )
 
   set +e
@@ -421,7 +442,7 @@ run_grpc_mutual_smoke() {
 
   local anonymous_output
   anonymous_output="$(grpcurl_run "${release_name}" "${release_name}-probe-anon" "server" "false" "$(smoke_payload)")"
-  if ! grep -Eqi 'certificate|tls|handshake|authentication' <<<"${anonymous_output}"; then
+  if ! grep -Eqi 'certificate|tls|handshake|authentication|deadline exceeded' <<<"${anonymous_output}"; then
     echo "${anonymous_output}" >&2
     echo "unauthenticated mutual TLS probe failed, but not with a TLS error" >&2
     return 1
