@@ -1,26 +1,52 @@
 use std::env;
+use std::io;
 
-use crate::env_bool::parse_bool_env;
+use crate::{NatsTlsConfig, nats_tls_config::NatsEndpointConfig};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompatibilityNatsConfig {
     pub url: String,
     pub enabled: bool,
+    pub tls: NatsTlsConfig,
 }
 
 impl CompatibilityNatsConfig {
     pub fn from_env() -> Self {
+        Self::try_from_env().expect("NATS_* compatibility config should be valid")
+    }
+
+    pub fn try_from_env() -> io::Result<Self> {
+        Self::from_lookup(|key| env::var(key).ok())
+    }
+
+    fn from_lookup<F>(lookup: F) -> io::Result<Self>
+    where
+        F: Fn(&str) -> Option<String>,
+    {
+        let endpoint = NatsEndpointConfig::from_lookup(&lookup)?;
+
+        Ok(Self {
+            url: endpoint.url,
+            enabled: lookup("ENABLE_NATS")
+                .map(|value| crate::env_bool::parse_bool_value(&value))
+                .unwrap_or(true),
+            tls: endpoint.tls,
+        })
+    }
+
+    pub fn disabled() -> Self {
+        let endpoint = NatsEndpointConfig::disabled();
+
         Self {
-            url: env::var("NATS_URL").unwrap_or_else(|_| "nats://nats:4222".to_string()),
-            enabled: parse_bool_env("ENABLE_NATS", true),
+            url: endpoint.url,
+            enabled: false,
+            tls: endpoint.tls,
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::env_bool::parse_bool_value;
-
     use super::CompatibilityNatsConfig;
 
     #[test]
@@ -29,19 +55,6 @@ mod tests {
 
         assert_eq!(config.url, "nats://nats:4222");
         assert!(config.enabled);
-    }
-
-    #[test]
-    fn parse_bool_value_accepts_frozen_truthy_values() {
-        for value in ["true", "TRUE", "1", " yes ", "on"] {
-            assert!(parse_bool_value(value));
-        }
-    }
-
-    #[test]
-    fn parse_bool_value_treats_other_values_as_false() {
-        for value in ["false", "0", "no", "off", ""] {
-            assert!(!parse_bool_value(value));
-        }
+        assert_eq!(config.tls, crate::NatsTlsConfig::disabled());
     }
 }

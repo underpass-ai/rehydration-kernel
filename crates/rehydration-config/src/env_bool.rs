@@ -1,13 +1,3 @@
-use std::env;
-
-pub(crate) fn parse_bool_env(name: &str, default: bool) -> bool {
-    let Ok(value) = env::var(name) else {
-        return default;
-    };
-
-    parse_bool_value(&value)
-}
-
 pub(crate) fn parse_bool_value(value: &str) -> bool {
     matches!(
         value.trim().to_ascii_lowercase().as_str(),

@@ -5,6 +5,8 @@ use rehydration_config::CompatibilityNatsConfig;
 use rehydration_domain::{GraphNeighborhoodReader, NodeDetailReader, SnapshotStore};
 use rehydration_transport_grpc::GrpcServer;
 
+use crate::nats_tls::adapter_nats_tls_config;
+
 pub enum CompatibilityRuntime<S> {
     Enabled(Box<NatsCompatibilityRuntime<S>>),
     Disabled,
@@ -47,6 +49,7 @@ where
 
     NatsCompatibilityRuntime::connect(
         &config.url,
+        &adapter_nats_tls_config(&config.tls),
         ContextAsyncApplication::new(
             grpc_server.command_application(),
             grpc_server.query_application(),
@@ -60,7 +63,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use rehydration_config::{AppConfig, GrpcTlsConfig};
+    use rehydration_config::{AppConfig, GrpcTlsConfig, NatsTlsConfig};
     use rehydration_domain::{
         NodeDetailProjection, NodeNeighborhood, PortError, SnapshotSaveOptions,
     };
@@ -128,6 +131,7 @@ mod tests {
             &rehydration_config::CompatibilityNatsConfig {
                 url: "nats://127.0.0.1:4222".to_string(),
                 enabled: false,
+                tls: NatsTlsConfig::disabled(),
             },
         )
         .await
@@ -175,6 +179,7 @@ mod tests {
             &rehydration_config::CompatibilityNatsConfig {
                 url: "nats://127.0.0.1:1".to_string(),
                 enabled: true,
+                tls: NatsTlsConfig::disabled(),
             },
         )
         .await

@@ -90,6 +90,8 @@ Current progress:
 - config envs for certificate paths are implemented
 - Helm wiring is being added in this milestone so operators can mount
   certificate secrets without patching manifests manually
+- outbound NATS TLS configuration is being added as the next transport-security
+  slice for the event runtime
 
 ## Decision
 
@@ -121,7 +123,6 @@ Out of scope for v1:
 - RBAC or authorization based on certificate identity
 - SPIFFE or SPIRE integration
 - automatic certificate rotation
-- NATS TLS
 - Valkey TLS
 - additional HTTP admin transport security
 
