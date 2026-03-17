@@ -2081,6 +2081,7 @@ dependencies = [
  "tempfile",
  "testcontainers",
  "tokio",
+ "tokio-rustls",
  "tokio-stream",
  "tonic",
 ]

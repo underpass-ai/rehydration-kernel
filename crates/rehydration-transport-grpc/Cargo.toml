@@ -25,6 +25,7 @@ serde_json.workspace = true
 tonic.workspace = true
 tokio.workspace = true
 tokio-stream.workspace = true
+tokio-rustls = "0.26.4"
 
 [dev-dependencies]
 neo4rs.workspace = true
