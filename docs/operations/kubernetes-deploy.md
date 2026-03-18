@@ -65,6 +65,16 @@ IMAGE_TAG=main \
 bash scripts/ci/deploy-kubernetes.sh
 ```
 
+## Smoke Validation
+
+After deploying transport-security changes, use the dedicated smoke script:
+
+- [`scripts/ci/kubernetes-transport-smoke.sh`](../../scripts/ci/kubernetes-transport-smoke.sh)
+- runbook: [kubernetes-transport-smoke.md](./kubernetes-transport-smoke.md)
+
+That path validates real in-cluster gRPC TLS and mTLS, and it can also validate
+outbound NATS and Valkey TLS against a TLS-enabled environment.
+
 ## gRPC TLS and mTLS
 
 The chart now exposes inbound gRPC transport mode directly:
