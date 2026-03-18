@@ -106,7 +106,7 @@ spec:
                   key: {{ .Values.secrets.keys.natsUrl | quote }}
             {{- else if .Values.development.allowInlineConnections }}
             - name: REHYDRATION_GRAPH_URI
-              value: {{ default (include "rehydration-kernel.neo4j.uri" .) .Values.connections.graphUri | quote }}
+              value: {{ include "rehydration-kernel.inlineGraphUri" (dict "uri" (default (include "rehydration-kernel.neo4j.uri" .) .Values.connections.graphUri) "tls" .Values.neo4jTls) | quote }}
             - name: REHYDRATION_DETAIL_URI
               value: {{ include "rehydration-kernel.inlineValkeyUri" (dict "uri" .Values.connections.detailUri "tls" .Values.valkeyTls) | quote }}
             - name: REHYDRATION_SNAPSHOT_URI
@@ -119,7 +119,7 @@ spec:
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
-          {{- if or (ne .Values.tls.mode "disabled") .Values.natsTls.existingSecret .Values.valkeyTls.existingSecret }}
+          {{- if or (ne .Values.tls.mode "disabled") .Values.natsTls.existingSecret .Values.valkeyTls.existingSecret .Values.neo4jTls.existingSecret }}
           volumeMounts:
             {{- if ne .Values.tls.mode "disabled" }}
             - name: grpc-tls
@@ -136,10 +136,15 @@ spec:
               mountPath: {{ .Values.valkeyTls.mountPath | quote }}
               readOnly: true
             {{- end }}
+            {{- if .Values.neo4jTls.existingSecret }}
+            - name: neo4j-tls
+              mountPath: {{ .Values.neo4jTls.mountPath | quote }}
+              readOnly: true
+            {{- end }}
           {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-      {{- if or (ne .Values.tls.mode "disabled") .Values.natsTls.existingSecret .Values.valkeyTls.existingSecret }}
+      {{- if or (ne .Values.tls.mode "disabled") .Values.natsTls.existingSecret .Values.valkeyTls.existingSecret .Values.neo4jTls.existingSecret }}
       volumes:
         {{- if ne .Values.tls.mode "disabled" }}
         - name: grpc-tls
@@ -155,6 +160,11 @@ spec:
         - name: valkey-tls
           secret:
             secretName: {{ .Values.valkeyTls.existingSecret | quote }}
+        {{- end }}
+        {{- if .Values.neo4jTls.existingSecret }}
+        - name: neo4j-tls
+          secret:
+            secretName: {{ .Values.neo4jTls.existingSecret | quote }}
         {{- end }}
       {{- end }}
       {{- with .Values.nodeSelector }}

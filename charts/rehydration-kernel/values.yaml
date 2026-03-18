@@ -35,6 +35,14 @@ securityContext:
 service:
   type: ClusterIP
   grpcPort: 50054
+  annotations: {}
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts: []
+  tls: []
 
 tls:
   mode: disabled
@@ -63,6 +71,13 @@ valkeyTls:
     ca: ""
     cert: ""
     key: ""
+
+neo4jTls:
+  enabled: false
+  existingSecret: ""
+  mountPath: /var/run/rehydration-kernel/neo4j-tls
+  keys:
+    ca: ""
 
 config:
   serviceName: rehydration-kernel

@@ -1,38 +1,36 @@
 # Transport Security v1
 
-Status: `in_progress`
+Status: `implemented_with_follow_up_gap`
 
 ## Purpose
 
 Define the first transport-security milestone for `rehydration-kernel`.
 
-This milestone starts with the most important gap:
+This milestone started with the most important gap:
 
 - inbound gRPC transport security for the standalone kernel
 
-The goal is to make the kernel deployable in less-trusted cluster networks
+The delivered result is a kernel that is deployable in less-trusted cluster
+networks
 without forcing a service mesh or sidecar proxy.
 
 ## Why This Matters
 
-Today the kernel is strong in:
+The kernel is now strong in:
 
 - contract discipline
 - packaging
 - CI quality gates
 - Helm deployment
 
-But it still assumes a trusted internal network at transport level.
+The original transport gap is closed for the kernel-owned surfaces.
 
 Current limitations:
 
-- gRPC server runs in plaintext
-- no client certificate validation
-- no server certificate configuration
-- Helm chart has no first-class TLS or mTLS wiring
+- the chart does not yet expose Neo4j client identity as a first-class feature
+- HTTP admin transport is still a placeholder, not a hardened public surface
 
-That is acceptable for internal evaluation, but not for a serious production
-posture.
+Those are narrower follow-up items, not the original blocker.
 
 ## Current State
 
@@ -42,15 +40,15 @@ Current server implementation:
 
 - [`crates/rehydration-transport-grpc/src/transport/grpc_server.rs`](../../crates/rehydration-transport-grpc/src/transport/grpc_server.rs)
 
-It uses:
+It now uses:
 
 - `tonic::transport::Server::builder()`
 
-It does not use:
+It now supports:
 
-- `ServerTlsConfig`
-- server certificate loading
-- client CA verification
+- plaintext mode
+- server TLS
+- mutual TLS with client CA verification
 
 ### Configuration
 
@@ -58,13 +56,13 @@ Current app config:
 
 - [`crates/rehydration-config/src/app_config.rs`](../../crates/rehydration-config/src/app_config.rs)
 
-It exposes:
+It now exposes:
 
 - `grpc_bind`
 - `admin_bind`
 - backend URIs
 
-It does not expose:
+It now includes:
 
 - TLS mode
 - cert path
@@ -78,11 +76,17 @@ Current chart wiring:
 - [`charts/rehydration-kernel/templates/deployment.yaml`](../../charts/rehydration-kernel/templates/deployment.yaml)
 - [`charts/rehydration-kernel/values.yaml`](../../charts/rehydration-kernel/values.yaml)
 
-It does not support:
+It now supports:
 
-- TLS secret mounts
-- mTLS CA mounts
+- TLS secret mounts for inbound gRPC
+- mTLS CA mounts for inbound gRPC
 - transport mode selection
+- outbound NATS TLS and outbound Valkey TLS wiring
+- custom Neo4j CA wiring for secure inline `graphUri` values
+
+It does not yet support:
+
+- first-class Neo4j client identity wiring
 
 Current progress:
 
@@ -93,6 +97,11 @@ Current progress:
 - outbound Valkey TLS and `rediss://` / `valkeys://` support are implemented
 - the current chart slice is wiring certificate mounts and operator-facing
   values for outbound NATS and Valkey TLS
+- custom Neo4j CA wiring is implemented in the chart for secure inline
+  `graphUri` values
+- cluster smoke coverage is implemented for gRPC TLS and mTLS plus outbound TLS
+- container-backed full-journey TLS coverage is implemented across gRPC, NATS,
+  Valkey, and Neo4j
 
 ## Decision
 
@@ -125,12 +134,12 @@ cache connections:
 - NATS client TLS and mTLS
 - Valkey TLS via `rediss://` and `valkeys://`
 
-Out of scope for v1:
+Remaining follow-up beyond the delivered v1 slice:
 
 - RBAC or authorization based on certificate identity
 - SPIFFE or SPIRE integration
 - automatic certificate rotation
-- Valkey TLS
+- first-class Neo4j client identity wiring
 - additional HTTP admin transport security
 
 Those belong to later milestones.

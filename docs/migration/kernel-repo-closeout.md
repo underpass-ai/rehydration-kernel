@@ -81,6 +81,10 @@ Its non-responsibilities are:
 
 - container-backed gRPC compatibility tests
 - container-backed generic NATS tests
+- full kernel journey E2E across projection, query, compatibility, command, and
+  admin
+- full TLS kernel journey E2E across gRPC, NATS, Valkey, and Neo4j in the test
+  harness
 - agentic end-to-end proof using runtime tool execution
 - event-driven agentic end-to-end proof triggered from
   `context.bundle.generated`

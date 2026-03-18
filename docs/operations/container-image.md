@@ -10,7 +10,7 @@ Registry:
 
 - `ghcr.io/underpass-ai/rehydration-kernel`
 
-Expected tags:
+Published tags:
 
 - `latest` on the default branch
 - `main`
@@ -29,9 +29,10 @@ owned by sibling repos.
 
 - gRPC: `50054`
 
-## Default Environment In The Image
+## Default Runtime Configuration In The Container
 
-The image sets container-oriented defaults:
+Between image environment variables and server-side config defaults, the
+container starts with:
 
 - `REHYDRATION_SERVICE_NAME=rehydration-kernel`
 - `REHYDRATION_GRPC_BIND=0.0.0.0:50054`
@@ -114,6 +115,16 @@ Security posture of the chart:
 - it expects a Valkey-backed `runtimeStateUri` for projection deduplication and checkpoints
 - inline `connections.*` are reserved for development-only overrides such as
   [`values.dev.yaml`](../../charts/rehydration-kernel/values.dev.yaml)
+
+Current chart boundary:
+
+- inbound gRPC TLS and mTLS are first-class
+- outbound NATS TLS and outbound Valkey TLS are first-class
+- optional Kubernetes Ingress rendering is first-class for controller-managed
+  gRPC exposure
+- Neo4j secure schemes plus custom CA mounts are first-class for inline
+  `graphUri` values
+- Neo4j client identity is not yet a first-class chart feature
 
 Local validation:
 

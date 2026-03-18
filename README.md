@@ -28,9 +28,13 @@ What is already in place:
 - frozen node-centric gRPC and async contracts
 - contract CI with `buf breaking`, AsyncAPI checks, and boundary naming policy
 - container-backed integration tests
+- full kernel journey end-to-end coverage:
+  - projection -> query -> compatibility -> command -> admin
+  - full TLS variant across gRPC, NATS, Valkey, and Neo4j in the test harness
 - agentic end-to-end proofs:
-  - pull-driven runtime flow
+  - pull-driven runtime flow against a narrow runtime contract shape
   - event-driven runtime trigger flow
+- cluster-verifiable starship journey demo for a production-like graph case
 - runtime integration reference docs and runnable client example
 
 What is intentionally out of scope for this repo:
@@ -149,6 +153,8 @@ bash scripts/ci/integration-valkey.sh
 bash scripts/ci/integration-neo4j.sh
 bash scripts/ci/integration-agentic-context.sh
 bash scripts/ci/integration-agentic-event-context.sh
+bash scripts/ci/integration-kernel-full-journey.sh
+bash scripts/ci/integration-kernel-full-journey-tls.sh
 ```
 
 For deployed kernels, the generic projection runtime persists its own state in
@@ -209,7 +215,7 @@ See:
 The kernel now owns a standalone OCI image intended for external download and
 evaluation.
 
-Planned public location:
+Public location:
 
 - `ghcr.io/underpass-ai/rehydration-kernel`
 
@@ -225,13 +231,20 @@ for environment variables, tags, and usage.
 Helm chart:
 
 - source chart: [`charts/rehydration-kernel`](./charts/rehydration-kernel)
-- planned OCI location: `oci://ghcr.io/underpass-ai/charts/rehydration-kernel`
+- OCI location: `oci://ghcr.io/underpass-ai/charts/rehydration-kernel`
 
 The default chart values are intentionally secure:
 
 - no implicit `latest` image tag
 - no inline backend URIs by default
 - production-style installs should use `image.digest` or a pinned tag plus `secrets.existingSecret`
+- optional `ingress.enabled` can expose the gRPC service through a controller-managed ingress
+- optional `neo4jTls.*` can mount a custom Neo4j CA for secure `graphUri` values
+
+The sibling-runtime deployment profiles are:
+
+- [`charts/rehydration-kernel/values.underpass-runtime.yaml`](./charts/rehydration-kernel/values.underpass-runtime.yaml) for the current cluster wiring, including the NGINX gRPC ingress host `rehydration-kernel.underpassai.com`
+- [`charts/rehydration-kernel/values.underpass-runtime.secure.example.yaml`](./charts/rehydration-kernel/values.underpass-runtime.secure.example.yaml) for the staged Neo4j TLS target once the shared graph service publishes a CA-backed TLS endpoint
 
 For local evaluation only, use [`values.dev.yaml`](./charts/rehydration-kernel/values.dev.yaml).
 

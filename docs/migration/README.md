@@ -30,7 +30,7 @@ Phase 0 status:
 - runtime integration reference for external consumers: complete
 - runnable runtime reference client outside tests: complete
 - LLM response determinism strategy: planned and documented
-- transport security v1: planned and documented
+- transport security v1: implemented for gRPC, outbound NATS, outbound Valkey, and Neo4j CA wiring; Neo4j client identity remains open
 - repo closeout and handoff to integrating products: complete
 - shadow mode specification for `swe-ai-fleet`: complete as documentation
 - deferred kernel maintenance milestone: consolidate the integration harness

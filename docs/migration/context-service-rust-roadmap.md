@@ -130,7 +130,7 @@ Reference:
 
 ## Strategic Security Milestone
 
-Status: `planned`
+Status: `mostly_complete`
 
 Title:
 
@@ -139,9 +139,12 @@ Title:
 Why it exists:
 
 - the kernel is already strong in contract, CI, packaging, and deployment, but
-  still assumes plaintext trusted-network transport
-- production-grade standalone deployment needs first-class TLS and mTLS support
-  for gRPC
+  still needed first-class transport hardening for standalone deployment
+- inbound gRPC TLS and mTLS are now delivered
+- outbound NATS TLS and outbound Valkey TLS are now delivered
+- Neo4j custom CA wiring in Helm is now delivered
+- the remaining transport gap is any future Neo4j client identity plus admin
+  hardening if those become necessary
 
 Reference:
 

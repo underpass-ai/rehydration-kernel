@@ -47,9 +47,17 @@ The default values file is:
 
 - [`charts/rehydration-kernel/values.underpass-runtime.yaml`](../../charts/rehydration-kernel/values.underpass-runtime.yaml)
 
-That keeps the deploy path aligned with the sibling runtime environment.
-The kernel chart assumes Neo4j, Valkey, and NATS are required runtime
+That keeps the deploy path aligned with the sibling runtime environment and now
+includes the controller-managed gRPC ingress host currently reserved for the
+kernel. The kernel chart assumes Neo4j, Valkey, and NATS are required runtime
 dependencies; there are no transport disable flags in the deployment contract.
+
+The secure follow-up profile is:
+
+- [`charts/rehydration-kernel/values.underpass-runtime.secure.example.yaml`](../../charts/rehydration-kernel/values.underpass-runtime.secure.example.yaml)
+
+That file captures the intended sibling-runtime target once the shared Neo4j
+deployment exposes TLS and the kernel namespace has the matching CA secret.
 
 ## Local Equivalent
 
@@ -122,6 +130,47 @@ tls:
   mode: mutual
   existingSecret: rehydration-kernel-grpc-tls
 ```
+
+## Ingress Exposure
+
+The chart can optionally render a Kubernetes `Ingress` in front of the gRPC
+service.
+
+The core values are:
+
+- `ingress.enabled`
+- `ingress.className`
+- `ingress.annotations`
+- `ingress.hosts`
+- `ingress.tls`
+
+Example for an NGINX ingress controller serving gRPC:
+
+```yaml
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/backend-protocol: GRPC
+  hosts:
+    - host: rehydration-kernel.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - hosts:
+        - rehydration-kernel.example.com
+      secretName: rehydration-kernel-ingress-tls
+```
+
+Controller-specific annotations stay with the operator because gRPC ingress
+behavior is controller-specific.
+
+The sibling runtime profile now enables this directly with:
+
+- host: `rehydration-kernel.underpassai.com`
+- class: `nginx`
+- annotation: `nginx.ingress.kubernetes.io/backend-protocol: GRPC`
 
 ## Outbound NATS TLS
 
@@ -214,6 +263,51 @@ If you use `secrets.existingSecret` for connection URIs, Helm cannot rewrite
 the secret-backed values. In that case, store the final `rediss://` or
 `valkeys://` URIs in the secret, including `tls_ca_path`, `tls_cert_path`, and
 `tls_key_path` query parameters that match the mounted paths.
+
+## Neo4j TLS Today
+
+The Neo4j adapter supports secure schemes such as:
+
+- `bolt+s://`
+- `bolt+ssc://`
+- `neo4j+s://`
+- `neo4j+ssc://`
+
+The chart now supports first-class mounting of a custom Neo4j CA for inline
+`connections.graphUri` values.
+
+The shared cluster still serves Neo4j over plaintext `neo4j://` today, so the
+default sibling-runtime values stay on the plaintext URI. The staged secure
+target lives in
+[`charts/rehydration-kernel/values.underpass-runtime.secure.example.yaml`](../../charts/rehydration-kernel/values.underpass-runtime.secure.example.yaml)
+and switches the graph connection to `neo4j+s://...` plus `neo4jTls.*`.
+
+Example values override:
+
+```yaml
+neo4jTls:
+  enabled: true
+  existingSecret: rehydration-kernel-neo4j-tls
+  keys:
+    ca: ca.crt
+
+connections:
+  graphUri: bolt+s://neo4j.example.internal:7687
+```
+
+That renders `REHYDRATION_GRAPH_URI` with the matching `tls_ca_path` query
+parameter that points at the mounted CA file.
+
+Current boundary:
+
+- publicly trusted Neo4j certificates can be handled through the base image
+  trust store plus a secure `graphUri`
+- private-trust Neo4j deployments can use `neo4jTls.*` with inline
+  `connections.graphUri`
+- secret-backed `graphUri` values still need the final secure URI, including
+  `tls_ca_path`, to be stored in the secret because Helm cannot rewrite secret
+  contents
+- Neo4j client identity is still outside the current chart surface
 
 ## Notes
 
