@@ -11,9 +11,13 @@ pub(crate) mod fake_underpass_runtime;
 pub(crate) mod generic_seed_data;
 #[path = "../support/grpc_runtime.rs"]
 pub(crate) mod grpc_runtime;
+#[path = "../support/kernel_e2e_seed.rs"]
+pub(crate) mod kernel_e2e_seed;
 #[path = "../support/nats_container.rs"]
 pub(crate) mod nats_container;
 #[path = "../support/projection_runtime.rs"]
 pub(crate) mod projection_runtime;
 #[path = "../support/runtime_workspace.rs"]
 pub(crate) mod runtime_workspace;
+#[path = "../support/seed_data.rs"]
+pub(crate) mod seed_data;

@@ -38,5 +38,7 @@ run_container_coverage_test rehydration-adapter-nats runtime_integration
 run_container_coverage_test rehydration-transport-grpc compatibility_integration
 run_container_coverage_test rehydration-transport-grpc agentic_integration
 run_container_coverage_test rehydration-transport-grpc agentic_event_integration
+run_container_coverage_test rehydration-transport-grpc kernel_full_journey_integration
+run_container_coverage_test rehydration-transport-grpc kernel_full_journey_tls_integration
 
 cargo llvm-cov report --locked --lcov --output-path target/llvm-cov/lcov.info
