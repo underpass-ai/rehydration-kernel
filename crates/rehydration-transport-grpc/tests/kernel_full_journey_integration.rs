@@ -3,12 +3,22 @@
 mod agentic_support;
 
 use std::error::Error;
+use std::time::Duration as StdDuration;
 
 use agentic_support::agentic_fixture::AgenticFixture;
-use agentic_support::kernel_e2e_seed::{TASK_DETAIL, publish_kernel_e2e_projection_events};
+use agentic_support::kernel_e2e_seed::{
+    CHIEF_ENGINEER_TITLE, DECISION_DETAIL, DECISION_ID, DECISION_TITLE,
+    EXPECTED_COMPLETED_TASK_COUNT, EXPECTED_DECISION_COUNT, EXPECTED_DECISION_EDGE_COUNT,
+    EXPECTED_DETAIL_COUNT, EXPECTED_IMPACT_COUNT, EXPECTED_NEIGHBOR_COUNT,
+    EXPECTED_RELATIONSHIP_COUNT, EXPECTED_SELECTED_NODE_COUNT,
+    EXPECTED_SELECTED_RELATIONSHIP_COUNT, EXPECTED_TASK_COUNT, EXPECTED_TOKEN_BUDGET_HINT,
+    JUMP_DECISION_ID, POWER_TASK_ID, PROPULSION_SUBSYSTEM_TITLE, RELATION_DECISION_REQUIRES,
+    RELATION_DEPENDS_ON, RELATION_IMPACTS, ROOT_DETAIL, ROOT_LABEL, ROOT_NODE_ID, ROOT_TITLE,
+    TASK_DETAIL, TASK_ID, TASK_TITLE, publish_kernel_e2e_projection_events,
+};
 use agentic_support::seed_data::{
-    BUILD_PHASE, DECISION_ID, DEVELOPER_ROLE, ROOT_LABEL, ROOT_NODE_ID, ROOT_TITLE, TASK_ID,
-    TASK_TITLE, allowed_validate_scope_request_scopes, rejected_validate_scope_request_scopes,
+    BUILD_PHASE, DEVELOPER_ROLE, allowed_validate_scope_request_scopes,
+    rejected_validate_scope_request_scopes,
 };
 use prost_types::Duration;
 use rehydration_proto::fleet_context_v1::{
@@ -25,6 +35,8 @@ use rehydration_proto::v1alpha1::{
     GetProjectionStatusRequest, GetRehydrationDiagnosticsRequest, Phase, ReplayMode,
     ReplayProjectionRequest, RevisionPrecondition, UpdateContextRequest,
 };
+use tokio::time::sleep;
+use tonic::transport::Channel;
 
 #[tokio::test]
 async fn kernel_full_journey_covers_projection_query_compatibility_command_and_admin()
@@ -40,6 +52,8 @@ async fn kernel_full_journey_covers_projection_query_compatibility_command_and_a
         let mut command_client = fixture.command_client();
         let mut admin_client = fixture.admin_client();
 
+        wait_for_full_compatibility_graph(compatibility_client.clone()).await?;
+
         let compatibility_context = compatibility_client
             .get_context(CompatibilityGetContextRequest {
                 story_id: ROOT_NODE_ID.to_string(),
@@ -53,6 +67,15 @@ async fn kernel_full_journey_covers_projection_query_compatibility_command_and_a
         assert!(compatibility_context.context.contains(ROOT_TITLE));
         assert!(compatibility_context.context.contains(TASK_TITLE));
         assert!(compatibility_context.context.contains(TASK_DETAIL));
+        assert!(compatibility_context.context.contains(ROOT_DETAIL));
+        assert!(compatibility_context.context.contains(DECISION_TITLE));
+        assert!(compatibility_context.context.contains(DECISION_DETAIL));
+        assert!(
+            compatibility_context
+                .context
+                .contains(PROPULSION_SUBSYSTEM_TITLE)
+        );
+        assert!(compatibility_context.context.contains(CHIEF_ENGINEER_TITLE));
         assert_eq!(
             compatibility_context
                 .blocks
@@ -123,6 +146,26 @@ async fn kernel_full_journey_covers_projection_query_compatibility_command_and_a
                 .iter()
                 .any(|node| node.id == DECISION_ID)
         );
+        assert_eq!(compatibility_graph.neighbors.len(), EXPECTED_NEIGHBOR_COUNT);
+        assert_eq!(
+            compatibility_graph.relationships.len(),
+            EXPECTED_RELATIONSHIP_COUNT
+        );
+        assert!(compatibility_graph.relationships.iter().any(|edge| {
+            edge.from_node_id == DECISION_ID
+                && edge.to_node_id == TASK_ID
+                && edge.r#type == RELATION_IMPACTS
+        }));
+        assert!(compatibility_graph.relationships.iter().any(|edge| {
+            edge.from_node_id == POWER_TASK_ID
+                && edge.to_node_id == TASK_ID
+                && edge.r#type == RELATION_DEPENDS_ON
+        }));
+        assert!(compatibility_graph.relationships.iter().any(|edge| {
+            edge.from_node_id == JUMP_DECISION_ID
+                && edge.to_node_id == DECISION_ID
+                && edge.r#type == RELATION_DECISION_REQUIRES
+        }));
 
         let compatibility_rehydrate = compatibility_client
             .rehydrate_session(CompatibilityRehydrateSessionRequest {
@@ -137,14 +180,67 @@ async fn kernel_full_journey_covers_projection_query_compatibility_command_and_a
             .await?
             .into_inner();
         assert_eq!(compatibility_rehydrate.case_id, ROOT_NODE_ID);
-        assert!(compatibility_rehydrate.packs.contains_key(DEVELOPER_ROLE));
+        let compatibility_pack = compatibility_rehydrate
+            .packs
+            .get(DEVELOPER_ROLE)
+            .expect("developer pack should exist");
+        assert_eq!(compatibility_pack.subtasks.len(), EXPECTED_TASK_COUNT);
+        assert_eq!(compatibility_pack.decisions.len(), EXPECTED_DECISION_COUNT);
         assert_eq!(
-            compatibility_rehydrate
-                .stats
-                .as_ref()
-                .map(|stats| stats.events),
-            Some(7)
+            compatibility_pack.decision_deps.len(),
+            EXPECTED_DECISION_EDGE_COUNT
         );
+        assert_eq!(compatibility_pack.impacted.len(), EXPECTED_IMPACT_COUNT);
+        assert_eq!(compatibility_pack.last_summary, ROOT_DETAIL);
+        assert_eq!(
+            compatibility_pack.token_budget_hint,
+            EXPECTED_TOKEN_BUDGET_HINT
+        );
+        assert_eq!(
+            compatibility_pack
+                .plan_header
+                .as_ref()
+                .map(|header| header.total_subtasks),
+            Some(EXPECTED_TASK_COUNT as i32)
+        );
+        assert_eq!(
+            compatibility_pack
+                .plan_header
+                .as_ref()
+                .map(|header| header.completed_subtasks),
+            Some(EXPECTED_COMPLETED_TASK_COUNT)
+        );
+        assert!(compatibility_pack.subtasks.iter().any(|subtask| {
+            subtask.subtask_id == TASK_ID && subtask.dependencies == vec![POWER_TASK_ID.to_string()]
+        }));
+        assert!(compatibility_pack.decisions.iter().any(|decision| {
+            decision.id == DECISION_ID && decision.rationale == DECISION_DETAIL
+        }));
+        assert!(
+            compatibility_pack.impacted.iter().any(|impact| {
+                impact.decision_id == DECISION_ID && impact.subtask_id == TASK_ID
+            })
+        );
+        assert!(compatibility_pack.decision_deps.iter().any(|edge| {
+            edge.src_id == JUMP_DECISION_ID
+                && edge.dst_id == DECISION_ID
+                && edge.relation_type == RELATION_DECISION_REQUIRES
+        }));
+        let compatibility_stats = compatibility_rehydrate
+            .stats
+            .as_ref()
+            .expect("compatibility stats should exist");
+        assert_eq!(
+            compatibility_stats.decisions,
+            EXPECTED_DECISION_COUNT as i32
+        );
+        assert_eq!(
+            compatibility_stats.decision_edges,
+            EXPECTED_DECISION_EDGE_COUNT as i32
+        );
+        assert_eq!(compatibility_stats.impacts, EXPECTED_IMPACT_COUNT as i32);
+        assert_eq!(compatibility_stats.events, 7);
+        assert_eq!(compatibility_stats.roles, vec![DEVELOPER_ROLE.to_string()]);
 
         let compatibility_update = compatibility_client
             .update_context(CompatibilityUpdateContextRequest {
@@ -181,24 +277,60 @@ async fn kernel_full_journey_covers_projection_query_compatibility_command_and_a
         let query_bundle = query_context.bundle.expect("query bundle should exist");
         assert_eq!(query_bundle.root_node_id, ROOT_NODE_ID);
         assert_eq!(query_bundle.bundles.len(), 1);
+        let query_role_bundle = &query_bundle.bundles[0];
+        assert_eq!(query_role_bundle.role, DEVELOPER_ROLE);
+        assert_eq!(
+            query_role_bundle.neighbor_nodes.len(),
+            EXPECTED_NEIGHBOR_COUNT
+        );
+        assert_eq!(
+            query_role_bundle.relationships.len(),
+            EXPECTED_RELATIONSHIP_COUNT
+        );
+        assert_eq!(query_role_bundle.node_details.len(), EXPECTED_DETAIL_COUNT);
         assert!(
-            query_bundle.bundles[0]
+            query_role_bundle
                 .neighbor_nodes
                 .iter()
                 .any(|node| node.node_id == TASK_ID)
         );
         assert!(
-            query_bundle.bundles[0]
+            query_role_bundle
                 .node_details
                 .iter()
                 .any(|detail| detail.node_id == TASK_ID)
         );
+        assert!(query_role_bundle.relationships.iter().any(|edge| {
+            edge.source_node_id == DECISION_ID
+                && edge.target_node_id == TASK_ID
+                && edge.relationship_type == RELATION_IMPACTS
+        }));
+        assert!(query_role_bundle.relationships.iter().any(|edge| {
+            edge.source_node_id == POWER_TASK_ID
+                && edge.target_node_id == TASK_ID
+                && edge.relationship_type == RELATION_DEPENDS_ON
+        }));
+        assert!(query_role_bundle.relationships.iter().any(|edge| {
+            edge.source_node_id == JUMP_DECISION_ID
+                && edge.target_node_id == DECISION_ID
+                && edge.relationship_type == RELATION_DECISION_REQUIRES
+        }));
+        let rendered_query_context = query_context
+            .rendered
+            .expect("rendered context should exist");
+        assert!(rendered_query_context.content.contains(ROOT_TITLE));
+        assert!(rendered_query_context.content.contains(ROOT_DETAIL));
+        assert!(rendered_query_context.content.contains(TASK_DETAIL));
+        assert!(rendered_query_context.content.contains(DECISION_DETAIL));
         assert!(
-            query_context
-                .rendered
-                .expect("rendered context should exist")
+            rendered_query_context
                 .content
-                .contains(ROOT_TITLE)
+                .contains(PROPULSION_SUBSYSTEM_TITLE)
+        );
+        assert!(
+            rendered_query_context
+                .content
+                .contains(CHIEF_ENGINEER_TITLE)
         );
 
         let query_rehydrate = query_client
@@ -225,12 +357,32 @@ async fn kernel_full_journey_covers_projection_query_compatibility_command_and_a
             .bundle
             .expect("rehydrated bundle should exist");
         assert_eq!(query_rehydrate_bundle.root_node_id, ROOT_NODE_ID);
+        let query_rehydrate_stats = query_rehydrate_bundle
+            .stats
+            .as_ref()
+            .expect("rehydrated stats should exist");
+        assert_eq!(query_rehydrate_stats.nodes, EXPECTED_SELECTED_NODE_COUNT);
         assert_eq!(
-            query_rehydrate_bundle
-                .stats
-                .as_ref()
-                .map(|stats| stats.timeline_events),
-            Some(11)
+            query_rehydrate_stats.relationships,
+            EXPECTED_SELECTED_RELATIONSHIP_COUNT
+        );
+        assert_eq!(
+            query_rehydrate_stats.detailed_nodes,
+            EXPECTED_DETAIL_COUNT as u32
+        );
+        assert_eq!(query_rehydrate_stats.timeline_events, 11);
+        assert_eq!(query_rehydrate_bundle.bundles.len(), 1);
+        assert_eq!(
+            query_rehydrate_bundle.bundles[0].neighbor_nodes.len(),
+            EXPECTED_NEIGHBOR_COUNT
+        );
+        assert_eq!(
+            query_rehydrate_bundle.bundles[0].relationships.len(),
+            EXPECTED_RELATIONSHIP_COUNT
+        );
+        assert_eq!(
+            query_rehydrate_bundle.bundles[0].node_details.len(),
+            EXPECTED_DETAIL_COUNT
         );
 
         let command_update = command_client
@@ -308,6 +460,20 @@ async fn kernel_full_journey_covers_projection_query_compatibility_command_and_a
                 .map(|bundle| bundle.root_node_id.as_str()),
             Some(ROOT_NODE_ID)
         );
+        let snapshot_bundle = bundle_snapshot
+            .bundle
+            .as_ref()
+            .expect("snapshot bundle should exist");
+        let snapshot_stats = snapshot_bundle
+            .stats
+            .as_ref()
+            .expect("snapshot stats should exist");
+        assert_eq!(snapshot_stats.nodes, EXPECTED_SELECTED_NODE_COUNT);
+        assert_eq!(
+            snapshot_stats.relationships,
+            EXPECTED_SELECTED_RELATIONSHIP_COUNT
+        );
+        assert_eq!(snapshot_stats.detailed_nodes, EXPECTED_DETAIL_COUNT as u32);
 
         let admin_graph = admin_client
             .get_graph_relationships(GetGraphRelationshipsRequest {
@@ -328,12 +494,23 @@ async fn kernel_full_journey_covers_projection_query_compatibility_command_and_a
                 .iter()
                 .any(|node| node.node_id == TASK_ID)
         );
-        assert!(
-            admin_graph
-                .relationships
-                .iter()
-                .any(|edge| edge.target_node_id == TASK_ID)
-        );
+        assert_eq!(admin_graph.neighbors.len(), EXPECTED_NEIGHBOR_COUNT);
+        assert_eq!(admin_graph.relationships.len(), EXPECTED_RELATIONSHIP_COUNT);
+        assert!(admin_graph.relationships.iter().any(|edge| {
+            edge.source_node_id == DECISION_ID
+                && edge.target_node_id == TASK_ID
+                && edge.relationship_type == RELATION_IMPACTS
+        }));
+        assert!(admin_graph.relationships.iter().any(|edge| {
+            edge.source_node_id == POWER_TASK_ID
+                && edge.target_node_id == TASK_ID
+                && edge.relationship_type == RELATION_DEPENDS_ON
+        }));
+        assert!(admin_graph.relationships.iter().any(|edge| {
+            edge.source_node_id == JUMP_DECISION_ID
+                && edge.target_node_id == DECISION_ID
+                && edge.relationship_type == RELATION_DECISION_REQUIRES
+        }));
 
         let diagnostics = admin_client
             .get_rehydration_diagnostics(GetRehydrationDiagnosticsRequest {
@@ -348,9 +525,10 @@ async fn kernel_full_journey_covers_projection_query_compatibility_command_and_a
             diagnostics
                 .diagnostics
                 .iter()
-                .any(|item| item.role == DEVELOPER_ROLE
-                    && item.selected_nodes > 0
-                    && item.estimated_tokens > 0)
+                .all(|item| item.selected_nodes == EXPECTED_SELECTED_NODE_COUNT
+                    && item.selected_relationships == EXPECTED_SELECTED_RELATIONSHIP_COUNT
+                    && item.detailed_nodes == EXPECTED_DETAIL_COUNT as u32
+                    && item.estimated_tokens > EXPECTED_SELECTED_NODE_COUNT * 10)
         );
         assert!(
             diagnostics
@@ -380,4 +558,41 @@ async fn kernel_full_journey_covers_projection_query_compatibility_command_and_a
 
     fixture.shutdown().await?;
     result
+}
+
+async fn wait_for_full_compatibility_graph(
+    mut compatibility_client: rehydration_proto::fleet_context_v1::context_service_client::ContextServiceClient<
+        Channel,
+    >,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let mut last_error: Option<Box<dyn Error + Send + Sync>> = None;
+
+    for _ in 0..40 {
+        match compatibility_client
+            .get_graph_relationships(CompatibilityGetGraphRelationshipsRequest {
+                node_id: ROOT_NODE_ID.to_string(),
+                node_type: ROOT_LABEL.to_string(),
+                depth: 9,
+            })
+            .await
+        {
+            Ok(response) => {
+                let graph = response.into_inner();
+                if graph.neighbors.len() == EXPECTED_NEIGHBOR_COUNT
+                    && graph.relationships.len() == EXPECTED_RELATIONSHIP_COUNT
+                {
+                    return Ok(());
+                }
+            }
+            Err(error) => last_error = Some(Box::new(error)),
+        }
+
+        sleep(StdDuration::from_millis(200)).await;
+    }
+
+    Err(last_error.unwrap_or_else(|| {
+        "compatibility graph did not reach expected size before timeout"
+            .to_string()
+            .into()
+    }))
 }

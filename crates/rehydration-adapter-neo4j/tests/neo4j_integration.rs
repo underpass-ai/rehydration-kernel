@@ -78,6 +78,11 @@ async fn load_neighborhood_reads_root_and_related_nodes() -> Result<(), Box<dyn 
                     target_node_id: "node-root".to_string(),
                     relation_type: "depends_on".to_string(),
                 }),
+                ProjectionMutation::UpsertNodeRelation(NodeRelationProjection {
+                    source_node_id: "decision-1".to_string(),
+                    target_node_id: "task-1".to_string(),
+                    relation_type: "informs".to_string(),
+                }),
             ])
             .await?;
 
@@ -102,7 +107,7 @@ async fn load_neighborhood_reads_root_and_related_nodes() -> Result<(), Box<dyn 
                 .iter()
                 .any(|node| node.node_id == "task-1" && node.status == "READY")
         );
-        assert_eq!(neighborhood.relations.len(), 2);
+        assert_eq!(neighborhood.relations.len(), 3);
         assert!(neighborhood.relations.iter().any(|relation| {
             relation.source_node_id == "node-root"
                 && relation.target_node_id == "decision-1"
@@ -112,6 +117,11 @@ async fn load_neighborhood_reads_root_and_related_nodes() -> Result<(), Box<dyn 
             relation.source_node_id == "task-1"
                 && relation.target_node_id == "node-root"
                 && relation.relation_type == "depends_on"
+        }));
+        assert!(neighborhood.relations.iter().any(|relation| {
+            relation.source_node_id == "decision-1"
+                && relation.target_node_id == "task-1"
+                && relation.relation_type == "informs"
         }));
 
         Ok(())
