@@ -112,6 +112,16 @@ It publishes on:
 - push of tags matching `v*`
 - manual workflow dispatch
 
+Registry authentication for publish:
+
+- default path: `github.token`
+- fallback path: repository or organization secrets `GHCR_USERNAME` and
+  `GHCR_TOKEN`
+
+Use the fallback secrets when the workflow can build successfully but GHCR
+rejects the push with `403 Forbidden`. That usually means the package is not
+granting write access to the repository-scoped workflow token.
+
 ## Helm Chart
 
 The kernel also ships a standalone Helm chart:

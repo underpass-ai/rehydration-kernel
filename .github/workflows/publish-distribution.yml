@@ -30,11 +30,16 @@ jobs:
         uses: docker/setup-buildx-action@988b5a0280414f521da01fcc63a27aeeb4b104db
 
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        env:
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          GITHUB_TOKEN_VALUE: ${{ github.token }}
+        run: |
+          username="${GHCR_USERNAME:-${GITHUB_ACTOR}}"
+          token="${GHCR_TOKEN:-${GITHUB_TOKEN_VALUE}}"
+          echo "::add-mask::${token}"
+          echo "${token}" | docker login ghcr.io --username "${username}" --password-stdin
 
       - name: Extract image metadata
         id: meta
@@ -98,10 +103,14 @@ jobs:
       - name: Log in to GitHub Container Registry for Helm
         shell: bash
         run: |
-          echo "${TOKEN}" | helm registry login ghcr.io --username "${ACTOR}" --password-stdin
+          username="${GHCR_USERNAME:-${GITHUB_ACTOR}}"
+          token="${GHCR_TOKEN:-${GITHUB_TOKEN_VALUE}}"
+          echo "::add-mask::${token}"
+          echo "${token}" | helm registry login ghcr.io --username "${username}" --password-stdin
         env:
-          TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ACTOR: ${{ github.actor }}
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          GITHUB_TOKEN_VALUE: ${{ github.token }}
 
       - name: Push Helm chart
         shell: bash
