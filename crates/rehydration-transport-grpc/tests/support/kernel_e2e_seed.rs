@@ -9,9 +9,9 @@ pub(crate) use rehydration_transport_grpc::starship_e2e::{
     EXPECTED_DETAIL_COUNT, EXPECTED_IMPACT_COUNT, EXPECTED_NEIGHBOR_COUNT,
     EXPECTED_RELATIONSHIP_COUNT, EXPECTED_SELECTED_NODE_COUNT,
     EXPECTED_SELECTED_RELATIONSHIP_COUNT, EXPECTED_TASK_COUNT, EXPECTED_TOKEN_BUDGET_HINT,
-    JUMP_DECISION_ID, POWER_TASK_ID, PROPULSION_SUBSYSTEM_TITLE,
-    RELATION_DECISION_REQUIRES, RELATION_DEPENDS_ON, RELATION_IMPACTS, ROOT_DETAIL, ROOT_LABEL,
-    ROOT_NODE_ID, ROOT_TITLE, TASK_DETAIL, TASK_ID, TASK_TITLE,
+    JUMP_DECISION_ID, POWER_TASK_ID, PROPULSION_SUBSYSTEM_TITLE, RELATION_DECISION_REQUIRES,
+    RELATION_DEPENDS_ON, RELATION_IMPACTS, ROOT_DETAIL, ROOT_LABEL, ROOT_NODE_ID, ROOT_TITLE,
+    TASK_DETAIL, TASK_ID, TASK_TITLE,
 };
 
 pub(crate) const SUBJECT_PREFIX: &str =
@@ -20,9 +20,9 @@ pub(crate) const SUBJECT_PREFIX: &str =
 pub(crate) async fn publish_kernel_e2e_projection_events(
     client: &Client,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    for (subject, payload) in rehydration_transport_grpc::starship_e2e::projection_messages(
-        SUBJECT_PREFIX,
-    )? {
+    for (subject, payload) in
+        rehydration_transport_grpc::starship_e2e::projection_messages(SUBJECT_PREFIX)?
+    {
         debug_log_value("publishing kernel e2e subject", &subject);
         client.publish(subject, payload.into()).await?;
     }

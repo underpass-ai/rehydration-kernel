@@ -63,8 +63,7 @@ pub const STARSHIP_NODE_IDS: &[&str] = &[
     "crew:chief-engineer",
 ];
 
-pub type ProjectionMessagesResult =
-    Result<Vec<(String, Vec<u8>)>, Box<dyn Error + Send + Sync>>;
+pub type ProjectionMessagesResult = Result<Vec<(String, Vec<u8>)>, Box<dyn Error + Send + Sync>>;
 
 #[derive(Clone, Copy)]
 struct RelationSeed {
@@ -494,10 +493,7 @@ pub fn projection_messages(subject_prefix: &str) -> ProjectionMessagesResult {
     projection_messages_for_run(subject_prefix, "kernel-e2e")
 }
 
-pub fn projection_messages_for_run(
-    subject_prefix: &str,
-    run_id: &str,
-) -> ProjectionMessagesResult {
+pub fn projection_messages_for_run(subject_prefix: &str, run_id: &str) -> ProjectionMessagesResult {
     let mut messages = Vec::with_capacity(KERNEL_GRAPH_NODES.len() * 2);
 
     for node in KERNEL_GRAPH_NODES {

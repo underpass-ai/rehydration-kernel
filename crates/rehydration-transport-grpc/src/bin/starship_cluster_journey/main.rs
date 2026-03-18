@@ -8,18 +8,17 @@ use rehydration_proto::fleet_context_v1::{
     context_service_client::ContextServiceClient,
 };
 use rehydration_proto::v1alpha1::{
-    BundleRenderFormat, GetBundleSnapshotRequest, GetContextRequest,
-    GetGraphRelationshipsRequest, GetProjectionStatusRequest, GetRehydrationDiagnosticsRequest,
-    Phase, RehydrateSessionRequest, context_admin_service_client::ContextAdminServiceClient,
+    BundleRenderFormat, GetBundleSnapshotRequest, GetContextRequest, GetGraphRelationshipsRequest,
+    GetProjectionStatusRequest, GetRehydrationDiagnosticsRequest, Phase, RehydrateSessionRequest,
+    context_admin_service_client::ContextAdminServiceClient,
     context_query_service_client::ContextQueryServiceClient,
 };
 use rehydration_transport_grpc::starship_e2e::{
-    CHIEF_ENGINEER_TITLE, DECISION_DETAIL, DECISION_ID, DECISION_TITLE,
-    DEFAULT_SUBJECT_PREFIX, EXPECTED_DETAIL_COUNT, EXPECTED_NEIGHBOR_COUNT,
-    EXPECTED_RELATIONSHIP_COUNT, EXPECTED_SELECTED_NODE_COUNT,
-    EXPECTED_SELECTED_RELATIONSHIP_COUNT, POWER_TASK_ID, PROPULSION_SUBSYSTEM_TITLE,
-    RELATION_DECISION_REQUIRES, RELATION_DEPENDS_ON, RELATION_IMPACTS, ROOT_DETAIL, ROOT_LABEL,
-    ROOT_NODE_ID, ROOT_TITLE, TASK_DETAIL, TASK_ID, TASK_TITLE,
+    CHIEF_ENGINEER_TITLE, DECISION_DETAIL, DECISION_ID, DECISION_TITLE, DEFAULT_SUBJECT_PREFIX,
+    EXPECTED_DETAIL_COUNT, EXPECTED_NEIGHBOR_COUNT, EXPECTED_RELATIONSHIP_COUNT,
+    EXPECTED_SELECTED_NODE_COUNT, EXPECTED_SELECTED_RELATIONSHIP_COUNT, POWER_TASK_ID,
+    PROPULSION_SUBSYSTEM_TITLE, RELATION_DECISION_REQUIRES, RELATION_DEPENDS_ON, RELATION_IMPACTS,
+    ROOT_DETAIL, ROOT_LABEL, ROOT_NODE_ID, ROOT_TITLE, TASK_DETAIL, TASK_ID, TASK_TITLE,
     publish_projection_events_for_run,
 };
 use serde::Serialize;
@@ -199,8 +198,14 @@ async fn verify(
     assert_eq!(query_bundle.root_node_id, ROOT_NODE_ID);
     assert_eq!(query_bundle.bundles.len(), 1);
     let query_role_bundle = &query_bundle.bundles[0];
-    assert_eq!(query_role_bundle.neighbor_nodes.len(), EXPECTED_NEIGHBOR_COUNT);
-    assert_eq!(query_role_bundle.relationships.len(), EXPECTED_RELATIONSHIP_COUNT);
+    assert_eq!(
+        query_role_bundle.neighbor_nodes.len(),
+        EXPECTED_NEIGHBOR_COUNT
+    );
+    assert_eq!(
+        query_role_bundle.relationships.len(),
+        EXPECTED_RELATIONSHIP_COUNT
+    );
     assert_eq!(query_role_bundle.node_details.len(), EXPECTED_DETAIL_COUNT);
     assert!(query_role_bundle.relationships.iter().any(|edge| {
         edge.source_node_id == DECISION_ID
