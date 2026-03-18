@@ -1,3 +1,5 @@
+use std::path::{Path, PathBuf};
+
 use rehydration_ports::PortError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -5,6 +7,7 @@ pub(crate) struct Neo4jEndpoint {
     pub(crate) connection_uri: String,
     pub(crate) user: String,
     pub(crate) password: String,
+    pub(crate) tls_ca_path: Option<PathBuf>,
 }
 
 pub(crate) struct UriParts<'a> {
@@ -41,18 +44,56 @@ impl Neo4jEndpoint {
         }
 
         let authority = parse_authority(uri.authority, "graph")?;
-        if uri.query.is_some() {
-            return Err(PortError::InvalidState(
-                "graph uri query params are not supported yet".to_string(),
-            ));
-        }
+        let tls_enabled = matches!(uri.scheme, "neo4j+s" | "neo4j+ssc" | "bolt+s" | "bolt+ssc");
+        let tls_ca_path = parse_query_params(uri.query, "graph", tls_enabled)?;
 
         Ok(Self {
             connection_uri: format!("{}://{}", uri.scheme, authority.host_port),
             user: authority.user.unwrap_or_default(),
             password: authority.password.unwrap_or_default(),
+            tls_ca_path,
         })
     }
+}
+
+fn parse_query_params(
+    query: Option<&str>,
+    name: &str,
+    tls_enabled: bool,
+) -> Result<Option<PathBuf>, PortError> {
+    let Some(query) = query else {
+        return Ok(None);
+    };
+
+    let mut tls_ca_path = None;
+    for pair in query.split('&') {
+        if pair.is_empty() {
+            continue;
+        }
+
+        let (key, value) = pair.split_once('=').ok_or_else(|| {
+            PortError::InvalidState(format!("{name} uri query parameter `{pair}` is invalid"))
+        })?;
+
+        match key {
+            "tls_ca_path" => {
+                if !tls_enabled {
+                    return Err(PortError::InvalidState(
+                        "graph tls_ca_path requires bolt+s, bolt+ssc, neo4j+s, or neo4j+ssc"
+                            .to_string(),
+                    ));
+                }
+                tls_ca_path = Some(parse_tls_path(value, name, key)?);
+            }
+            _ => {
+                return Err(PortError::InvalidState(format!(
+                    "unsupported graph uri option `{key}`"
+                )));
+            }
+        }
+    }
+
+    Ok(tls_ca_path)
 }
 
 pub(crate) fn split_uri<'a>(raw_uri: &'a str, name: &str) -> Result<UriParts<'a>, PortError> {
@@ -156,4 +197,15 @@ pub(crate) fn parse_host_port(authority: &str, name: &str) -> Result<(), PortErr
     }
 
     Ok(())
+}
+
+fn parse_tls_path(value: &str, name: &str, key: &str) -> Result<PathBuf, PortError> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Err(PortError::InvalidState(format!(
+            "{name} {key} cannot be empty"
+        )));
+    }
+
+    Ok(Path::new(trimmed).to_path_buf())
 }

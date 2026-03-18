@@ -5,9 +5,11 @@ use std::time::Duration;
 use async_nats::Client;
 use rehydration_adapter_neo4j::Neo4jProjectionStore;
 use rehydration_adapter_valkey::{ValkeyNodeDetailStore, ValkeySnapshotStore};
+use rehydration_proto::fleet_context_v1::context_service_client::ContextServiceClient;
 use rehydration_proto::v1alpha1::{
     BundleRenderFormat, GetContextRequest, Phase,
     context_admin_service_client::ContextAdminServiceClient,
+    context_command_service_client::ContextCommandServiceClient,
     context_query_service_client::ContextQueryServiceClient,
 };
 use testcontainers::GenericImage;
@@ -35,7 +37,9 @@ pub(crate) struct AgenticFixture {
     projection_runtime: RunningProjectionRuntime,
     server: RunningGrpcServer,
     nats_url: String,
+    compatibility_client: ContextServiceClient<Channel>,
     query_client: ContextQueryServiceClient<Channel>,
+    command_client: ContextCommandServiceClient<Channel>,
     admin_client: ContextAdminServiceClient<Channel>,
 }
 
@@ -103,7 +107,9 @@ impl AgenticFixture {
         debug_log("grpc server started");
         let channel = server.connect_channel().await?;
         debug_log("grpc channel connected");
+        let compatibility_client = ContextServiceClient::new(channel.clone());
         let query_client = ContextQueryServiceClient::new(channel.clone());
+        let command_client = ContextCommandServiceClient::new(channel.clone());
         let admin_client = ContextAdminServiceClient::new(channel);
 
         let publisher = connect_with_retry(&nats_url).await?;
@@ -119,13 +125,23 @@ impl AgenticFixture {
             projection_runtime,
             server,
             nats_url,
+            compatibility_client,
             query_client,
+            command_client,
             admin_client,
         })
     }
 
+    pub(crate) fn compatibility_client(&self) -> ContextServiceClient<Channel> {
+        self.compatibility_client.clone()
+    }
+
     pub(crate) fn query_client(&self) -> ContextQueryServiceClient<Channel> {
         self.query_client.clone()
+    }
+
+    pub(crate) fn command_client(&self) -> ContextCommandServiceClient<Channel> {
+        self.command_client.clone()
     }
 
     pub(crate) fn admin_client(&self) -> ContextAdminServiceClient<Channel> {

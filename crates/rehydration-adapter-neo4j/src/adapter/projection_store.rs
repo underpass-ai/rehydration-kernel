@@ -1,7 +1,7 @@
 use std::fmt;
 use std::sync::Arc;
 
-use neo4rs::Graph;
+use neo4rs::{ConfigBuilder, Graph};
 use rehydration_ports::PortError;
 use tokio::sync::OnceCell;
 
@@ -37,14 +37,22 @@ impl Neo4jProjectionStore {
         let graph = self
             .graph
             .get_or_try_init(|| async {
-                Graph::new(
-                    &self.endpoint.connection_uri,
-                    &self.endpoint.user,
-                    &self.endpoint.password,
-                )
-                .await
-                .map(Arc::new)
-                .map_err(|error| {
+                let mut config = ConfigBuilder::new()
+                    .uri(self.endpoint.connection_uri.clone())
+                    .user(self.endpoint.user.clone())
+                    .password(self.endpoint.password.clone());
+                if let Some(tls_ca_path) = &self.endpoint.tls_ca_path {
+                    config = config.with_client_certificate(tls_ca_path);
+                }
+
+                let config = config.build().map_err(|error| {
+                    PortError::InvalidState(format!(
+                        "neo4j configuration failed for `{}`: {error}",
+                        self.endpoint.connection_uri
+                    ))
+                })?;
+
+                Graph::connect(config).await.map(Arc::new).map_err(|error| {
                     PortError::Unavailable(format!(
                         "neo4j connection failed for `{}`: {error}",
                         self.endpoint.connection_uri

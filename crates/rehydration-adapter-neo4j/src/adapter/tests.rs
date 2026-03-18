@@ -14,6 +14,7 @@ fn endpoint_supports_auth_segments() {
     assert_eq!(endpoint.connection_uri, "neo4j://localhost:7687");
     assert_eq!(endpoint.user, "neo4j");
     assert_eq!(endpoint.password, "neo");
+    assert!(endpoint.tls_ca_path.is_none());
 }
 
 #[test]
@@ -27,19 +28,49 @@ fn projection_store_keeps_endpoint_configuration() {
 }
 
 #[test]
-fn endpoint_rejects_query_params_and_paths() {
+fn endpoint_accepts_tls_ca_path_for_secure_schemes() {
+    let endpoint = Neo4jEndpoint::parse(
+        "bolt+s://neo4j:secret@localhost:7687?tls_ca_path=/tmp/neo4j-ca.pem".to_string(),
+    )
+    .expect("secure uri should accept a tls_ca_path");
+
+    assert_eq!(endpoint.connection_uri, "bolt+s://localhost:7687");
+    assert_eq!(endpoint.user, "neo4j");
+    assert_eq!(endpoint.password, "secret");
+    assert_eq!(
+        endpoint.tls_ca_path.as_deref(),
+        Some(std::path::Path::new("/tmp/neo4j-ca.pem"))
+    );
+}
+
+#[test]
+fn endpoint_rejects_unknown_query_params_and_paths() {
     let with_query = Neo4jEndpoint::parse("neo4j://localhost:7687?db=neo4j".to_string())
-        .expect_err("query params are not supported yet");
+        .expect_err("unknown query params are not supported");
     let with_path = Neo4jEndpoint::parse("neo4j://localhost:7687/graph".to_string())
         .expect_err("paths are not supported");
 
     assert_eq!(
         with_query,
-        PortError::InvalidState("graph uri query params are not supported yet".to_string())
+        PortError::InvalidState("unsupported graph uri option `db`".to_string())
     );
     assert_eq!(
         with_path,
         PortError::InvalidState("graph uri path segments are not supported".to_string())
+    );
+}
+
+#[test]
+fn endpoint_rejects_tls_ca_path_for_plaintext_schemes() {
+    let error =
+        Neo4jEndpoint::parse("neo4j://localhost:7687?tls_ca_path=/tmp/neo4j-ca.pem".to_string())
+            .expect_err("plaintext uri should reject tls_ca_path");
+
+    assert_eq!(
+        error,
+        PortError::InvalidState(
+            "graph tls_ca_path requires bolt+s, bolt+ssc, neo4j+s, or neo4j+ssc".to_string()
+        )
     );
 }
 

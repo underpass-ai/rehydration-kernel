@@ -50,3 +50,8 @@ required-features = ["container-tests"]
 name = "agentic_event_integration"
 path = "tests/agentic_event_integration.rs"
 required-features = ["container-tests"]
+
+[[test]]
+name = "kernel_full_journey_tls_integration"
+path = "tests/kernel_full_journey_tls_integration.rs"
+required-features = ["container-tests"]
