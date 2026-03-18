@@ -579,3 +579,183 @@ fn base_envelope(
         schema_version: "v1alpha1".to_string(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use serde_json::Value;
+
+    use super::*;
+
+    fn decoded_messages_for_run(run_id: &str) -> Vec<(String, Value)> {
+        projection_messages_for_run(DEFAULT_SUBJECT_PREFIX, run_id)
+            .expect("starship seed should render")
+            .into_iter()
+            .map(|(subject, payload)| {
+                (
+                    subject,
+                    serde_json::from_slice(&payload).expect("payload should decode"),
+                )
+            })
+            .collect()
+    }
+
+    fn subject_suffix_count(messages: &[(String, Value)], suffix: &str) -> usize {
+        messages
+            .iter()
+            .filter(|(subject, _)| subject.ends_with(suffix))
+            .count()
+    }
+
+    #[test]
+    fn projection_messages_render_expected_starship_graph() {
+        let messages = decoded_messages_for_run("run-42");
+        let expected_detail_messages = KERNEL_GRAPH_NODES
+            .iter()
+            .filter(|node| node.detail.is_some())
+            .count();
+
+        assert_eq!(
+            messages.len(),
+            KERNEL_GRAPH_NODES.len() + expected_detail_messages
+        );
+        assert_eq!(
+            subject_suffix_count(&messages, "graph.node.materialized"),
+            STARSHIP_NODE_IDS.len()
+        );
+        assert_eq!(
+            subject_suffix_count(&messages, "node.detail.materialized"),
+            EXPECTED_DETAIL_COUNT
+        );
+
+        let graph_nodes: Vec<_> = messages
+            .iter()
+            .filter(|(subject, _)| subject.ends_with("graph.node.materialized"))
+            .map(|(_, payload)| &payload["data"])
+            .collect();
+
+        let root_node = graph_nodes
+            .iter()
+            .find(|payload| payload["node_id"] == ROOT_NODE_ID)
+            .expect("root node should exist");
+        let root_relations = root_node["related_nodes"]
+            .as_array()
+            .expect("related nodes should be an array");
+        assert_eq!(root_node["node_kind"], ROOT_LABEL);
+        assert_eq!(root_node["title"], ROOT_TITLE);
+        assert_eq!(root_node["status"], "AT_RISK");
+        assert_eq!(root_relations.len(), EXPECTED_NEIGHBOR_COUNT);
+
+        let task_count = graph_nodes
+            .iter()
+            .filter(|payload| payload["node_kind"] == "Task")
+            .count();
+        let decision_count = graph_nodes
+            .iter()
+            .filter(|payload| payload["node_kind"] == "Decision")
+            .count();
+        let completed_task_count = graph_nodes
+            .iter()
+            .filter(|payload| payload["node_kind"] == "Task" && payload["status"] == "DONE")
+            .count();
+        assert_eq!(task_count, EXPECTED_TASK_COUNT);
+        assert_eq!(decision_count, EXPECTED_DECISION_COUNT);
+        assert_eq!(completed_task_count as i32, EXPECTED_COMPLETED_TASK_COUNT);
+
+        let impact_edge_count = graph_nodes
+            .iter()
+            .flat_map(|payload| {
+                payload["related_nodes"]
+                    .as_array()
+                    .expect("related nodes should be an array")
+                    .iter()
+            })
+            .filter(|relation| relation["relation_type"] == RELATION_IMPACTS)
+            .count();
+        let decision_dependency_count = graph_nodes
+            .iter()
+            .flat_map(|payload| {
+                payload["related_nodes"]
+                    .as_array()
+                    .expect("related nodes should be an array")
+                    .iter()
+            })
+            .filter(|relation| {
+                relation["relation_type"] == RELATION_DECISION_REQUIRES
+                    || relation["relation_type"] == "DECISION_DEPENDS_ON"
+            })
+            .count();
+        assert_eq!(impact_edge_count, EXPECTED_IMPACT_COUNT);
+        assert_eq!(decision_dependency_count, EXPECTED_DECISION_EDGE_COUNT);
+    }
+
+    #[test]
+    fn projection_messages_include_run_specific_envelopes_and_details() {
+        let messages = decoded_messages_for_run("run-99");
+
+        let root_graph_event = messages
+            .iter()
+            .find(|(_, payload)| {
+                payload["data"]["node_id"] == ROOT_NODE_ID
+                    && payload["data"].get("detail").is_none()
+                    && payload["data"]["title"] == ROOT_TITLE
+            })
+            .expect("root graph event should exist");
+        assert_eq!(
+            root_graph_event.0,
+            format!("{DEFAULT_SUBJECT_PREFIX}.graph.node.materialized")
+        );
+        assert_eq!(root_graph_event.1["event_id"], "evt-kernel-root-1-run-99");
+        assert_eq!(
+            root_graph_event.1["correlation_id"],
+            "corr-kernel-e2e-run-99"
+        );
+        assert_eq!(
+            root_graph_event.1["data"]["properties"]["plan_id"],
+            "mission-odyssey-red-alert"
+        );
+
+        let root_detail_event = messages
+            .iter()
+            .find(|(_, payload)| {
+                payload["data"]["node_id"] == ROOT_NODE_ID
+                    && payload["data"]["detail"] == ROOT_DETAIL
+            })
+            .expect("root detail event should exist");
+        assert_eq!(
+            root_detail_event.0,
+            format!("{DEFAULT_SUBJECT_PREFIX}.node.detail.materialized")
+        );
+        assert_eq!(
+            root_detail_event.1["event_id"],
+            "evt-kernel-root-detail-1-run-99"
+        );
+        assert_eq!(
+            root_detail_event.1["data"]["content_hash"],
+            "hash-odyssey-root"
+        );
+        assert_eq!(root_detail_event.1["data"]["revision"], 5);
+    }
+
+    #[test]
+    fn projection_messages_wrapper_uses_default_subjects_and_run_id() {
+        let messages = projection_messages(DEFAULT_SUBJECT_PREFIX).expect("wrapper should render");
+
+        let first_graph_event = messages
+            .iter()
+            .find(|(subject, _)| subject.ends_with("graph.node.materialized"))
+            .expect("graph event should exist");
+        let payload: Value =
+            serde_json::from_slice(&first_graph_event.1).expect("payload should decode");
+
+        assert_eq!(
+            first_graph_event.0,
+            format!("{DEFAULT_SUBJECT_PREFIX}.graph.node.materialized")
+        );
+        assert!(
+            payload["event_id"]
+                .as_str()
+                .expect("event id should be a string")
+                .ends_with("-kernel-e2e")
+        );
+    }
+}

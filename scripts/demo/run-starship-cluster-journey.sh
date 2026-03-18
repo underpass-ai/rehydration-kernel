@@ -46,12 +46,16 @@ cleanup_port_forwards() {
     wait "${NATS_FORWARD_PID}" >/dev/null 2>&1 || true
   fi
   rm -rf "${TMP_DIR}"
+  return 0
 }
 
 trap cleanup_port_forwards EXIT
 
 bool_is_true() {
-  [[ "${1}" == "true" || "${1}" == "1" || "${1}" == "yes" ]]
+  if [[ "${1}" == "true" || "${1}" == "1" || "${1}" == "yes" ]]; then
+    return 0
+  fi
+  return 1
 }
 
 wait_for_local_port() {
@@ -73,6 +77,7 @@ find_valkey_pod() {
     | grep '^pod/valkey-' \
     | head -n 1 \
     | cut -d/ -f2
+  return 0
 }
 
 start_port_forwards() {
@@ -86,6 +91,7 @@ start_port_forwards() {
 
   wait_for_local_port "${LOCAL_GRPC_PORT}"
   wait_for_local_port "${LOCAL_NATS_PORT}"
+  return 0
 }
 
 cleanup_starship_data() {
@@ -118,6 +124,7 @@ cleanup_starship_data() {
   kubectl exec -n "${GRAPH_NAMESPACE}" "${NEO4J_POD}" -- \
     cypher-shell -u neo4j -p underpassai \
     "MATCH (n:ProjectionNode) WHERE n.node_id IN [${cypher_ids}] DETACH DELETE n RETURN count(*) AS deleted" >/dev/null
+  return 0
 }
 
 verify_cleanup() {
@@ -149,6 +156,7 @@ verify_cleanup() {
     echo "starship graph nodes still exist after cleanup: ${remaining}" >&2
     exit 1
   fi
+  return 0
 }
 
 seed_and_verify() {
@@ -157,6 +165,7 @@ seed_and_verify() {
   CLUSTER_STARSHIP_NATS_URL="nats://127.0.0.1:${LOCAL_NATS_PORT}" \
   CLUSTER_STARSHIP_SUBJECT_PREFIX="${SUBJECT_PREFIX}" \
     cargo run --offline -p rehydration-transport-grpc --bin starship_cluster_journey
+  return 0
 }
 
 case "${ACTION}" in
