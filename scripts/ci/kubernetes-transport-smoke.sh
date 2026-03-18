@@ -12,7 +12,10 @@ HELM_TIMEOUT="${HELM_TIMEOUT:-10m}"
 GRPC_PORT="${GRPC_PORT:-50054}"
 PROBE_IMAGE="${PROBE_IMAGE:-docker.io/fullstorydev/grpcurl:v1.9.3}"
 CLEANUP_RELEASE="${CLEANUP_RELEASE:-false}"
-GRPC_SMOKE_MODE="${GRPC_SMOKE_MODE:-server}"
+GRPC_MODE_SERVER="server"
+GRPC_MODE_MUTUAL="mutual"
+SNAPSHOT_PERSISTED_PATTERN='"snapshotPersisted": true'
+GRPC_SMOKE_MODE="${GRPC_SMOKE_MODE:-${GRPC_MODE_SERVER}}"
 IMAGE_PULL_SECRET="${IMAGE_PULL_SECRET:-}"
 
 NATS_TLS_MODE="${NATS_TLS_MODE:-disabled}"
@@ -52,7 +55,7 @@ case "${MODE}" in
 esac
 
 case "${GRPC_SMOKE_MODE}" in
-  server|mutual) ;;
+  "${GRPC_MODE_SERVER}"|"${GRPC_MODE_MUTUAL}") ;;
   *)
     echo "GRPC_SMOKE_MODE must be server or mutual" >&2
     exit 1
@@ -60,14 +63,14 @@ case "${GRPC_SMOKE_MODE}" in
 esac
 
 case "${NATS_TLS_MODE}" in
-  disabled|server|mutual) ;;
+  disabled|"${GRPC_MODE_SERVER}"|"${GRPC_MODE_MUTUAL}") ;;
   *)
     echo "NATS_TLS_MODE must be disabled, server, or mutual" >&2
     exit 1
     ;;
 esac
 
-if [[ "${NATS_TLS_MODE}" == "mutual" && -z "${NATS_TLS_SECRET_NAME}" ]]; then
+if [[ "${NATS_TLS_MODE}" == "${GRPC_MODE_MUTUAL}" && -z "${NATS_TLS_SECRET_NAME}" ]]; then
   echo "NATS_TLS_SECRET_NAME is required when NATS_TLS_MODE=mutual" >&2
   exit 1
 fi
@@ -84,16 +87,22 @@ TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "${TMP_DIR}"' EXIT
 
 bool_is_true() {
-  [[ "${1}" == "true" || "${1}" == "1" || "${1}" == "yes" ]]
+  if [[ "${1}" == "true" || "${1}" == "1" || "${1}" == "yes" ]]; then
+    return 0
+  fi
+
+  return 1
 }
 
 release_name_for() {
   printf "%s-%s" "${RELEASE_PREFIX}" "${1}"
+  return 0
 }
 
 service_host_for() {
   local release_name="$1"
   printf "%s.%s.svc.cluster.local:%s" "${release_name}" "${NAMESPACE}" "${GRPC_PORT}"
+  return 0
 }
 
 cleanup_release() {
@@ -102,6 +111,8 @@ cleanup_release() {
   if bool_is_true "${CLEANUP_RELEASE}"; then
     helm uninstall "${release_name}" --namespace "${NAMESPACE}" >/dev/null 2>&1 || true
   fi
+
+  return 0
 }
 
 cleanup_temp_resources() {
@@ -109,6 +120,8 @@ cleanup_temp_resources() {
 
   kubectl delete secret "${release_name}-grpc-tls" -n "${NAMESPACE}" --ignore-not-found >/dev/null
   kubectl delete configmap "${release_name}-grpc-proto" -n "${NAMESPACE}" --ignore-not-found >/dev/null
+
+  return 0
 }
 
 run_openssl() {
@@ -118,6 +131,8 @@ run_openssl() {
     echo "${output}" >&2
     return 1
   }
+
+  return 0
 }
 
 write_grpc_tls_material() {
@@ -200,6 +215,8 @@ EOF
     --from-file=query.proto=api/proto/underpass/rehydration/kernel/v1alpha1/query.proto \
     --from-file=common.proto=api/proto/underpass/rehydration/kernel/v1alpha1/common.proto \
     --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+
+  return 0
 }
 
 write_override_values() {
@@ -248,6 +265,7 @@ EOF
   fi
 
   printf "%s" "${override_file}"
+  return 0
 }
 
 helm_deploy() {
@@ -270,6 +288,8 @@ helm_deploy() {
     --timeout "${HELM_TIMEOUT}" \
     --atomic \
     "${set_image_args[@]}"
+
+  return 0
 }
 
 assert_rollout() {
@@ -277,6 +297,8 @@ assert_rollout() {
 
   kubectl rollout status "deployment/${release_name}" -n "${NAMESPACE}" --timeout "${HELM_TIMEOUT}"
   kubectl get svc "${release_name}" -n "${NAMESPACE}" >/dev/null
+
+  return 0
 }
 
 grpcurl_run() {
@@ -297,7 +319,7 @@ grpcurl_run() {
   service_host="${host%:*}"
   payload_json="$(printf '%s' "${payload}" | sed 's/\\/\\\\/g; s/"/\\"/g')"
 
-  if [[ "${grpc_mode}" == "mutual" ]]; then
+  if [[ "${grpc_mode}" == "${GRPC_MODE_MUTUAL}" ]]; then
     auth_args_json=$(
       cat <<'EOF'
 ,          "-cert",
@@ -406,12 +428,14 @@ EOF
   fi
 
   cat "${output_file}"
+  return 0
 }
 
 smoke_payload() {
   cat <<'EOF'
 {"rootNodeId":"node:smoke:transport-security","roles":["system"],"persistSnapshot":true,"snapshotTtl":"300s"}
 EOF
+  return 0
 }
 
 run_grpc_server_smoke() {
@@ -421,11 +445,12 @@ run_grpc_server_smoke() {
   cleanup_temp_resources "${release_name}"
   write_grpc_tls_material "${release_name}"
   local override_file
-  override_file="$(write_override_values "${release_name}" "server")"
+  override_file="$(write_override_values "${release_name}" "${GRPC_MODE_SERVER}")"
 
   helm_deploy "${release_name}" "${override_file}"
   assert_rollout "${release_name}"
-  grpcurl_run "${release_name}" "${release_name}-probe" "server" "true" "$(smoke_payload)" | grep -q '"snapshotPersisted": true'
+  grpcurl_run "${release_name}" "${release_name}-probe" "${GRPC_MODE_SERVER}" "true" "$(smoke_payload)" | grep -q "${SNAPSHOT_PERSISTED_PATTERN}"
+  return 0
 }
 
 run_grpc_mutual_smoke() {
@@ -435,20 +460,21 @@ run_grpc_mutual_smoke() {
   cleanup_temp_resources "${release_name}"
   write_grpc_tls_material "${release_name}"
   local override_file
-  override_file="$(write_override_values "${release_name}" "mutual")"
+  override_file="$(write_override_values "${release_name}" "${GRPC_MODE_MUTUAL}")"
 
   helm_deploy "${release_name}" "${override_file}"
   assert_rollout "${release_name}"
 
   local anonymous_output
-  anonymous_output="$(grpcurl_run "${release_name}" "${release_name}-probe-anon" "server" "false" "$(smoke_payload)")"
+  anonymous_output="$(grpcurl_run "${release_name}" "${release_name}-probe-anon" "${GRPC_MODE_SERVER}" "false" "$(smoke_payload)")"
   if ! grep -Eqi 'certificate|tls|handshake|authentication|deadline exceeded' <<<"${anonymous_output}"; then
     echo "${anonymous_output}" >&2
     echo "unauthenticated mutual TLS probe failed, but not with a TLS error" >&2
     return 1
   fi
 
-  grpcurl_run "${release_name}" "${release_name}-probe-auth" "mutual" "true" "$(smoke_payload)" | grep -q '"snapshotPersisted": true'
+  grpcurl_run "${release_name}" "${release_name}-probe-auth" "${GRPC_MODE_MUTUAL}" "true" "$(smoke_payload)" | grep -q "${SNAPSHOT_PERSISTED_PATTERN}"
+  return 0
 }
 
 run_outbound_smoke() {
@@ -463,11 +489,13 @@ run_outbound_smoke() {
   helm_deploy "${release_name}" "${override_file}"
   assert_rollout "${release_name}"
 
-  if [[ "${GRPC_SMOKE_MODE}" == "mutual" ]]; then
-    grpcurl_run "${release_name}" "${release_name}-probe" "mutual" "true" "$(smoke_payload)" | grep -q '"snapshotPersisted": true'
+  if [[ "${GRPC_SMOKE_MODE}" == "${GRPC_MODE_MUTUAL}" ]]; then
+    grpcurl_run "${release_name}" "${release_name}-probe" "${GRPC_MODE_MUTUAL}" "true" "$(smoke_payload)" | grep -q "${SNAPSHOT_PERSISTED_PATTERN}"
   else
-    grpcurl_run "${release_name}" "${release_name}-probe" "server" "true" "$(smoke_payload)" | grep -q '"snapshotPersisted": true'
+    grpcurl_run "${release_name}" "${release_name}-probe" "${GRPC_MODE_SERVER}" "true" "$(smoke_payload)" | grep -q "${SNAPSHOT_PERSISTED_PATTERN}"
   fi
+
+  return 0
 }
 
 main() {
@@ -486,7 +514,13 @@ main() {
       run_grpc_mutual_smoke
       run_outbound_smoke
       ;;
+    *)
+      echo "unsupported mode: ${MODE}" >&2
+      return 1
+      ;;
   esac
+
+  return 0
 }
 
 main "$@"
