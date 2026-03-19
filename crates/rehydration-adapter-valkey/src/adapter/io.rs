@@ -107,12 +107,14 @@ fn build_tls_client_config(endpoint: &ValkeyEndpoint) -> Result<ClientConfig, Po
         (Some(cert_path), Some(key_path)) => {
             let client_chain = read_pem_chain(cert_path)?;
             let identity = read_identity_der(key_path)?;
-            builder.with_client_auth_cert(client_chain, identity).map_err(|error| {
-                PortError::InvalidState(format!(
-                    "unable to configure valkey client identity for {}: {error}",
-                    endpoint.raw_uri
-                ))
-            })
+            builder
+                .with_client_auth_cert(client_chain, identity)
+                .map_err(|error| {
+                    PortError::InvalidState(format!(
+                        "unable to configure valkey client identity for {}: {error}",
+                        endpoint.raw_uri
+                    ))
+                })
         }
         (None, None) => Ok(builder.with_no_client_auth()),
         _ => Err(PortError::InvalidState(format!(

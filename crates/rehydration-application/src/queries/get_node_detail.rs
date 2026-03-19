@@ -53,11 +53,8 @@ where
                 "Node not found: {node_id}"
             )));
         };
-        let node_detail = match self
-            .detail_reader
-            .load_node_detail(&node_id)
-            .await?
-        {
+        #[allow(clippy::manual_map)]
+        let node_detail = match self.detail_reader.load_node_detail(&node_id).await? {
             Some(projection) => Some(map_node_detail(projection)),
             None => None,
         };
