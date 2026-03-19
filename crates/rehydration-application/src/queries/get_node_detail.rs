@@ -1,3 +1,4 @@
+use std::fmt;
 use std::sync::Arc;
 
 use rehydration_domain::{
@@ -12,7 +13,7 @@ pub struct GetNodeDetailQuery {
     pub node_id: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct NodeDetailView {
     pub node_id: String,
     pub detail: String,
@@ -20,10 +21,30 @@ pub struct NodeDetailView {
     pub revision: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct GetNodeDetailResult {
     pub node: GraphNodeView,
     pub detail: Option<NodeDetailView>,
+}
+
+impl fmt::Debug for NodeDetailView {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("NodeDetailView")
+            .field("node_id", &self.node_id)
+            .field("detail", &"<redacted>")
+            .field("content_hash", &"<redacted>")
+            .field("revision", &self.revision)
+            .finish()
+    }
+}
+
+impl fmt::Debug for GetNodeDetailResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("GetNodeDetailResult")
+            .field("node", &self.node)
+            .field("detail", &self.detail)
+            .finish()
+    }
 }
 
 #[derive(Debug)]
@@ -53,15 +74,15 @@ where
                 "Node not found: {node_id}"
             )));
         };
-        let detail = self
+        let node_detail = self
             .detail_reader
             .load_node_detail(&node_id)
             .await?
-            .map(map_detail);
+            .map(map_node_detail);
 
         Ok(GetNodeDetailResult {
             node: map_root_node(&neighborhood),
-            detail,
+            detail: node_detail,
         })
     }
 }
@@ -96,12 +117,12 @@ fn map_root_node(neighborhood: &NodeNeighborhood) -> GraphNodeView {
     }
 }
 
-fn map_detail(detail: NodeDetailProjection) -> NodeDetailView {
+fn map_node_detail(projection: NodeDetailProjection) -> NodeDetailView {
     NodeDetailView {
-        node_id: detail.node_id,
-        detail: detail.detail,
-        content_hash: detail.content_hash,
-        revision: detail.revision,
+        node_id: projection.node_id,
+        detail: projection.detail,
+        content_hash: projection.content_hash,
+        revision: projection.revision,
     }
 }
 
