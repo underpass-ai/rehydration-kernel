@@ -7,13 +7,14 @@ use crate::ApplicationError;
 pub use crate::queries::render_graph_bundle::RenderedContext;
 use crate::queries::{
     ContextRenderOptions, QueryApplicationService, RehydrateSessionUseCase, ScopeValidation,
-    ValidateScopeUseCase, render_graph_bundle_with_options,
+    ValidateScopeUseCase, clamp_native_graph_traversal_depth, render_graph_bundle_with_options,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GetContextQuery {
     pub root_node_id: String,
     pub role: String,
+    pub depth: u32,
     pub requested_scopes: Vec<String>,
     pub render_options: ContextRenderOptions,
 }
@@ -45,12 +46,19 @@ where
         &self,
         root_node_id: &str,
         role: &str,
+        depth: u32,
         requested_scopes: &[String],
         render_options: &ContextRenderOptions,
     ) -> Result<GetContextResult, ApplicationError> {
         let bundle = self
             .rehydrate_session
-            .execute(root_node_id, role, false, SnapshotSaveOptions::default())
+            .execute_with_depth(
+                root_node_id,
+                role,
+                clamp_native_graph_traversal_depth(depth),
+                false,
+                SnapshotSaveOptions::default(),
+            )
             .await?;
         let rendered = render_graph_bundle_with_options(&bundle, render_options);
         let scope_validation = ValidateScopeUseCase::execute(requested_scopes, requested_scopes);
@@ -85,6 +93,7 @@ where
             .execute(
                 &query.root_node_id,
                 &query.role,
+                query.depth,
                 &query.requested_scopes,
                 &query.render_options,
             )

@@ -10,5 +10,6 @@
     "risks"
   ],
   "renderFormat": "BUNDLE_RENDER_FORMAT_LLM_PROMPT",
-  "includeDebugSections": false
+  "includeDebugSections": false,
+  "depth": 10
 }

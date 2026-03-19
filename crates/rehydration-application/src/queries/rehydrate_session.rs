@@ -64,10 +64,28 @@ where
         persist_snapshot: bool,
         snapshot_options: SnapshotSaveOptions,
     ) -> Result<RehydrationBundle, ApplicationError> {
+        self.execute_with_depth(
+            root_node_id,
+            role,
+            crate::queries::DEFAULT_NATIVE_GRAPH_TRAVERSAL_DEPTH,
+            persist_snapshot,
+            snapshot_options,
+        )
+        .await
+    }
+
+    pub async fn execute_with_depth(
+        &self,
+        root_node_id: &str,
+        role: &str,
+        depth: u32,
+        persist_snapshot: bool,
+        snapshot_options: SnapshotSaveOptions,
+    ) -> Result<RehydrationBundle, ApplicationError> {
         let bundle_reader =
             NodeCentricProjectionReader::new(&self.graph_reader, &self.detail_reader);
         let bundle = match bundle_reader
-            .load_bundle(root_node_id, role, self.generator_version)
+            .load_bundle_with_depth(root_node_id, role, self.generator_version, depth)
             .await?
         {
             Some(bundle) => bundle,
@@ -178,6 +196,7 @@ mod tests {
         async fn load_neighborhood(
             &self,
             root_node_id: &str,
+            _depth: u32,
         ) -> Result<Option<NodeNeighborhood>, PortError> {
             Ok(Some(NodeNeighborhood {
                 root: NodeProjection {

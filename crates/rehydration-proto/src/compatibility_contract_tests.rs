@@ -17,6 +17,7 @@ fn generated_kernel_messages_are_available() {
         requested_scopes: vec!["decisions".to_string()],
         render_format: v1alpha1::BundleRenderFormat::Structured as i32,
         include_debug_sections: false,
+        depth: 10,
     };
 
     assert_eq!(request.root_node_id, "node-123");

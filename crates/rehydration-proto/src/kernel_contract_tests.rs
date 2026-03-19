@@ -61,6 +61,7 @@ fn get_context_request_fields_are_stable() {
             "requested_scopes",
             "render_format",
             "include_debug_sections",
+            "depth",
         ]
     );
 }

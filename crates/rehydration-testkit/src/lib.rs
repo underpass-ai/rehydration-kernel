@@ -25,6 +25,7 @@ impl GraphNeighborhoodReader for InMemoryGraphNeighborhoodReader {
     async fn load_neighborhood(
         &self,
         root_node_id: &str,
+        _depth: u32,
     ) -> Result<Option<NodeNeighborhood>, PortError> {
         Ok(self.neighborhoods.get(root_node_id).cloned())
     }
@@ -227,7 +228,7 @@ mod tests {
         });
 
         let loaded = reader
-            .load_neighborhood("node-123")
+            .load_neighborhood("node-123", 1)
             .await
             .expect("load should succeed");
 

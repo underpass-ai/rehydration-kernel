@@ -271,6 +271,7 @@ async fn kernel_full_journey_covers_projection_query_compatibility_command_and_a
                 requested_scopes: vec!["graph".to_string(), "decisions".to_string()],
                 render_format: BundleRenderFormat::Structured as i32,
                 include_debug_sections: true,
+                depth: 3,
             })
             .await?
             .into_inner();

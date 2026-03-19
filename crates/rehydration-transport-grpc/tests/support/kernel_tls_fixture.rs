@@ -236,6 +236,7 @@ async fn wait_for_context_ready(
                 requested_scopes: vec!["implementation".to_string()],
                 render_format: BundleRenderFormat::Structured as i32,
                 include_debug_sections: false,
+                depth: 0,
             })
             .await
         {

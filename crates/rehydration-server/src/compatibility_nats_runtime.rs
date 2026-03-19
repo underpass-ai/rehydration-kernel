@@ -78,6 +78,7 @@ mod tests {
         async fn load_neighborhood(
             &self,
             _root_node_id: &str,
+            _depth: u32,
         ) -> Result<Option<NodeNeighborhood>, PortError> {
             Ok(None)
         }

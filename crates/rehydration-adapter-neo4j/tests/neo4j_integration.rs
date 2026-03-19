@@ -24,8 +24,7 @@ const CONNECT_RETRY_ATTEMPTS: usize = 15;
 const CONNECT_RETRY_DELAY: Duration = Duration::from_secs(1);
 
 #[tokio::test]
-async fn load_neighborhood_reads_root_and_related_nodes() -> Result<(), Box<dyn Error + Send + Sync>>
-{
+async fn load_neighborhood_respects_directed_depth() -> Result<(), Box<dyn Error + Send + Sync>> {
     run_with_timeout(async {
         let container = start_neo4j_container().await?;
         let host = container.get_host().await?;
@@ -68,60 +67,92 @@ async fn load_neighborhood_reads_root_and_related_nodes() -> Result<(), Box<dyn 
                     labels: vec!["work-item".to_string()],
                     properties: BTreeMap::from([("priority".to_string(), "5".to_string())]),
                 }),
+                ProjectionMutation::UpsertNode(NodeProjection {
+                    node_id: "blocker-1".to_string(),
+                    node_kind: "risk".to_string(),
+                    title: "Inbound blocker".to_string(),
+                    summary: "Should not be reachable from the root".to_string(),
+                    status: "OPEN".to_string(),
+                    labels: vec!["risk".to_string()],
+                    properties: BTreeMap::new(),
+                }),
                 ProjectionMutation::UpsertNodeRelation(NodeRelationProjection {
                     source_node_id: "node-root".to_string(),
                     target_node_id: "decision-1".to_string(),
                     relation_type: "records".to_string(),
                 }),
                 ProjectionMutation::UpsertNodeRelation(NodeRelationProjection {
-                    source_node_id: "task-1".to_string(),
-                    target_node_id: "node-root".to_string(),
-                    relation_type: "depends_on".to_string(),
-                }),
-                ProjectionMutation::UpsertNodeRelation(NodeRelationProjection {
                     source_node_id: "decision-1".to_string(),
                     target_node_id: "task-1".to_string(),
                     relation_type: "informs".to_string(),
                 }),
+                ProjectionMutation::UpsertNodeRelation(NodeRelationProjection {
+                    source_node_id: "blocker-1".to_string(),
+                    target_node_id: "node-root".to_string(),
+                    relation_type: "blocks".to_string(),
+                }),
             ])
             .await?;
 
-        let neighborhood = store
-            .load_neighborhood("node-root")
+        let shallow_neighborhood = store
+            .load_neighborhood("node-root", 1)
             .await?
             .expect("seeded neighborhood should load");
 
-        assert_eq!(neighborhood.root.node_id, "node-root");
-        assert_eq!(neighborhood.root.title, "Projection kernel");
-        assert_eq!(neighborhood.root.properties["created_by"], "planner");
-        assert_eq!(neighborhood.neighbors.len(), 2);
+        assert_eq!(shallow_neighborhood.root.node_id, "node-root");
+        assert_eq!(shallow_neighborhood.root.title, "Projection kernel");
+        assert_eq!(
+            shallow_neighborhood.root.properties["created_by"],
+            "planner"
+        );
+        assert_eq!(shallow_neighborhood.neighbors.len(), 1);
         assert!(
-            neighborhood
+            shallow_neighborhood
                 .neighbors
                 .iter()
                 .any(|node| node.node_id == "decision-1" && node.node_kind == "decision")
         );
         assert!(
-            neighborhood
+            shallow_neighborhood
                 .neighbors
                 .iter()
-                .any(|node| node.node_id == "task-1" && node.status == "READY")
+                .all(|node| node.node_id != "task-1" && node.node_id != "blocker-1")
         );
-        assert_eq!(neighborhood.relations.len(), 3);
-        assert!(neighborhood.relations.iter().any(|relation| {
+        assert_eq!(shallow_neighborhood.relations.len(), 1);
+        assert!(shallow_neighborhood.relations.iter().any(|relation| {
             relation.source_node_id == "node-root"
                 && relation.target_node_id == "decision-1"
                 && relation.relation_type == "records"
         }));
-        assert!(neighborhood.relations.iter().any(|relation| {
-            relation.source_node_id == "task-1"
-                && relation.target_node_id == "node-root"
-                && relation.relation_type == "depends_on"
-        }));
-        assert!(neighborhood.relations.iter().any(|relation| {
+
+        let deep_neighborhood = store
+            .load_neighborhood("node-root", 3)
+            .await?
+            .expect("seeded deep neighborhood should load");
+
+        assert_eq!(deep_neighborhood.neighbors.len(), 2);
+        assert!(
+            deep_neighborhood
+                .neighbors
+                .iter()
+                .any(|node| node.node_id == "task-1" && node.status == "READY")
+        );
+        assert!(
+            deep_neighborhood
+                .neighbors
+                .iter()
+                .all(|node| node.node_id != "blocker-1")
+        );
+        assert_eq!(deep_neighborhood.relations.len(), 2);
+        assert!(deep_neighborhood.relations.iter().any(|relation| {
             relation.source_node_id == "decision-1"
                 && relation.target_node_id == "task-1"
                 && relation.relation_type == "informs"
+        }));
+        assert!(deep_neighborhood.relations.iter().all(|relation| {
+            !(relation.source_node_id == "blocker-1"
+                && relation.target_node_id == "node-root"
+                && relation.relation_type == "blocks")
         }));
 
         Ok(())

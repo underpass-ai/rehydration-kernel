@@ -72,6 +72,7 @@ where
                 requested_scopes: request.requested_scopes,
                 render_format: request.render_format as i32,
                 include_debug_sections: request.include_debug_sections,
+                depth: 0,
             })
             .await?
             .into_inner();

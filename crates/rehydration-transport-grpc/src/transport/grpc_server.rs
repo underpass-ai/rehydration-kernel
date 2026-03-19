@@ -6,8 +6,8 @@ use std::sync::Arc;
 
 use rehydration_application::{
     AdminCommandApplicationService, AdminQueryApplicationService, ApplicationError,
-    CommandApplicationService, QueryApplicationService, RehydrationApplication,
-    UpdateContextUseCase,
+    CommandApplicationService, DEFAULT_NATIVE_GRAPH_TRAVERSAL_DEPTH, QueryApplicationService,
+    RehydrationApplication, UpdateContextUseCase,
 };
 use rehydration_config::{AppConfig, GrpcTlsConfig, GrpcTlsMode};
 use rehydration_domain::{
@@ -96,6 +96,7 @@ where
             requested_scopes: Vec::new(),
             render_format: BundleRenderFormat::Structured as i32,
             include_debug_sections: false,
+            depth: DEFAULT_NATIVE_GRAPH_TRAVERSAL_DEPTH,
         }
     }
 
