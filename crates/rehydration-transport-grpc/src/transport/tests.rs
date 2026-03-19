@@ -27,8 +27,9 @@ use rehydration_proto::fleet_context_v1::{
 };
 use rehydration_proto::v1alpha1::{
     BundleRenderFormat, ContextChange, ContextChangeOperation, GetBundleSnapshotRequest,
-    GetContextRequest, GetProjectionStatusRequest, GetRehydrationDiagnosticsRequest, Phase,
-    UpdateContextRequest, ValidateScopeRequest, context_admin_service_server::ContextAdminService,
+    GetContextRequest, GetNodeDetailRequest, GetProjectionStatusRequest,
+    GetRehydrationDiagnosticsRequest, Phase, UpdateContextRequest, ValidateScopeRequest,
+    context_admin_service_server::ContextAdminService,
     context_command_service_server::ContextCommandService,
     context_query_service_server::ContextQueryService,
 };
@@ -87,6 +88,47 @@ impl NodeDetailReader for EmptyNodeDetailReader {
         _node_id: &str,
     ) -> Result<Option<NodeDetailProjection>, PortError> {
         Ok(None)
+    }
+}
+
+struct SeededGraphNeighborhoodReader;
+
+impl GraphNeighborhoodReader for SeededGraphNeighborhoodReader {
+    async fn load_neighborhood(
+        &self,
+        root_node_id: &str,
+        _depth: u32,
+    ) -> Result<Option<NodeNeighborhood>, PortError> {
+        match root_node_id {
+            "node-123" => Ok(Some(sample_node_neighborhood("node-123", "ACTIVE"))),
+            "graph-only" => Ok(Some(sample_node_neighborhood("graph-only", "READY"))),
+            _ => Ok(None),
+        }
+    }
+}
+
+struct SeededNodeDetailReader;
+
+impl NodeDetailReader for SeededNodeDetailReader {
+    async fn load_node_detail(
+        &self,
+        node_id: &str,
+    ) -> Result<Option<NodeDetailProjection>, PortError> {
+        Ok(match node_id {
+            "node-123" => Some(NodeDetailProjection {
+                node_id: "node-123".to_string(),
+                detail: "Expanded detail".to_string(),
+                content_hash: "hash-1".to_string(),
+                revision: 2,
+            }),
+            "orphan-detail" => Some(NodeDetailProjection {
+                node_id: "orphan-detail".to_string(),
+                detail: "orphaned".to_string(),
+                content_hash: "hash-orphan".to_string(),
+                revision: 1,
+            }),
+            _ => None,
+        })
     }
 }
 
@@ -249,6 +291,80 @@ async fn query_service_forwards_requested_depth_to_application() {
         .expect("get context should succeed");
 
     assert_eq!(&*depths.lock().await, &[17]);
+}
+
+#[tokio::test]
+async fn query_service_returns_node_detail_panel() {
+    let application = Arc::new(QueryApplicationService::new(
+        Arc::new(SeededGraphNeighborhoodReader),
+        Arc::new(SeededNodeDetailReader),
+        Arc::new(NoopSnapshotStore),
+        "0.1.0",
+    ));
+    let service = QueryGrpcService::new(application);
+
+    let response = service
+        .get_node_detail(Request::new(GetNodeDetailRequest {
+            node_id: "node-123".to_string(),
+        }))
+        .await
+        .expect("get node detail should succeed")
+        .into_inner();
+
+    let node = response.node.expect("node should exist");
+    let detail = response.detail.expect("detail should exist");
+
+    assert_eq!(node.node_id, "node-123");
+    assert_eq!(node.title, "Node node-123");
+    assert_eq!(node.properties["owner"], "ops");
+    assert_eq!(detail.detail, "Expanded detail");
+    assert_eq!(detail.revision, 2);
+}
+
+#[tokio::test]
+async fn query_service_returns_node_metadata_when_detail_is_missing() {
+    let application = Arc::new(QueryApplicationService::new(
+        Arc::new(SeededGraphNeighborhoodReader),
+        Arc::new(EmptyNodeDetailReader),
+        Arc::new(NoopSnapshotStore),
+        "0.1.0",
+    ));
+    let service = QueryGrpcService::new(application);
+
+    let response = service
+        .get_node_detail(Request::new(GetNodeDetailRequest {
+            node_id: "graph-only".to_string(),
+        }))
+        .await
+        .expect("graph-only node detail should succeed")
+        .into_inner();
+
+    assert_eq!(
+        response.node.expect("node should exist").node_id,
+        "graph-only"
+    );
+    assert!(response.detail.is_none());
+}
+
+#[tokio::test]
+async fn query_service_returns_not_found_for_missing_node_detail_target() {
+    let application = Arc::new(QueryApplicationService::new(
+        Arc::new(SeededGraphNeighborhoodReader),
+        Arc::new(SeededNodeDetailReader),
+        Arc::new(NoopSnapshotStore),
+        "0.1.0",
+    ));
+    let service = QueryGrpcService::new(application);
+
+    let error = service
+        .get_node_detail(Request::new(GetNodeDetailRequest {
+            node_id: "orphan-detail".to_string(),
+        }))
+        .await
+        .expect_err("orphan detail should map to not found");
+
+    assert_eq!(error.code(), tonic::Code::NotFound);
+    assert_eq!(error.message(), "Node not found: orphan-detail");
 }
 
 #[tokio::test]
@@ -729,6 +845,10 @@ fn helper_mappers_cover_versions_errors_and_trim_logic() {
         .code(),
         tonic::Code::Unavailable
     );
+    assert_eq!(
+        map_application_error(ApplicationError::NotFound("missing".to_string())).code(),
+        tonic::Code::NotFound
+    );
     assert_eq!(proto_replay_mode(map_replay_mode(999)) as i32, 1);
     assert_eq!(proto_replay_mode(ReplayModeSelection::Rebuild) as i32, 2);
 
@@ -817,6 +937,24 @@ fn sample_bundle(root_node_id: &str, role: &str, summary: &str) -> RehydrationBu
         BundleMetadata::initial("0.1.0"),
     )
     .expect("sample bundle should be valid")
+}
+
+fn sample_node_neighborhood(node_id: &str, status: &str) -> NodeNeighborhood {
+    NodeNeighborhood {
+        root: rehydration_domain::NodeProjection {
+            node_id: node_id.to_string(),
+            node_kind: "task".to_string(),
+            title: format!("Node {node_id}"),
+            summary: format!("Summary for {node_id}"),
+            status: status.to_string(),
+            labels: vec!["Task".to_string()],
+            properties: [("owner".to_string(), "ops".to_string())]
+                .into_iter()
+                .collect(),
+        },
+        neighbors: Vec::new(),
+        relations: Vec::new(),
+    }
 }
 
 fn compatibility_service() -> ContextCompatibilityGrpcService<

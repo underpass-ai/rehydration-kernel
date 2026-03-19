@@ -100,19 +100,21 @@ async fn connect_stream(endpoint: &ValkeyEndpoint) -> Result<BoxedValkeyIo, Port
 
 fn build_tls_client_config(endpoint: &ValkeyEndpoint) -> Result<ClientConfig, PortError> {
     ensure_crypto_provider();
-    let roots = load_root_certificates(endpoint)?;
+    let roots = build_root_store(endpoint)?;
     let builder = ClientConfig::builder().with_root_certificates(roots);
 
     match (&endpoint.tls.cert_path, &endpoint.tls.key_path) {
         (Some(cert_path), Some(key_path)) => {
-            let certs = load_pem_certificates(cert_path)?;
-            let key = load_private_key(key_path)?;
-            builder.with_client_auth_cert(certs, key).map_err(|error| {
-                PortError::InvalidState(format!(
-                    "unable to configure valkey client identity for {}: {error}",
-                    endpoint.raw_uri
-                ))
-            })
+            let client_chain = read_pem_chain(cert_path)?;
+            let identity = read_identity_der(key_path)?;
+            builder
+                .with_client_auth_cert(client_chain, identity)
+                .map_err(|error| {
+                    PortError::InvalidState(format!(
+                        "unable to configure valkey client identity for {}: {error}",
+                        endpoint.raw_uri
+                    ))
+                })
         }
         (None, None) => Ok(builder.with_no_client_auth()),
         _ => Err(PortError::InvalidState(format!(
@@ -122,12 +124,12 @@ fn build_tls_client_config(endpoint: &ValkeyEndpoint) -> Result<ClientConfig, Po
     }
 }
 
-fn load_root_certificates(endpoint: &ValkeyEndpoint) -> Result<RootCertStore, PortError> {
+fn build_root_store(endpoint: &ValkeyEndpoint) -> Result<RootCertStore, PortError> {
     let mut roots = RootCertStore::empty();
 
     if let Some(ca_path) = &endpoint.tls.ca_path {
-        for cert in load_pem_certificates(ca_path)? {
-            roots.add(cert).map_err(|error| {
+        for anchor in read_pem_chain(ca_path)? {
+            roots.add(anchor).map_err(|error| {
                 PortError::InvalidState(format!(
                     "unable to load valkey CA certificate `{}`: {error}",
                     ca_path.display()
@@ -138,8 +140,8 @@ fn load_root_certificates(endpoint: &ValkeyEndpoint) -> Result<RootCertStore, Po
     }
 
     let native = rustls_native_certs::load_native_certs();
-    for cert in native.certs {
-        roots.add(cert).map_err(|error| {
+    for anchor in native.certs {
+        roots.add(anchor).map_err(|error| {
             PortError::InvalidState(format!(
                 "unable to load system trust store for valkey TLS: {error}"
             ))
@@ -156,7 +158,7 @@ fn load_root_certificates(endpoint: &ValkeyEndpoint) -> Result<RootCertStore, Po
     Ok(roots)
 }
 
-fn load_pem_certificates(path: &Path) -> Result<Vec<CertificateDer<'static>>, PortError> {
+fn read_pem_chain(path: &Path) -> Result<Vec<CertificateDer<'static>>, PortError> {
     let file = File::open(path).map_err(|error| {
         PortError::InvalidState(format!(
             "unable to open valkey certificate file `{}`: {error}",
@@ -174,7 +176,7 @@ fn load_pem_certificates(path: &Path) -> Result<Vec<CertificateDer<'static>>, Po
         })
 }
 
-fn load_private_key(path: &Path) -> Result<PrivateKeyDer<'static>, PortError> {
+fn read_identity_der(path: &Path) -> Result<PrivateKeyDer<'static>, PortError> {
     let file = File::open(path).map_err(|error| {
         PortError::InvalidState(format!(
             "unable to open valkey private key file `{}`: {error}",
@@ -238,7 +240,7 @@ mod tests {
 
     use super::{
         ServerName, build_tls_client_config, ensure_crypto_provider, execute_get_command,
-        execute_set_command, load_pem_certificates, load_private_key, parse_server_name,
+        execute_set_command, parse_server_name, read_identity_der, read_pem_chain,
     };
     use crate::adapter::endpoint::{ValkeyEndpoint, ValkeyTlsConfig};
     use rehydration_ports::PortError;
@@ -253,7 +255,7 @@ mod tests {
             raw_uri: format!(
                 "rediss://127.0.0.1:{}?tls_ca_path={}",
                 server.port,
-                tls.ca_cert.display()
+                tls.ca_pem.display()
             ),
             host: "127.0.0.1".to_string(),
             port: server.port,
@@ -261,7 +263,7 @@ mod tests {
             ttl_seconds: None,
             tls: ValkeyTlsConfig {
                 enabled: true,
-                ca_path: Some(tls.ca_cert.clone()),
+                ca_path: Some(tls.ca_pem.clone()),
                 cert_path: None,
                 key_path: None,
             },
@@ -291,9 +293,9 @@ mod tests {
             raw_uri: format!(
                 "rediss://localhost:{}?tls_ca_path={}&tls_cert_path={}&tls_key_path={}",
                 server.port,
-                tls.ca_cert.display(),
-                tls.client_cert.display(),
-                tls.client_key.display()
+                tls.ca_pem.display(),
+                tls.client_pem.display(),
+                tls.client_identity.display()
             ),
             host: "localhost".to_string(),
             port: server.port,
@@ -301,9 +303,9 @@ mod tests {
             ttl_seconds: None,
             tls: ValkeyTlsConfig {
                 enabled: true,
-                ca_path: Some(tls.ca_cert.clone()),
-                cert_path: Some(tls.client_cert.clone()),
-                key_path: Some(tls.client_key.clone()),
+                ca_path: Some(tls.ca_pem.clone()),
+                cert_path: Some(tls.client_pem.clone()),
+                key_path: Some(tls.client_identity.clone()),
             },
         };
 
@@ -327,9 +329,9 @@ mod tests {
         let endpoint = ValkeyEndpoint {
             raw_uri: format!(
                 "rediss://localhost:6379?tls_ca_path={}&tls_cert_path={}&tls_key_path={}",
-                tls.ca_cert.display(),
-                tls.client_cert.display(),
-                tls.client_key.display()
+                tls.ca_pem.display(),
+                tls.client_pem.display(),
+                tls.client_identity.display()
             ),
             host: "localhost".to_string(),
             port: 6379,
@@ -337,9 +339,9 @@ mod tests {
             ttl_seconds: None,
             tls: ValkeyTlsConfig {
                 enabled: true,
-                ca_path: Some(tls.ca_cert.clone()),
-                cert_path: Some(tls.client_cert.clone()),
-                key_path: Some(tls.client_key.clone()),
+                ca_path: Some(tls.ca_pem.clone()),
+                cert_path: Some(tls.client_pem.clone()),
+                key_path: Some(tls.client_identity.clone()),
             },
         };
 
@@ -352,8 +354,8 @@ mod tests {
         let endpoint = ValkeyEndpoint {
             raw_uri: format!(
                 "rediss://localhost:6379?tls_ca_path={}&tls_cert_path={}",
-                tls.ca_cert.display(),
-                tls.client_cert.display(),
+                tls.ca_pem.display(),
+                tls.client_pem.display(),
             ),
             host: "localhost".to_string(),
             port: 6379,
@@ -361,8 +363,8 @@ mod tests {
             ttl_seconds: None,
             tls: ValkeyTlsConfig {
                 enabled: true,
-                ca_path: Some(tls.ca_cert.clone()),
-                cert_path: Some(tls.client_cert.clone()),
+                ca_path: Some(tls.ca_pem.clone()),
+                cert_path: Some(tls.client_pem.clone()),
                 key_path: None,
             },
         };
@@ -395,12 +397,12 @@ mod tests {
     }
 
     #[test]
-    fn load_private_key_rejects_invalid_pem() {
+    fn read_identity_der_rejects_invalid_pem() {
         let dir = tempfile::tempdir().expect("tempdir should be created");
         let key_path = dir.path().join("client.key");
         fs::write(&key_path, "not a private key").expect("fixture should be written");
 
-        let error = load_private_key(&key_path).expect_err("invalid PEM should fail");
+        let error = read_identity_der(&key_path).expect_err("invalid PEM should fail");
 
         let message = error.to_string();
         assert!(
@@ -411,26 +413,26 @@ mod tests {
 
     struct TlsFixturePaths {
         _dir: TempDir,
-        ca_cert: PathBuf,
-        server_cert: PathBuf,
-        server_key: PathBuf,
-        client_cert: PathBuf,
-        client_key: PathBuf,
+        ca_pem: PathBuf,
+        server_pem: PathBuf,
+        server_identity: PathBuf,
+        client_pem: PathBuf,
+        client_identity: PathBuf,
     }
 
     impl TlsFixturePaths {
         fn new() -> io::Result<Self> {
             let dir = tempfile::tempdir()?;
-            let ca_key = dir.path().join("ca.key");
-            let ca_cert = dir.path().join("ca.crt");
-            let server_key = dir.path().join("server.key");
+            let ca_material = dir.path().join("ca.key");
+            let ca_pem = dir.path().join("ca.crt");
+            let server_identity = dir.path().join("server.key");
             let server_csr = dir.path().join("server.csr");
             let server_ext = dir.path().join("server.ext");
-            let server_cert = dir.path().join("server.crt");
-            let client_key = dir.path().join("client.key");
+            let server_pem = dir.path().join("server.crt");
+            let client_identity = dir.path().join("client.key");
             let client_csr = dir.path().join("client.csr");
             let client_ext = dir.path().join("client.ext");
-            let client_cert = dir.path().join("client.crt");
+            let client_pem = dir.path().join("client.crt");
 
             run_openssl([
                 "req",
@@ -441,9 +443,9 @@ mod tests {
                 "3650",
                 "-nodes",
                 "-keyout",
-                &path_string(&ca_key)?,
+                &path_string(&ca_material)?,
                 "-out",
-                &path_string(&ca_cert)?,
+                &path_string(&ca_pem)?,
                 "-subj",
                 "/CN=rehydration-valkey-test-ca",
             ])?;
@@ -454,7 +456,7 @@ mod tests {
                 "rsa:2048",
                 "-nodes",
                 "-keyout",
-                &path_string(&server_key)?,
+                &path_string(&server_identity)?,
                 "-out",
                 &path_string(&server_csr)?,
                 "-subj",
@@ -472,12 +474,12 @@ mod tests {
                 "-in",
                 &path_string(&server_csr)?,
                 "-CA",
-                &path_string(&ca_cert)?,
+                &path_string(&ca_pem)?,
                 "-CAkey",
-                &path_string(&ca_key)?,
+                &path_string(&ca_material)?,
                 "-CAcreateserial",
                 "-out",
-                &path_string(&server_cert)?,
+                &path_string(&server_pem)?,
                 "-days",
                 "3650",
                 "-extfile",
@@ -492,7 +494,7 @@ mod tests {
                 "rsa:2048",
                 "-nodes",
                 "-keyout",
-                &path_string(&client_key)?,
+                &path_string(&client_identity)?,
                 "-out",
                 &path_string(&client_csr)?,
                 "-subj",
@@ -505,12 +507,12 @@ mod tests {
                 "-in",
                 &path_string(&client_csr)?,
                 "-CA",
-                &path_string(&ca_cert)?,
+                &path_string(&ca_pem)?,
                 "-CAkey",
-                &path_string(&ca_key)?,
+                &path_string(&ca_material)?,
                 "-CAcreateserial",
                 "-out",
-                &path_string(&client_cert)?,
+                &path_string(&client_pem)?,
                 "-days",
                 "3650",
                 "-extfile",
@@ -521,11 +523,11 @@ mod tests {
 
             Ok(Self {
                 _dir: dir,
-                ca_cert,
-                server_cert,
-                server_key,
-                client_cert,
-                client_key,
+                ca_pem,
+                server_pem,
+                server_identity,
+                client_pem,
+                client_identity,
             })
         }
     }
@@ -610,15 +612,15 @@ mod tests {
         require_client_identity: bool,
     ) -> io::Result<ServerConfig> {
         ensure_crypto_provider();
-        let certs = load_pem_certificates(&fixture.server_cert).map_err(port_error_to_io)?;
-        let key = load_private_key(&fixture.server_key).map_err(port_error_to_io)?;
+        let chain = read_pem_chain(&fixture.server_pem).map_err(port_error_to_io)?;
+        let identity = read_identity_der(&fixture.server_identity).map_err(port_error_to_io)?;
         let builder = ServerConfig::builder();
 
         if require_client_identity {
             let mut roots = RootCertStore::empty();
-            for cert in load_pem_certificates(&fixture.ca_cert).map_err(port_error_to_io)? {
+            for anchor in read_pem_chain(&fixture.ca_pem).map_err(port_error_to_io)? {
                 roots
-                    .add(cert)
+                    .add(anchor)
                     .map_err(|error| io::Error::other(error.to_string()))?;
             }
             let verifier = WebPkiClientVerifier::builder(Arc::new(roots))
@@ -627,13 +629,13 @@ mod tests {
 
             return builder
                 .with_client_cert_verifier(verifier)
-                .with_single_cert(certs, key)
+                .with_single_cert(chain, identity)
                 .map_err(|error| io::Error::other(error.to_string()));
         }
 
         builder
             .with_no_client_auth()
-            .with_single_cert(certs, key)
+            .with_single_cert(chain, identity)
             .map_err(|error| io::Error::other(error.to_string()))
     }
 

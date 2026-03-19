@@ -10,6 +10,7 @@ option go_package = "github.com/underpass-ai/rehydration-kernel/api/gen/go/under
 
 service ContextQueryService {
   rpc GetContext(GetContextRequest) returns (GetContextResponse);
+  rpc GetNodeDetail(GetNodeDetailRequest) returns (GetNodeDetailResponse);
   rpc RehydrateSession(RehydrateSessionRequest) returns (RehydrateSessionResponse);
   rpc ValidateScope(ValidateScopeRequest) returns (ValidateScopeResponse);
 }
@@ -31,6 +32,15 @@ message GetContextResponse {
   RenderedContext rendered = 2;
   ScopeValidationResult scope_validation = 3;
   google.protobuf.Timestamp served_at = 4;
+}
+
+message GetNodeDetailRequest {
+  string node_id = 1;
+}
+
+message GetNodeDetailResponse {
+  GraphNode node = 1;
+  BundleNodeDetail detail = 2;
 }
 
 message RehydrateSessionRequest {

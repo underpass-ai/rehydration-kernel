@@ -6,6 +6,7 @@ pub(crate) fn map_compatibility_error(error: ApplicationError) -> Status {
         ApplicationError::Domain(domain_error) => {
             Status::invalid_argument(domain_error.to_string())
         }
+        ApplicationError::NotFound(message) => Status::not_found(message),
         ApplicationError::Validation(message) => Status::invalid_argument(message),
         ApplicationError::Ports(port_error) => Status::internal(port_error.to_string()),
     }
@@ -39,6 +40,10 @@ mod tests {
             )))
             .code(),
             tonic::Code::Internal
+        );
+        assert_eq!(
+            map_compatibility_error(ApplicationError::NotFound("missing".to_string())).code(),
+            tonic::Code::NotFound
         );
         assert_eq!(
             unimplemented_status("ValidateScope").code(),

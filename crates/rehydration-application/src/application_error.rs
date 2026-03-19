@@ -7,6 +7,7 @@ use rehydration_domain::{DomainError, PortError};
 pub enum ApplicationError {
     Domain(DomainError),
     Ports(PortError),
+    NotFound(String),
     Validation(String),
 }
 
@@ -15,6 +16,7 @@ impl fmt::Display for ApplicationError {
         match self {
             Self::Domain(error) => error.fmt(f),
             Self::Ports(error) => error.fmt(f),
+            Self::NotFound(message) => f.write_str(message),
             Self::Validation(message) => f.write_str(message),
         }
     }

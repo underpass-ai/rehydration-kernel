@@ -21,6 +21,12 @@ fn generated_kernel_messages_are_available() {
     };
 
     assert_eq!(request.root_node_id, "node-123");
+
+    let detail_request = v1alpha1::GetNodeDetailRequest {
+        node_id: "node-123".to_string(),
+    };
+
+    assert_eq!(detail_request.node_id, "node-123");
 }
 
 #[test]
