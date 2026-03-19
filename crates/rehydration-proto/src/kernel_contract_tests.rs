@@ -13,7 +13,12 @@ fn query_service_surface_is_stable() {
 
     assert_eq!(
         service_method_names(query_file, "ContextQueryService"),
-        vec!["GetContext", "RehydrateSession", "ValidateScope"]
+        vec![
+            "GetContext",
+            "GetNodeDetail",
+            "RehydrateSession",
+            "ValidateScope"
+        ]
     );
 }
 
@@ -63,6 +68,28 @@ fn get_context_request_fields_are_stable() {
             "include_debug_sections",
             "depth",
         ]
+    );
+}
+
+#[test]
+fn get_node_detail_request_fields_are_stable() {
+    let descriptor_set = decode_kernel_descriptor_set();
+    let query_file = kernel_file(&descriptor_set, "query.proto");
+
+    assert_eq!(
+        message_field_names(query_file, "GetNodeDetailRequest"),
+        vec!["node_id"]
+    );
+}
+
+#[test]
+fn get_node_detail_response_fields_are_stable() {
+    let descriptor_set = decode_kernel_descriptor_set();
+    let query_file = kernel_file(&descriptor_set, "query.proto");
+
+    assert_eq!(
+        message_field_names(query_file, "GetNodeDetailResponse"),
+        vec!["node", "detail"]
     );
 }
 

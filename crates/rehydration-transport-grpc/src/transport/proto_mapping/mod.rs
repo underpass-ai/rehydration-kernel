@@ -11,8 +11,8 @@ pub(crate) use bundle_mapping::{
 };
 pub(crate) use diagnostics_mapping::proto_rehydration_diagnostics_response;
 pub(crate) use graph_mapping::{
-    proto_bundle_node, proto_bundle_node_detail, proto_bundle_relationship,
-    proto_graph_relationships_response,
+    proto_bundle_node, proto_bundle_node_detail, proto_bundle_relationship, proto_graph_node,
+    proto_graph_relationships_response, proto_node_detail_view,
 };
 pub(crate) use projection_mapping::{
     proto_projection_status_response, proto_replay_projection_response,
@@ -24,6 +24,6 @@ pub(crate) use version_mapping::{proto_accepted_version, proto_bundle_version};
 #[cfg(test)]
 pub(crate) use diagnostics_mapping::proto_diagnostic;
 #[cfg(test)]
-pub(crate) use graph_mapping::{proto_graph_node, proto_graph_relationship};
+pub(crate) use graph_mapping::proto_graph_relationship;
 #[cfg(test)]
 pub(crate) use projection_mapping::proto_projection_status;

@@ -1,4 +1,6 @@
-use rehydration_application::{GetGraphRelationshipsResult, GraphNodeView, GraphRelationshipView};
+use rehydration_application::{
+    GetGraphRelationshipsResult, GraphNodeView, GraphRelationshipView, NodeDetailView,
+};
 use rehydration_domain::{BundleNode, BundleNodeDetail, BundleRelationship};
 use rehydration_proto::v1alpha1::{
     BundleNodeDetail as ProtoBundleNodeDetail, GetGraphRelationshipsResponse, GraphNode,
@@ -70,5 +72,14 @@ pub(crate) fn proto_bundle_node_detail(detail: &BundleNodeDetail) -> ProtoBundle
         detail: detail.detail().to_string(),
         content_hash: detail.content_hash().to_string(),
         revision: detail.revision(),
+    }
+}
+
+pub(crate) fn proto_node_detail_view(detail: &NodeDetailView) -> ProtoBundleNodeDetail {
+    ProtoBundleNodeDetail {
+        node_id: detail.node_id.clone(),
+        detail: detail.detail.clone(),
+        content_hash: detail.content_hash.clone(),
+        revision: detail.revision,
     }
 }

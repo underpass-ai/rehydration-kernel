@@ -31,6 +31,7 @@ pub(crate) fn map_application_error(error: ApplicationError) -> Status {
             }
             rehydration_ports::PortError::Unavailable(message) => Status::unavailable(message),
         },
+        ApplicationError::NotFound(message) => Status::not_found(message),
         ApplicationError::Validation(message) => Status::invalid_argument(message),
     }
 }
