@@ -13,6 +13,19 @@ SUBJECT_PREFIX="${SUBJECT_PREFIX:-rehydration}"
 AUTO_CLEANUP="${AUTO_CLEANUP:-true}"
 JOB_TIMEOUT="${JOB_TIMEOUT:-5m}"
 JOB_PREFIX="${JOB_PREFIX:-starship-cluster-journey}"
+GRPC_TLS_MODE="${GRPC_TLS_MODE:-disabled}"
+GRPC_TLS_SECRET_NAME="${GRPC_TLS_SECRET_NAME:-}"
+GRPC_TLS_CA_KEY="${GRPC_TLS_CA_KEY:-ca.crt}"
+GRPC_TLS_CERT_KEY="${GRPC_TLS_CERT_KEY:-client.crt}"
+GRPC_TLS_KEY_KEY="${GRPC_TLS_KEY_KEY:-client.key}"
+NATS_TLS_MODE="${NATS_TLS_MODE:-disabled}"
+NATS_TLS_SECRET_NAME="${NATS_TLS_SECRET_NAME:-}"
+NATS_TLS_FIRST="${NATS_TLS_FIRST:-false}"
+NATS_TLS_CA_KEY="${NATS_TLS_CA_KEY:-ca.crt}"
+NATS_TLS_CERT_KEY="${NATS_TLS_CERT_KEY:-tls.crt}"
+NATS_TLS_KEY_KEY="${NATS_TLS_KEY_KEY:-tls.key}"
+JOB_GRPC_TLS_MOUNT_PATH="${JOB_GRPC_TLS_MOUNT_PATH:-/var/run/starship-cluster-journey/grpc-tls}"
+JOB_NATS_TLS_MOUNT_PATH="${JOB_NATS_TLS_MOUNT_PATH:-/var/run/starship-cluster-journey/nats-tls}"
 JOB_NAME=""
 
 ROOT_NODE_ID="incident:starship-odyssey:port-manifold-breach"
@@ -50,6 +63,53 @@ find_valkey_pod() {
     | head -n 1 \
     | cut -d/ -f2
   return 0
+}
+
+validate_tls_inputs() {
+  case "${GRPC_TLS_MODE}" in
+    disabled|server|mutual) ;;
+    *)
+      echo "GRPC_TLS_MODE must be disabled, server, or mutual" >&2
+      exit 1
+      ;;
+  esac
+
+  case "${NATS_TLS_MODE}" in
+    disabled|server|mutual) ;;
+    *)
+      echo "NATS_TLS_MODE must be disabled, server, or mutual" >&2
+      exit 1
+      ;;
+  esac
+
+  if [[ "${GRPC_TLS_MODE}" != "disabled" && -z "${GRPC_TLS_SECRET_NAME}" ]]; then
+    echo "GRPC_TLS_SECRET_NAME is required when GRPC_TLS_MODE is server or mutual" >&2
+    exit 1
+  fi
+
+  if [[ "${GRPC_TLS_MODE}" == "mutual" ]]; then
+    if [[ -z "${GRPC_TLS_CERT_KEY}" || -z "${GRPC_TLS_KEY_KEY}" ]]; then
+      echo "GRPC mutual TLS requires GRPC_TLS_CERT_KEY and GRPC_TLS_KEY_KEY" >&2
+      exit 1
+    fi
+  fi
+
+  if [[ "${NATS_TLS_MODE}" != "disabled" && -z "${NATS_TLS_SECRET_NAME}" ]]; then
+    echo "NATS_TLS_SECRET_NAME is required when NATS_TLS_MODE is server or mutual" >&2
+    exit 1
+  fi
+
+  if [[ "${NATS_TLS_MODE}" == "mutual" ]]; then
+    if [[ -z "${NATS_TLS_CERT_KEY}" || -z "${NATS_TLS_KEY_KEY}" ]]; then
+      echo "NATS mutual TLS requires NATS_TLS_CERT_KEY and NATS_TLS_KEY_KEY" >&2
+      exit 1
+    fi
+  fi
+
+  if bool_is_true "${NATS_TLS_FIRST}" && [[ "${NATS_TLS_MODE}" == "disabled" ]]; then
+    echo "NATS_TLS_FIRST requires NATS_TLS_MODE=server or mutual" >&2
+    exit 1
+  fi
 }
 
 kernel_image() {
@@ -139,6 +199,106 @@ cleanup_job_on_exit() {
 
 job_manifest() {
   local image="$1"
+  local grpc_host="${KERNEL_SERVICE}.${KERNEL_NAMESPACE}.svc.cluster.local"
+  local grpc_scheme="http"
+  local grpc_tls_env=""
+  local grpc_tls_mount=""
+  local grpc_tls_volume=""
+  local nats_tls_env=""
+  local nats_tls_mount=""
+  local nats_tls_volume=""
+  local volume_mounts_block=""
+  local volumes_block=""
+
+  if [[ "${GRPC_TLS_MODE}" != "disabled" ]]; then
+    grpc_scheme="https"
+    grpc_tls_env="$(cat <<EOF
+            - name: CLUSTER_STARSHIP_GRPC_TLS_MODE
+              value: ${GRPC_TLS_MODE}
+            - name: CLUSTER_STARSHIP_GRPC_TLS_DOMAIN_NAME
+              value: ${grpc_host}
+            - name: CLUSTER_STARSHIP_GRPC_TLS_CA_PATH
+              value: ${JOB_GRPC_TLS_MOUNT_PATH}/${GRPC_TLS_CA_KEY}
+EOF
+)"
+    if [[ "${GRPC_TLS_MODE}" == "mutual" ]]; then
+      grpc_tls_env="${grpc_tls_env}"$'\n'"$(cat <<EOF
+            - name: CLUSTER_STARSHIP_GRPC_TLS_CERT_PATH
+              value: ${JOB_GRPC_TLS_MOUNT_PATH}/${GRPC_TLS_CERT_KEY}
+            - name: CLUSTER_STARSHIP_GRPC_TLS_KEY_PATH
+              value: ${JOB_GRPC_TLS_MOUNT_PATH}/${GRPC_TLS_KEY_KEY}
+EOF
+)"
+    fi
+    grpc_tls_mount="$(cat <<EOF
+            - name: grpc-tls
+              mountPath: ${JOB_GRPC_TLS_MOUNT_PATH}
+              readOnly: true
+EOF
+)"
+    grpc_tls_volume="$(cat <<EOF
+        - name: grpc-tls
+          secret:
+            secretName: ${GRPC_TLS_SECRET_NAME}
+EOF
+)"
+  fi
+
+  if [[ "${NATS_TLS_MODE}" != "disabled" ]]; then
+    nats_tls_env="$(cat <<EOF
+            - name: CLUSTER_STARSHIP_NATS_TLS_MODE
+              value: ${NATS_TLS_MODE}
+            - name: CLUSTER_STARSHIP_NATS_TLS_CA_PATH
+              value: ${JOB_NATS_TLS_MOUNT_PATH}/${NATS_TLS_CA_KEY}
+EOF
+)"
+    if bool_is_true "${NATS_TLS_FIRST}"; then
+      nats_tls_env="${nats_tls_env}"$'\n'"$(cat <<EOF
+            - name: CLUSTER_STARSHIP_NATS_TLS_FIRST
+              value: "true"
+EOF
+)"
+    fi
+    if [[ "${NATS_TLS_MODE}" == "mutual" ]]; then
+      nats_tls_env="${nats_tls_env}"$'\n'"$(cat <<EOF
+            - name: CLUSTER_STARSHIP_NATS_TLS_CERT_PATH
+              value: ${JOB_NATS_TLS_MOUNT_PATH}/${NATS_TLS_CERT_KEY}
+            - name: CLUSTER_STARSHIP_NATS_TLS_KEY_PATH
+              value: ${JOB_NATS_TLS_MOUNT_PATH}/${NATS_TLS_KEY_KEY}
+EOF
+)"
+    fi
+    nats_tls_mount="$(cat <<EOF
+            - name: nats-tls
+              mountPath: ${JOB_NATS_TLS_MOUNT_PATH}
+              readOnly: true
+EOF
+)"
+    nats_tls_volume="$(cat <<EOF
+        - name: nats-tls
+          secret:
+            secretName: ${NATS_TLS_SECRET_NAME}
+EOF
+)"
+  fi
+
+  if [[ -n "${grpc_tls_mount}${nats_tls_mount}" ]]; then
+    volume_mounts_block="$(cat <<EOF
+          volumeMounts:
+${grpc_tls_mount:+${grpc_tls_mount}}
+${nats_tls_mount:+${nats_tls_mount}}
+EOF
+)"
+  fi
+
+  if [[ -n "${grpc_tls_volume}${nats_tls_volume}" ]]; then
+    volumes_block="$(cat <<EOF
+      volumes:
+${grpc_tls_volume:+${grpc_tls_volume}}
+${nats_tls_volume:+${nats_tls_volume}}
+EOF
+)"
+  fi
 
   cat <<EOF
 apiVersion: batch/v1
@@ -160,11 +320,15 @@ spec:
             - /usr/local/bin/starship-cluster-journey
           env:
             - name: CLUSTER_STARSHIP_GRPC_ENDPOINT
-              value: http://${KERNEL_SERVICE}.${KERNEL_NAMESPACE}.svc.cluster.local:50054
+              value: ${grpc_scheme}://${grpc_host}:50054
             - name: CLUSTER_STARSHIP_NATS_URL
               value: nats://${NATS_SERVICE}.${KERNEL_NAMESPACE}.svc.cluster.local:4222
             - name: CLUSTER_STARSHIP_SUBJECT_PREFIX
               value: ${SUBJECT_PREFIX}
+${grpc_tls_env:+${grpc_tls_env}}
+${nats_tls_env:+${nats_tls_env}}
+${volume_mounts_block:+${volume_mounts_block}}
+${volumes_block:+${volumes_block}}
 EOF
 }
 
@@ -196,6 +360,7 @@ run_job() {
 }
 
 trap cleanup_job_on_exit EXIT
+validate_tls_inputs
 
 case "${ACTION}" in
   run)

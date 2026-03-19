@@ -1,8 +1,13 @@
 use std::env;
 use std::error::Error;
+use std::fs;
+use std::io;
+use std::path::PathBuf;
 use std::time::Duration as StdDuration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use async_nats::ConnectOptions;
+use rehydration_config::{GrpcTlsMode, NatsTlsMode};
 use rehydration_proto::fleet_context_v1::{
     GetContextRequest as CompatibilityGetContextRequest,
     context_service_client::ContextServiceClient,
@@ -25,7 +30,7 @@ use rehydration_transport_grpc::starship_e2e::{
 };
 use serde::Serialize;
 use tokio::time::sleep;
-use tonic::transport::Channel;
+use tonic::transport::{Certificate, Channel, ClientTlsConfig, Endpoint, Identity};
 
 const DEFAULT_GRPC_ENDPOINT: &str = "http://127.0.0.1:50054";
 const DEFAULT_NATS_URL: &str = "nats://127.0.0.1:4222";
@@ -36,6 +41,24 @@ const DEFAULT_TOKEN_BUDGET: u32 = 2048;
 const EXPLORER_TOKEN_BUDGET: u32 = 8192;
 const DEFAULT_TIMELINE_WINDOW: u32 = 11;
 const DEFAULT_SNAPSHOT_TTL_SECONDS: i64 = 900;
+
+#[derive(Debug, Clone)]
+struct GrpcClientTlsOptions {
+    mode: GrpcTlsMode,
+    ca_path: Option<PathBuf>,
+    cert_path: Option<PathBuf>,
+    key_path: Option<PathBuf>,
+    domain_name: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct NatsClientTlsOptions {
+    mode: NatsTlsMode,
+    ca_path: Option<PathBuf>,
+    cert_path: Option<PathBuf>,
+    key_path: Option<PathBuf>,
+    tls_first: bool,
+}
 
 #[derive(Serialize)]
 struct DiagnosticSummary {
@@ -72,43 +95,294 @@ struct VerificationSummary {
 
 struct AppConfig {
     grpc_endpoint: String,
+    grpc_tls: GrpcClientTlsOptions,
     nats_url: String,
+    nats_tls: NatsClientTlsOptions,
     subject_prefix: String,
 }
 
 impl AppConfig {
-    fn from_env() -> Self {
-        Self {
+    fn from_env() -> Result<Self, Box<dyn Error + Send + Sync>> {
+        Ok(Self {
             grpc_endpoint: env::var("CLUSTER_STARSHIP_GRPC_ENDPOINT")
                 .unwrap_or_else(|_| DEFAULT_GRPC_ENDPOINT.to_string()),
+            grpc_tls: GrpcClientTlsOptions::from_env()?,
             nats_url: env::var("CLUSTER_STARSHIP_NATS_URL")
                 .unwrap_or_else(|_| DEFAULT_NATS_URL.to_string()),
+            nats_tls: NatsClientTlsOptions::from_env()?,
             subject_prefix: env::var("CLUSTER_STARSHIP_SUBJECT_PREFIX")
                 .unwrap_or_else(|_| DEFAULT_SUBJECT_PREFIX.to_string()),
-        }
+        })
     }
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
-    let config = AppConfig::from_env();
+    let config = AppConfig::from_env()?;
     let run_id = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis().to_string())
         .unwrap_or_else(|_| "cluster-run".to_string());
 
-    let publisher = async_nats::connect(config.nats_url.clone()).await?;
+    let publisher = connect_nats(&config.nats_url, &config.nats_tls).await?;
     publish_projection_events_for_run(&publisher, &config.subject_prefix, &run_id).await?;
 
-    let compatibility_client = ContextServiceClient::connect(config.grpc_endpoint.clone()).await?;
-    let query_client = ContextQueryServiceClient::connect(config.grpc_endpoint.clone()).await?;
-    let admin_client = ContextAdminServiceClient::connect(config.grpc_endpoint).await?;
+    let channel = connect_grpc_channel(&config.grpc_endpoint, &config.grpc_tls).await?;
+    let compatibility_client = ContextServiceClient::new(channel.clone());
+    let query_client = ContextQueryServiceClient::new(channel.clone());
+    let admin_client = ContextAdminServiceClient::new(channel);
 
     wait_for_context_ready(query_client.clone()).await?;
     let summary = verify(compatibility_client, query_client, admin_client).await?;
     println!("{}", serde_json::to_string_pretty(&summary)?);
 
     Ok(())
+}
+
+impl GrpcClientTlsOptions {
+    fn from_env() -> Result<Self, Box<dyn Error + Send + Sync>> {
+        let mode = parse_grpc_tls_mode(
+            &env::var("CLUSTER_STARSHIP_GRPC_TLS_MODE")
+                .unwrap_or_else(|_| GrpcTlsMode::Disabled.as_str().to_string()),
+        )?;
+        let ca_path = env_path("CLUSTER_STARSHIP_GRPC_TLS_CA_PATH");
+        let cert_path = env_path("CLUSTER_STARSHIP_GRPC_TLS_CERT_PATH");
+        let key_path = env_path("CLUSTER_STARSHIP_GRPC_TLS_KEY_PATH");
+        let domain_name = env::var("CLUSTER_STARSHIP_GRPC_TLS_DOMAIN_NAME")
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
+
+        validate_pair(
+            "CLUSTER_STARSHIP_GRPC_TLS_CERT_PATH",
+            &cert_path,
+            "CLUSTER_STARSHIP_GRPC_TLS_KEY_PATH",
+            &key_path,
+        )?;
+        if mode == GrpcTlsMode::Mutual && (cert_path.is_none() || key_path.is_none()) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "gRPC mutual TLS requires CLUSTER_STARSHIP_GRPC_TLS_CERT_PATH and CLUSTER_STARSHIP_GRPC_TLS_KEY_PATH",
+            )
+            .into());
+        }
+
+        Ok(Self {
+            mode,
+            ca_path,
+            cert_path,
+            key_path,
+            domain_name,
+        })
+    }
+}
+
+impl NatsClientTlsOptions {
+    fn from_env() -> Result<Self, Box<dyn Error + Send + Sync>> {
+        let mode = parse_nats_tls_mode(
+            &env::var("CLUSTER_STARSHIP_NATS_TLS_MODE")
+                .unwrap_or_else(|_| NatsTlsMode::Disabled.as_str().to_string()),
+        )?;
+        let ca_path = env_path("CLUSTER_STARSHIP_NATS_TLS_CA_PATH");
+        let cert_path = env_path("CLUSTER_STARSHIP_NATS_TLS_CERT_PATH");
+        let key_path = env_path("CLUSTER_STARSHIP_NATS_TLS_KEY_PATH");
+        let tls_first = env_bool("CLUSTER_STARSHIP_NATS_TLS_FIRST")?;
+
+        validate_pair(
+            "CLUSTER_STARSHIP_NATS_TLS_CERT_PATH",
+            &cert_path,
+            "CLUSTER_STARSHIP_NATS_TLS_KEY_PATH",
+            &key_path,
+        )?;
+        if mode == NatsTlsMode::Mutual && (cert_path.is_none() || key_path.is_none()) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "NATS mutual TLS requires CLUSTER_STARSHIP_NATS_TLS_CERT_PATH and CLUSTER_STARSHIP_NATS_TLS_KEY_PATH",
+            )
+            .into());
+        }
+        if tls_first && mode == NatsTlsMode::Disabled {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "CLUSTER_STARSHIP_NATS_TLS_FIRST requires CLUSTER_STARSHIP_NATS_TLS_MODE=server or mutual",
+            )
+            .into());
+        }
+
+        Ok(Self {
+            mode,
+            ca_path,
+            cert_path,
+            key_path,
+            tls_first,
+        })
+    }
+}
+
+async fn connect_nats(
+    url: &str,
+    tls: &NatsClientTlsOptions,
+) -> Result<async_nats::Client, Box<dyn Error + Send + Sync>> {
+    let mut options = ConnectOptions::new();
+
+    if tls.mode != NatsTlsMode::Disabled {
+        options = options.require_tls(true);
+    }
+    if let Some(ca_path) = &tls.ca_path {
+        options = options.add_root_certificates(ca_path.clone());
+    }
+    if let (Some(cert_path), Some(key_path)) = (&tls.cert_path, &tls.key_path) {
+        options = options.add_client_certificate(cert_path.clone(), key_path.clone());
+    }
+    if tls.tls_first {
+        options = options.tls_first();
+    }
+
+    options.connect(url).await.map_err(|error| {
+        io::Error::other(format!("failed to connect to NATS at {url}: {error}")).into()
+    })
+}
+
+async fn connect_grpc_channel(
+    endpoint: &str,
+    tls: &GrpcClientTlsOptions,
+) -> Result<Channel, Box<dyn Error + Send + Sync>> {
+    let mut endpoint_builder = Endpoint::from_shared(endpoint.to_string())?;
+
+    if tls.mode != GrpcTlsMode::Disabled {
+        let mut tls_config = ClientTlsConfig::new();
+
+        if let Some(ca_path) = &tls.ca_path {
+            tls_config = tls_config.ca_certificate(Certificate::from_pem(fs::read(ca_path)?));
+        }
+
+        let domain_name = tls
+            .domain_name
+            .clone()
+            .or_else(|| derive_domain_name(endpoint))
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!("could not derive a TLS domain name from endpoint `{endpoint}`"),
+                )
+            })?;
+        tls_config = tls_config.domain_name(domain_name);
+
+        if tls.mode == GrpcTlsMode::Mutual {
+            let cert_path = tls.cert_path.as_ref().ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "missing CLUSTER_STARSHIP_GRPC_TLS_CERT_PATH for mutual TLS",
+                )
+            })?;
+            let key_path = tls.key_path.as_ref().ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "missing CLUSTER_STARSHIP_GRPC_TLS_KEY_PATH for mutual TLS",
+                )
+            })?;
+            tls_config = tls_config.identity(Identity::from_pem(
+                fs::read(cert_path)?,
+                fs::read(key_path)?,
+            ));
+        }
+
+        endpoint_builder = endpoint_builder.tls_config(tls_config)?;
+    }
+
+    Ok(endpoint_builder.connect().await?)
+}
+
+fn derive_domain_name(endpoint: &str) -> Option<String> {
+    let authority = endpoint.split("://").nth(1).unwrap_or(endpoint);
+    let authority = authority.split('/').next().unwrap_or(authority);
+    let authority = authority.rsplit('@').next().unwrap_or(authority);
+    let host = if authority.starts_with('[') {
+        authority
+            .trim_start_matches('[')
+            .split(']')
+            .next()
+            .unwrap_or(authority)
+    } else {
+        authority.split(':').next().unwrap_or(authority)
+    };
+    let host = host.trim();
+    if host.is_empty() {
+        None
+    } else {
+        Some(host.to_string())
+    }
+}
+
+fn env_path(key: &str) -> Option<PathBuf> {
+    env::var(key)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+}
+
+fn env_bool(key: &str) -> Result<bool, Box<dyn Error + Send + Sync>> {
+    Ok(match env::var(key) {
+        Ok(value) if !value.trim().is_empty() => match value.trim().to_ascii_lowercase().as_str() {
+            "true" | "1" | "yes" => true,
+            "false" | "0" | "no" => false,
+            _ => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!("unsupported {key} value `{value}`; expected true or false"),
+                )
+                .into());
+            }
+        },
+        _ => false,
+    })
+}
+
+fn validate_pair<T>(
+    left_name: &str,
+    left: &Option<T>,
+    right_name: &str,
+    right: &Option<T>,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    match (left.is_some(), right.is_some()) {
+        (true, true) | (false, false) => Ok(()),
+        _ => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("{left_name} and {right_name} must be configured together"),
+        )
+        .into()),
+    }
+}
+
+fn parse_grpc_tls_mode(value: &str) -> Result<GrpcTlsMode, Box<dyn Error + Send + Sync>> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "disabled" | "plaintext" => Ok(GrpcTlsMode::Disabled),
+        "server" | "tls" => Ok(GrpcTlsMode::Server),
+        "mutual" | "mtls" => Ok(GrpcTlsMode::Mutual),
+        _ => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "unsupported CLUSTER_STARSHIP_GRPC_TLS_MODE `{value}`; expected disabled, server, or mutual"
+            ),
+        )
+        .into()),
+    }
+}
+
+fn parse_nats_tls_mode(value: &str) -> Result<NatsTlsMode, Box<dyn Error + Send + Sync>> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "disabled" | "plaintext" => Ok(NatsTlsMode::Disabled),
+        "server" | "tls" => Ok(NatsTlsMode::Server),
+        "mutual" | "mtls" => Ok(NatsTlsMode::Mutual),
+        _ => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "unsupported CLUSTER_STARSHIP_NATS_TLS_MODE `{value}`; expected disabled, server, or mutual"
+            ),
+        )
+        .into()),
+    }
 }
 
 async fn wait_for_context_ready(
