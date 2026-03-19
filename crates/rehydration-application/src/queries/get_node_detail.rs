@@ -53,11 +53,14 @@ where
                 "Node not found: {node_id}"
             )));
         };
-        let node_detail = self
+        let node_detail = match self
             .detail_reader
             .load_node_detail(&node_id)
             .await?
-            .map(map_node_detail);
+        {
+            Some(projection) => Some(map_node_detail(projection)),
+            None => None,
+        };
 
         Ok(GetNodeDetailResult {
             node: map_root_node(&neighborhood),
