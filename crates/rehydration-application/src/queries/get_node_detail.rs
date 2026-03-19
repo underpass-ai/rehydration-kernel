@@ -1,4 +1,3 @@
-use std::fmt;
 use std::sync::Arc;
 
 use rehydration_domain::{
@@ -25,26 +24,6 @@ pub struct NodeDetailView {
 pub struct GetNodeDetailResult {
     pub node: GraphNodeView,
     pub detail: Option<NodeDetailView>,
-}
-
-impl fmt::Debug for NodeDetailView {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("NodeDetailView")
-            .field("node_id", &self.node_id)
-            .field("detail", &"<redacted>")
-            .field("content_hash", &"<redacted>")
-            .field("revision", &self.revision)
-            .finish()
-    }
-}
-
-impl fmt::Debug for GetNodeDetailResult {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("GetNodeDetailResult")
-            .field("node", &self.node)
-            .field("detail", &self.detail)
-            .finish()
-    }
 }
 
 #[derive(Debug)]
@@ -269,10 +248,10 @@ mod tests {
     async fn execute_returns_not_found_when_graph_node_is_missing() {
         let use_case = GetNodeDetailUseCase::new(SeededGraphReader, SeededDetailReader);
 
-        let error = use_case
-            .execute("orphan-detail")
-            .await
-            .expect_err("orphan detail should not be enough");
+        let error = match use_case.execute("orphan-detail").await {
+            Ok(_) => panic!("orphan detail should not be enough"),
+            Err(error) => error,
+        };
 
         assert!(matches!(
             error,
@@ -303,10 +282,10 @@ mod tests {
     async fn execute_rejects_blank_node_id() {
         let use_case = GetNodeDetailUseCase::new(SeededGraphReader, EmptyDetailReader);
 
-        let error = use_case
-            .execute("   ")
-            .await
-            .expect_err("blank node id must be rejected");
+        let error = match use_case.execute("   ").await {
+            Ok(_) => panic!("blank node id must be rejected"),
+            Err(error) => error,
+        };
 
         assert!(matches!(
             error,
