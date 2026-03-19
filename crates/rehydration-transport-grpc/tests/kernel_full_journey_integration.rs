@@ -12,9 +12,12 @@ use agentic_support::kernel_e2e_seed::{
     EXPECTED_DETAIL_COUNT, EXPECTED_IMPACT_COUNT, EXPECTED_NEIGHBOR_COUNT,
     EXPECTED_RELATIONSHIP_COUNT, EXPECTED_SELECTED_NODE_COUNT,
     EXPECTED_SELECTED_RELATIONSHIP_COUNT, EXPECTED_TASK_COUNT, EXPECTED_TOKEN_BUDGET_HINT,
-    JUMP_DECISION_ID, POWER_TASK_ID, PROPULSION_SUBSYSTEM_TITLE, RELATION_DECISION_REQUIRES,
-    RELATION_DEPENDS_ON, RELATION_IMPACTS, ROOT_DETAIL, ROOT_LABEL, ROOT_NODE_ID, ROOT_TITLE,
-    TASK_DETAIL, TASK_ID, TASK_TITLE, publish_kernel_e2e_projection_events,
+    EXPLORER_CHECKLIST_ID, EXPLORER_CHECKLIST_TITLE, EXPLORER_LEAF_DETAIL, EXPLORER_LEAF_ID,
+    EXPLORER_LEAF_TITLE, EXPLORER_WORKSTREAM_DETAIL, EXPLORER_WORKSTREAM_ID,
+    EXPLORER_WORKSTREAM_TITLE, JUMP_DECISION_ID, POWER_TASK_ID, PROPULSION_SUBSYSTEM_TITLE,
+    RELATION_DECISION_REQUIRES, RELATION_DEPENDS_ON, RELATION_IMPACTS, ROOT_DETAIL, ROOT_LABEL,
+    ROOT_NODE_ID, ROOT_TITLE, TASK_DETAIL, TASK_ID, TASK_TITLE,
+    publish_kernel_e2e_projection_events,
 };
 use agentic_support::seed_data::{
     BUILD_PHASE, DEVELOPER_ROLE, allowed_validate_scope_request_scopes,
@@ -32,8 +35,8 @@ use rehydration_proto::fleet_context_v1::{
 use rehydration_proto::v1alpha1::{
     BundleRenderFormat, CommandMetadata, ContextChange, ContextChangeOperation,
     GetBundleSnapshotRequest, GetContextRequest, GetGraphRelationshipsRequest,
-    GetProjectionStatusRequest, GetRehydrationDiagnosticsRequest, Phase, ReplayMode,
-    ReplayProjectionRequest, RevisionPrecondition, UpdateContextRequest,
+    GetNodeDetailRequest, GetProjectionStatusRequest, GetRehydrationDiagnosticsRequest, Phase,
+    ReplayMode, ReplayProjectionRequest, RevisionPrecondition, UpdateContextRequest,
 };
 use tokio::time::sleep;
 use tonic::transport::Channel;
@@ -261,13 +264,58 @@ async fn kernel_full_journey_covers_projection_query_compatibility_command_and_a
         assert_eq!(compatibility_update.version, 1);
         assert!(compatibility_update.hash.contains(ROOT_NODE_ID));
 
+        let shallow_query_context = query_client
+            .get_context(GetContextRequest {
+                root_node_id: ROOT_NODE_ID.to_string(),
+                role: DEVELOPER_ROLE.to_string(),
+                phase: Phase::Build as i32,
+                work_item_id: TASK_ID.to_string(),
+                token_budget: 8192,
+                requested_scopes: vec!["graph".to_string(), "decisions".to_string()],
+                render_format: BundleRenderFormat::Structured as i32,
+                include_debug_sections: true,
+                depth: 1,
+            })
+            .await?
+            .into_inner();
+        let shallow_bundle = shallow_query_context
+            .bundle
+            .expect("shallow query bundle should exist");
+        let shallow_role_bundle = &shallow_bundle.bundles[0];
+        assert!(
+            shallow_role_bundle
+                .neighbor_nodes
+                .iter()
+                .any(|node| node.node_id == EXPLORER_WORKSTREAM_ID)
+        );
+        assert!(
+            !shallow_role_bundle
+                .neighbor_nodes
+                .iter()
+                .any(|node| node.node_id == EXPLORER_CHECKLIST_ID)
+        );
+        assert!(
+            !shallow_role_bundle
+                .neighbor_nodes
+                .iter()
+                .any(|node| node.node_id == EXPLORER_LEAF_ID)
+        );
+        assert!(
+            !shallow_query_context
+                .rendered
+                .as_ref()
+                .expect("shallow rendered context should exist")
+                .content
+                .contains(EXPLORER_LEAF_DETAIL)
+        );
+
         let query_context = query_client
             .get_context(GetContextRequest {
                 root_node_id: ROOT_NODE_ID.to_string(),
                 role: DEVELOPER_ROLE.to_string(),
                 phase: Phase::Build as i32,
                 work_item_id: TASK_ID.to_string(),
-                token_budget: 2048,
+                token_budget: 8192,
                 requested_scopes: vec!["graph".to_string(), "decisions".to_string()],
                 render_format: BundleRenderFormat::Structured as i32,
                 include_debug_sections: true,
@@ -301,6 +349,36 @@ async fn kernel_full_journey_covers_projection_query_compatibility_command_and_a
                 .iter()
                 .any(|detail| detail.node_id == TASK_ID)
         );
+        assert!(
+            query_role_bundle
+                .neighbor_nodes
+                .iter()
+                .any(|node| node.node_id == EXPLORER_WORKSTREAM_ID)
+        );
+        assert!(
+            query_role_bundle
+                .neighbor_nodes
+                .iter()
+                .any(|node| node.node_id == EXPLORER_CHECKLIST_ID)
+        );
+        assert!(
+            query_role_bundle
+                .neighbor_nodes
+                .iter()
+                .any(|node| node.node_id == EXPLORER_LEAF_ID)
+        );
+        assert!(
+            query_role_bundle
+                .node_details
+                .iter()
+                .any(|detail| detail.node_id == EXPLORER_WORKSTREAM_ID)
+        );
+        assert!(
+            query_role_bundle
+                .node_details
+                .iter()
+                .any(|detail| detail.node_id == EXPLORER_LEAF_ID)
+        );
         assert!(query_role_bundle.relationships.iter().any(|edge| {
             edge.source_node_id == DECISION_ID
                 && edge.target_node_id == TASK_ID
@@ -333,6 +411,92 @@ async fn kernel_full_journey_covers_projection_query_compatibility_command_and_a
                 .content
                 .contains(CHIEF_ENGINEER_TITLE)
         );
+        assert!(
+            rendered_query_context
+                .content
+                .contains(EXPLORER_WORKSTREAM_TITLE)
+        );
+        assert!(
+            rendered_query_context
+                .content
+                .contains(EXPLORER_WORKSTREAM_DETAIL)
+        );
+        assert!(
+            rendered_query_context
+                .content
+                .contains(EXPLORER_CHECKLIST_TITLE)
+        );
+        assert!(rendered_query_context.content.contains(EXPLORER_LEAF_TITLE));
+        assert!(
+            rendered_query_context
+                .content
+                .contains(EXPLORER_LEAF_DETAIL)
+        );
+
+        let node_detail = query_client
+            .get_node_detail(GetNodeDetailRequest {
+                node_id: EXPLORER_LEAF_ID.to_string(),
+            })
+            .await?
+            .into_inner();
+        assert_eq!(
+            node_detail.node.as_ref().map(|node| node.node_id.as_str()),
+            Some(EXPLORER_LEAF_ID)
+        );
+        assert_eq!(
+            node_detail.node.as_ref().map(|node| node.title.as_str()),
+            Some(EXPLORER_LEAF_TITLE)
+        );
+        assert_eq!(
+            node_detail
+                .detail
+                .as_ref()
+                .map(|detail| detail.detail.as_str()),
+            Some(EXPLORER_LEAF_DETAIL)
+        );
+
+        let zoomed_context = query_client
+            .get_context(GetContextRequest {
+                root_node_id: EXPLORER_WORKSTREAM_ID.to_string(),
+                role: DEVELOPER_ROLE.to_string(),
+                phase: Phase::Build as i32,
+                work_item_id: String::new(),
+                token_budget: 8192,
+                requested_scopes: vec!["graph".to_string(), "details".to_string()],
+                render_format: BundleRenderFormat::Structured as i32,
+                include_debug_sections: true,
+                depth: 2,
+            })
+            .await?
+            .into_inner();
+        let zoomed_bundle = zoomed_context.bundle.expect("zoomed bundle should exist");
+        assert_eq!(zoomed_bundle.root_node_id, EXPLORER_WORKSTREAM_ID);
+        let zoomed_role_bundle = &zoomed_bundle.bundles[0];
+        assert_eq!(zoomed_role_bundle.neighbor_nodes.len(), 2);
+        assert_eq!(zoomed_role_bundle.relationships.len(), 2);
+        assert_eq!(zoomed_role_bundle.node_details.len(), 2);
+        assert!(
+            zoomed_role_bundle
+                .neighbor_nodes
+                .iter()
+                .any(|node| node.node_id == EXPLORER_CHECKLIST_ID)
+        );
+        assert!(
+            zoomed_role_bundle
+                .neighbor_nodes
+                .iter()
+                .any(|node| node.node_id == EXPLORER_LEAF_ID)
+        );
+        let zoomed_rendered = zoomed_context
+            .rendered
+            .expect("zoomed rendered context should exist");
+        assert!(zoomed_rendered.content.contains(EXPLORER_WORKSTREAM_TITLE));
+        assert!(zoomed_rendered.content.contains(EXPLORER_WORKSTREAM_DETAIL));
+        assert!(zoomed_rendered.content.contains(EXPLORER_CHECKLIST_TITLE));
+        assert!(zoomed_rendered.content.contains(EXPLORER_LEAF_TITLE));
+        assert!(zoomed_rendered.content.contains(EXPLORER_LEAF_DETAIL));
+        assert!(!zoomed_rendered.content.contains(ROOT_TITLE));
+        assert!(!zoomed_rendered.content.contains(ROOT_DETAIL));
 
         let query_rehydrate = query_client
             .rehydrate_session(rehydration_proto::v1alpha1::RehydrateSessionRequest {
@@ -384,6 +548,37 @@ async fn kernel_full_journey_covers_projection_query_compatibility_command_and_a
         assert_eq!(
             query_rehydrate_bundle.bundles[0].node_details.len(),
             EXPECTED_DETAIL_COUNT
+        );
+
+        let leaf_rehydrate = query_client
+            .rehydrate_session(rehydration_proto::v1alpha1::RehydrateSessionRequest {
+                root_node_id: EXPLORER_LEAF_ID.to_string(),
+                roles: vec![DEVELOPER_ROLE.to_string()],
+                include_timeline: false,
+                include_summaries: true,
+                timeline_window: 0,
+                persist_snapshot: false,
+                snapshot_ttl: None,
+            })
+            .await?
+            .into_inner();
+        assert!(!leaf_rehydrate.snapshot_persisted);
+        let leaf_bundle = leaf_rehydrate
+            .bundle
+            .expect("leaf rehydration bundle should exist");
+        assert_eq!(leaf_bundle.root_node_id, EXPLORER_LEAF_ID);
+        let leaf_stats = leaf_bundle.stats.as_ref().expect("leaf stats should exist");
+        assert_eq!(leaf_stats.nodes, 1);
+        assert_eq!(leaf_stats.relationships, 0);
+        assert_eq!(leaf_stats.detailed_nodes, 1);
+        let leaf_role_bundle = &leaf_bundle.bundles[0];
+        assert!(leaf_role_bundle.neighbor_nodes.is_empty());
+        assert!(leaf_role_bundle.relationships.is_empty());
+        assert_eq!(leaf_role_bundle.node_details.len(), 1);
+        assert_eq!(leaf_role_bundle.node_details[0].node_id, EXPLORER_LEAF_ID);
+        assert_eq!(
+            leaf_role_bundle.node_details[0].detail,
+            EXPLORER_LEAF_DETAIL
         );
 
         let command_update = command_client
