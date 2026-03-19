@@ -28,6 +28,14 @@ pub const JUMP_DECISION_ID: &str = "decision:delay-jump-window";
 
 pub const PROPULSION_SUBSYSTEM_TITLE: &str = "Propulsion containment";
 pub const CHIEF_ENGINEER_TITLE: &str = "Chief Engineer T. Garcia";
+pub const EXPLORER_WORKSTREAM_ID: &str = "workstream:containment-control-loop";
+pub const EXPLORER_WORKSTREAM_TITLE: &str = "Containment control loop recovery";
+pub const EXPLORER_WORKSTREAM_DETAIL: &str = "Engineering split the manifold recovery into an explorer-friendly branch so command can zoom from the incident to the containment control loop, then down to the alignment checklist, and finally to the telemetry artifact that proves the fix is safe.";
+pub const EXPLORER_CHECKLIST_ID: &str = "checklist:align-plasma-baffles";
+pub const EXPLORER_CHECKLIST_TITLE: &str = "Align the plasma baffles";
+pub const EXPLORER_LEAF_ID: &str = "artifact:plasma-baffle-telemetry";
+pub const EXPLORER_LEAF_TITLE: &str = "Plasma baffle telemetry capture";
+pub const EXPLORER_LEAF_DETAIL: &str = "The telemetry capture isolates the oscillation to baffle segment C and confirms the manifold can be stabilized without triggering a full reactor scram.";
 
 pub const RELATION_DEPENDS_ON: &str = "DEPENDS_ON";
 pub const RELATION_IMPACTS: &str = "IMPACTS";
@@ -38,12 +46,13 @@ pub const EXPECTED_DECISION_COUNT: usize = 4;
 pub const EXPECTED_DECISION_EDGE_COUNT: usize = 3;
 pub const EXPECTED_IMPACT_COUNT: usize = 4;
 pub const EXPECTED_COMPLETED_TASK_COUNT: i32 = 2;
-pub const EXPECTED_NEIGHBOR_COUNT: usize = 14;
-pub const EXPECTED_RELATIONSHIP_COUNT: usize = 27;
-pub const EXPECTED_DETAIL_COUNT: usize = 15;
-pub const EXPECTED_SELECTED_NODE_COUNT: u32 = 15;
-pub const EXPECTED_SELECTED_RELATIONSHIP_COUNT: u32 = 27;
-pub const EXPECTED_TOKEN_BUDGET_HINT: i32 = 1920;
+pub const EXPECTED_ROOT_RELATION_COUNT: usize = 15;
+pub const EXPECTED_NEIGHBOR_COUNT: usize = 17;
+pub const EXPECTED_RELATIONSHIP_COUNT: usize = 30;
+pub const EXPECTED_DETAIL_COUNT: usize = 17;
+pub const EXPECTED_SELECTED_NODE_COUNT: u32 = 18;
+pub const EXPECTED_SELECTED_RELATIONSHIP_COUNT: u32 = 30;
+pub const EXPECTED_TOKEN_BUDGET_HINT: i32 = 2304;
 
 pub const STARSHIP_NODE_IDS: &[&str] = &[
     ROOT_NODE_ID,
@@ -61,6 +70,9 @@ pub const STARSHIP_NODE_IDS: &[&str] = &[
     "subsystem:navigation",
     "subsystem:life-support",
     "crew:chief-engineer",
+    EXPLORER_WORKSTREAM_ID,
+    EXPLORER_CHECKLIST_ID,
+    EXPLORER_LEAF_ID,
 ];
 
 pub type ProjectionMessagesResult = Result<Vec<(String, Vec<u8>)>, Box<dyn Error + Send + Sync>>;
@@ -150,6 +162,10 @@ const ROOT_RELATED_NODES: &[RelationSeed] = &[
         node_id: "crew:chief-engineer",
         relation_type: "ASSIGNS",
     },
+    RelationSeed {
+        node_id: EXPLORER_WORKSTREAM_ID,
+        relation_type: "TRACKS",
+    },
 ];
 
 const KERNEL_GRAPH_NODES: &[NodeSeed] = &[
@@ -171,6 +187,64 @@ const KERNEL_GRAPH_NODES: &[NodeSeed] = &[
             detail: ROOT_DETAIL,
             content_hash: "hash-odyssey-root",
             revision: 5,
+        }),
+    },
+    NodeSeed {
+        event_id: "evt-kernel-workstream-control-loop-1",
+        node_id: EXPLORER_WORKSTREAM_ID,
+        node_kind: "Workstream",
+        title: EXPLORER_WORKSTREAM_TITLE,
+        summary: "Track the recovery branch from the containment control loop down to the telemetry artifact that validates the repair.",
+        status: "IN_PROGRESS",
+        labels: &["Workstream", "Explorer"],
+        properties: &[("owner", CHIEF_ENGINEER_TITLE), ("branch", "explorer-demo")],
+        related_nodes: &[RelationSeed {
+            node_id: EXPLORER_CHECKLIST_ID,
+            relation_type: "GUIDES",
+        }],
+        detail: Some(DetailSeed {
+            event_id: "evt-kernel-workstream-control-loop-detail-1",
+            detail: EXPLORER_WORKSTREAM_DETAIL,
+            content_hash: "hash-odyssey-workstream-control-loop",
+            revision: 2,
+        }),
+    },
+    NodeSeed {
+        event_id: "evt-kernel-checklist-baffles-1",
+        node_id: EXPLORER_CHECKLIST_ID,
+        node_kind: "Checklist",
+        title: EXPLORER_CHECKLIST_TITLE,
+        summary: "Walk the alignment sequence that keeps the manifold stable while the control loop is recovered.",
+        status: "READY",
+        labels: &["Checklist", "Explorer"],
+        properties: &[
+            ("owner", "Lt. S. Rao"),
+            ("sequence", "containment-recovery"),
+        ],
+        related_nodes: &[RelationSeed {
+            node_id: EXPLORER_LEAF_ID,
+            relation_type: "PRODUCES",
+        }],
+        detail: None,
+    },
+    NodeSeed {
+        event_id: "evt-kernel-artifact-baffle-telemetry-1",
+        node_id: EXPLORER_LEAF_ID,
+        node_kind: "Artifact",
+        title: EXPLORER_LEAF_TITLE,
+        summary: "Captured telemetry that proves the plasma baffles are aligned closely enough to avoid a scram.",
+        status: "READY",
+        labels: &["Artifact", "Explorer"],
+        properties: &[
+            ("format", "telemetry-capture"),
+            ("owner", "Engineering telemetry"),
+        ],
+        related_nodes: &[],
+        detail: Some(DetailSeed {
+            event_id: "evt-kernel-artifact-baffle-telemetry-detail-1",
+            detail: EXPLORER_LEAF_DETAIL,
+            content_hash: "hash-odyssey-artifact-baffle-telemetry",
+            revision: 1,
         }),
     },
     NodeSeed {
@@ -643,7 +717,10 @@ mod tests {
         assert_eq!(root_node["node_kind"], ROOT_LABEL);
         assert_eq!(root_node["title"], ROOT_TITLE);
         assert_eq!(root_node["status"], "AT_RISK");
-        assert_eq!(root_relations.len(), EXPECTED_NEIGHBOR_COUNT);
+        assert_eq!(root_relations.len(), EXPECTED_ROOT_RELATION_COUNT);
+        assert!(root_relations.iter().any(|relation| {
+            relation["node_id"] == EXPLORER_WORKSTREAM_ID && relation["relation_type"] == "TRACKS"
+        }));
 
         let task_count = graph_nodes
             .iter()

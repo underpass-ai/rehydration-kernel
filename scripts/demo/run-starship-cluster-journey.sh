@@ -30,6 +30,9 @@ STARSHIP_NODE_IDS=(
   "subsystem:navigation"
   "subsystem:life-support"
   "crew:chief-engineer"
+  "workstream:containment-control-loop"
+  "checklist:align-plasma-baffles"
+  "artifact:plasma-baffle-telemetry"
 )
 
 TMP_DIR="$(mktemp -d)"
