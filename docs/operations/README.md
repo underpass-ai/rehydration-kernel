@@ -8,6 +8,7 @@ Current contents:
 - [`container-image.md`](./container-image.md)
 - [`kubernetes-deploy.md`](./kubernetes-deploy.md)
 - [`kubernetes-transport-smoke.md`](./kubernetes-transport-smoke.md)
+- [`graph-explorer-demo.md`](./graph-explorer-demo.md)
 
 Key rule:
 
