@@ -32,6 +32,7 @@ use rehydration_proto::v1alpha1::{
     context_command_service_server::ContextCommandService,
     context_query_service_server::ContextQueryService,
 };
+use tokio::sync::Mutex;
 use tonic::Request;
 
 use super::admin_grpc_service::AdminGrpcService;
@@ -57,7 +58,23 @@ impl GraphNeighborhoodReader for EmptyGraphNeighborhoodReader {
     async fn load_neighborhood(
         &self,
         _root_node_id: &str,
+        _depth: u32,
     ) -> Result<Option<NodeNeighborhood>, PortError> {
+        Ok(None)
+    }
+}
+
+struct RecordingGraphNeighborhoodReader {
+    depths: Arc<Mutex<Vec<u32>>>,
+}
+
+impl GraphNeighborhoodReader for RecordingGraphNeighborhoodReader {
+    async fn load_neighborhood(
+        &self,
+        _root_node_id: &str,
+        depth: u32,
+    ) -> Result<Option<NodeNeighborhood>, PortError> {
+        self.depths.lock().await.push(depth);
         Ok(None)
     }
 }
@@ -134,6 +151,7 @@ async fn grpc_server_application_accessors_return_callable_services() {
         .get_context(GetContextQuery {
             root_node_id: "node-123".to_string(),
             role: "developer".to_string(),
+            depth: 0,
             requested_scopes: vec!["graph".to_string()],
             render_options: Default::default(),
         })
@@ -178,6 +196,7 @@ async fn query_service_returns_rendered_context() {
             requested_scopes: vec!["graph".to_string()],
             render_format: BundleRenderFormat::Structured as i32,
             include_debug_sections: false,
+            depth: 0,
         }))
         .await
         .expect("get context should succeed")
@@ -199,6 +218,37 @@ async fn query_service_returns_rendered_context() {
             .content
             .contains("node-123")
     );
+}
+
+#[tokio::test]
+async fn query_service_forwards_requested_depth_to_application() {
+    let depths = Arc::new(Mutex::new(Vec::new()));
+    let application = Arc::new(QueryApplicationService::new(
+        Arc::new(RecordingGraphNeighborhoodReader {
+            depths: Arc::clone(&depths),
+        }),
+        Arc::new(EmptyNodeDetailReader),
+        Arc::new(NoopSnapshotStore),
+        "0.1.0",
+    ));
+    let service = QueryGrpcService::new(application);
+
+    service
+        .get_context(Request::new(GetContextRequest {
+            root_node_id: "node-123".to_string(),
+            role: "developer".to_string(),
+            phase: Phase::Build as i32,
+            work_item_id: String::new(),
+            token_budget: 1024,
+            requested_scopes: vec!["graph".to_string()],
+            render_format: BundleRenderFormat::Structured as i32,
+            include_debug_sections: false,
+            depth: 17,
+        }))
+        .await
+        .expect("get context should succeed");
+
+    assert_eq!(&*depths.lock().await, &[17]);
 }
 
 #[tokio::test]

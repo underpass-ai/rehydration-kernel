@@ -18,14 +18,15 @@ pub use projection::{
 };
 pub use queries::{
     AdminQueryApplicationService, BundleAssembler, BundleSnapshotResult, ContextRenderOptions,
-    GetBundleSnapshotQuery, GetBundleSnapshotUseCase, GetContextQuery, GetContextResult,
-    GetContextUseCase, GetGraphRelationshipsQuery, GetGraphRelationshipsResult,
-    GetGraphRelationshipsUseCase, GetProjectionStatusQuery, GetProjectionStatusResult,
-    GetProjectionStatusUseCase, GetRehydrationDiagnosticsQuery, GetRehydrationDiagnosticsResult,
-    GetRehydrationDiagnosticsUseCase, GraphNodeView, GraphRelationshipView,
+    DEFAULT_NATIVE_GRAPH_TRAVERSAL_DEPTH, GetBundleSnapshotQuery, GetBundleSnapshotUseCase,
+    GetContextQuery, GetContextResult, GetContextUseCase, GetGraphRelationshipsQuery,
+    GetGraphRelationshipsResult, GetGraphRelationshipsUseCase, GetProjectionStatusQuery,
+    GetProjectionStatusResult, GetProjectionStatusUseCase, GetRehydrationDiagnosticsQuery,
+    GetRehydrationDiagnosticsResult, GetRehydrationDiagnosticsUseCase, GraphNodeView,
+    GraphRelationshipView, MAX_NATIVE_GRAPH_TRAVERSAL_DEPTH, MIN_NATIVE_GRAPH_TRAVERSAL_DEPTH,
     NodeCentricProjectionReader, ProjectionStatusView, QueryApplicationService,
     RehydrateSessionQuery, RehydrateSessionResult, RehydrateSessionUseCase,
     RehydrationDiagnosticView, RenderedContext, ScopeValidation, ValidateScopeQuery,
-    ValidateScopeUseCase, render_graph_bundle_with_options,
+    ValidateScopeUseCase, clamp_native_graph_traversal_depth, render_graph_bundle_with_options,
 };
 pub use rehydration_application::RehydrationApplication;

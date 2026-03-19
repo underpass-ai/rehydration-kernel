@@ -5,6 +5,7 @@ use rehydration_domain::{
 
 use crate::ApplicationError;
 use crate::queries::ordered_neighborhood::ordered_neighborhood;
+use crate::queries::{DEFAULT_NATIVE_GRAPH_TRAVERSAL_DEPTH, clamp_native_graph_traversal_depth};
 
 #[derive(Debug, Clone)]
 pub struct NodeCentricProjectionReader<G, D> {
@@ -32,7 +33,27 @@ where
         role: &str,
         generator_version: &str,
     ) -> Result<Option<RehydrationBundle>, ApplicationError> {
-        let Some(neighborhood) = self.graph_reader.load_neighborhood(root_node_id).await? else {
+        self.load_bundle_with_depth(
+            root_node_id,
+            role,
+            generator_version,
+            DEFAULT_NATIVE_GRAPH_TRAVERSAL_DEPTH,
+        )
+        .await
+    }
+
+    pub async fn load_bundle_with_depth(
+        &self,
+        root_node_id: &str,
+        role: &str,
+        generator_version: &str,
+        depth: u32,
+    ) -> Result<Option<RehydrationBundle>, ApplicationError> {
+        let Some(neighborhood) = self
+            .graph_reader
+            .load_neighborhood(root_node_id, clamp_native_graph_traversal_depth(depth))
+            .await?
+        else {
             return Ok(None);
         };
 
@@ -82,12 +103,15 @@ where
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
+    use std::sync::Arc;
 
     use rehydration_domain::{
         NodeDetailProjection, NodeNeighborhood, NodeProjection, NodeRelationProjection, PortError,
     };
+    use tokio::sync::Mutex;
 
     use super::NodeCentricProjectionReader;
+    use crate::queries::DEFAULT_NATIVE_GRAPH_TRAVERSAL_DEPTH;
 
     struct StubGraphReader;
 
@@ -95,6 +119,7 @@ mod tests {
         async fn load_neighborhood(
             &self,
             _root_node_id: &str,
+            _depth: u32,
         ) -> Result<Option<NodeNeighborhood>, PortError> {
             Ok(Some(NodeNeighborhood {
                 root: NodeProjection {
@@ -153,5 +178,42 @@ mod tests {
         assert_eq!(bundle.neighbor_nodes().len(), 1);
         assert_eq!(bundle.relationships().len(), 1);
         assert_eq!(bundle.node_details().len(), 1);
+    }
+
+    struct RecordingGraphReader {
+        depths: Arc<Mutex<Vec<u32>>>,
+    }
+
+    impl rehydration_domain::GraphNeighborhoodReader for RecordingGraphReader {
+        async fn load_neighborhood(
+            &self,
+            _root_node_id: &str,
+            depth: u32,
+        ) -> Result<Option<NodeNeighborhood>, PortError> {
+            self.depths.lock().await.push(depth);
+            Ok(None)
+        }
+    }
+
+    #[tokio::test]
+    async fn load_bundle_uses_default_graph_traversal_depth() {
+        let depths = Arc::new(Mutex::new(Vec::new()));
+        let reader = NodeCentricProjectionReader::new(
+            RecordingGraphReader {
+                depths: Arc::clone(&depths),
+            },
+            StubDetailReader,
+        );
+
+        let bundle = reader
+            .load_bundle("node-root", "developer", "0.1.0")
+            .await
+            .expect("bundle load should succeed");
+
+        assert!(bundle.is_none());
+        assert_eq!(
+            &*depths.lock().await,
+            &[DEFAULT_NATIVE_GRAPH_TRAVERSAL_DEPTH]
+        );
     }
 }

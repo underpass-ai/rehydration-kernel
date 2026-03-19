@@ -4,6 +4,7 @@ use rehydration_domain::{GraphNeighborhoodReader, NodeNeighborhood};
 
 use crate::ApplicationError;
 use crate::queries::AdminQueryApplicationService;
+use crate::queries::clamp_native_graph_traversal_depth;
 use crate::queries::ordered_neighborhood::ordered_neighborhood;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -60,8 +61,14 @@ where
     ) -> Result<GetGraphRelationshipsResult, ApplicationError> {
         let node_id = trim_to_option(&query.node_id)
             .ok_or_else(|| ApplicationError::Validation("node_id cannot be empty".to_string()))?;
-        let neighborhood =
-            ordered_neighborhood(load_existing_neighborhood(&self.graph_reader, &node_id).await?);
+        let neighborhood = ordered_neighborhood(
+            load_existing_neighborhood(
+                &self.graph_reader,
+                &node_id,
+                clamp_native_graph_traversal_depth(query.depth),
+            )
+            .await?,
+        );
 
         Ok(GetGraphRelationshipsResult {
             root: map_node(&neighborhood.root),
@@ -98,12 +105,13 @@ where
 async fn load_existing_neighborhood<G>(
     graph_reader: &G,
     node_id: &str,
+    depth: u32,
 ) -> Result<NodeNeighborhood, ApplicationError>
 where
     G: GraphNeighborhoodReader + Send + Sync,
 {
     graph_reader
-        .load_neighborhood(node_id)
+        .load_neighborhood(node_id, depth)
         .await?
         .ok_or_else(|| ApplicationError::Validation(format!("Node not found: {node_id}")))
 }
@@ -132,11 +140,14 @@ fn trim_to_option(value: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
+    use std::sync::Arc;
 
     use rehydration_domain::{NodeNeighborhood, NodeProjection, NodeRelationProjection, PortError};
+    use tokio::sync::Mutex;
 
     use super::{GetGraphRelationshipsQuery, GetGraphRelationshipsUseCase};
     use crate::ApplicationError;
+    use crate::queries::MAX_NATIVE_GRAPH_TRAVERSAL_DEPTH;
 
     struct MissingGraphReader;
 
@@ -144,6 +155,7 @@ mod tests {
         async fn load_neighborhood(
             &self,
             _root_node_id: &str,
+            _depth: u32,
         ) -> Result<Option<NodeNeighborhood>, PortError> {
             Ok(None)
         }
@@ -155,6 +167,7 @@ mod tests {
         async fn load_neighborhood(
             &self,
             root_node_id: &str,
+            _depth: u32,
         ) -> Result<Option<NodeNeighborhood>, PortError> {
             Ok(Some(NodeNeighborhood {
                 root: NodeProjection {
@@ -224,5 +237,52 @@ mod tests {
         assert_eq!(result.neighbors.len(), 1);
         assert_eq!(result.relationships.len(), 1);
         assert_eq!(result.relationships[0].target_node_id, "neighbor-1");
+    }
+
+    struct RecordingGraphReader {
+        depths: Arc<Mutex<Vec<u32>>>,
+    }
+
+    impl rehydration_domain::GraphNeighborhoodReader for RecordingGraphReader {
+        async fn load_neighborhood(
+            &self,
+            root_node_id: &str,
+            depth: u32,
+        ) -> Result<Option<NodeNeighborhood>, PortError> {
+            self.depths.lock().await.push(depth);
+            Ok(Some(NodeNeighborhood {
+                root: NodeProjection {
+                    node_id: root_node_id.to_string(),
+                    node_kind: "story".to_string(),
+                    title: "Root".to_string(),
+                    summary: "Root summary".to_string(),
+                    status: "ACTIVE".to_string(),
+                    labels: vec!["Story".to_string()],
+                    properties: BTreeMap::new(),
+                },
+                neighbors: Vec::new(),
+                relations: Vec::new(),
+            }))
+        }
+    }
+
+    #[tokio::test]
+    async fn execute_clamps_and_forwards_depth_to_graph_reader() {
+        let depths = Arc::new(Mutex::new(Vec::new()));
+        let use_case = GetGraphRelationshipsUseCase::new(RecordingGraphReader {
+            depths: Arc::clone(&depths),
+        });
+
+        use_case
+            .execute(GetGraphRelationshipsQuery {
+                node_id: "story-123".to_string(),
+                node_kind: None,
+                depth: 99,
+                include_reverse_edges: false,
+            })
+            .await
+            .expect("existing node should succeed");
+
+        assert_eq!(&*depths.lock().await, &[MAX_NATIVE_GRAPH_TRAVERSAL_DEPTH]);
     }
 }

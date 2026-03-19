@@ -33,10 +33,11 @@ impl Neo4jProjectionStore {
         &self,
         graph: &Graph,
         root_node_id: &str,
+        depth: u32,
     ) -> Result<Vec<neo4rs::Row>, PortError> {
         self.fetch_rows(
             graph,
-            load_neighborhood_query(root_node_id),
+            load_neighborhood_query(root_node_id, depth),
             &format!("load node neighborhood for `{root_node_id}`"),
         )
         .await
@@ -47,12 +48,13 @@ impl GraphNeighborhoodReader for Neo4jProjectionStore {
     async fn load_neighborhood(
         &self,
         root_node_id: &str,
+        depth: u32,
     ) -> Result<Option<NodeNeighborhood>, PortError> {
         let graph = self.graph().await?;
         let Some(root) = self.load_root_node(&graph, root_node_id).await? else {
             return Ok(None);
         };
-        let rows = self.load_neighbor_rows(&graph, root_node_id).await?;
+        let rows = self.load_neighbor_rows(&graph, root_node_id, depth).await?;
 
         let mut neighbors_by_id = BTreeMap::<String, NodeProjection>::new();
         let mut relation_keys = BTreeSet::<(String, String, String)>::new();

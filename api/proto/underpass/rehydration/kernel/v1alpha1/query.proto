@@ -23,6 +23,7 @@ message GetContextRequest {
   repeated string requested_scopes = 6;
   BundleRenderFormat render_format = 7;
   bool include_debug_sections = 8;
+  uint32 depth = 9;
 }
 
 message GetContextResponse {

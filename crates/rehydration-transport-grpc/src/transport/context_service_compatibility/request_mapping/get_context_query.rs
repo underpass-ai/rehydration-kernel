@@ -1,4 +1,6 @@
-use rehydration_application::{ContextRenderOptions, GetContextQuery};
+use rehydration_application::{
+    ContextRenderOptions, DEFAULT_NATIVE_GRAPH_TRAVERSAL_DEPTH, GetContextQuery,
+};
 use rehydration_proto::fleet_context_v1::GetContextRequest;
 
 use crate::transport::context_service_compatibility::scope_policy::expected_scopes;
@@ -13,6 +15,7 @@ pub(crate) fn map_get_context_query(request: GetContextRequest) -> GetContextQue
         },
         root_node_id: request.story_id,
         role: request.role,
+        depth: DEFAULT_NATIVE_GRAPH_TRAVERSAL_DEPTH,
     }
 }
 
@@ -22,6 +25,7 @@ fn positive_token_budget(value: i32) -> Option<u32> {
 
 #[cfg(test)]
 mod tests {
+    use rehydration_application::DEFAULT_NATIVE_GRAPH_TRAVERSAL_DEPTH;
     use rehydration_proto::fleet_context_v1::GetContextRequest;
 
     use super::map_get_context_query;
@@ -44,6 +48,7 @@ mod tests {
         );
         assert_eq!(query.render_options.token_budget, Some(1024));
         assert!(query.requested_scopes.is_empty());
+        assert_eq!(query.depth, DEFAULT_NATIVE_GRAPH_TRAVERSAL_DEPTH);
     }
 
     #[test]
@@ -68,5 +73,6 @@ mod tests {
         );
         assert_eq!(query.render_options.focus_node_id, None);
         assert_eq!(query.render_options.token_budget, None);
+        assert_eq!(query.depth, DEFAULT_NATIVE_GRAPH_TRAVERSAL_DEPTH);
     }
 }
