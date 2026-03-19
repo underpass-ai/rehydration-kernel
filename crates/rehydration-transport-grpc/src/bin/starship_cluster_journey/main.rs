@@ -118,6 +118,7 @@ impl AppConfig {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let _ = tokio_rustls::rustls::crypto::aws_lc_rs::default_provider().install_default();
     let config = AppConfig::from_env()?;
     let run_id = SystemTime::now()
         .duration_since(UNIX_EPOCH)
