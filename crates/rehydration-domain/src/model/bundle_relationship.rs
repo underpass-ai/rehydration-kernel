@@ -1,13 +1,11 @@
-use std::collections::BTreeMap;
-
-use crate::NodeRelationProjection;
+use crate::{NodeRelationProjection, RelationExplanation};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BundleRelationship {
     source_node_id: String,
     target_node_id: String,
     relationship_type: String,
-    properties: BTreeMap<String, String>,
+    explanation: RelationExplanation,
 }
 
 impl BundleRelationship {
@@ -15,13 +13,13 @@ impl BundleRelationship {
         source_node_id: impl Into<String>,
         target_node_id: impl Into<String>,
         relationship_type: impl Into<String>,
-        properties: BTreeMap<String, String>,
+        explanation: RelationExplanation,
     ) -> Self {
         Self {
             source_node_id: source_node_id.into(),
             target_node_id: target_node_id.into(),
             relationship_type: relationship_type.into(),
-            properties,
+            explanation,
         }
     }
 
@@ -30,7 +28,7 @@ impl BundleRelationship {
             source_node_id: relationship.source_node_id.clone(),
             target_node_id: relationship.target_node_id.clone(),
             relationship_type: relationship.relation_type.clone(),
-            properties: BTreeMap::new(),
+            explanation: relationship.explanation.clone(),
         }
     }
 
@@ -46,7 +44,7 @@ impl BundleRelationship {
         &self.relationship_type
     }
 
-    pub fn properties(&self) -> &BTreeMap<String, String> {
-        &self.properties
+    pub fn explanation(&self) -> &RelationExplanation {
+        &self.explanation
     }
 }

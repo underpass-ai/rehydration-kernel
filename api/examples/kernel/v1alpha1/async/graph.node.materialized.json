@@ -23,8 +23,12 @@
     "related_nodes": [
       {
         "node_id": "node:task:retry-handler",
-        "node_kind": "task",
-        "relation_type": "contains"
+        "relation_type": "contains",
+        "explanation": {
+          "semantic_class": "structural",
+          "rationale": "the retry handler is the primary work item inside this workspace",
+          "sequence": 1
+        }
       }
     ]
   }

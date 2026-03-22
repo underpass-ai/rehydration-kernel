@@ -61,6 +61,20 @@ impl AgenticFixture {
         F: FnOnce(Client) -> Fut,
         Fut: Future<Output = Result<(), Box<dyn Error + Send + Sync>>>,
     {
+        Self::start_with_seed_and_readiness(root_node_id, focus_node_id, true, seed_projection)
+            .await
+    }
+
+    pub(crate) async fn start_with_seed_and_readiness<F, Fut>(
+        root_node_id: &str,
+        focus_node_id: &str,
+        require_node_detail: bool,
+        seed_projection: F,
+    ) -> Result<Self, Box<dyn Error + Send + Sync>>
+    where
+        F: FnOnce(Client) -> Fut,
+        Fut: Future<Output = Result<(), Box<dyn Error + Send + Sync>>>,
+    {
         debug_log("starting agentic fixture");
         let neo4j = start_neo4j_container().await?;
         let valkey = start_valkey_container().await?;
@@ -115,7 +129,13 @@ impl AgenticFixture {
         let publisher = connect_with_retry(&nats_url).await?;
         seed_projection(publisher.clone()).await?;
         debug_log("projection seed events published");
-        wait_for_context_ready(query_client.clone(), root_node_id, focus_node_id).await?;
+        wait_for_context_ready(
+            query_client.clone(),
+            root_node_id,
+            focus_node_id,
+            require_node_detail,
+        )
+        .await?;
         debug_log("context became ready");
 
         Ok(Self {
@@ -166,6 +186,7 @@ async fn wait_for_context_ready(
     mut query_client: ContextQueryServiceClient<Channel>,
     root_node_id: &str,
     focus_node_id: &str,
+    require_node_detail: bool,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let mut last_error: Option<Box<dyn Error + Send + Sync>> = None;
 
@@ -188,10 +209,10 @@ async fn wait_for_context_ready(
                 let response = response.into_inner();
                 if let Some(bundle) = response.bundle
                     && bundle.root_node_id == root_node_id
-                    && bundle
-                        .bundles
-                        .first()
-                        .is_some_and(|role_bundle| !role_bundle.node_details.is_empty())
+                    && bundle.bundles.first().is_some_and(|role_bundle| {
+                        !role_bundle.neighbor_nodes.is_empty()
+                            && (!require_node_detail || !role_bundle.node_details.is_empty())
+                    })
                 {
                     debug_log("context readiness probe succeeded");
                     return Ok(());

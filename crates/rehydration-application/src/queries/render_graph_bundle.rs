@@ -161,12 +161,43 @@ fn render_node(node: &BundleNode) -> String {
 }
 
 fn render_relationship(relationship: &BundleRelationship) -> String {
-    format!(
+    let mut section = format!(
         "Relationship {} --{}--> {}",
         relationship.source_node_id(),
         relationship.relationship_type(),
         relationship.target_node_id()
-    )
+    );
+
+    section.push_str(" [");
+    section.push_str(relationship.explanation().semantic_class().as_str());
+    section.push(']');
+
+    if let Some(rationale) = relationship
+        .explanation()
+        .rationale()
+        .or(relationship.explanation().motivation())
+    {
+        section.push_str(" because ");
+        section.push_str(rationale);
+    }
+    if let Some(method) = relationship.explanation().method() {
+        section.push_str(" via ");
+        section.push_str(method);
+    }
+    if let Some(decision_id) = relationship.explanation().decision_id() {
+        section.push_str(" decision=");
+        section.push_str(decision_id);
+    }
+    if let Some(caused_by_node_id) = relationship.explanation().caused_by_node_id() {
+        section.push_str(" caused_by=");
+        section.push_str(caused_by_node_id);
+    }
+    if let Some(sequence) = relationship.explanation().sequence() {
+        section.push_str(" step=");
+        section.push_str(&sequence.to_string());
+    }
+
+    section
 }
 
 fn render_detail(
@@ -192,7 +223,7 @@ mod tests {
 
     use rehydration_domain::{
         BundleMetadata, BundleNode, BundleNodeDetail, BundleRelationship, CaseId,
-        RehydrationBundle, Role,
+        RehydrationBundle, RelationExplanation, RelationSemanticClass, Role,
     };
 
     use crate::queries::ContextRenderOptions;
@@ -226,7 +257,7 @@ mod tests {
                 "case-123",
                 "node-1",
                 "RELATES_TO",
-                BTreeMap::new(),
+                RelationExplanation::new(RelationSemanticClass::Structural),
             )],
             vec![BundleNodeDetail::new(
                 "case-123",
@@ -315,8 +346,18 @@ mod tests {
                 ),
             ],
             vec![
-                BundleRelationship::new("case-123", "node-1", "RELATES_TO", BTreeMap::new()),
-                BundleRelationship::new("case-123", "node-2", "HAS_TASK", BTreeMap::new()),
+                BundleRelationship::new(
+                    "case-123",
+                    "node-1",
+                    "RELATES_TO",
+                    RelationExplanation::new(RelationSemanticClass::Structural),
+                ),
+                BundleRelationship::new(
+                    "case-123",
+                    "node-2",
+                    "HAS_TASK",
+                    RelationExplanation::new(RelationSemanticClass::Structural),
+                ),
             ],
             vec![
                 BundleNodeDetail::new("case-123", "Expanded detail", "hash-1", 2),
@@ -325,5 +366,54 @@ mod tests {
             BundleMetadata::initial("0.1.0"),
         )
         .expect("bundle should be valid")
+    }
+
+    #[test]
+    fn render_graph_bundle_includes_explanatory_relation_metadata() {
+        let bundle = RehydrationBundle::new(
+            CaseId::new("case-123").expect("case id is valid"),
+            Role::new("developer").expect("role is valid"),
+            BundleNode::new(
+                "case-123",
+                "case",
+                "Root",
+                "Root summary",
+                "ACTIVE",
+                vec![],
+                BTreeMap::new(),
+            ),
+            vec![BundleNode::new(
+                "node-1",
+                "task",
+                "Neighbor",
+                "Neighbor summary",
+                "ACTIVE",
+                vec![],
+                BTreeMap::new(),
+            )],
+            vec![BundleRelationship::new(
+                "case-123",
+                "node-1",
+                "AUTHORIZES",
+                RelationExplanation::new(RelationSemanticClass::Motivational)
+                    .with_rationale("reserve power must be diverted before repair")
+                    .with_decision_id("decision-1")
+                    .with_sequence(1),
+            )],
+            Vec::new(),
+            BundleMetadata::initial("0.1.0"),
+        )
+        .expect("bundle should be valid");
+
+        let rendered = render_graph_bundle(&bundle);
+
+        assert!(rendered.content.contains("[motivational]"));
+        assert!(
+            rendered
+                .content
+                .contains("because reserve power must be diverted before repair")
+        );
+        assert!(rendered.content.contains("decision=decision-1"));
+        assert!(rendered.content.contains("step=1"));
     }
 }

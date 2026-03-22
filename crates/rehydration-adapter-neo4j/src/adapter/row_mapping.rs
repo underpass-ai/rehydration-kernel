@@ -13,7 +13,7 @@ pub(crate) fn serialize_properties(
     })
 }
 
-fn deserialize_properties(
+pub(crate) fn deserialize_properties(
     payload: &str,
     entity: &str,
 ) -> Result<BTreeMap<String, String>, PortError> {
@@ -22,6 +22,14 @@ fn deserialize_properties(
             "neo4j {entity} properties_json could not be decoded: {error}"
         ))
     })
+}
+
+pub(crate) fn row_properties(
+    row: &Row,
+    key: &str,
+    entity: &str,
+) -> Result<BTreeMap<String, String>, PortError> {
+    deserialize_properties(&row_string(row, key, entity)?, entity)
 }
 
 pub(crate) fn row_string(row: &Row, key: &str, entity: &str) -> Result<String, PortError> {

@@ -123,7 +123,8 @@ mod tests {
     use std::collections::BTreeMap;
 
     use crate::{
-        BundleMetadata, BundleNode, BundleNodeDetail, BundleRelationship, CaseId, DomainError, Role,
+        BundleMetadata, BundleNode, BundleNodeDetail, BundleRelationship, CaseId, DomainError,
+        RelationExplanation, RelationSemanticClass, Role,
     };
 
     use super::RehydrationBundle;
@@ -187,7 +188,7 @@ mod tests {
                 "node-123",
                 "node-456",
                 "RELATES_TO",
-                BTreeMap::new(),
+                RelationExplanation::new(RelationSemanticClass::Structural),
             )],
             vec![BundleNodeDetail::new("node-789", "detail", "hash-1", 1)],
             BundleMetadata::initial("0.1.0"),

@@ -13,8 +13,8 @@ use rehydration_application::{
 use rehydration_domain::{
     BundleMetadata, BundleNode, BundleNodeDetail, BundleRelationship, CaseId,
     ContextPathNeighborhood, GraphNeighborhoodReader, NodeDetailProjection, NodeDetailReader,
-    NodeNeighborhood, NodeProjection, NodeRelationProjection, PortError, RehydrationBundle, Role,
-    SnapshotSaveOptions, SnapshotStore,
+    NodeNeighborhood, NodeProjection, NodeRelationProjection, PortError, RehydrationBundle,
+    RelationExplanation, RelationSemanticClass, Role, SnapshotSaveOptions, SnapshotStore,
 };
 use rehydration_proto::fleet_context_v1::{
     ContextChange as CompatibilityContextChange,
@@ -165,11 +165,19 @@ impl GraphNeighborhoodReader for SeededGraphNeighborhoodReader {
                             source_node_id: "node-123".to_string(),
                             target_node_id: "node-456".to_string(),
                             relation_type: "HAS_TASK".to_string(),
+                            explanation: RelationExplanation::new(
+                                RelationSemanticClass::Structural,
+                            )
+                            .with_sequence(1),
                         },
                         NodeRelationProjection {
                             source_node_id: "node-456".to_string(),
                             target_node_id: "node-789".to_string(),
                             relation_type: "HAS_TASK".to_string(),
+                            explanation: RelationExplanation::new(
+                                RelationSemanticClass::Structural,
+                            )
+                            .with_sequence(2),
                         },
                     ],
                     path_node_ids: vec![
@@ -923,9 +931,7 @@ fn helper_mappers_cover_projection_replay_and_diagnostics() {
         source_node_id: "root".to_string(),
         target_node_id: "node-1".to_string(),
         relationship_type: "DEPENDS_ON".to_string(),
-        properties: [("order".to_string(), "1".to_string())]
-            .into_iter()
-            .collect(),
+        explanation: RelationExplanation::new(RelationSemanticClass::Constraint).with_sequence(1),
     };
     let graph = proto_graph_relationships_response(&GetGraphRelationshipsResult {
         root: root.clone(),
@@ -1056,7 +1062,7 @@ fn sample_bundle(root_node_id: &str, role: &str, summary: &str) -> RehydrationBu
             case_id.as_str(),
             "node-456",
             "RELATES_TO",
-            BTreeMap::new(),
+            RelationExplanation::new(RelationSemanticClass::Structural),
         )],
         vec![BundleNodeDetail::new(
             case_id.as_str(),

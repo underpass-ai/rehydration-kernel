@@ -130,13 +130,45 @@ components:
       required:
         - node_id
         - relation_type
+        - explanation
       properties:
         node_id:
           type: string
-        node_kind:
-          type: string
         relation_type:
           type: string
+        explanation:
+          $ref: '#/components/schemas/RelatedNodeExplanation'
+    RelatedNodeExplanation:
+      type: object
+      required:
+        - semantic_class
+      properties:
+        semantic_class:
+          type: string
+          enum:
+            - structural
+            - causal
+            - motivational
+            - procedural
+            - evidential
+            - constraint
+        rationale:
+          type: string
+        motivation:
+          type: string
+        method:
+          type: string
+        decision_id:
+          type: string
+        caused_by_node_id:
+          type: string
+        evidence:
+          type: string
+        confidence:
+          type: string
+        sequence:
+          type: integer
+          format: int32
     NodeDetailMaterializedEvent:
       allOf:
         - $ref: '#/components/schemas/EventEnvelope'

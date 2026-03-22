@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 
-use rehydration_domain::{PortError, ProjectionMutation, ProjectionWriter};
+use rehydration_domain::{
+    PortError, ProjectionMutation, ProjectionWriter, RelationExplanation, RelationSemanticClass,
+};
 use rehydration_ports::{NodeDetailProjection, NodeProjection, NodeRelationProjection};
 
 pub(crate) const ROOT_NODE_ID: &str = "story-123";
@@ -121,11 +123,16 @@ fn graph_mutations() -> Vec<ProjectionMutation> {
             source_node_id: ROOT_NODE_ID.to_string(),
             target_node_id: DECISION_ID.to_string(),
             relation_type: RECORDS_RELATION.to_string(),
+            explanation: RelationExplanation::new(RelationSemanticClass::Structural)
+                .with_sequence(1),
         }),
         ProjectionMutation::UpsertNodeRelation(NodeRelationProjection {
             source_node_id: ROOT_NODE_ID.to_string(),
             target_node_id: TASK_ID.to_string(),
             relation_type: HAS_TASK_RELATION.to_string(),
+            explanation: RelationExplanation::new(RelationSemanticClass::Motivational)
+                .with_sequence(2)
+                .with_rationale("the task operationalizes the selected compatibility approach"),
         }),
     ]
 }

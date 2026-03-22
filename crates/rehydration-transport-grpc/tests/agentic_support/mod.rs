@@ -5,6 +5,8 @@ pub(crate) mod agentic_debug;
 pub(crate) mod agentic_fixture;
 #[path = "../support/containers.rs"]
 pub(crate) mod containers;
+#[path = "../support/explanatory_seed_data.rs"]
+pub(crate) mod explanatory_seed_data;
 #[path = "../support/fake_underpass_runtime.rs"]
 pub(crate) mod fake_underpass_runtime;
 #[path = "../support/generic_seed_data.rs"]
@@ -15,6 +17,11 @@ pub(crate) mod grpc_runtime;
 pub(crate) mod kernel_e2e_seed;
 #[path = "../support/nats_container.rs"]
 pub(crate) mod nats_container;
+#[allow(dead_code)]
+#[path = "../support/paper_metrics.rs"]
+pub(crate) mod paper_metrics;
+#[path = "../support/paper_use_case_harness.rs"]
+pub(crate) mod paper_use_case_harness;
 #[path = "../support/projection_runtime.rs"]
 pub(crate) mod projection_runtime;
 #[path = "../support/runtime_workspace.rs"]

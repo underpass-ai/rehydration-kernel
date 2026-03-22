@@ -21,7 +21,8 @@ RETURN coalesce(neighbor.node_id, '') AS neighbor_node_id,
        coalesce(neighbor.properties_json, '{{}}') AS neighbor_properties_json,
        CASE WHEN edge IS NULL THEN '' ELSE startNode(edge).node_id END AS source_node_id,
        CASE WHEN edge IS NULL THEN '' ELSE endNode(edge).node_id END AS target_node_id,
-       coalesce(edge.relation_type, '') AS relation_type
+       coalesce(edge.relation_type, '') AS relation_type,
+       coalesce(edge.properties_json, '{{}}') AS relation_properties_json
         ",
     ))
     .param("root_node_id", root_node_id)

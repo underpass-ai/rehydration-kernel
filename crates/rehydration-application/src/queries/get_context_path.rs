@@ -156,7 +156,8 @@ mod tests {
 
     use rehydration_domain::{
         ContextPathNeighborhood, NodeDetailProjection, NodeNeighborhood, NodeProjection,
-        NodeRelationProjection, PortError, RehydrationBundle, SnapshotSaveOptions, SnapshotStore,
+        NodeRelationProjection, PortError, RehydrationBundle, RelationExplanation,
+        RelationSemanticClass, SnapshotSaveOptions, SnapshotStore,
     };
     use tokio::sync::Mutex;
 
@@ -179,6 +180,7 @@ mod tests {
                     source_node_id: "target-node".to_string(),
                     target_node_id: "fallback-leaf".to_string(),
                     relation_type: "HAS_CHILD".to_string(),
+                    explanation: structural_explanation(),
                 }],
             }))
         }
@@ -387,6 +389,11 @@ mod tests {
             source_node_id: source_node_id.to_string(),
             target_node_id: target_node_id.to_string(),
             relation_type: relation_type.to_string(),
+            explanation: structural_explanation(),
         }
+    }
+
+    fn structural_explanation() -> RelationExplanation {
+        RelationExplanation::new(RelationSemanticClass::Structural)
     }
 }

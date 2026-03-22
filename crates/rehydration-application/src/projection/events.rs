@@ -1,4 +1,7 @@
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+
+use rehydration_domain::{RelationExplanation, RelationSemanticClass};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProjectionEnvelope {
@@ -15,6 +18,44 @@ pub struct ProjectionEnvelope {
 pub struct RelatedNodeReference {
     pub node_id: String,
     pub relation_type: String,
+    pub explanation: RelatedNodeExplanationData,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RelatedNodeExplanationData {
+    pub semantic_class: RelationSemanticClass,
+    #[serde(default)]
+    pub rationale: Option<String>,
+    #[serde(default)]
+    pub motivation: Option<String>,
+    #[serde(default)]
+    pub method: Option<String>,
+    #[serde(default)]
+    pub decision_id: Option<String>,
+    #[serde(default)]
+    pub caused_by_node_id: Option<String>,
+    #[serde(default)]
+    pub evidence: Option<String>,
+    #[serde(default)]
+    pub confidence: Option<String>,
+    #[serde(default)]
+    pub sequence: Option<u32>,
+}
+
+impl TryFrom<RelatedNodeExplanationData> for RelationExplanation {
+    type Error = rehydration_domain::DomainError;
+
+    fn try_from(value: RelatedNodeExplanationData) -> Result<Self, Self::Error> {
+        Ok(RelationExplanation::new(value.semantic_class)
+            .with_optional_rationale(value.rationale)
+            .with_optional_motivation(value.motivation)
+            .with_optional_method(value.method)
+            .with_optional_decision_id(value.decision_id)
+            .with_optional_caused_by_node_id(value.caused_by_node_id)
+            .with_optional_evidence(value.evidence)
+            .with_optional_confidence(value.confidence)
+            .with_optional_sequence(value.sequence))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -25,7 +66,7 @@ pub struct GraphNodeMaterializedData {
     pub summary: String,
     pub status: String,
     pub labels: Vec<String>,
-    pub properties: std::collections::BTreeMap<String, String>,
+    pub properties: BTreeMap<String, String>,
     pub related_nodes: Vec<RelatedNodeReference>,
 }
 

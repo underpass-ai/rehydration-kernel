@@ -207,7 +207,7 @@ mod tests {
 
     use rehydration_domain::{
         BundleMetadata, BundleNode, BundleNodeDetail, BundleRelationship, CaseId,
-        RehydrationBundle, Role,
+        RehydrationBundle, RelationExplanation, RelationSemanticClass, Role,
     };
 
     use super::proto_role_context_pack;
@@ -253,7 +253,7 @@ mod tests {
                 "decision-1",
                 "task-1",
                 "IMPACTS",
-                BTreeMap::new(),
+                RelationExplanation::new(RelationSemanticClass::Causal),
             )],
             vec![BundleNodeDetail::new(
                 "decision-1",

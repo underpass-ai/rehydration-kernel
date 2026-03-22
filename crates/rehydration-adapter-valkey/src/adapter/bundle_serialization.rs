@@ -57,7 +57,7 @@ fn serialize_relationship(relationship: &BundleRelationship) -> Value {
         "source_node_id": relationship.source_node_id(),
         "target_node_id": relationship.target_node_id(),
         "relationship_type": relationship.relationship_type(),
-        "properties": relationship.properties(),
+        "explanation": relationship.explanation().to_properties(),
     })
 }
 

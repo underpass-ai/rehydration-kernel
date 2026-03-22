@@ -6,8 +6,10 @@ use std::error::Error;
 use async_nats::Client;
 use rehydration_application::{
     GraphNodeMaterializedData, GraphNodeMaterializedEvent, NodeDetailMaterializedData,
-    NodeDetailMaterializedEvent, ProjectionEnvelope, RelatedNodeReference,
+    NodeDetailMaterializedEvent, ProjectionEnvelope, RelatedNodeExplanationData,
+    RelatedNodeReference,
 };
+use rehydration_domain::RelationSemanticClass;
 
 use crate::agentic_support::agentic_debug::debug_log_value;
 
@@ -91,10 +93,37 @@ fn root_node_event() -> GraphNodeMaterializedEvent {
                 RelatedNodeReference {
                     node_id: FOCUS_NODE_ID.to_string(),
                     relation_type: CONTAINS_RELATION.to_string(),
+                    explanation: RelatedNodeExplanationData {
+                        semantic_class: RelationSemanticClass::Structural,
+                        rationale: Some(
+                            "the retry handler is the primary work item inside this workspace"
+                                .to_string(),
+                        ),
+                        motivation: None,
+                        method: None,
+                        decision_id: None,
+                        caused_by_node_id: None,
+                        evidence: None,
+                        confidence: None,
+                        sequence: Some(1),
+                    },
                 },
                 RelatedNodeReference {
                     node_id: DEPENDENCY_NODE_ID.to_string(),
                     relation_type: DEPENDS_ON_RELATION.to_string(),
+                    explanation: RelatedNodeExplanationData {
+                        semantic_class: RelationSemanticClass::Constraint,
+                        rationale: Some(
+                            "settlement retries rely on the shared payments SDK".to_string(),
+                        ),
+                        motivation: None,
+                        method: None,
+                        decision_id: None,
+                        caused_by_node_id: None,
+                        evidence: None,
+                        confidence: None,
+                        sequence: Some(2),
+                    },
                 },
             ],
         },

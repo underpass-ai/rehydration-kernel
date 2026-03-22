@@ -42,7 +42,11 @@ fn proto_graph_relationship(relationship: &GraphRelationshipView) -> GraphRelati
         from_node_id: relationship.source_node_id.clone(),
         to_node_id: relationship.target_node_id.clone(),
         r#type: relationship.relationship_type.clone(),
-        properties: relationship.properties.clone().into_iter().collect(),
+        properties: relationship
+            .explanation
+            .to_properties()
+            .into_iter()
+            .collect(),
     }
 }
 
@@ -53,6 +57,7 @@ mod tests {
     use rehydration_application::{
         GetGraphRelationshipsResult, GraphNodeView, GraphRelationshipView,
     };
+    use rehydration_domain::{RelationExplanation, RelationSemanticClass};
 
     use super::proto_get_graph_relationships_response;
 
@@ -73,7 +78,7 @@ mod tests {
                 source_node_id: "node-1".to_string(),
                 target_node_id: "node-2".to_string(),
                 relationship_type: "DEPENDS_ON".to_string(),
-                properties: BTreeMap::new(),
+                explanation: RelationExplanation::new(RelationSemanticClass::Constraint),
             }],
             observed_at: std::time::SystemTime::now(),
         });
