@@ -112,6 +112,12 @@ It publishes on:
 - push of tags matching `v*`
 - manual workflow dispatch
 
+When the repository cannot push to GHCR with `GITHUB_TOKEN`, set these repo
+secrets so the workflow can authenticate with an explicit package writer:
+
+- `GHCR_USERNAME`
+- `GHCR_TOKEN`
+
 ## Helm Chart
 
 The kernel also ships a standalone Helm chart:
