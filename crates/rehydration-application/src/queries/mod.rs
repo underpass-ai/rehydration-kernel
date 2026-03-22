@@ -3,6 +3,7 @@ pub mod bundle_assembler;
 pub mod bundle_snapshot;
 pub mod context_render_options;
 pub mod get_context;
+pub mod get_context_path;
 pub mod get_node_detail;
 pub mod graph_relationships;
 pub mod graph_traversal_depth;
@@ -20,6 +21,7 @@ pub use bundle_assembler::BundleAssembler;
 pub use bundle_snapshot::{BundleSnapshotResult, GetBundleSnapshotQuery, GetBundleSnapshotUseCase};
 pub use context_render_options::ContextRenderOptions;
 pub use get_context::{GetContextQuery, GetContextResult, GetContextUseCase};
+pub use get_context_path::{GetContextPathQuery, GetContextPathResult, GetContextPathUseCase};
 pub use get_node_detail::{
     GetNodeDetailQuery, GetNodeDetailResult, GetNodeDetailUseCase, NodeDetailView,
 };

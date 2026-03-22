@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use rehydration_domain::{
     BundleMetadata, BundleNode, BundleNodeDetail, BundleRelationship, CaseId,
     GraphNeighborhoodReader, NodeDetailReader, NodeNeighborhood, RehydrationBundle, Role,
@@ -59,25 +61,50 @@ where
 
         let neighborhood = ordered_neighborhood(neighborhood);
         let node_details = load_node_details(&self.detail_reader, &neighborhood).await?;
-        let root_node_id = CaseId::new(root_node_id)?;
-        let role = Role::new(role)?;
 
-        Ok(Some(RehydrationBundle::new(
+        Ok(Some(build_bundle(
             root_node_id,
             role,
-            BundleNode::from_projection(&neighborhood.root),
-            neighborhood
-                .neighbors
-                .iter()
-                .map(BundleNode::from_projection)
-                .collect(),
-            neighborhood
-                .relations
-                .iter()
-                .map(BundleRelationship::from_projection)
-                .collect(),
+            generator_version,
+            neighborhood,
             node_details,
-            BundleMetadata::initial(generator_version),
+        )?))
+    }
+
+    pub async fn load_context_path_bundle_with_depth(
+        &self,
+        root_node_id: &str,
+        target_node_id: &str,
+        role: &str,
+        generator_version: &str,
+        subtree_depth: u32,
+    ) -> Result<Option<RehydrationBundle>, ApplicationError> {
+        let Some(path_neighborhood) = self
+            .graph_reader
+            .load_context_path(
+                root_node_id,
+                target_node_id,
+                clamp_native_graph_traversal_depth(subtree_depth),
+            )
+            .await?
+        else {
+            return Ok(None);
+        };
+
+        let path_node_ids = path_neighborhood.path_node_ids.clone();
+        let neighborhood = ordered_neighborhood(NodeNeighborhood {
+            root: path_neighborhood.root,
+            neighbors: path_neighborhood.neighbors,
+            relations: path_neighborhood.relations,
+        });
+        let node_details = load_node_details_for_ids(&self.detail_reader, path_node_ids).await?;
+
+        Ok(Some(build_bundle(
+            root_node_id,
+            role,
+            generator_version,
+            neighborhood,
+            node_details,
         )?))
     }
 }
@@ -89,15 +116,71 @@ async fn load_node_details<D>(
 where
     D: NodeDetailReader + Send + Sync,
 {
-    let mut details = Vec::new();
+    load_node_details_for_ids(
+        detail_reader,
+        std::iter::once(neighborhood.root.node_id.clone())
+            .chain(
+                neighborhood
+                    .neighbors
+                    .iter()
+                    .map(|node| node.node_id.clone()),
+            )
+            .collect::<Vec<_>>(),
+    )
+    .await
+}
 
-    for node in std::iter::once(&neighborhood.root).chain(neighborhood.neighbors.iter()) {
-        if let Some(detail) = detail_reader.load_node_detail(&node.node_id).await? {
+async fn load_node_details_for_ids<D, I>(
+    detail_reader: &D,
+    node_ids: I,
+) -> Result<Vec<BundleNodeDetail>, rehydration_domain::PortError>
+where
+    D: NodeDetailReader + Send + Sync,
+    I: IntoIterator<Item = String>,
+{
+    let mut details = Vec::new();
+    let mut seen = BTreeSet::new();
+
+    for node_id in node_ids {
+        if !seen.insert(node_id.clone()) {
+            continue;
+        }
+
+        if let Some(detail) = detail_reader.load_node_detail(&node_id).await? {
             details.push(BundleNodeDetail::from_projection(&detail));
         }
     }
 
     Ok(details)
+}
+
+fn build_bundle(
+    root_node_id: &str,
+    role: &str,
+    generator_version: &str,
+    neighborhood: NodeNeighborhood,
+    node_details: Vec<BundleNodeDetail>,
+) -> Result<RehydrationBundle, ApplicationError> {
+    let root_node_id = CaseId::new(root_node_id)?;
+    let role = Role::new(role)?;
+
+    Ok(RehydrationBundle::new(
+        root_node_id,
+        role,
+        BundleNode::from_projection(&neighborhood.root),
+        neighborhood
+            .neighbors
+            .iter()
+            .map(BundleNode::from_projection)
+            .collect(),
+        neighborhood
+            .relations
+            .iter()
+            .map(BundleRelationship::from_projection)
+            .collect(),
+        node_details,
+        BundleMetadata::initial(generator_version),
+    )?)
 }
 
 #[cfg(test)]
@@ -106,7 +189,8 @@ mod tests {
     use std::sync::Arc;
 
     use rehydration_domain::{
-        NodeDetailProjection, NodeNeighborhood, NodeProjection, NodeRelationProjection, PortError,
+        ContextPathNeighborhood, NodeDetailProjection, NodeNeighborhood, NodeProjection,
+        NodeRelationProjection, PortError,
     };
     use tokio::sync::Mutex;
 
@@ -146,6 +230,62 @@ mod tests {
                     relation_type: "RELATES_TO".to_string(),
                 }],
             }))
+        }
+
+        async fn load_context_path(
+            &self,
+            root_node_id: &str,
+            target_node_id: &str,
+            _subtree_depth: u32,
+        ) -> Result<Option<ContextPathNeighborhood>, PortError> {
+            Ok(
+                (root_node_id == "node-root" && target_node_id == "node-1").then_some(
+                    ContextPathNeighborhood {
+                        root: NodeProjection {
+                            node_id: "node-root".to_string(),
+                            node_kind: "case".to_string(),
+                            title: "Root".to_string(),
+                            summary: "Root summary".to_string(),
+                            status: "ACTIVE".to_string(),
+                            labels: vec!["ProjectionNode".to_string()],
+                            properties: BTreeMap::new(),
+                        },
+                        neighbors: vec![
+                            NodeProjection {
+                                node_id: "node-1".to_string(),
+                                node_kind: "decision".to_string(),
+                                title: "Neighbor".to_string(),
+                                summary: "Neighbor summary".to_string(),
+                                status: "ACTIVE".to_string(),
+                                labels: vec!["ProjectionNode".to_string()],
+                                properties: BTreeMap::new(),
+                            },
+                            NodeProjection {
+                                node_id: "node-2".to_string(),
+                                node_kind: "artifact".to_string(),
+                                title: "Leaf".to_string(),
+                                summary: "Leaf summary".to_string(),
+                                status: "READY".to_string(),
+                                labels: vec!["ProjectionNode".to_string()],
+                                properties: BTreeMap::new(),
+                            },
+                        ],
+                        relations: vec![
+                            NodeRelationProjection {
+                                source_node_id: "node-root".to_string(),
+                                target_node_id: "node-1".to_string(),
+                                relation_type: "RELATES_TO".to_string(),
+                            },
+                            NodeRelationProjection {
+                                source_node_id: "node-1".to_string(),
+                                target_node_id: "node-2".to_string(),
+                                relation_type: "HAS_ARTIFACT".to_string(),
+                            },
+                        ],
+                        path_node_ids: vec!["node-root".to_string(), "node-1".to_string()],
+                    },
+                ),
+            )
         }
     }
 
@@ -193,6 +333,16 @@ mod tests {
             self.depths.lock().await.push(depth);
             Ok(None)
         }
+
+        async fn load_context_path(
+            &self,
+            _root_node_id: &str,
+            _target_node_id: &str,
+            subtree_depth: u32,
+        ) -> Result<Option<ContextPathNeighborhood>, PortError> {
+            self.depths.lock().await.push(subtree_depth);
+            Ok(None)
+        }
     }
 
     #[tokio::test]
@@ -214,6 +364,28 @@ mod tests {
         assert_eq!(
             &*depths.lock().await,
             &[DEFAULT_NATIVE_GRAPH_TRAVERSAL_DEPTH]
+        );
+    }
+
+    #[tokio::test]
+    async fn load_context_path_bundle_only_includes_details_for_path_nodes() {
+        let reader = NodeCentricProjectionReader::new(StubGraphReader, StubDetailReader);
+        let bundle = reader
+            .load_context_path_bundle_with_depth("node-root", "node-1", "developer", "0.1.0", 4)
+            .await
+            .expect("path bundle load should succeed")
+            .expect("bundle should exist");
+
+        assert_eq!(bundle.root_node().node_id(), "node-root");
+        assert_eq!(bundle.neighbor_nodes().len(), 2);
+        assert_eq!(bundle.relationships().len(), 2);
+        assert_eq!(
+            bundle
+                .node_details()
+                .iter()
+                .map(|detail| detail.node_id())
+                .collect::<Vec<_>>(),
+            vec!["node-root"]
         );
     }
 }

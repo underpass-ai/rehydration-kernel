@@ -1,3 +1,4 @@
+pub mod context_path_neighborhood;
 pub mod node_detail_projection;
 pub mod node_neighborhood;
 pub mod node_projection;
@@ -5,6 +6,7 @@ pub mod node_relation_projection;
 pub mod projection_checkpoint;
 pub mod projection_mutation;
 
+pub use context_path_neighborhood::ContextPathNeighborhood;
 pub use node_detail_projection::NodeDetailProjection;
 pub use node_neighborhood::NodeNeighborhood;
 pub use node_projection::NodeProjection;

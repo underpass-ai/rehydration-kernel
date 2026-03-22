@@ -15,6 +15,7 @@ fn query_service_surface_is_stable() {
         service_method_names(query_file, "ContextQueryService"),
         vec![
             "GetContext",
+            "GetContextPath",
             "GetNodeDetail",
             "RehydrateSession",
             "ValidateScope"
@@ -79,6 +80,28 @@ fn get_node_detail_request_fields_are_stable() {
     assert_eq!(
         message_field_names(query_file, "GetNodeDetailRequest"),
         vec!["node_id"]
+    );
+}
+
+#[test]
+fn get_context_path_request_fields_are_stable() {
+    let descriptor_set = decode_kernel_descriptor_set();
+    let query_file = kernel_file(&descriptor_set, "query.proto");
+
+    assert_eq!(
+        message_field_names(query_file, "GetContextPathRequest"),
+        vec!["root_node_id", "target_node_id", "role", "token_budget"]
+    );
+}
+
+#[test]
+fn get_context_path_response_fields_are_stable() {
+    let descriptor_set = decode_kernel_descriptor_set();
+    let query_file = kernel_file(&descriptor_set, "query.proto");
+
+    assert_eq!(
+        message_field_names(query_file, "GetContextPathResponse"),
+        vec!["path_bundle", "rendered", "served_at"]
     );
 }
 

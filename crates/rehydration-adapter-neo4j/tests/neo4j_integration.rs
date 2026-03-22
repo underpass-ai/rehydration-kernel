@@ -244,6 +244,128 @@ RETURN count(edge) AS edge_count
     .await
 }
 
+#[tokio::test]
+async fn load_context_path_returns_shortest_path_and_target_subtree()
+-> Result<(), Box<dyn Error + Send + Sync>> {
+    run_with_timeout(async {
+        let container = start_neo4j_container().await?;
+        let host = container.get_host().await?;
+        let port = container.get_host_port_ipv4(NEO4J_INTERNAL_PORT).await?;
+        let graph =
+            connect_with_retry(format!("neo4j://{host}:{port}"), "neo4j", NEO4J_PASSWORD).await?;
+        graph.run(query("MATCH (n) DETACH DELETE n")).await?;
+
+        let store =
+            Neo4jProjectionReader::new(format!("neo4j://neo4j:{NEO4J_PASSWORD}@{host}:{port}"))?;
+        store
+            .apply_mutations(vec![
+                ProjectionMutation::UpsertNode(NodeProjection {
+                    node_id: "node-root".to_string(),
+                    node_kind: "mission".to_string(),
+                    title: "Root".to_string(),
+                    summary: "Root summary".to_string(),
+                    status: "ACTIVE".to_string(),
+                    labels: vec!["mission".to_string()],
+                    properties: BTreeMap::new(),
+                }),
+                ProjectionMutation::UpsertNode(NodeProjection {
+                    node_id: "story-1".to_string(),
+                    node_kind: "story".to_string(),
+                    title: "Story".to_string(),
+                    summary: "Story summary".to_string(),
+                    status: "ACTIVE".to_string(),
+                    labels: vec!["story".to_string()],
+                    properties: BTreeMap::new(),
+                }),
+                ProjectionMutation::UpsertNode(NodeProjection {
+                    node_id: "task-1".to_string(),
+                    node_kind: "task".to_string(),
+                    title: "Task".to_string(),
+                    summary: "Task summary".to_string(),
+                    status: "READY".to_string(),
+                    labels: vec!["task".to_string()],
+                    properties: BTreeMap::new(),
+                }),
+                ProjectionMutation::UpsertNode(NodeProjection {
+                    node_id: "artifact-1".to_string(),
+                    node_kind: "artifact".to_string(),
+                    title: "Artifact".to_string(),
+                    summary: "Artifact summary".to_string(),
+                    status: "READY".to_string(),
+                    labels: vec!["artifact".to_string()],
+                    properties: BTreeMap::new(),
+                }),
+                ProjectionMutation::UpsertNode(NodeProjection {
+                    node_id: "detour-1".to_string(),
+                    node_kind: "story".to_string(),
+                    title: "Detour".to_string(),
+                    summary: "Detour summary".to_string(),
+                    status: "ACTIVE".to_string(),
+                    labels: vec!["story".to_string()],
+                    properties: BTreeMap::new(),
+                }),
+                ProjectionMutation::UpsertNodeRelation(NodeRelationProjection {
+                    source_node_id: "node-root".to_string(),
+                    target_node_id: "story-1".to_string(),
+                    relation_type: "HAS_STORY".to_string(),
+                }),
+                ProjectionMutation::UpsertNodeRelation(NodeRelationProjection {
+                    source_node_id: "story-1".to_string(),
+                    target_node_id: "task-1".to_string(),
+                    relation_type: "HAS_TASK".to_string(),
+                }),
+                ProjectionMutation::UpsertNodeRelation(NodeRelationProjection {
+                    source_node_id: "task-1".to_string(),
+                    target_node_id: "artifact-1".to_string(),
+                    relation_type: "HAS_ARTIFACT".to_string(),
+                }),
+                ProjectionMutation::UpsertNodeRelation(NodeRelationProjection {
+                    source_node_id: "node-root".to_string(),
+                    target_node_id: "detour-1".to_string(),
+                    relation_type: "HAS_STORY".to_string(),
+                }),
+            ])
+            .await?;
+
+        let context_path = store
+            .load_context_path("node-root", "task-1", 8)
+            .await?
+            .expect("seeded path should load");
+
+        assert_eq!(context_path.root.node_id, "node-root");
+        assert_eq!(
+            context_path.path_node_ids,
+            vec![
+                "node-root".to_string(),
+                "story-1".to_string(),
+                "task-1".to_string()
+            ]
+        );
+        assert_eq!(context_path.neighbors.len(), 3);
+        assert!(
+            context_path
+                .neighbors
+                .iter()
+                .any(|node| node.node_id == "artifact-1")
+        );
+        assert!(
+            context_path
+                .neighbors
+                .iter()
+                .all(|node| node.node_id != "detour-1")
+        );
+        assert_eq!(context_path.relations.len(), 3);
+        assert!(context_path.relations.iter().any(|relation| {
+            relation.source_node_id == "task-1"
+                && relation.target_node_id == "artifact-1"
+                && relation.relation_type == "HAS_ARTIFACT"
+        }));
+
+        Ok(())
+    })
+    .await
+}
+
 async fn run_with_timeout<F>(future: F) -> Result<(), Box<dyn Error + Send + Sync>>
 where
     F: std::future::Future<Output = Result<(), Box<dyn Error + Send + Sync>>>,

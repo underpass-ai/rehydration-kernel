@@ -12,8 +12,9 @@ use rehydration_application::{
 };
 use rehydration_domain::{
     BundleMetadata, BundleNode, BundleNodeDetail, BundleRelationship, CaseId,
-    GraphNeighborhoodReader, NodeDetailProjection, NodeDetailReader, NodeNeighborhood, PortError,
-    RehydrationBundle, Role, SnapshotSaveOptions, SnapshotStore,
+    ContextPathNeighborhood, GraphNeighborhoodReader, NodeDetailProjection, NodeDetailReader,
+    NodeNeighborhood, NodeProjection, NodeRelationProjection, PortError, RehydrationBundle, Role,
+    SnapshotSaveOptions, SnapshotStore,
 };
 use rehydration_proto::fleet_context_v1::{
     ContextChange as CompatibilityContextChange,
@@ -27,7 +28,7 @@ use rehydration_proto::fleet_context_v1::{
 };
 use rehydration_proto::v1alpha1::{
     BundleRenderFormat, ContextChange, ContextChangeOperation, GetBundleSnapshotRequest,
-    GetContextRequest, GetNodeDetailRequest, GetProjectionStatusRequest,
+    GetContextPathRequest, GetContextRequest, GetNodeDetailRequest, GetProjectionStatusRequest,
     GetRehydrationDiagnosticsRequest, Phase, UpdateContextRequest, ValidateScopeRequest,
     context_admin_service_server::ContextAdminService,
     context_command_service_server::ContextCommandService,
@@ -63,6 +64,15 @@ impl GraphNeighborhoodReader for EmptyGraphNeighborhoodReader {
     ) -> Result<Option<NodeNeighborhood>, PortError> {
         Ok(None)
     }
+
+    async fn load_context_path(
+        &self,
+        _root_node_id: &str,
+        _target_node_id: &str,
+        _subtree_depth: u32,
+    ) -> Result<Option<ContextPathNeighborhood>, PortError> {
+        Ok(None)
+    }
 }
 
 struct RecordingGraphNeighborhoodReader {
@@ -76,6 +86,16 @@ impl GraphNeighborhoodReader for RecordingGraphNeighborhoodReader {
         depth: u32,
     ) -> Result<Option<NodeNeighborhood>, PortError> {
         self.depths.lock().await.push(depth);
+        Ok(None)
+    }
+
+    async fn load_context_path(
+        &self,
+        _root_node_id: &str,
+        _target_node_id: &str,
+        subtree_depth: u32,
+    ) -> Result<Option<ContextPathNeighborhood>, PortError> {
+        self.depths.lock().await.push(subtree_depth);
         Ok(None)
     }
 }
@@ -105,6 +125,62 @@ impl GraphNeighborhoodReader for SeededGraphNeighborhoodReader {
             _ => Ok(None),
         }
     }
+
+    async fn load_context_path(
+        &self,
+        root_node_id: &str,
+        target_node_id: &str,
+        _subtree_depth: u32,
+    ) -> Result<Option<ContextPathNeighborhood>, PortError> {
+        Ok(
+            (root_node_id == "node-123" && target_node_id == "node-789").then_some(
+                ContextPathNeighborhood {
+                    root: sample_node_neighborhood("node-123", "ACTIVE").root,
+                    neighbors: vec![
+                        NodeProjection {
+                            node_id: "node-456".to_string(),
+                            node_kind: "task".to_string(),
+                            title: "Node node-456".to_string(),
+                            summary: "Summary for node-456".to_string(),
+                            status: "OPEN".to_string(),
+                            labels: vec!["Task".to_string()],
+                            properties: [("owner".to_string(), "ops".to_string())]
+                                .into_iter()
+                                .collect(),
+                        },
+                        NodeProjection {
+                            node_id: "node-789".to_string(),
+                            node_kind: "task".to_string(),
+                            title: "Node node-789".to_string(),
+                            summary: "Summary for node-789".to_string(),
+                            status: "READY".to_string(),
+                            labels: vec!["Task".to_string()],
+                            properties: [("owner".to_string(), "ops".to_string())]
+                                .into_iter()
+                                .collect(),
+                        },
+                    ],
+                    relations: vec![
+                        NodeRelationProjection {
+                            source_node_id: "node-123".to_string(),
+                            target_node_id: "node-456".to_string(),
+                            relation_type: "HAS_TASK".to_string(),
+                        },
+                        NodeRelationProjection {
+                            source_node_id: "node-456".to_string(),
+                            target_node_id: "node-789".to_string(),
+                            relation_type: "HAS_TASK".to_string(),
+                        },
+                    ],
+                    path_node_ids: vec![
+                        "node-123".to_string(),
+                        "node-456".to_string(),
+                        "node-789".to_string(),
+                    ],
+                },
+            ),
+        )
+    }
 }
 
 struct SeededNodeDetailReader;
@@ -120,6 +196,18 @@ impl NodeDetailReader for SeededNodeDetailReader {
                 detail: "Expanded detail".to_string(),
                 content_hash: "hash-1".to_string(),
                 revision: 2,
+            }),
+            "node-456" => Some(NodeDetailProjection {
+                node_id: "node-456".to_string(),
+                detail: "Middle detail".to_string(),
+                content_hash: "hash-456".to_string(),
+                revision: 3,
+            }),
+            "node-789" => Some(NodeDetailProjection {
+                node_id: "node-789".to_string(),
+                detail: "Target detail".to_string(),
+                content_hash: "hash-789".to_string(),
+                revision: 4,
             }),
             "orphan-detail" => Some(NodeDetailProjection {
                 node_id: "orphan-detail".to_string(),
@@ -291,6 +379,48 @@ async fn query_service_forwards_requested_depth_to_application() {
         .expect("get context should succeed");
 
     assert_eq!(&*depths.lock().await, &[17]);
+}
+
+#[tokio::test]
+async fn query_service_returns_context_path_bundle() {
+    let application = Arc::new(QueryApplicationService::new(
+        Arc::new(SeededGraphNeighborhoodReader),
+        Arc::new(SeededNodeDetailReader),
+        Arc::new(NoopSnapshotStore),
+        "0.1.0",
+    ));
+    let service = QueryGrpcService::new(application);
+
+    let response = service
+        .get_context_path(Request::new(GetContextPathRequest {
+            root_node_id: "node-123".to_string(),
+            target_node_id: "node-789".to_string(),
+            role: "developer".to_string(),
+            token_budget: 1024,
+        }))
+        .await
+        .expect("get context path should succeed")
+        .into_inner();
+
+    let bundle = response.path_bundle.expect("path bundle should exist");
+    let role_bundle = bundle
+        .bundles
+        .first()
+        .expect("path bundle should contain one role bundle");
+
+    assert_eq!(bundle.root_node_id, "node-123");
+    assert_eq!(role_bundle.neighbor_nodes.len(), 2);
+    assert_eq!(role_bundle.relationships.len(), 2);
+    assert_eq!(role_bundle.node_details.len(), 3);
+    assert!(
+        response
+            .rendered
+            .as_ref()
+            .expect("rendered context should exist")
+            .content
+            .contains("Target detail")
+    );
+    assert!(response.served_at.is_some());
 }
 
 #[tokio::test]

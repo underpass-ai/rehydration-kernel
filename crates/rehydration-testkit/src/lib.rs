@@ -2,9 +2,10 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use rehydration_domain::{
-    GraphNeighborhoodReader, NodeDetailProjection, NodeDetailReader, NodeNeighborhood, PortError,
-    ProcessedEventStore, ProjectionCheckpoint, ProjectionCheckpointStore, ProjectionMutation,
-    ProjectionWriter, RehydrationBundle, SnapshotSaveOptions, SnapshotStore,
+    ContextPathNeighborhood, GraphNeighborhoodReader, NodeDetailProjection, NodeDetailReader,
+    NodeNeighborhood, PortError, ProcessedEventStore, ProjectionCheckpoint,
+    ProjectionCheckpointStore, ProjectionMutation, ProjectionWriter, RehydrationBundle,
+    SnapshotSaveOptions, SnapshotStore,
 };
 use tokio::sync::Mutex;
 
@@ -28,6 +29,15 @@ impl GraphNeighborhoodReader for InMemoryGraphNeighborhoodReader {
         _depth: u32,
     ) -> Result<Option<NodeNeighborhood>, PortError> {
         Ok(self.neighborhoods.get(root_node_id).cloned())
+    }
+
+    async fn load_context_path(
+        &self,
+        _root_node_id: &str,
+        _target_node_id: &str,
+        _subtree_depth: u32,
+    ) -> Result<Option<ContextPathNeighborhood>, PortError> {
+        Ok(None)
     }
 }
 

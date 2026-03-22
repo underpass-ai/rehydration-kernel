@@ -1,4 +1,4 @@
-use rehydration_application::GetContextResult;
+use rehydration_application::{GetContextResult, RenderedContext};
 use rehydration_proto::v1alpha1::{
     BundleRenderFormat, BundleSection, RenderedContext as ProtoRenderedContext,
 };
@@ -6,12 +6,18 @@ use rehydration_proto::v1alpha1::{
 pub(crate) fn proto_rendered_context_from_result(
     result: &GetContextResult,
 ) -> ProtoRenderedContext {
+    proto_rendered_context(&result.rendered, &result.scope_validation.provided_scopes)
+}
+
+pub(crate) fn proto_rendered_context(
+    rendered: &RenderedContext,
+    scopes: &[String],
+) -> ProtoRenderedContext {
     ProtoRenderedContext {
         format: BundleRenderFormat::Structured as i32,
-        content: result.rendered.content.clone(),
-        token_count: result.rendered.token_count,
-        sections: result
-            .rendered
+        content: rendered.content.clone(),
+        token_count: rendered.token_count,
+        sections: rendered
             .sections
             .iter()
             .enumerate()
@@ -20,7 +26,7 @@ pub(crate) fn proto_rendered_context_from_result(
                 title: format!("Section {}", index + 1),
                 content: section.clone(),
                 token_count: section.split_whitespace().count() as u32,
-                scopes: result.scope_validation.provided_scopes.clone(),
+                scopes: scopes.to_vec(),
             })
             .collect(),
     }

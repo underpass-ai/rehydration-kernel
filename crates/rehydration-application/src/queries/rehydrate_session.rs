@@ -185,7 +185,8 @@ mod tests {
     use tokio::sync::Mutex;
 
     use rehydration_domain::{
-        NodeDetailProjection, NodeNeighborhood, NodeProjection, PortError, SnapshotSaveOptions,
+        ContextPathNeighborhood, NodeDetailProjection, NodeNeighborhood, NodeProjection, PortError,
+        SnapshotSaveOptions,
     };
 
     use super::{QueryApplicationService, RehydrateSessionQuery};
@@ -211,6 +212,15 @@ mod tests {
                 neighbors: Vec::new(),
                 relations: Vec::new(),
             }))
+        }
+
+        async fn load_context_path(
+            &self,
+            _root_node_id: &str,
+            _target_node_id: &str,
+            _subtree_depth: u32,
+        ) -> Result<Option<ContextPathNeighborhood>, PortError> {
+            Ok(None)
         }
     }
 

@@ -142,7 +142,10 @@ mod tests {
     use std::collections::BTreeMap;
     use std::sync::Arc;
 
-    use rehydration_domain::{NodeNeighborhood, NodeProjection, NodeRelationProjection, PortError};
+    use rehydration_domain::{
+        ContextPathNeighborhood, NodeNeighborhood, NodeProjection, NodeRelationProjection,
+        PortError,
+    };
     use tokio::sync::Mutex;
 
     use super::{GetGraphRelationshipsQuery, GetGraphRelationshipsUseCase};
@@ -157,6 +160,15 @@ mod tests {
             _root_node_id: &str,
             _depth: u32,
         ) -> Result<Option<NodeNeighborhood>, PortError> {
+            Ok(None)
+        }
+
+        async fn load_context_path(
+            &self,
+            _root_node_id: &str,
+            _target_node_id: &str,
+            _subtree_depth: u32,
+        ) -> Result<Option<ContextPathNeighborhood>, PortError> {
             Ok(None)
         }
     }
@@ -194,6 +206,15 @@ mod tests {
                     relation_type: "RELATES_TO".to_string(),
                 }],
             }))
+        }
+
+        async fn load_context_path(
+            &self,
+            _root_node_id: &str,
+            _target_node_id: &str,
+            _subtree_depth: u32,
+        ) -> Result<Option<ContextPathNeighborhood>, PortError> {
+            Ok(None)
         }
     }
 
@@ -263,6 +284,15 @@ mod tests {
                 neighbors: Vec::new(),
                 relations: Vec::new(),
             }))
+        }
+
+        async fn load_context_path(
+            &self,
+            _root_node_id: &str,
+            _target_node_id: &str,
+            _subtree_depth: u32,
+        ) -> Result<Option<ContextPathNeighborhood>, PortError> {
+            Ok(None)
         }
     }
 
