@@ -120,8 +120,8 @@ mod tests {
     use std::sync::Arc;
 
     use rehydration_domain::{
-        NodeDetailProjection, NodeNeighborhood, NodeProjection, PortError, RehydrationBundle,
-        SnapshotSaveOptions, SnapshotStore,
+        ContextPathNeighborhood, NodeDetailProjection, NodeNeighborhood, NodeProjection, PortError,
+        RehydrationBundle, SnapshotSaveOptions, SnapshotStore,
     };
     use tokio::sync::Mutex;
 
@@ -141,6 +141,15 @@ mod tests {
                 "graph-only" => Ok(Some(sample_neighborhood("graph-only", "READY"))),
                 _ => Ok(None),
             }
+        }
+
+        async fn load_context_path(
+            &self,
+            _root_node_id: &str,
+            _target_node_id: &str,
+            _subtree_depth: u32,
+        ) -> Result<Option<ContextPathNeighborhood>, PortError> {
+            Ok(None)
         }
     }
 
@@ -181,6 +190,15 @@ mod tests {
         ) -> Result<Option<NodeNeighborhood>, PortError> {
             self.depths.lock().await.push(depth);
             Ok(Some(sample_neighborhood("node-123", "ACTIVE")))
+        }
+
+        async fn load_context_path(
+            &self,
+            _root_node_id: &str,
+            _target_node_id: &str,
+            _subtree_depth: u32,
+        ) -> Result<Option<ContextPathNeighborhood>, PortError> {
+            Ok(None)
         }
     }
 

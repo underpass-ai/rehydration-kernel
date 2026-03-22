@@ -32,3 +32,16 @@ where
             .await
     }
 }
+
+impl<T> SnapshotStore for &T
+where
+    T: SnapshotStore + Send + Sync + ?Sized,
+{
+    async fn save_bundle_with_options(
+        &self,
+        bundle: &RehydrationBundle,
+        options: SnapshotSaveOptions,
+    ) -> Result<(), PortError> {
+        (*self).save_bundle_with_options(bundle, options).await
+    }
+}

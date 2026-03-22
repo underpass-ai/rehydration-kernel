@@ -65,7 +65,8 @@ where
 mod tests {
     use rehydration_config::{AppConfig, GrpcTlsConfig, NatsTlsConfig};
     use rehydration_domain::{
-        NodeDetailProjection, NodeNeighborhood, PortError, SnapshotSaveOptions,
+        ContextPathNeighborhood, NodeDetailProjection, NodeNeighborhood, PortError,
+        SnapshotSaveOptions,
     };
     use rehydration_transport_grpc::GrpcServer;
 
@@ -80,6 +81,15 @@ mod tests {
             _root_node_id: &str,
             _depth: u32,
         ) -> Result<Option<NodeNeighborhood>, PortError> {
+            Ok(None)
+        }
+
+        async fn load_context_path(
+            &self,
+            _root_node_id: &str,
+            _target_node_id: &str,
+            _subtree_depth: u32,
+        ) -> Result<Option<ContextPathNeighborhood>, PortError> {
             Ok(None)
         }
     }

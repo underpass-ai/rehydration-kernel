@@ -2,8 +2,8 @@ use std::time::Duration;
 
 use rehydration_config::{AppConfig, GrpcTlsConfig};
 use rehydration_domain::{
-    GraphNeighborhoodReader, NodeDetailProjection, NodeDetailReader, NodeNeighborhood, PortError,
-    RehydrationBundle, SnapshotSaveOptions, SnapshotStore,
+    ContextPathNeighborhood, GraphNeighborhoodReader, NodeDetailProjection, NodeDetailReader,
+    NodeNeighborhood, PortError, RehydrationBundle, SnapshotSaveOptions, SnapshotStore,
 };
 use rehydration_proto::fleet_context_v1::{
     GetContextRequest as CompatibilityGetContextRequest,
@@ -12,8 +12,8 @@ use rehydration_proto::fleet_context_v1::{
 };
 use rehydration_proto::v1alpha1::{
     BundleRenderFormat, ContextChange, ContextChangeOperation, GetBundleSnapshotRequest,
-    GetContextRequest, GetProjectionStatusRequest, Phase, UpdateContextRequest,
-    context_admin_service_client::ContextAdminServiceClient,
+    GetContextPathRequest, GetContextRequest, GetProjectionStatusRequest, Phase,
+    UpdateContextRequest, context_admin_service_client::ContextAdminServiceClient,
     context_command_service_client::ContextCommandServiceClient,
     context_query_service_client::ContextQueryServiceClient,
 };
@@ -31,6 +31,15 @@ impl GraphNeighborhoodReader for EmptyGraphNeighborhoodReader {
         _root_node_id: &str,
         _depth: u32,
     ) -> Result<Option<NodeNeighborhood>, PortError> {
+        Ok(None)
+    }
+
+    async fn load_context_path(
+        &self,
+        _root_node_id: &str,
+        _target_node_id: &str,
+        _subtree_depth: u32,
+    ) -> Result<Option<ContextPathNeighborhood>, PortError> {
         Ok(None)
     }
 }
@@ -152,6 +161,25 @@ async fn grpc_server_supports_query_command_and_admin_roundtrip() {
             .expect("bundle should exist")
             .root_node_id,
         "case-123"
+    );
+
+    let get_context_path = query_client
+        .get_context_path(GetContextPathRequest {
+            root_node_id: "case-123".to_string(),
+            target_node_id: "case-456".to_string(),
+            role: "developer".to_string(),
+            token_budget: 1024,
+        })
+        .await
+        .expect("query path service should respond")
+        .into_inner();
+    assert_eq!(
+        get_context_path
+            .path_bundle
+            .as_ref()
+            .expect("path bundle should exist")
+            .root_node_id,
+        "case-456"
     );
 
     let update_context = command_client

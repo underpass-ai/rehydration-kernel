@@ -1,20 +1,21 @@
 use std::sync::Arc;
 
 use rehydration_application::{
-    ContextRenderOptions, GetContextQuery, GetNodeDetailQuery, QueryApplicationService,
-    RehydrateSessionQuery, ValidateScopeQuery,
+    ContextRenderOptions, GetContextPathQuery, GetContextQuery, GetNodeDetailQuery,
+    QueryApplicationService, RehydrateSessionQuery, ValidateScopeQuery,
 };
 use rehydration_domain::{GraphNeighborhoodReader, NodeDetailReader, SnapshotStore};
 use rehydration_proto::v1alpha1::{
-    GetContextRequest, GetContextResponse, GetNodeDetailRequest, GetNodeDetailResponse,
-    RehydrateSessionRequest, RehydrateSessionResponse, ValidateScopeRequest, ValidateScopeResponse,
-    context_query_service_server::ContextQueryService,
+    GetContextPathRequest, GetContextPathResponse, GetContextRequest, GetContextResponse,
+    GetNodeDetailRequest, GetNodeDetailResponse, RehydrateSessionRequest, RehydrateSessionResponse,
+    ValidateScopeRequest, ValidateScopeResponse, context_query_service_server::ContextQueryService,
 };
 use tonic::{Request, Response, Status};
 
 use crate::transport::proto_mapping::{
     proto_bundle_from_single_role, proto_graph_node, proto_node_detail_view,
-    proto_rehydrate_session_response, proto_rendered_context_from_result, proto_scope_validation,
+    proto_rehydrate_session_response, proto_rendered_context, proto_rendered_context_from_result,
+    proto_scope_validation,
 };
 use crate::transport::support::map_application_error;
 
@@ -60,6 +61,32 @@ where
             bundle: Some(proto_bundle_from_single_role(&result.bundle)),
             rendered: Some(proto_rendered_context_from_result(&result)),
             scope_validation: Some(proto_scope_validation(&result.scope_validation)),
+            served_at: Some(crate::transport::support::timestamp_from(result.served_at)),
+        }))
+    }
+
+    async fn get_context_path(
+        &self,
+        request: Request<GetContextPathRequest>,
+    ) -> Result<Response<GetContextPathResponse>, Status> {
+        let request = request.into_inner();
+        let result = self
+            .application
+            .get_context_path(GetContextPathQuery {
+                root_node_id: request.root_node_id,
+                target_node_id: request.target_node_id,
+                role: request.role,
+                render_options: ContextRenderOptions {
+                    focus_node_id: None,
+                    token_budget: (request.token_budget > 0).then_some(request.token_budget),
+                },
+            })
+            .await
+            .map_err(map_application_error)?;
+
+        Ok(Response::new(GetContextPathResponse {
+            path_bundle: Some(proto_bundle_from_single_role(&result.path_bundle)),
+            rendered: Some(proto_rendered_context(&result.rendered, &[])),
             served_at: Some(crate::transport::support::timestamp_from(result.served_at)),
         }))
     }

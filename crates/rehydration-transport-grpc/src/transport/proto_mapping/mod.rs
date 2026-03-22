@@ -17,7 +17,7 @@ pub(crate) use graph_mapping::{
 pub(crate) use projection_mapping::{
     proto_projection_status_response, proto_replay_projection_response,
 };
-pub(crate) use rendered_mapping::proto_rendered_context_from_result;
+pub(crate) use rendered_mapping::{proto_rendered_context, proto_rendered_context_from_result};
 pub(crate) use scope_mapping::proto_scope_validation;
 pub(crate) use version_mapping::{proto_accepted_version, proto_bundle_version};
 

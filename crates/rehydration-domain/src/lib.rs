@@ -9,8 +9,8 @@ pub use model::{
     BundleNode, BundleNodeDetail, BundleRelationship, RehydrationBundle, RehydrationStats,
 };
 pub use projection::{
-    NodeDetailProjection, NodeNeighborhood, NodeProjection, NodeRelationProjection,
-    ProjectionCheckpoint, ProjectionMutation,
+    ContextPathNeighborhood, NodeDetailProjection, NodeNeighborhood, NodeProjection,
+    NodeRelationProjection, ProjectionCheckpoint, ProjectionMutation,
 };
 pub use repositories::{
     GraphNeighborhoodReader, NodeDetailReader, PortError, ProcessedEventStore,
