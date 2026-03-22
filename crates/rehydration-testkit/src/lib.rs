@@ -210,10 +210,9 @@ mod tests {
     use std::collections::BTreeMap;
 
     use rehydration_domain::{
-        CaseId, ContextPathNeighborhood, GraphNeighborhoodReader, NodeDetailProjection,
-        NodeDetailReader, NodeNeighborhood, NodeProjection, ProcessedEventStore,
-        ProjectionCheckpoint, ProjectionCheckpointStore, ProjectionMutation, ProjectionWriter,
-        SnapshotStore,
+        CaseId, GraphNeighborhoodReader, NodeDetailProjection, NodeDetailReader, NodeNeighborhood,
+        NodeProjection, ProcessedEventStore, ProjectionCheckpoint, ProjectionCheckpointStore,
+        ProjectionMutation, ProjectionWriter, SnapshotStore,
     };
 
     use super::{
