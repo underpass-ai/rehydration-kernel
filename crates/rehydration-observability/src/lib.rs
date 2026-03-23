@@ -91,12 +91,11 @@ pub fn shutdown_observability(provider: Option<SdkTracerProvider>) {
 
 #[cfg(test)]
 mod tests {
-    use super::init_observability;
+    use super::shutdown_observability;
 
     #[test]
-    fn init_observability_is_callable() {
-        let _ = std::panic::catch_unwind(|| {
-            let _provider = init_observability("test");
-        });
+    fn shutdown_handles_none_provider_gracefully() {
+        // Verifies that shutdown with no OTel provider is a no-op
+        shutdown_observability(None);
     }
 }

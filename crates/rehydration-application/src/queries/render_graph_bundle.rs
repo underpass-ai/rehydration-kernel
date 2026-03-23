@@ -302,7 +302,7 @@ mod tests {
 
     use rehydration_domain::{
         BundleMetadata, BundleNode, BundleNodeDetail, BundleRelationship, CaseId,
-        RehydrationBundle, RelationExplanation, RelationSemanticClass, Role,
+        RehydrationBundle, RelationExplanation, RelationSemanticClass, Role, TokenEstimator,
     };
 
     use crate::queries::ContextRenderOptions;
@@ -531,5 +531,45 @@ mod tests {
         );
         assert!(rendered.content.contains("decision=decision-1"));
         assert!(rendered.content.contains("step=1"));
+    }
+
+    #[test]
+    fn cl100k_estimator_returns_expected_counts_for_known_inputs() {
+        let estimator = super::Cl100kEstimator::new();
+        // "hello world" is 2 tokens in cl100k_base
+        assert_eq!(estimator.estimate_tokens("hello world"), 2);
+        assert_eq!(estimator.name(), "cl100k_base");
+    }
+
+    #[test]
+    fn cl100k_estimator_handles_empty_input() {
+        let estimator = super::Cl100kEstimator::new();
+        assert_eq!(estimator.estimate_tokens(""), 0);
+    }
+
+    #[test]
+    fn render_without_budget_has_no_truncation_metadata() {
+        let bundle = sample_bundle();
+        let rendered = render_graph_bundle(&bundle);
+        assert!(rendered.truncation.is_none());
+    }
+
+    #[test]
+    fn render_with_budget_reports_truncation_metadata() {
+        let bundle = sample_bundle();
+        let rendered = render_graph_bundle_with_options(
+            &bundle,
+            &ContextRenderOptions {
+                focus_node_id: None,
+                token_budget: Some(1000),
+            },
+        );
+        let truncation = rendered
+            .truncation
+            .expect("budget should produce truncation");
+        assert_eq!(truncation.budget_requested, 1000);
+        assert_eq!(truncation.sections_dropped, 0);
+        assert_eq!(truncation.token_estimator, "cl100k_base");
+        assert!(truncation.budget_used <= 1000);
     }
 }

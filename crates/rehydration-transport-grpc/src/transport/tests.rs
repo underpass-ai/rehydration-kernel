@@ -550,6 +550,33 @@ async fn command_service_accepts_update_context() {
 }
 
 #[tokio::test]
+async fn command_service_returns_aborted_on_revision_conflict() {
+    let event_store = Arc::new(InMemoryContextEventStore::new());
+    let service =
+        CommandGrpcServiceV1Beta1::new(Arc::new(CommandApplicationService::new(Arc::new(
+            rehydration_application::UpdateContextUseCase::new(event_store, "0.1.0"),
+        ))));
+
+    let status = service
+        .update_context(Request::new(UpdateContextRequest {
+            root_node_id: "node-123".to_string(),
+            role: "developer".to_string(),
+            work_item_id: String::new(),
+            changes: vec![],
+            metadata: None,
+            precondition: Some(rehydration_proto::v1beta1::RevisionPrecondition {
+                expected_revision: 99,
+                expected_content_hash: String::new(),
+            }),
+            persist_snapshot: false,
+        }))
+        .await
+        .expect_err("wrong revision should fail");
+
+    assert_eq!(status.code(), tonic::Code::Aborted);
+}
+
+#[tokio::test]
 async fn admin_service_returns_snapshot_and_status() {
     let application = Arc::new(AdminQueryApplicationService::new(
         Arc::new(EmptyGraphNeighborhoodReader),
