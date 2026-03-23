@@ -540,7 +540,14 @@ fn projection_graph_payload(event_id: &str) -> Value {
             "status": "ACTIVE",
             "labels": ["projection"],
             "properties": {"phase": "build"},
-            "related_nodes": [{"node_id": "node-detail", "relation_type": "depends_on"}]
+            "related_nodes": [{
+                "node_id": "node-detail",
+                "relation_type": "depends_on",
+                "explanation": {
+                    "semantic_class": "constraint",
+                    "sequence": 1
+                }
+            }]
         }
     })
 }

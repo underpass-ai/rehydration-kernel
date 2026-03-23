@@ -41,7 +41,11 @@ pub(crate) fn proto_graph_relationship(relationship: &GraphRelationshipView) -> 
         source_node_id: relationship.source_node_id.clone(),
         target_node_id: relationship.target_node_id.clone(),
         relationship_type: relationship.relationship_type.clone(),
-        properties: relationship.properties.clone().into_iter().collect(),
+        properties: relationship
+            .explanation
+            .to_properties()
+            .into_iter()
+            .collect(),
     }
 }
 
@@ -62,7 +66,11 @@ pub(crate) fn proto_bundle_relationship(relationship: &BundleRelationship) -> Gr
         source_node_id: relationship.source_node_id().to_string(),
         target_node_id: relationship.target_node_id().to_string(),
         relationship_type: relationship.relationship_type().to_string(),
-        properties: relationship.properties().clone().into_iter().collect(),
+        properties: relationship
+            .explanation()
+            .to_properties()
+            .into_iter()
+            .collect(),
     }
 }
 

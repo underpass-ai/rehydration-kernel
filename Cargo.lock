@@ -1963,6 +1963,7 @@ dependencies = [
  "serde_json",
  "testcontainers",
  "tokio",
+ "tokio-rustls",
  "tokio-stream",
 ]
 
@@ -2011,6 +2012,9 @@ version = "0.1.0"
 [[package]]
 name = "rehydration-domain"
 version = "0.1.0"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "rehydration-observability"

@@ -63,7 +63,14 @@ async fn consume_routes_prefixed_graph_node_subject() {
             "labels": ["projection"],
             "properties": {"phase": "build"},
             "related_nodes": [
-                {"node_id": "node-122", "relation_type": "depends_on"}
+                {
+                    "node_id": "node-122",
+                    "relation_type": "depends_on",
+                    "explanation": {
+                        "semantic_class": "constraint",
+                        "sequence": 1
+                    }
+                }
             ]
         }
     });
@@ -149,4 +156,46 @@ async fn consume_rejects_invalid_json_payload() {
         .expect_err("invalid payload must fail");
 
     assert!(matches!(error, NatsConsumerError::InvalidPayload(_)));
+}
+
+#[tokio::test]
+async fn consume_rejects_graph_nodes_missing_relation_explanation() {
+    let consumer = NatsProjectionConsumer::new("rehydration".to_string());
+    let handler = RecordingHandler::default();
+    let payload = json!({
+        "event_id": "evt-3",
+        "correlation_id": "corr-3",
+        "causation_id": "cmd-3",
+        "occurred_at": "2026-03-07T20:02:00Z",
+        "aggregate_id": "node-123",
+        "aggregate_type": "node",
+        "schema_version": "v1alpha1",
+        "data": {
+            "node_id": "node-123",
+            "node_kind": "capability",
+            "title": "Projection consumer foundation",
+            "summary": "Node centric projection input",
+            "status": "ACTIVE",
+            "labels": ["projection"],
+            "properties": {"phase": "build"},
+            "related_nodes": [
+                {"node_id": "node-122", "relation_type": "depends_on"}
+            ]
+        }
+    });
+
+    let error = consumer
+        .consume(
+            &handler,
+            "rehydration.graph.node.materialized",
+            payload.to_string().as_bytes(),
+        )
+        .await
+        .expect_err("events without relationship explanation must fail");
+
+    assert!(matches!(
+        error,
+        NatsConsumerError::InvalidPayload(message)
+            if message.contains("missing field `explanation`")
+    ));
 }

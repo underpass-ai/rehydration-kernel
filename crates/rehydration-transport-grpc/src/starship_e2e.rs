@@ -4,8 +4,10 @@ use std::error::Error;
 use async_nats::Client;
 use rehydration_application::{
     GraphNodeMaterializedData, GraphNodeMaterializedEvent, NodeDetailMaterializedData,
-    NodeDetailMaterializedEvent, ProjectionEnvelope, RelatedNodeReference,
+    NodeDetailMaterializedEvent, ProjectionEnvelope, RelatedNodeExplanationData,
+    RelatedNodeReference,
 };
+use rehydration_domain::RelationSemanticClass;
 
 pub const DEFAULT_SUBJECT_PREFIX: &str = "rehydration";
 
@@ -609,12 +611,36 @@ fn graph_node_event(node: NodeSeed, run_id: &str) -> GraphNodeMaterializedEvent 
             related_nodes: node
                 .related_nodes
                 .iter()
-                .map(|relation| RelatedNodeReference {
+                .enumerate()
+                .map(|(sequence, relation)| RelatedNodeReference {
                     node_id: relation.node_id.to_string(),
                     relation_type: relation.relation_type.to_string(),
+                    explanation: RelatedNodeExplanationData {
+                        semantic_class: relation_semantic_class(relation.relation_type),
+                        rationale: None,
+                        motivation: None,
+                        method: None,
+                        decision_id: None,
+                        caused_by_node_id: None,
+                        evidence: None,
+                        confidence: None,
+                        sequence: Some((sequence + 1) as u32),
+                    },
                 })
                 .collect(),
         },
+    }
+}
+
+fn relation_semantic_class(relation_type: &str) -> RelationSemanticClass {
+    match relation_type {
+        "RECORDS" | "TRACKS" | "ASSIGNS" | "GUIDES" | "HAS_TASK" | "AFFECTS" => {
+            RelationSemanticClass::Structural
+        }
+        RELATION_DEPENDS_ON => RelationSemanticClass::Constraint,
+        RELATION_IMPACTS => RelationSemanticClass::Causal,
+        RELATION_DECISION_REQUIRES | "PRODUCES" => RelationSemanticClass::Procedural,
+        _ => RelationSemanticClass::Structural,
     }
 }
 

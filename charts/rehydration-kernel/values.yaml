@@ -99,3 +99,27 @@ tolerations: []
 affinity: {}
 
 extraEnv: []
+
+# Optional graph database managed by this chart. When enabled together with
+# development.allowInlineConnections=true, the kernel can omit connections.graphUri
+# and will connect to the release-scoped Neo4j service automatically.
+neo4j:
+  enabled: false
+  auth: "neo4j/underpassai"
+  image:
+    repository: docker.io/library/neo4j
+    tag: "5.14"
+  memory:
+    pagecache: "512M"
+    heapInitial: "512M"
+    heapMax: "1G"
+  resources:
+    requests:
+      cpu: 200m
+      memory: 1Gi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+  persistence:
+    storageClass: local-path
+    size: 10Gi

@@ -75,7 +75,7 @@ mod tests {
     use rehydration_application::RehydrateSessionResult;
     use rehydration_domain::{
         BundleMetadata, BundleNode, BundleNodeDetail, BundleRelationship, CaseId,
-        RehydrationBundle, Role,
+        RehydrationBundle, RelationExplanation, RelationSemanticClass, Role,
     };
 
     use super::proto_rehydrate_session_response;
@@ -118,7 +118,7 @@ mod tests {
                 "decision-1",
                 "task-1",
                 "IMPACTS",
-                BTreeMap::new(),
+                RelationExplanation::new(RelationSemanticClass::Causal),
             )],
             vec![BundleNodeDetail::new(
                 "case-123",

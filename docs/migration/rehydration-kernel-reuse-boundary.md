@@ -36,7 +36,7 @@ boundary unchanged.
 
 | Area | Why |
 | --- | --- |
-| `api/proto/underpass/rehydration/kernel/v1alpha1/*` | wrong package and service surface for the external contract |
+| `api/proto/underpass/rehydration/kernel/v1beta1/*` and `api/proto/underpass/rehydration/kernel/v1alpha1/*` | kernel transport packages are useful internally, but they are not the external Context Service contract |
 | `crates/rehydration-transport-grpc` | transport plumbing is useful, but the public service and message shapes diverge |
 | `api/asyncapi/context-projection.v1alpha1.yaml` | useful for internal projection eventing, not for the external Context Service subjects |
 | graph-native bundle responses | good internal output, wrong external response contract |
@@ -46,7 +46,8 @@ boundary unchanged.
 The migration must not treat any of the following as the external source of
 truth:
 
-- `underpass.rehydration.kernel.v1alpha1`
+- canonical `underpass.rehydration.kernel.v1beta1`
+- transitional `underpass.rehydration.kernel.v1alpha1`
 - `root_node_id` as a public replacement for `story_id` or `case_id`
 - current internal NATS subjects:
   - `graph.node.materialized`

@@ -1,0 +1,43 @@
+use std::error::Error;
+
+use rehydration_proto::v1beta1::{BundleRenderFormat, GetContextRequest, Phase};
+
+use crate::support::kernel_golden_contract::{
+    expected_get_context_response, normalize_get_context_response,
+};
+use crate::support::seed_data::{DEVELOPER_ROLE, ROOT_NODE_ID};
+use crate::support::seeded_kernel_fixture::SeededKernelFixture;
+
+#[tokio::test]
+async fn grpc_get_context_matches_v1beta1_golden_contract()
+-> Result<(), Box<dyn Error + Send + Sync>> {
+    let mut fixture = SeededKernelFixture::start().await?;
+
+    let result = async {
+        let response = fixture
+            .query_client()
+            .get_context(GetContextRequest {
+                root_node_id: ROOT_NODE_ID.to_string(),
+                role: DEVELOPER_ROLE.to_string(),
+                phase: Phase::Build as i32,
+                work_item_id: String::new(),
+                token_budget: 2048,
+                requested_scopes: vec!["graph".to_string()],
+                render_format: BundleRenderFormat::Structured as i32,
+                include_debug_sections: false,
+                depth: 0,
+            })
+            .await?
+            .into_inner();
+
+        assert_eq!(
+            normalize_get_context_response(response),
+            expected_get_context_response()
+        );
+        Ok::<(), Box<dyn Error + Send + Sync>>(())
+    }
+    .await;
+
+    fixture.shutdown().await?;
+    result
+}

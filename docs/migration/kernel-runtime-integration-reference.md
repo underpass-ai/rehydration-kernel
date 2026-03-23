@@ -10,7 +10,8 @@ uses `rehydration-kernel` as its context engine.
 
 This is not a kernel-owned transport contract in the same sense as:
 
-- `underpass.rehydration.kernel.v1alpha1`
+- `underpass.rehydration.kernel.v1beta1`
+- transitional `underpass.rehydration.kernel.v1alpha1`
 - `graph.node.materialized`
 - `node.detail.materialized`
 - `context.bundle.generated`

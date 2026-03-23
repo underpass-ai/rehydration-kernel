@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use neo4rs::Graph;
+use rehydration_domain::RelationExplanation;
 use rehydration_ports::{
     ContextPathNeighborhood, GraphNeighborhoodReader, NodeNeighborhood, NodeProjection,
     NodeRelationProjection, PortError,
@@ -8,7 +9,7 @@ use rehydration_ports::{
 
 use super::projection_store::Neo4jProjectionStore;
 use super::queries::{load_context_path_query, load_neighborhood_query, load_root_node_query};
-use super::row_mapping::{node_projection_from_row, row_string, row_string_vec};
+use super::row_mapping::{node_projection_from_row, row_properties, row_string, row_string_vec};
 
 impl Neo4jProjectionStore {
     async fn load_root_node(
@@ -93,6 +94,16 @@ impl GraphNeighborhoodReader for Neo4jProjectionStore {
 
             let source_node_id = row_string(&row, "source_node_id", "neighbor relation")?;
             let target_node_id = row_string(&row, "target_node_id", "neighbor relation")?;
+            let explanation = RelationExplanation::from_properties(&row_properties(
+                &row,
+                "relation_properties_json",
+                "neighbor relation",
+            )?)
+            .map_err(|error| {
+                PortError::InvalidState(format!(
+                    "neo4j neighbor relation explanation could not be decoded: {error}"
+                ))
+            })?;
             let relation_key = (
                 source_node_id.clone(),
                 target_node_id.clone(),
@@ -104,6 +115,7 @@ impl GraphNeighborhoodReader for Neo4jProjectionStore {
                     source_node_id,
                     target_node_id,
                     relation_type,
+                    explanation,
                 });
             }
         }
@@ -153,6 +165,16 @@ impl GraphNeighborhoodReader for Neo4jProjectionStore {
 
             let source_node_id = row_string(&row, "source_node_id", "context path relation")?;
             let target_node_id = row_string(&row, "target_node_id", "context path relation")?;
+            let explanation = RelationExplanation::from_properties(&row_properties(
+                &row,
+                "relation_properties_json",
+                "context path relation",
+            )?)
+            .map_err(|error| {
+                PortError::InvalidState(format!(
+                    "neo4j context path relation explanation could not be decoded: {error}"
+                ))
+            })?;
             let relation_key = (
                 source_node_id.clone(),
                 target_node_id.clone(),
@@ -164,6 +186,7 @@ impl GraphNeighborhoodReader for Neo4jProjectionStore {
                     source_node_id,
                     target_node_id,
                     relation_type,
+                    explanation,
                 });
             }
         }

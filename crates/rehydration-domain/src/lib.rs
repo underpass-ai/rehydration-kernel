@@ -17,12 +17,16 @@ pub use repositories::{
     ProjectionCheckpointStore, ProjectionWriter, SnapshotSaveOptions, SnapshotStore,
 };
 pub use value_objects::{BundleMetadata, CaseId, Role};
+pub use value_objects::{RelationExplanation, RelationSemanticClass};
 
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
 
-    use super::{BundleMetadata, BundleNode, CaseId, DomainError, RehydrationBundle, Role};
+    use super::{
+        BundleMetadata, BundleNode, CaseId, DomainError, RehydrationBundle, RelationExplanation,
+        RelationSemanticClass, Role,
+    };
 
     #[test]
     fn case_id_requires_a_value() {
@@ -78,7 +82,7 @@ mod tests {
                 "case-123",
                 "node-missing",
                 "RELATES_TO",
-                BTreeMap::new(),
+                RelationExplanation::new(RelationSemanticClass::Structural),
             )],
             Vec::new(),
             BundleMetadata::initial("0.1.0"),

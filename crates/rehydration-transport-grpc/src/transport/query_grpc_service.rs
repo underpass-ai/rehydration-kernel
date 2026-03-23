@@ -12,7 +12,7 @@ use rehydration_proto::v1alpha1::{
 };
 use tonic::{Request, Response, Status};
 
-use crate::transport::proto_mapping::{
+use crate::transport::proto_mapping_v1alpha1::{
     proto_bundle_from_single_role, proto_graph_node, proto_node_detail_view,
     proto_rehydrate_session_response, proto_rendered_context, proto_rendered_context_from_result,
     proto_scope_validation,

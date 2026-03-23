@@ -10,7 +10,7 @@ use rehydration_application::{ProjectionApplicationService, RoutingProjectionWri
 use rehydration_config::{GrpcTlsConfig, GrpcTlsMode};
 use rehydration_domain::ProjectionWriter;
 use rehydration_proto::fleet_context_v1::context_service_client::ContextServiceClient;
-use rehydration_proto::v1alpha1::{
+use rehydration_proto::v1beta1::{
     BundleRenderFormat, GetContextRequest, Phase,
     context_admin_service_client::ContextAdminServiceClient,
     context_command_service_client::ContextCommandServiceClient,

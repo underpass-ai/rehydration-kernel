@@ -1,4 +1,4 @@
-use rehydration_proto::v1alpha1::{BundleRenderFormat, Phase};
+use rehydration_proto::v1beta1::{BundleRenderFormat, Phase};
 
 pub const SUMMARY_PATH: &str = "context-summary.md";
 

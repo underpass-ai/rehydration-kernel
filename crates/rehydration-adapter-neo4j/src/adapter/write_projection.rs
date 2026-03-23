@@ -25,7 +25,7 @@ impl Neo4jProjectionStore {
     ) -> Result<(), PortError> {
         self.run_query(
             graph,
-            upsert_relation_projection_query(relation),
+            upsert_relation_projection_query(relation)?,
             &format!(
                 "apply relation projection for `{} -> {}`",
                 relation.source_node_id, relation.target_node_id

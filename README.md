@@ -87,6 +87,33 @@ They are useful for adopters, but they do not redefine the kernel domain.
 - `scripts/ci`: local quality and integration gates
 - `docs/migration`: closeout, handoff, and integration strategy docs
 
+## Paper Artifact
+
+The repository also contains an artifact-backed paper draft on explanatory
+graph context rehydration for agentic systems.
+
+Current paper materials:
+
+- submission draft:
+  [`docs/PAPER_SUBMISSION_DRAFT.md`](./docs/PAPER_SUBMISSION_DRAFT.md)
+- ACL package index:
+  [`docs/paper/README.md`](./docs/paper/README.md)
+- ACL review PDF:
+  [`docs/paper/acl/main.pdf`](./docs/paper/acl/main.pdf)
+- ACL preprint PDF:
+  [`docs/paper/acl/main-preprint.pdf`](./docs/paper/acl/main-preprint.pdf)
+- paper-use-case artifact summary:
+  [`artifacts/paper-use-cases/summary.json`](./artifacts/paper-use-cases/summary.json)
+- paper-use-case rendered report:
+  [`artifacts/paper-use-cases/results.md`](./artifacts/paper-use-cases/results.md)
+
+The current manuscript evaluates four use cases:
+
+- failure diagnosis with rehydration-point recovery
+- why a task was implemented in a particular way
+- interrupted handoff with resumable execution
+- constraint-preserving retrieval under token pressure
+
 ## Quickstart
 
 Toolchain:

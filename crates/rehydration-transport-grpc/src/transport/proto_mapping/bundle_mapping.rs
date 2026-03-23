@@ -5,7 +5,7 @@ use rehydration_proto::v1alpha1::{
     RehydrationBundle as ProtoRehydrationBundle, RehydrationStats,
 };
 
-use crate::transport::proto_mapping::{
+use crate::transport::proto_mapping_v1alpha1::{
     proto_bundle_node, proto_bundle_node_detail, proto_bundle_relationship, proto_bundle_version,
 };
 use crate::transport::support::{proto_duration, timestamp_from};

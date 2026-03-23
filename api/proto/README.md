@@ -1,7 +1,7 @@
 # Proto Contracts
 
 The Rehydration Kernel contracts live under
-`api/proto/underpass/rehydration/kernel/v1alpha1`.
+`api/proto/underpass/rehydration/kernel`.
 
 Current public surface:
 
@@ -11,9 +11,14 @@ Current public surface:
 
 Primary generic contract:
 
-- package: `underpass.rehydration.kernel.v1alpha1`
+- package: `underpass.rehydration.kernel.v1beta1`
 - anchor identifier: `root_node_id`
 - graph-native nouns only: `node`, `relationship`, `detail`
+
+Transitional compatibility contract:
+
+- package: `underpass.rehydration.kernel.v1alpha1`
+- kept while downstream clients move to `v1beta1`
 
 Compatibility note:
 
@@ -24,6 +29,7 @@ Compatibility note:
 Reference:
 
 - [`docs/migration/kernel-node-centric-integration-contract.md`](/home/tirso/ai/developents/rehydration-kernel/docs/migration/kernel-node-centric-integration-contract.md)
+- [`api/examples/kernel/v1beta1/grpc`](/home/tirso/ai/developents/rehydration-kernel/api/examples/kernel/v1beta1/grpc)
 - [`api/examples/kernel/v1alpha1/grpc`](/home/tirso/ai/developents/rehydration-kernel/api/examples/kernel/v1alpha1/grpc)
 
 Validation entrypoints:

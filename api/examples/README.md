@@ -3,10 +3,12 @@
 These fixtures are the canonical examples for the generic kernel-owned
 integration boundary.
 
-They are split by transport:
+They are split by transport and version:
 
+- `kernel/v1beta1/grpc`: ProtoJSON examples for the canonical
+  `underpass.rehydration.kernel.v1beta1` gRPC contract
 - `kernel/v1alpha1/grpc`: ProtoJSON examples for the
-  `underpass.rehydration.kernel.v1alpha1` gRPC contract
+  `underpass.rehydration.kernel.v1alpha1` gRPC contract kept during transition
 - `kernel/v1alpha1/async`: JSON examples for the generic AsyncAPI subjects
 - `runtime-reference/v1`: consumer-side runtime examples used by the agentic
   integration reference

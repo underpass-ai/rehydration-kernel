@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use neo4rs::{Graph, query};
 use rehydration_adapter_neo4j::Neo4jProjectionReader;
+use rehydration_domain::{RelationExplanation, RelationSemanticClass};
 use rehydration_ports::{
     GraphNeighborhoodReader, NodeProjection, NodeRelationProjection, ProjectionMutation,
     ProjectionWriter,
@@ -80,16 +81,22 @@ async fn load_neighborhood_respects_directed_depth() -> Result<(), Box<dyn Error
                     source_node_id: "node-root".to_string(),
                     target_node_id: "decision-1".to_string(),
                     relation_type: "records".to_string(),
+                    explanation: RelationExplanation::new(RelationSemanticClass::Structural)
+                        .with_sequence(1),
                 }),
                 ProjectionMutation::UpsertNodeRelation(NodeRelationProjection {
                     source_node_id: "decision-1".to_string(),
                     target_node_id: "task-1".to_string(),
                     relation_type: "informs".to_string(),
+                    explanation: RelationExplanation::new(RelationSemanticClass::Motivational)
+                        .with_sequence(2)
+                        .with_rationale("the task implements the accepted decision"),
                 }),
                 ProjectionMutation::UpsertNodeRelation(NodeRelationProjection {
                     source_node_id: "blocker-1".to_string(),
                     target_node_id: "node-root".to_string(),
                     relation_type: "blocks".to_string(),
+                    explanation: RelationExplanation::new(RelationSemanticClass::Constraint),
                 }),
             ])
             .await?;
@@ -148,6 +155,8 @@ async fn load_neighborhood_respects_directed_depth() -> Result<(), Box<dyn Error
             relation.source_node_id == "decision-1"
                 && relation.target_node_id == "task-1"
                 && relation.relation_type == "informs"
+                && relation.explanation.rationale()
+                    == Some("the task implements the accepted decision")
         }));
         assert!(deep_neighborhood.relations.iter().all(|relation| {
             !(relation.source_node_id == "blocker-1"
@@ -188,6 +197,8 @@ async fn apply_mutations_persists_generic_nodes_and_relations()
                     source_node_id: "node-123".to_string(),
                     target_node_id: "node-122".to_string(),
                     relation_type: "depends_on".to_string(),
+                    explanation: RelationExplanation::new(RelationSemanticClass::Constraint)
+                        .with_rationale("the capability relies on an upstream dependency"),
                 }),
             ])
             .await?;
@@ -213,7 +224,8 @@ RETURN node.node_kind AS node_kind,
             query(
                 "
 MATCH (:ProjectionNode {node_id: $source_node_id})-[edge:RELATED_TO {relation_type: $relation_type}]->(:ProjectionNode {node_id: $target_node_id})
-RETURN count(edge) AS edge_count
+RETURN count(edge) AS edge_count,
+       edge.properties_json AS properties_json
                 ",
             )
             .param("source_node_id", "node-123")
@@ -228,6 +240,7 @@ RETURN count(edge) AS edge_count
         let node_labels: Vec<String> = node_row.get("node_labels")?;
         let properties_json: String = node_row.get("properties_json")?;
         let edge_count: i64 = relation_row.get("edge_count")?;
+        let edge_properties_json: String = relation_row.get("properties_json")?;
 
         assert_eq!(node_kind, "capability");
         assert_eq!(title, "Projection consumer foundation");
@@ -238,6 +251,8 @@ RETURN count(edge) AS edge_count
         );
         assert!(properties_json.contains("\"phase\":\"build\""));
         assert_eq!(edge_count, 1);
+        assert!(edge_properties_json.contains("\"semantic_class\":\"constraint\""));
+        assert!(edge_properties_json.contains("\"rationale\":\"the capability relies on an upstream dependency\""));
 
         Ok(())
     })
@@ -308,21 +323,28 @@ async fn load_context_path_returns_shortest_path_and_target_subtree()
                     source_node_id: "node-root".to_string(),
                     target_node_id: "story-1".to_string(),
                     relation_type: "HAS_STORY".to_string(),
+                    explanation: RelationExplanation::new(RelationSemanticClass::Structural)
+                        .with_sequence(1),
                 }),
                 ProjectionMutation::UpsertNodeRelation(NodeRelationProjection {
                     source_node_id: "story-1".to_string(),
                     target_node_id: "task-1".to_string(),
                     relation_type: "HAS_TASK".to_string(),
+                    explanation: RelationExplanation::new(RelationSemanticClass::Structural)
+                        .with_sequence(2),
                 }),
                 ProjectionMutation::UpsertNodeRelation(NodeRelationProjection {
                     source_node_id: "task-1".to_string(),
                     target_node_id: "artifact-1".to_string(),
                     relation_type: "HAS_ARTIFACT".to_string(),
+                    explanation: RelationExplanation::new(RelationSemanticClass::Structural)
+                        .with_sequence(3),
                 }),
                 ProjectionMutation::UpsertNodeRelation(NodeRelationProjection {
                     source_node_id: "node-root".to_string(),
                     target_node_id: "detour-1".to_string(),
                     relation_type: "HAS_STORY".to_string(),
+                    explanation: RelationExplanation::new(RelationSemanticClass::Structural),
                 }),
             ])
             .await?;

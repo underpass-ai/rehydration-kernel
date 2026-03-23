@@ -40,7 +40,9 @@ Delivered:
 
 Implemented as planned.
 
-- explorer reads use `underpass.rehydration.kernel.v1alpha1`
+- explorer reads use the kernel-native package, now canonically
+  `underpass.rehydration.kernel.v1beta1` with `v1alpha1` kept during
+  transition
 - compatibility `fleet.context.v1` remains unchanged
 - compatibility `GetGraphRelationships.depth` still clamps to `1..3`
 
@@ -93,7 +95,7 @@ Delivered:
 
 Primary files:
 
-- [`api/proto/underpass/rehydration/kernel/v1alpha1/query.proto`](../api/proto/underpass/rehydration/kernel/v1alpha1/query.proto)
+- [`api/proto/underpass/rehydration/kernel/v1beta1/query.proto`](../api/proto/underpass/rehydration/kernel/v1beta1/query.proto)
 - [`crates/rehydration-transport-grpc/src/transport/query_grpc_service.rs`](../crates/rehydration-transport-grpc/src/transport/query_grpc_service.rs)
 - [`crates/rehydration-transport-grpc/src/transport/tests.rs`](../crates/rehydration-transport-grpc/src/transport/tests.rs)
 
@@ -109,7 +111,7 @@ Delivered:
 
 Primary files:
 
-- [`api/proto/underpass/rehydration/kernel/v1alpha1/query.proto`](../api/proto/underpass/rehydration/kernel/v1alpha1/query.proto)
+- [`api/proto/underpass/rehydration/kernel/v1beta1/query.proto`](../api/proto/underpass/rehydration/kernel/v1beta1/query.proto)
 - [`crates/rehydration-application/src/queries/get_node_detail.rs`](../crates/rehydration-application/src/queries/get_node_detail.rs)
 - [`crates/rehydration-transport-grpc/src/transport/query_grpc_service.rs`](../crates/rehydration-transport-grpc/src/transport/query_grpc_service.rs)
 - [`crates/rehydration-transport-grpc/src/transport/tests.rs`](../crates/rehydration-transport-grpc/src/transport/tests.rs)

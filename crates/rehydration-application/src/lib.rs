@@ -14,7 +14,7 @@ pub use projection::{
     GraphNodeMaterializedData, GraphNodeMaterializedEvent, NodeDetailMaterializedData,
     NodeDetailMaterializedEvent, ProjectionApplicationService, ProjectionEnvelope, ProjectionEvent,
     ProjectionEventHandler, ProjectionHandlingRequest, ProjectionHandlingResult,
-    RelatedNodeReference, RoutingProjectionWriter,
+    RelatedNodeExplanationData, RelatedNodeReference, RoutingProjectionWriter,
 };
 pub use queries::{
     AdminQueryApplicationService, BundleAssembler, BundleSnapshotResult, ContextRenderOptions,

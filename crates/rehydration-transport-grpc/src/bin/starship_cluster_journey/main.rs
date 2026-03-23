@@ -12,7 +12,7 @@ use rehydration_proto::fleet_context_v1::{
     GetContextRequest as CompatibilityGetContextRequest,
     context_service_client::ContextServiceClient,
 };
-use rehydration_proto::v1alpha1::{
+use rehydration_proto::v1beta1::{
     BundleRenderFormat, GetBundleSnapshotRequest, GetContextRequest, GetGraphRelationshipsRequest,
     GetNodeDetailRequest, GetProjectionStatusRequest, GetRehydrationDiagnosticsRequest, Phase,
     RehydrateSessionRequest, context_admin_service_client::ContextAdminServiceClient,

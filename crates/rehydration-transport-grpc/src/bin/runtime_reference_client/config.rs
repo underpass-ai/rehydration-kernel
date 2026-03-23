@@ -1,7 +1,7 @@
 use std::env;
 use std::io;
 
-use rehydration_proto::v1alpha1::{BundleRenderFormat, Phase};
+use rehydration_proto::v1beta1::{BundleRenderFormat, Phase};
 use rehydration_transport_grpc::agentic_reference::{AgentRequest, SUMMARY_PATH};
 
 #[derive(Debug)]

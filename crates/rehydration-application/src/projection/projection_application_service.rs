@@ -44,13 +44,26 @@ where
                     labels: event.data.labels.clone(),
                     properties: event.data.properties.clone(),
                 })];
-                mutations.extend(event.data.related_nodes.iter().map(|reference| {
-                    ProjectionMutation::UpsertNodeRelation(NodeRelationProjection {
+                mutations.extend(
+                    event
+                        .data
+                        .related_nodes
+                        .iter()
+                        .map(|reference| {
+                            Ok(ProjectionMutation::UpsertNodeRelation(NodeRelationProjection {
                         source_node_id: event.data.node_id.clone(),
                         target_node_id: reference.node_id.clone(),
                         relation_type: reference.relation_type.clone(),
-                    })
-                }));
+                        explanation: reference.explanation.clone().try_into().map_err(|error| {
+                            PortError::InvalidState(format!(
+                                "invalid related node explanation for `{}` -> `{}`: {error}",
+                                event.data.node_id, reference.node_id
+                            ))
+                        })?,
+                    }))
+                        })
+                        .collect::<Result<Vec<_>, PortError>>()?,
+                );
                 mutations
             }
             ProjectionEvent::NodeDetailMaterialized(event) => {

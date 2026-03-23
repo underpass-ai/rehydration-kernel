@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use rehydration_domain::{GraphNeighborhoodReader, NodeNeighborhood};
+use rehydration_domain::{GraphNeighborhoodReader, NodeNeighborhood, RelationExplanation};
 
 use crate::ApplicationError;
 use crate::queries::AdminQueryApplicationService;
@@ -31,7 +31,7 @@ pub struct GraphRelationshipView {
     pub source_node_id: String,
     pub target_node_id: String,
     pub relationship_type: String,
-    pub properties: BTreeMap<String, String>,
+    pub explanation: RelationExplanation,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -80,7 +80,7 @@ where
                     source_node_id: relation.source_node_id.clone(),
                     target_node_id: relation.target_node_id.clone(),
                     relationship_type: relation.relation_type.clone(),
-                    properties: BTreeMap::new(),
+                    explanation: relation.explanation.clone(),
                 })
                 .collect(),
             observed_at: std::time::SystemTime::now(),
@@ -144,7 +144,7 @@ mod tests {
 
     use rehydration_domain::{
         ContextPathNeighborhood, NodeNeighborhood, NodeProjection, NodeRelationProjection,
-        PortError,
+        PortError, RelationExplanation, RelationSemanticClass,
     };
     use tokio::sync::Mutex;
 
@@ -204,6 +204,8 @@ mod tests {
                     source_node_id: root_node_id.to_string(),
                     target_node_id: "neighbor-1".to_string(),
                     relation_type: "RELATES_TO".to_string(),
+                    explanation: RelationExplanation::new(RelationSemanticClass::Motivational)
+                        .with_rationale("neighbor-1 is the next actionable item"),
                 }],
             }))
         }
@@ -258,6 +260,10 @@ mod tests {
         assert_eq!(result.neighbors.len(), 1);
         assert_eq!(result.relationships.len(), 1);
         assert_eq!(result.relationships[0].target_node_id, "neighbor-1");
+        assert_eq!(
+            result.relationships[0].explanation.rationale(),
+            Some("neighbor-1 is the next actionable item")
+        );
     }
 
     struct RecordingGraphReader {

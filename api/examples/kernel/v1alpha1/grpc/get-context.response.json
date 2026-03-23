@@ -41,7 +41,9 @@
             "targetNodeId": "node:task:retry-handler",
             "relationshipType": "contains",
             "properties": {
-              "weight": "primary"
+              "semantic_class": "structural",
+              "rationale": "the retry handler is the primary work item inside this workspace",
+              "sequence": "1"
             }
           }
         ],

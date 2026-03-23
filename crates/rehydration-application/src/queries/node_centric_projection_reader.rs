@@ -190,7 +190,7 @@ mod tests {
 
     use rehydration_domain::{
         ContextPathNeighborhood, NodeDetailProjection, NodeNeighborhood, NodeProjection,
-        NodeRelationProjection, PortError,
+        NodeRelationProjection, PortError, RelationExplanation, RelationSemanticClass,
     };
     use tokio::sync::Mutex;
 
@@ -228,6 +228,7 @@ mod tests {
                     source_node_id: "node-root".to_string(),
                     target_node_id: "node-1".to_string(),
                     relation_type: "RELATES_TO".to_string(),
+                    explanation: structural_explanation(),
                 }],
             }))
         }
@@ -275,11 +276,13 @@ mod tests {
                                 source_node_id: "node-root".to_string(),
                                 target_node_id: "node-1".to_string(),
                                 relation_type: "RELATES_TO".to_string(),
+                                explanation: structural_explanation(),
                             },
                             NodeRelationProjection {
                                 source_node_id: "node-1".to_string(),
                                 target_node_id: "node-2".to_string(),
                                 relation_type: "HAS_ARTIFACT".to_string(),
+                                explanation: structural_explanation(),
                             },
                         ],
                         path_node_ids: vec!["node-root".to_string(), "node-1".to_string()],
@@ -387,5 +390,9 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["node-root"]
         );
+    }
+
+    fn structural_explanation() -> RelationExplanation {
+        RelationExplanation::new(RelationSemanticClass::Structural)
     }
 }

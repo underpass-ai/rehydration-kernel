@@ -36,8 +36,12 @@ pub(crate) fn expected_focused_get_context_response() -> GetContextResponse {
         format!("Node {ROOT_TITLE} ({ROOT_NODE_KIND}): {ROOT_SUMMARY}"),
         format!("Node {TASK_TITLE} ({TASK_KIND}): {TASK_SUMMARY}"),
         format!("Node {DECISION_TITLE} ({DECISION_KIND}): {DECISION_SUMMARY}"),
-        format!("Relationship {ROOT_NODE_ID} --{HAS_TASK_RELATION}--> {TASK_ID}"),
-        format!("Relationship {ROOT_NODE_ID} --{RECORDS_RELATION}--> {DECISION_ID}"),
+        format!(
+            "Relationship {ROOT_NODE_ID} --{HAS_TASK_RELATION}--> {TASK_ID} [motivational] because the task operationalizes the selected compatibility approach step=2"
+        ),
+        format!(
+            "Relationship {ROOT_NODE_ID} --{RECORDS_RELATION}--> {DECISION_ID} [structural] step=1"
+        ),
         format!("Detail {ROOT_NODE_ID} [rev {ROOT_DETAIL_REVISION}]: {ROOT_DETAIL}"),
         format!("Detail {DECISION_ID} [rev 3]: {DECISION_DETAIL}"),
     ]
@@ -205,13 +209,23 @@ pub(crate) fn expected_get_graph_relationships_response() -> GetGraphRelationshi
                 from_node_id: ROOT_NODE_ID.to_string(),
                 to_node_id: DECISION_ID.to_string(),
                 r#type: RECORDS_RELATION.to_string(),
-                properties: HashMap::new(),
+                properties: HashMap::from([
+                    ("semantic_class".to_string(), "structural".to_string()),
+                    ("sequence".to_string(), "1".to_string()),
+                ]),
             },
             GraphRelationship {
                 from_node_id: ROOT_NODE_ID.to_string(),
                 to_node_id: TASK_ID.to_string(),
                 r#type: HAS_TASK_RELATION.to_string(),
-                properties: HashMap::new(),
+                properties: HashMap::from([
+                    ("semantic_class".to_string(), "motivational".to_string()),
+                    (
+                        "rationale".to_string(),
+                        "the task operationalizes the selected compatibility approach".to_string(),
+                    ),
+                    ("sequence".to_string(), "2".to_string()),
+                ]),
             },
         ],
         success: true,
@@ -224,8 +238,12 @@ fn expected_rendered_context() -> String {
         format!("Node {ROOT_TITLE} ({ROOT_NODE_KIND}): {ROOT_SUMMARY}"),
         format!("Node {DECISION_TITLE} ({DECISION_KIND}): {DECISION_SUMMARY}"),
         format!("Node {TASK_TITLE} ({TASK_KIND}): {TASK_SUMMARY}"),
-        format!("Relationship {ROOT_NODE_ID} --{RECORDS_RELATION}--> {DECISION_ID}"),
-        format!("Relationship {ROOT_NODE_ID} --{HAS_TASK_RELATION}--> {TASK_ID}"),
+        format!(
+            "Relationship {ROOT_NODE_ID} --{RECORDS_RELATION}--> {DECISION_ID} [structural] step=1"
+        ),
+        format!(
+            "Relationship {ROOT_NODE_ID} --{HAS_TASK_RELATION}--> {TASK_ID} [motivational] because the task operationalizes the selected compatibility approach step=2"
+        ),
         format!("Detail {ROOT_NODE_ID} [rev {ROOT_DETAIL_REVISION}]: {ROOT_DETAIL}"),
         format!("Detail {DECISION_ID} [rev 3]: {DECISION_DETAIL}"),
     ]
