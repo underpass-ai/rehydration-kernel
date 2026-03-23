@@ -30,10 +30,11 @@ Status of each RPC in the `v1beta1` contract surface.
 
 ## Known Limitations
 
-- Token counting uses `ceil(chars / 4)` approximation, not model-aware tokenization.
+- Token counting uses `cl100k_base` BPE tokenizer (via `tiktoken-rs`).
 - `RehydrateSession` does not implement timeline or summary filtering.
 - Scope validation has no authorization backend; `GetContext` omits it entirely
   and `ValidateScope` operates as a standalone set-comparison utility.
-- The context event store adapter uses Valkey; planned migration to NATS JetStream.
+- Context event store has adapters for Valkey and NATS JetStream.
 - HTTP admin surface has been removed. The gRPC `ContextAdminService` is the
   only admin interface.
+- OpenTelemetry traces exported via OTLP when `OTEL_EXPORTER_OTLP_ENDPOINT` is set.

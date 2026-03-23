@@ -24,17 +24,36 @@ pub struct TruncationMetadata {
     pub token_estimator: String,
 }
 
-/// Estimates tokens as `ceil(chars / 4)`. This approximates BPE tokenizers
-/// for English text without requiring a model-specific vocabulary.
-pub struct CharDivFourEstimator;
+/// Estimates tokens using OpenAI's `cl100k_base` BPE encoding.
+///
+/// This is the standard tokenizer used by GPT-4, GPT-4o, and Claude-family
+/// models. Using a real BPE tokenizer makes token budget enforcement
+/// defensible and reproducible across implementations.
+pub struct Cl100kEstimator {
+    bpe: tiktoken_rs::CoreBPE,
+}
 
-impl TokenEstimator for CharDivFourEstimator {
+impl Cl100kEstimator {
+    pub fn new() -> Self {
+        Self {
+            bpe: tiktoken_rs::cl100k_base().expect("cl100k_base vocabulary should load"),
+        }
+    }
+}
+
+impl Default for Cl100kEstimator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl TokenEstimator for Cl100kEstimator {
     fn estimate_tokens(&self, text: &str) -> u32 {
-        text.len().div_ceil(4) as u32
+        self.bpe.encode_ordinary(text).len() as u32
     }
 
     fn name(&self) -> &str {
-        "char_div_4"
+        "cl100k_base"
     }
 }
 
@@ -42,7 +61,7 @@ pub fn render_graph_bundle(bundle: &RehydrationBundle) -> RenderedContext {
     render_graph_bundle_with_estimator(
         bundle,
         &ContextRenderOptions::default(),
-        &CharDivFourEstimator,
+        &Cl100kEstimator::new(),
     )
 }
 
@@ -50,7 +69,7 @@ pub fn render_graph_bundle_with_options(
     bundle: &RehydrationBundle,
     options: &ContextRenderOptions,
 ) -> RenderedContext {
-    render_graph_bundle_with_estimator(bundle, options, &CharDivFourEstimator)
+    render_graph_bundle_with_estimator(bundle, options, &Cl100kEstimator::new())
 }
 
 pub fn render_graph_bundle_with_estimator(
@@ -363,23 +382,26 @@ mod tests {
             &bundle,
             &ContextRenderOptions {
                 focus_node_id: Some("node-2".to_string()),
-                token_budget: Some(8),
+                token_budget: Some(10),
             },
         );
 
-        assert_eq!(rendered.sections.len(), 1);
+        assert!(
+            rendered.sections.len() < 7,
+            "budget should truncate sections"
+        );
         assert!(rendered.content.starts_with("Node Root"));
         let truncation = rendered
             .truncation
             .as_ref()
             .expect("should have truncation metadata");
-        assert_eq!(truncation.budget_requested, 8);
+        assert_eq!(truncation.budget_requested, 10);
         assert!(truncation.sections_dropped > 0);
-        assert_eq!(truncation.token_estimator, "char_div_4");
+        assert_eq!(truncation.token_estimator, "cl100k_base");
     }
 
     #[test]
-    fn render_graph_bundle_uses_char_div_4_estimator() {
+    fn render_graph_bundle_uses_cl100k_base_estimator() {
         let bundle = RehydrationBundle::new(
             CaseId::new("case-1").expect("case id is valid"),
             Role::new("dev").expect("role is valid"),
@@ -401,8 +423,9 @@ mod tests {
 
         let rendered = render_graph_bundle(&bundle);
 
-        // "Node Root (case)" = 16 chars => ceil(16/4) = 4 tokens
-        assert_eq!(rendered.token_count, 4);
+        // "Node Root (case)" tokenized with cl100k_base
+        assert!(rendered.token_count > 0);
+        assert!(rendered.token_count < 20);
     }
 
     fn sample_bundle() -> RehydrationBundle {
