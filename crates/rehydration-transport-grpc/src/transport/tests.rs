@@ -26,7 +26,7 @@ use rehydration_proto::fleet_context_v1::{
     ValidateScopeRequest as CompatibilityValidateScopeRequest,
     context_service_server::ContextService,
 };
-use rehydration_proto::v1alpha1::{
+use rehydration_proto::v1beta1::{
     BundleRenderFormat, ContextChange, ContextChangeOperation, GetBundleSnapshotRequest,
     GetContextPathRequest, GetContextRequest, GetNodeDetailRequest, GetProjectionStatusRequest,
     GetRehydrationDiagnosticsRequest, Phase, UpdateContextRequest, ValidateScopeRequest,
@@ -37,21 +37,22 @@ use rehydration_proto::v1alpha1::{
 use tokio::sync::Mutex;
 use tonic::Request;
 
-use super::admin_grpc_service::AdminGrpcService;
-use super::command_grpc_service::CommandGrpcService;
+use super::admin_grpc_service_v1beta1::AdminGrpcServiceV1Beta1;
+use super::command_grpc_service_v1beta1::CommandGrpcServiceV1Beta1;
 use super::context_service_compatibility::ContextCompatibilityGrpcService;
 use super::grpc_server::GrpcServer;
-use super::proto_mapping::{
-    proto_accepted_version, proto_bundle_from_single_role, proto_bundle_node,
-    proto_bundle_node_detail, proto_bundle_relationship, proto_bundle_snapshot_response,
-    proto_bundle_version, proto_diagnostic, proto_graph_node, proto_graph_relationship,
-    proto_graph_relationships_response, proto_projection_status, proto_projection_status_response,
-    proto_rehydrate_session_response, proto_rehydration_diagnostics_response,
-    proto_replay_projection_response,
+use super::proto_mapping_v1beta1::{
+    proto_accepted_version_v1beta1, proto_bundle_from_single_role_v1beta1,
+    proto_bundle_node_detail_v1beta1, proto_bundle_node_v1beta1, proto_bundle_relationship_v1beta1,
+    proto_bundle_snapshot_response_v1beta1, proto_graph_node_v1beta1,
+    proto_graph_relationships_response_v1beta1, proto_projection_status_response_v1beta1,
+    proto_rehydrate_session_response_v1beta1, proto_rehydration_diagnostics_response_v1beta1,
+    proto_replay_projection_response_v1beta1,
 };
-use super::query_grpc_service::QueryGrpcService;
+use super::query_grpc_service_v1beta1::QueryGrpcServiceV1Beta1;
 use super::support::{
-    map_application_error, map_replay_mode, proto_duration, proto_replay_mode, trim_to_option,
+    map_application_error, map_replay_mode_v1beta1, proto_duration, proto_replay_mode_v1beta1,
+    trim_to_option,
 };
 
 struct EmptyGraphNeighborhoodReader;
@@ -322,7 +323,7 @@ async fn query_service_returns_rendered_context() {
         Arc::new(NoopSnapshotStore),
         "0.1.0",
     ));
-    let service = QueryGrpcService::new(application);
+    let service = QueryGrpcServiceV1Beta1::new(application);
 
     let response = service
         .get_context(Request::new(GetContextRequest {
@@ -369,7 +370,7 @@ async fn query_service_forwards_requested_depth_to_application() {
         Arc::new(NoopSnapshotStore),
         "0.1.0",
     ));
-    let service = QueryGrpcService::new(application);
+    let service = QueryGrpcServiceV1Beta1::new(application);
 
     service
         .get_context(Request::new(GetContextRequest {
@@ -397,7 +398,7 @@ async fn query_service_returns_context_path_bundle() {
         Arc::new(NoopSnapshotStore),
         "0.1.0",
     ));
-    let service = QueryGrpcService::new(application);
+    let service = QueryGrpcServiceV1Beta1::new(application);
 
     let response = service
         .get_context_path(Request::new(GetContextPathRequest {
@@ -439,7 +440,7 @@ async fn query_service_returns_node_detail_panel() {
         Arc::new(NoopSnapshotStore),
         "0.1.0",
     ));
-    let service = QueryGrpcService::new(application);
+    let service = QueryGrpcServiceV1Beta1::new(application);
 
     let response = service
         .get_node_detail(Request::new(GetNodeDetailRequest {
@@ -467,7 +468,7 @@ async fn query_service_returns_node_metadata_when_detail_is_missing() {
         Arc::new(NoopSnapshotStore),
         "0.1.0",
     ));
-    let service = QueryGrpcService::new(application);
+    let service = QueryGrpcServiceV1Beta1::new(application);
 
     let response = service
         .get_node_detail(Request::new(GetNodeDetailRequest {
@@ -492,7 +493,7 @@ async fn query_service_returns_not_found_for_missing_node_detail_target() {
         Arc::new(NoopSnapshotStore),
         "0.1.0",
     ));
-    let service = QueryGrpcService::new(application);
+    let service = QueryGrpcServiceV1Beta1::new(application);
 
     let error = service
         .get_node_detail(Request::new(GetNodeDetailRequest {
@@ -513,7 +514,7 @@ async fn query_service_validates_scope_diffs() {
         Arc::new(NoopSnapshotStore),
         "0.1.0",
     ));
-    let service = QueryGrpcService::new(application);
+    let service = QueryGrpcServiceV1Beta1::new(application);
 
     let response = service
         .validate_scope(Request::new(ValidateScopeRequest {
@@ -533,9 +534,9 @@ async fn query_service_validates_scope_diffs() {
 
 #[tokio::test]
 async fn command_service_accepts_update_context() {
-    let service = CommandGrpcService::new(Arc::new(CommandApplicationService::new(Arc::new(
-        rehydration_application::UpdateContextUseCase::new("0.1.0"),
-    ))));
+    let service = CommandGrpcServiceV1Beta1::new(Arc::new(CommandApplicationService::new(
+        Arc::new(rehydration_application::UpdateContextUseCase::new("0.1.0")),
+    )));
 
     let response = service
         .update_context(Request::new(UpdateContextRequest {
@@ -577,7 +578,8 @@ async fn admin_service_returns_snapshot_and_status() {
         Arc::new(EmptyNodeDetailReader),
         "0.1.0",
     ));
-    let service = AdminGrpcService::new(application, Arc::new(AdminCommandApplicationService));
+    let service =
+        AdminGrpcServiceV1Beta1::new(application, Arc::new(AdminCommandApplicationService));
 
     let status = service
         .get_projection_status(Request::new(GetProjectionStatusRequest {
@@ -610,7 +612,8 @@ async fn admin_service_returns_diagnostics_per_role() {
         Arc::new(EmptyNodeDetailReader),
         "0.1.0",
     ));
-    let service = AdminGrpcService::new(application, Arc::new(AdminCommandApplicationService));
+    let service =
+        AdminGrpcServiceV1Beta1::new(application, Arc::new(AdminCommandApplicationService));
 
     let response = service
         .get_rehydration_diagnostics(Request::new(GetRehydrationDiagnosticsRequest {
@@ -630,7 +633,7 @@ async fn admin_service_returns_diagnostics_per_role() {
             .as_ref()
             .expect("version should exist")
             .schema_version,
-        "v1alpha1"
+        "v1beta1"
     );
 }
 
@@ -821,10 +824,10 @@ async fn compatibility_service_returns_unimplemented_for_remaining_placeholder_r
 #[test]
 fn helper_mappers_cover_bundle_mapping() {
     let bundle = sample_bundle("node-123", "developer", "Projection-backed summary");
-    let proto_bundle = proto_bundle_from_single_role(&bundle);
-    let proto_root = proto_bundle_node(bundle.root_node());
-    let proto_relationship = proto_bundle_relationship(&bundle.relationships()[0]);
-    let proto_detail = proto_bundle_node_detail(&bundle.node_details()[0]);
+    let proto_bundle = proto_bundle_from_single_role_v1beta1(&bundle);
+    let proto_root = proto_bundle_node_v1beta1(bundle.root_node());
+    let proto_relationship = proto_bundle_relationship_v1beta1(&bundle.relationships()[0]);
+    let proto_detail = proto_bundle_node_detail_v1beta1(&bundle.node_details()[0]);
 
     assert_eq!(proto_bundle.root_node_id, "node-123");
     assert_eq!(proto_bundle.bundles.len(), 1);
@@ -867,18 +870,20 @@ fn helper_mappers_cover_projection_replay_and_diagnostics() {
         healthy: true,
         warnings: vec!["lagging".to_string()],
     };
-    let projection_status = proto_projection_status_response(&GetProjectionStatusResult {
+    let projection_status = proto_projection_status_response_v1beta1(&GetProjectionStatusResult {
         projections: vec![projection_view.clone()],
         observed_at: now,
     });
-    let projection = proto_projection_status(&projection_view);
     assert_eq!(
         projection_status.projections[0].consumer_name,
         "context-projection"
     );
-    assert_eq!(projection.stream_name, "graph.node.materialized");
+    assert_eq!(
+        projection_status.projections[0].stream_name,
+        "graph.node.materialized"
+    );
 
-    let replay = proto_replay_projection_response(&ReplayProjectionOutcome {
+    let replay = proto_replay_projection_response_v1beta1(&ReplayProjectionOutcome {
         replay_id: "replay-1".to_string(),
         consumer_name: "context-projection".to_string(),
         replay_mode: ReplayModeSelection::Rebuild,
@@ -887,7 +892,7 @@ fn helper_mappers_cover_projection_replay_and_diagnostics() {
     });
     assert_eq!(
         replay.replay_mode,
-        rehydration_proto::v1alpha1::ReplayMode::Rebuild as i32
+        rehydration_proto::v1beta1::ReplayMode::Rebuild as i32
     );
 
     let diagnostic_view = RehydrationDiagnosticView {
@@ -899,11 +904,16 @@ fn helper_mappers_cover_projection_replay_and_diagnostics() {
         estimated_tokens: 256,
         notes: vec!["ok".to_string()],
     };
-    let diagnostics = proto_rehydration_diagnostics_response(&GetRehydrationDiagnosticsResult {
-        diagnostics: vec![diagnostic_view.clone()],
-        observed_at: now,
-    });
-    let diagnostic = proto_diagnostic(&diagnostic_view);
+    let diagnostics =
+        proto_rehydration_diagnostics_response_v1beta1(&GetRehydrationDiagnosticsResult {
+            diagnostics: vec![diagnostic_view.clone()],
+            observed_at: now,
+        });
+    let diagnostic = diagnostics
+        .diagnostics
+        .first()
+        .expect("diagnostic should exist")
+        .clone();
     assert_eq!(diagnostics.diagnostics[0].estimated_tokens, 256);
     assert_eq!(diagnostic.selected_relationships, 1);
 
@@ -933,14 +943,18 @@ fn helper_mappers_cover_projection_replay_and_diagnostics() {
         relationship_type: "DEPENDS_ON".to_string(),
         explanation: RelationExplanation::new(RelationSemanticClass::Constraint).with_sequence(1),
     };
-    let graph = proto_graph_relationships_response(&GetGraphRelationshipsResult {
+    let graph = proto_graph_relationships_response_v1beta1(&GetGraphRelationshipsResult {
         root: root.clone(),
         neighbors: vec![neighbor.clone()],
         relationships: vec![relationship.clone()],
         observed_at: now,
     });
-    let graph_root = proto_graph_node(&root);
-    let graph_relationship = proto_graph_relationship(&relationship);
+    let graph_root = proto_graph_node_v1beta1(&root);
+    let graph_relationship = graph
+        .relationships
+        .first()
+        .expect("graph relationship should exist")
+        .clone();
 
     assert_eq!(graph.neighbors.len(), 1);
     assert_eq!(graph.relationships[0].relationship_type, "DEPENDS_ON");
@@ -951,12 +965,12 @@ fn helper_mappers_cover_projection_replay_and_diagnostics() {
 #[test]
 fn helper_mappers_cover_versions_errors_and_trim_logic() {
     let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_100);
-    let version = proto_bundle_version(&BundleMetadata {
+    let version = super::proto_mapping_v1beta1::proto_bundle_version_v1beta1(&BundleMetadata {
         revision: 7,
         content_hash: "abc123".to_string(),
         generator_version: "0.1.0".to_string(),
     });
-    let accepted = proto_accepted_version(&AcceptedVersion {
+    let accepted = proto_accepted_version_v1beta1(&AcceptedVersion {
         revision: 8,
         content_hash: "xyz789".to_string(),
         generator_version: "0.1.0".to_string(),
@@ -985,10 +999,16 @@ fn helper_mappers_cover_versions_errors_and_trim_logic() {
         map_application_error(ApplicationError::NotFound("missing".to_string())).code(),
         tonic::Code::NotFound
     );
-    assert_eq!(proto_replay_mode(map_replay_mode(999)) as i32, 1);
-    assert_eq!(proto_replay_mode(ReplayModeSelection::Rebuild) as i32, 2);
+    assert_eq!(
+        proto_replay_mode_v1beta1(map_replay_mode_v1beta1(999)) as i32,
+        1
+    );
+    assert_eq!(
+        proto_replay_mode_v1beta1(ReplayModeSelection::Rebuild) as i32,
+        2
+    );
 
-    let response = proto_rehydrate_session_response(&RehydrateSessionResult {
+    let response = proto_rehydrate_session_response_v1beta1(&RehydrateSessionResult {
         root_node_id: "node-123".to_string(),
         bundles: vec![sample_bundle("node-123", "developer", "Section one")],
         timeline_events: 9,
@@ -1007,7 +1027,7 @@ fn helper_mappers_cover_versions_errors_and_trim_logic() {
         9
     );
 
-    let snapshot = proto_bundle_snapshot_response(&BundleSnapshotResult {
+    let snapshot = proto_bundle_snapshot_response_v1beta1(&BundleSnapshotResult {
         snapshot_id: "snapshot:node-123:developer".to_string(),
         root_node_id: "node-123".to_string(),
         role: "developer".to_string(),

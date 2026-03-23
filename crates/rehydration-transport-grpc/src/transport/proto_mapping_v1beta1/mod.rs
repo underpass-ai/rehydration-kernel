@@ -1,0 +1,26 @@
+mod bundle_mapping;
+mod diagnostics_mapping;
+mod graph_mapping;
+mod projection_mapping;
+mod rendered_mapping;
+mod scope_mapping;
+mod version_mapping;
+
+pub(crate) use bundle_mapping::{
+    proto_bundle_from_single_role_v1beta1, proto_bundle_snapshot_response_v1beta1,
+    proto_rehydrate_session_response_v1beta1,
+};
+pub(crate) use diagnostics_mapping::proto_rehydration_diagnostics_response_v1beta1;
+pub(crate) use graph_mapping::{
+    proto_bundle_node_detail_v1beta1, proto_bundle_node_v1beta1, proto_bundle_relationship_v1beta1,
+    proto_graph_node_v1beta1, proto_graph_relationships_response_v1beta1,
+    proto_node_detail_view_v1beta1,
+};
+pub(crate) use projection_mapping::{
+    proto_projection_status_response_v1beta1, proto_replay_projection_response_v1beta1,
+};
+pub(crate) use rendered_mapping::{
+    proto_rendered_context_from_result_v1beta1, proto_rendered_context_v1beta1,
+};
+pub(crate) use scope_mapping::proto_scope_validation_v1beta1;
+pub(crate) use version_mapping::{proto_accepted_version_v1beta1, proto_bundle_version_v1beta1};

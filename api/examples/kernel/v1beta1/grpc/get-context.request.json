@@ -1,0 +1,15 @@
+{
+  "rootNodeId": "node:workspace:billing-api",
+  "role": "implementer",
+  "phase": "PHASE_BUILD",
+  "workItemId": "node:task:retry-handler",
+  "tokenBudget": 1600,
+  "requestedScopes": [
+    "implementation",
+    "dependencies",
+    "risks"
+  ],
+  "renderFormat": "BUNDLE_RENDER_FORMAT_LLM_PROMPT",
+  "includeDebugSections": false,
+  "depth": 10
+}

@@ -1,7 +1,7 @@
 use rehydration_application::{GetRehydrationDiagnosticsResult, RehydrationDiagnosticView};
 use rehydration_proto::v1alpha1::{GetRehydrationDiagnosticsResponse, RehydrationDiagnostic};
 
-use crate::transport::proto_mapping::proto_bundle_version;
+use crate::transport::proto_mapping_v1alpha1::proto_bundle_version;
 use crate::transport::support::timestamp_from;
 
 pub(crate) fn proto_rehydration_diagnostics_response(

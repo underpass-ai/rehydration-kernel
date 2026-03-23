@@ -1,12 +1,10 @@
 use rehydration_application::{
     GetGraphRelationshipsResult, GraphNodeView, GraphRelationshipView, NodeDetailView,
 };
-use rehydration_domain::{
-    BundleNode, BundleNodeDetail, BundleRelationship, RelationExplanation, RelationSemanticClass,
-};
+use rehydration_domain::{BundleNode, BundleNodeDetail, BundleRelationship};
 use rehydration_proto::v1alpha1::{
     BundleNodeDetail as ProtoBundleNodeDetail, GetGraphRelationshipsResponse, GraphNode,
-    GraphRelationship, GraphRelationshipExplanation, GraphRelationshipSemanticClass,
+    GraphRelationship,
 };
 
 use crate::transport::support::timestamp_from;
@@ -43,9 +41,11 @@ pub(crate) fn proto_graph_relationship(relationship: &GraphRelationshipView) -> 
         source_node_id: relationship.source_node_id.clone(),
         target_node_id: relationship.target_node_id.clone(),
         relationship_type: relationship.relationship_type.clone(),
-        explanation: Some(proto_graph_relationship_explanation(
-            &relationship.explanation,
-        )),
+        properties: relationship
+            .explanation
+            .to_properties()
+            .into_iter()
+            .collect(),
     }
 }
 
@@ -66,9 +66,11 @@ pub(crate) fn proto_bundle_relationship(relationship: &BundleRelationship) -> Gr
         source_node_id: relationship.source_node_id().to_string(),
         target_node_id: relationship.target_node_id().to_string(),
         relationship_type: relationship.relationship_type().to_string(),
-        explanation: Some(proto_graph_relationship_explanation(
-            relationship.explanation(),
-        )),
+        properties: relationship
+            .explanation()
+            .to_properties()
+            .into_iter()
+            .collect(),
     }
 }
 
@@ -87,38 +89,5 @@ pub(crate) fn proto_node_detail_view(detail: &NodeDetailView) -> ProtoBundleNode
         detail: detail.detail.clone(),
         content_hash: detail.content_hash.clone(),
         revision: detail.revision,
-    }
-}
-
-fn proto_graph_relationship_explanation(
-    explanation: &RelationExplanation,
-) -> GraphRelationshipExplanation {
-    GraphRelationshipExplanation {
-        semantic_class: proto_graph_relationship_semantic_class(explanation.semantic_class())
-            as i32,
-        rationale: explanation.rationale().unwrap_or_default().to_string(),
-        motivation: explanation.motivation().unwrap_or_default().to_string(),
-        method: explanation.method().unwrap_or_default().to_string(),
-        decision_id: explanation.decision_id().unwrap_or_default().to_string(),
-        caused_by_node_id: explanation
-            .caused_by_node_id()
-            .unwrap_or_default()
-            .to_string(),
-        evidence: explanation.evidence().unwrap_or_default().to_string(),
-        confidence: explanation.confidence().unwrap_or_default().to_string(),
-        sequence: explanation.sequence().unwrap_or_default(),
-    }
-}
-
-fn proto_graph_relationship_semantic_class(
-    semantic_class: &RelationSemanticClass,
-) -> GraphRelationshipSemanticClass {
-    match semantic_class {
-        RelationSemanticClass::Structural => GraphRelationshipSemanticClass::Structural,
-        RelationSemanticClass::Causal => GraphRelationshipSemanticClass::Causal,
-        RelationSemanticClass::Motivational => GraphRelationshipSemanticClass::Motivational,
-        RelationSemanticClass::Procedural => GraphRelationshipSemanticClass::Procedural,
-        RelationSemanticClass::Evidential => GraphRelationshipSemanticClass::Evidential,
-        RelationSemanticClass::Constraint => GraphRelationshipSemanticClass::Constraint,
     }
 }

@@ -1,4 +1,4 @@
-use crate::{fleet_context_v1, v1alpha1};
+use crate::{fleet_context_v1, v1alpha1, v1beta1};
 
 #[test]
 fn kernel_descriptor_set_is_embedded() {
@@ -63,6 +63,12 @@ fn generated_kernel_command_messages_are_available() {
 #[test]
 fn compatibility_descriptor_set_is_embedded() {
     let descriptor_set = std::hint::black_box(fleet_context_v1::FILE_DESCRIPTOR_SET);
+    assert!(!descriptor_set.is_empty());
+}
+
+#[test]
+fn kernel_v1beta1_descriptor_set_is_embedded() {
+    let descriptor_set = std::hint::black_box(v1beta1::FILE_DESCRIPTOR_SET);
     assert!(!descriptor_set.is_empty());
 }
 

@@ -55,3 +55,8 @@ required-features = ["container-tests"]
 name = "kernel_full_journey_tls_integration"
 path = "tests/kernel_full_journey_tls_integration.rs"
 required-features = ["container-tests"]
+
+[[test]]
+name = "kernel_golden_integration"
+path = "tests/kernel_golden_integration.rs"
+required-features = ["container-tests"]

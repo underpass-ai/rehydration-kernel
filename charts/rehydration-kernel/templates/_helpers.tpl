@@ -58,6 +58,7 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- $valkeyTlsCaKey := default "" .Values.valkeyTls.keys.ca -}}
 {{- $valkeyTlsCertKey := default "" .Values.valkeyTls.keys.cert -}}
 {{- $valkeyTlsKeyKey := default "" .Values.valkeyTls.keys.key -}}
+{{- $neo4jEnabled := default false .Values.neo4j.enabled -}}
 {{- if and (eq $tag "") (eq $digest "") -}}
 {{- fail "set image.tag or image.digest; the chart no longer defaults to latest" -}}
 {{- end -}}
@@ -115,7 +116,7 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- fail "valkeyTls.keys.cert and valkeyTls.keys.key must be configured together" -}}
 {{- end -}}
 {{- if $allowInlineConnections -}}
-{{- if eq (default "" .Values.connections.graphUri) "" -}}
+{{- if and (not $neo4jEnabled) (eq (default "" .Values.connections.graphUri) "") -}}
 {{- fail "connections.graphUri is required when development.allowInlineConnections=true" -}}
 {{- end -}}
 {{- if eq (default "" .Values.connections.detailUri) "" -}}
@@ -135,6 +136,32 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 {{- end -}}
 {{- end -}}
+{{- end -}}
+
+{{- define "rehydration-kernel.neo4j.fullname" -}}
+{{- printf "%s-neo4j" (include "rehydration-kernel.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{- define "rehydration-kernel.neo4j.username" -}}
+{{- $authParts := splitList "/" (default "neo4j/underpassai" .Values.neo4j.auth) -}}
+{{- if gt (len $authParts) 0 -}}
+{{- index $authParts 0 -}}
+{{- else -}}
+neo4j
+{{- end -}}
+{{- end -}}
+
+{{- define "rehydration-kernel.neo4j.password" -}}
+{{- $authParts := splitList "/" (default "neo4j/underpassai" .Values.neo4j.auth) -}}
+{{- if gt (len $authParts) 1 -}}
+{{- index $authParts 1 -}}
+{{- else -}}
+underpassai
+{{- end -}}
+{{- end -}}
+
+{{- define "rehydration-kernel.neo4j.uri" -}}
+{{- printf "neo4j://%s:%s@%s:7687" (include "rehydration-kernel.neo4j.username" .) (include "rehydration-kernel.neo4j.password" .) (include "rehydration-kernel.neo4j.fullname" .) -}}
 {{- end -}}
 
 {{- define "rehydration-kernel.inlineValkeyUri" -}}

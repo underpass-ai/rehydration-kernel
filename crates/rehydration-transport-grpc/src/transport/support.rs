@@ -3,6 +3,7 @@ use std::time::SystemTime;
 use prost_types::{Duration as ProtoDuration, Timestamp};
 use rehydration_application::{ApplicationError, ReplayModeSelection};
 use rehydration_proto::v1alpha1::ReplayMode;
+use rehydration_proto::v1beta1::ReplayMode as ReplayModeV1Beta1;
 use tonic::Status;
 
 pub(crate) fn map_replay_mode(value: i32) -> ReplayModeSelection {
@@ -17,6 +18,21 @@ pub(crate) fn proto_replay_mode(value: ReplayModeSelection) -> ReplayMode {
     match value {
         ReplayModeSelection::DryRun => ReplayMode::DryRun,
         ReplayModeSelection::Rebuild => ReplayMode::Rebuild,
+    }
+}
+
+pub(crate) fn map_replay_mode_v1beta1(value: i32) -> ReplayModeSelection {
+    match ReplayModeV1Beta1::try_from(value).unwrap_or(ReplayModeV1Beta1::DryRun) {
+        ReplayModeV1Beta1::DryRun => ReplayModeSelection::DryRun,
+        ReplayModeV1Beta1::Rebuild => ReplayModeSelection::Rebuild,
+        ReplayModeV1Beta1::Unspecified => ReplayModeSelection::DryRun,
+    }
+}
+
+pub(crate) fn proto_replay_mode_v1beta1(value: ReplayModeSelection) -> ReplayModeV1Beta1 {
+    match value {
+        ReplayModeSelection::DryRun => ReplayModeV1Beta1::DryRun,
+        ReplayModeSelection::Rebuild => ReplayModeV1Beta1::Rebuild,
     }
 }
 

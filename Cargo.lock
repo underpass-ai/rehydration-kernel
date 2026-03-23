@@ -1963,6 +1963,7 @@ dependencies = [
  "serde_json",
  "testcontainers",
  "tokio",
+ "tokio-rustls",
  "tokio-stream",
 ]
 

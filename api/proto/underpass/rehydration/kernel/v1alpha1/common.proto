@@ -30,16 +30,6 @@ enum ReplayMode {
   REPLAY_MODE_REBUILD = 2;
 }
 
-enum GraphRelationshipSemanticClass {
-  GRAPH_RELATIONSHIP_SEMANTIC_CLASS_UNSPECIFIED = 0;
-  GRAPH_RELATIONSHIP_SEMANTIC_CLASS_STRUCTURAL = 1;
-  GRAPH_RELATIONSHIP_SEMANTIC_CLASS_CAUSAL = 2;
-  GRAPH_RELATIONSHIP_SEMANTIC_CLASS_MOTIVATIONAL = 3;
-  GRAPH_RELATIONSHIP_SEMANTIC_CLASS_PROCEDURAL = 4;
-  GRAPH_RELATIONSHIP_SEMANTIC_CLASS_EVIDENTIAL = 5;
-  GRAPH_RELATIONSHIP_SEMANTIC_CLASS_CONSTRAINT = 6;
-}
-
 message BundleVersion {
   uint64 revision = 1;
   string content_hash = 2;
@@ -140,19 +130,7 @@ message GraphRelationship {
   string source_node_id = 1;
   string target_node_id = 2;
   string relationship_type = 3;
-  GraphRelationshipExplanation explanation = 4;
-}
-
-message GraphRelationshipExplanation {
-  GraphRelationshipSemanticClass semantic_class = 1;
-  string rationale = 2;
-  string motivation = 3;
-  string method = 4;
-  string decision_id = 5;
-  string caused_by_node_id = 6;
-  string evidence = 7;
-  string confidence = 8;
-  uint32 sequence = 9;
+  map<string, string> properties = 4;
 }
 
 message RehydrationDiagnostic {

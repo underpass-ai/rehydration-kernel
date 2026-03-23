@@ -1,22 +1,38 @@
-use crate::v1alpha1;
+use crate::{v1alpha1, v1beta1};
 use prost::Message;
 use prost_types::{DescriptorProto, FieldDescriptorProto, FileDescriptorProto, FileDescriptorSet};
 use serde_json::Value;
 
-const KERNEL_PACKAGE: &str = "underpass.rehydration.kernel.v1alpha1";
-const GET_CONTEXT_REQUEST_FIXTURE: &str =
+const KERNEL_PACKAGE_V1ALPHA1: &str = "underpass.rehydration.kernel.v1alpha1";
+const KERNEL_PACKAGE_V1BETA1: &str = "underpass.rehydration.kernel.v1beta1";
+
+const GET_CONTEXT_REQUEST_FIXTURE_V1ALPHA1: &str =
     include_str!("../../../api/examples/kernel/v1alpha1/grpc/get-context.request.json");
-const GET_CONTEXT_RESPONSE_FIXTURE: &str =
+const GET_CONTEXT_RESPONSE_FIXTURE_V1ALPHA1: &str =
     include_str!("../../../api/examples/kernel/v1alpha1/grpc/get-context.response.json");
-const REHYDRATE_SESSION_REQUEST_FIXTURE: &str =
+const REHYDRATE_SESSION_REQUEST_FIXTURE_V1ALPHA1: &str =
     include_str!("../../../api/examples/kernel/v1alpha1/grpc/rehydrate-session.request.json");
-const UPDATE_CONTEXT_REQUEST_FIXTURE: &str =
+const UPDATE_CONTEXT_REQUEST_FIXTURE_V1ALPHA1: &str =
     include_str!("../../../api/examples/kernel/v1alpha1/grpc/update-context.request.json");
-const GET_GRAPH_RELATIONSHIPS_REQUEST_FIXTURE: &str =
+const GET_GRAPH_RELATIONSHIPS_REQUEST_FIXTURE_V1ALPHA1: &str =
     include_str!("../../../api/examples/kernel/v1alpha1/grpc/get-graph-relationships.request.json");
-const GET_GRAPH_RELATIONSHIPS_RESPONSE_FIXTURE: &str = include_str!(
+const GET_GRAPH_RELATIONSHIPS_RESPONSE_FIXTURE_V1ALPHA1: &str = include_str!(
     "../../../api/examples/kernel/v1alpha1/grpc/get-graph-relationships.response.json"
 );
+
+const GET_CONTEXT_REQUEST_FIXTURE_V1BETA1: &str =
+    include_str!("../../../api/examples/kernel/v1beta1/grpc/get-context.request.json");
+const GET_CONTEXT_RESPONSE_FIXTURE_V1BETA1: &str =
+    include_str!("../../../api/examples/kernel/v1beta1/grpc/get-context.response.json");
+const REHYDRATE_SESSION_REQUEST_FIXTURE_V1BETA1: &str =
+    include_str!("../../../api/examples/kernel/v1beta1/grpc/rehydrate-session.request.json");
+const UPDATE_CONTEXT_REQUEST_FIXTURE_V1BETA1: &str =
+    include_str!("../../../api/examples/kernel/v1beta1/grpc/update-context.request.json");
+const GET_GRAPH_RELATIONSHIPS_REQUEST_FIXTURE_V1BETA1: &str =
+    include_str!("../../../api/examples/kernel/v1beta1/grpc/get-graph-relationships.request.json");
+const GET_GRAPH_RELATIONSHIPS_RESPONSE_FIXTURE_V1BETA1: &str =
+    include_str!("../../../api/examples/kernel/v1beta1/grpc/get-graph-relationships.response.json");
+
 const GRAPH_NODE_MATERIALIZED_FIXTURE: &str =
     include_str!("../../../api/examples/kernel/v1alpha1/async/graph.node.materialized.json");
 const NODE_DETAIL_MATERIALIZED_FIXTURE: &str =
@@ -25,45 +41,39 @@ const CONTEXT_BUNDLE_GENERATED_FIXTURE: &str =
     include_str!("../../../api/examples/kernel/v1alpha1/async/context.bundle.generated.json");
 
 #[test]
-fn grpc_reference_fixtures_match_protojson_contract() {
-    let descriptor_set = decode_kernel_descriptor_set();
+fn grpc_reference_fixtures_match_v1alpha1_protojson_contract() {
+    assert_grpc_reference_fixtures_match_protojson_contract(
+        &decode_kernel_descriptor_set_v1alpha1(),
+        &GrpcFixtureSet {
+            get_context_request: GET_CONTEXT_REQUEST_FIXTURE_V1ALPHA1,
+            get_context_response: GET_CONTEXT_RESPONSE_FIXTURE_V1ALPHA1,
+            rehydrate_session_request: REHYDRATE_SESSION_REQUEST_FIXTURE_V1ALPHA1,
+            update_context_request: UPDATE_CONTEXT_REQUEST_FIXTURE_V1ALPHA1,
+            get_graph_relationships_request: GET_GRAPH_RELATIONSHIPS_REQUEST_FIXTURE_V1ALPHA1,
+            get_graph_relationships_response: GET_GRAPH_RELATIONSHIPS_RESPONSE_FIXTURE_V1ALPHA1,
+        },
+    );
+}
 
-    assert_fixture_keys_match_message(
-        &descriptor_set,
-        "GetContextRequest",
-        &parse_fixture(GET_CONTEXT_REQUEST_FIXTURE),
-    );
-    assert_fixture_keys_match_message(
-        &descriptor_set,
-        "GetContextResponse",
-        &parse_fixture(GET_CONTEXT_RESPONSE_FIXTURE),
-    );
-    assert_fixture_keys_match_message(
-        &descriptor_set,
-        "RehydrateSessionRequest",
-        &parse_fixture(REHYDRATE_SESSION_REQUEST_FIXTURE),
-    );
-    assert_fixture_keys_match_message(
-        &descriptor_set,
-        "UpdateContextRequest",
-        &parse_fixture(UPDATE_CONTEXT_REQUEST_FIXTURE),
-    );
-    assert_fixture_keys_match_message(
-        &descriptor_set,
-        "GetGraphRelationshipsRequest",
-        &parse_fixture(GET_GRAPH_RELATIONSHIPS_REQUEST_FIXTURE),
-    );
-    assert_fixture_keys_match_message(
-        &descriptor_set,
-        "GetGraphRelationshipsResponse",
-        &parse_fixture(GET_GRAPH_RELATIONSHIPS_RESPONSE_FIXTURE),
+#[test]
+fn grpc_reference_fixtures_match_v1beta1_protojson_contract() {
+    assert_grpc_reference_fixtures_match_protojson_contract(
+        &decode_kernel_descriptor_set_v1beta1(),
+        &GrpcFixtureSet {
+            get_context_request: GET_CONTEXT_REQUEST_FIXTURE_V1BETA1,
+            get_context_response: GET_CONTEXT_RESPONSE_FIXTURE_V1BETA1,
+            rehydrate_session_request: REHYDRATE_SESSION_REQUEST_FIXTURE_V1BETA1,
+            update_context_request: UPDATE_CONTEXT_REQUEST_FIXTURE_V1BETA1,
+            get_graph_relationships_request: GET_GRAPH_RELATIONSHIPS_REQUEST_FIXTURE_V1BETA1,
+            get_graph_relationships_response: GET_GRAPH_RELATIONSHIPS_RESPONSE_FIXTURE_V1BETA1,
+        },
     );
 }
 
 #[test]
 fn grpc_response_reference_fixture_uses_generic_bundle_shape() {
-    let descriptor_set = decode_kernel_descriptor_set();
-    let fixture = parse_fixture(GET_CONTEXT_RESPONSE_FIXTURE);
+    let descriptor_set = decode_kernel_descriptor_set_v1beta1();
+    let fixture = parse_fixture(GET_CONTEXT_RESPONSE_FIXTURE_V1BETA1);
     let bundle = fixture_object_field(&fixture, "bundle");
     let rendered = fixture_object_field(&fixture, "rendered");
     let scope_validation = fixture_object_field(&fixture, "scopeValidation");
@@ -142,12 +152,18 @@ fn async_reference_fixtures_use_generic_event_envelope_and_node_centric_payloads
 #[test]
 fn reference_fixtures_do_not_reintroduce_legacy_product_nouns() {
     let fixtures = [
-        parse_fixture(GET_CONTEXT_REQUEST_FIXTURE),
-        parse_fixture(GET_CONTEXT_RESPONSE_FIXTURE),
-        parse_fixture(REHYDRATE_SESSION_REQUEST_FIXTURE),
-        parse_fixture(UPDATE_CONTEXT_REQUEST_FIXTURE),
-        parse_fixture(GET_GRAPH_RELATIONSHIPS_REQUEST_FIXTURE),
-        parse_fixture(GET_GRAPH_RELATIONSHIPS_RESPONSE_FIXTURE),
+        parse_fixture(GET_CONTEXT_REQUEST_FIXTURE_V1ALPHA1),
+        parse_fixture(GET_CONTEXT_RESPONSE_FIXTURE_V1ALPHA1),
+        parse_fixture(REHYDRATE_SESSION_REQUEST_FIXTURE_V1ALPHA1),
+        parse_fixture(UPDATE_CONTEXT_REQUEST_FIXTURE_V1ALPHA1),
+        parse_fixture(GET_GRAPH_RELATIONSHIPS_REQUEST_FIXTURE_V1ALPHA1),
+        parse_fixture(GET_GRAPH_RELATIONSHIPS_RESPONSE_FIXTURE_V1ALPHA1),
+        parse_fixture(GET_CONTEXT_REQUEST_FIXTURE_V1BETA1),
+        parse_fixture(GET_CONTEXT_RESPONSE_FIXTURE_V1BETA1),
+        parse_fixture(REHYDRATE_SESSION_REQUEST_FIXTURE_V1BETA1),
+        parse_fixture(UPDATE_CONTEXT_REQUEST_FIXTURE_V1BETA1),
+        parse_fixture(GET_GRAPH_RELATIONSHIPS_REQUEST_FIXTURE_V1BETA1),
+        parse_fixture(GET_GRAPH_RELATIONSHIPS_RESPONSE_FIXTURE_V1BETA1),
         parse_fixture(GRAPH_NODE_MATERIALIZED_FIXTURE),
         parse_fixture(NODE_DETAIL_MATERIALIZED_FIXTURE),
         parse_fixture(CONTEXT_BUNDLE_GENERATED_FIXTURE),
@@ -167,6 +183,51 @@ fn reference_fixtures_do_not_reintroduce_legacy_product_nouns() {
             );
         }
     }
+}
+
+struct GrpcFixtureSet<'a> {
+    get_context_request: &'a str,
+    get_context_response: &'a str,
+    rehydrate_session_request: &'a str,
+    update_context_request: &'a str,
+    get_graph_relationships_request: &'a str,
+    get_graph_relationships_response: &'a str,
+}
+
+fn assert_grpc_reference_fixtures_match_protojson_contract(
+    descriptor_set: &FileDescriptorSet,
+    fixtures: &GrpcFixtureSet<'_>,
+) {
+    assert_fixture_keys_match_message(
+        descriptor_set,
+        "GetContextRequest",
+        &parse_fixture(fixtures.get_context_request),
+    );
+    assert_fixture_keys_match_message(
+        descriptor_set,
+        "GetContextResponse",
+        &parse_fixture(fixtures.get_context_response),
+    );
+    assert_fixture_keys_match_message(
+        descriptor_set,
+        "RehydrateSessionRequest",
+        &parse_fixture(fixtures.rehydrate_session_request),
+    );
+    assert_fixture_keys_match_message(
+        descriptor_set,
+        "UpdateContextRequest",
+        &parse_fixture(fixtures.update_context_request),
+    );
+    assert_fixture_keys_match_message(
+        descriptor_set,
+        "GetGraphRelationshipsRequest",
+        &parse_fixture(fixtures.get_graph_relationships_request),
+    );
+    assert_fixture_keys_match_message(
+        descriptor_set,
+        "GetGraphRelationshipsResponse",
+        &parse_fixture(fixtures.get_graph_relationships_response),
+    );
 }
 
 fn assert_async_fixture_matches_expected_shape(
@@ -278,10 +339,15 @@ fn message_descriptor<'a>(
     descriptor_set: &'a FileDescriptorSet,
     message_name: &str,
 ) -> &'a DescriptorProto {
+    let package_name = match detect_kernel_version(descriptor_set) {
+        KernelVersion::V1Alpha1 => KERNEL_PACKAGE_V1ALPHA1,
+        KernelVersion::V1Beta1 => KERNEL_PACKAGE_V1BETA1,
+    };
+
     descriptor_set
         .file
         .iter()
-        .filter(|file| file.package.as_deref() == Some(KERNEL_PACKAGE))
+        .filter(|file| file.package.as_deref() == Some(package_name))
         .find_map(|file| {
             file.message_type
                 .iter()
@@ -290,16 +356,43 @@ fn message_descriptor<'a>(
         .unwrap_or_else(|| panic!("missing message descriptor `{message_name}`"))
 }
 
-fn decode_kernel_descriptor_set() -> FileDescriptorSet {
+fn decode_kernel_descriptor_set_v1alpha1() -> FileDescriptorSet {
     FileDescriptorSet::decode(v1alpha1::FILE_DESCRIPTOR_SET)
         .expect("kernel descriptor set should decode")
 }
 
+fn decode_kernel_descriptor_set_v1beta1() -> FileDescriptorSet {
+    FileDescriptorSet::decode(v1beta1::FILE_DESCRIPTOR_SET)
+        .expect("kernel v1beta1 descriptor set should decode")
+}
+
+enum KernelVersion {
+    V1Alpha1,
+    V1Beta1,
+}
+
+fn detect_kernel_version(descriptor_set: &FileDescriptorSet) -> KernelVersion {
+    if descriptor_set
+        .file
+        .iter()
+        .any(|file| file.package.as_deref() == Some(KERNEL_PACKAGE_V1BETA1))
+    {
+        KernelVersion::V1Beta1
+    } else {
+        KernelVersion::V1Alpha1
+    }
+}
+
 #[allow(dead_code)]
 fn _kernel_files(descriptor_set: &FileDescriptorSet) -> Vec<&FileDescriptorProto> {
+    let package_name = match detect_kernel_version(descriptor_set) {
+        KernelVersion::V1Alpha1 => KERNEL_PACKAGE_V1ALPHA1,
+        KernelVersion::V1Beta1 => KERNEL_PACKAGE_V1BETA1,
+    };
+
     descriptor_set
         .file
         .iter()
-        .filter(|file| file.package.as_deref() == Some(KERNEL_PACKAGE))
+        .filter(|file| file.package.as_deref() == Some(package_name))
         .collect()
 }

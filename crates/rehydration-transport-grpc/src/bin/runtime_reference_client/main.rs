@@ -3,7 +3,7 @@ mod config;
 use serde_json::json;
 
 use crate::config::AppConfig;
-use rehydration_proto::v1alpha1::{
+use rehydration_proto::v1beta1::{
     context_admin_service_client::ContextAdminServiceClient,
     context_query_service_client::ContextQueryServiceClient,
 };

@@ -100,13 +100,11 @@ affinity: {}
 
 extraEnv: []
 
-# ---------------------------------------------------------------------------
-# Neo4j (optional embedded graph database)
-# ---------------------------------------------------------------------------
+# Optional graph database managed by this chart. When enabled together with
+# development.allowInlineConnections=true, the kernel can omit connections.graphUri
+# and will connect to the release-scoped Neo4j service automatically.
 neo4j:
-  # -- Deploy Neo4j StatefulSet alongside the kernel
   enabled: false
-  # -- Neo4j auth in format user/password
   auth: "neo4j/underpassai"
   image:
     repository: docker.io/library/neo4j

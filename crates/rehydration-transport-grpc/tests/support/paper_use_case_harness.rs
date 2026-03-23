@@ -2,9 +2,10 @@
 
 use std::error::Error;
 
-use rehydration_proto::v1alpha1::{
-    GetContextPathRequest, GetGraphRelationshipsRequest, GraphRelationship, GraphRoleBundle,
-    RehydrationBundle, RenderedContext, context_query_service_client::ContextQueryServiceClient,
+use rehydration_proto::v1beta1::{
+    GetContextPathRequest, GetGraphRelationshipsRequest, GraphRelationship,
+    GraphRelationshipExplanation, GraphRoleBundle, RehydrationBundle, RenderedContext,
+    context_query_service_client::ContextQueryServiceClient,
 };
 use tonic::transport::Channel;
 
@@ -165,6 +166,18 @@ struct RetryPathObservation {
     rendered: RenderedContext,
 }
 
+#[derive(Debug, Clone)]
+struct RelationshipExplanationView {
+    rationale: String,
+    motivation: String,
+    method: String,
+    decision_id: String,
+    caused_by_node_id: String,
+    evidence: String,
+    confidence: String,
+    sequence: u32,
+}
+
 pub(crate) async fn observe_failure_diagnosis_use_case(
     variant: PaperUseCaseVariant,
 ) -> Result<FailureDiagnosisObservation, Box<dyn Error + Send + Sync>> {
@@ -190,7 +203,7 @@ pub(crate) async fn observe_failure_diagnosis_use_case(
             })
             .await?
             .into_inner();
-        let rehydration_proto::v1alpha1::GetContextPathResponse {
+        let rehydration_proto::v1beta1::GetContextPathResponse {
             path_bundle,
             rendered,
             ..
@@ -213,13 +226,12 @@ pub(crate) async fn observe_failure_diagnosis_use_case(
                 .relationships
                 .iter()
                 .filter(|relationship| {
-                    relationship
-                        .explanation
-                        .as_ref()
-                        .is_some_and(|explanation| {
+                    relationship_explanation(relationship)
+                        .map(|explanation| {
                             explanation.decision_id == rehydration_node_id
                                 || explanation.caused_by_node_id == rehydration_node_id
                         })
+                        .unwrap_or(false)
                 })
                 .map(metric_relationship)
                 .collect::<Vec<_>>()
@@ -426,7 +438,7 @@ pub(crate) async fn observe_why_task_was_implemented_that_way(
             })
             .await?
             .into_inner();
-        let rehydration_proto::v1alpha1::GetContextPathResponse {
+        let rehydration_proto::v1beta1::GetContextPathResponse {
             path_bundle,
             rendered,
             ..
@@ -558,7 +570,7 @@ pub(crate) async fn observe_interrupted_handoff_use_case(
             })
             .await?
             .into_inner();
-        let rehydration_proto::v1alpha1::GetContextPathResponse {
+        let rehydration_proto::v1beta1::GetContextPathResponse {
             path_bundle,
             rendered,
             ..
@@ -772,7 +784,7 @@ pub(crate) async fn observe_constraint_under_token_pressure_use_case(
             })
             .await?
             .into_inner();
-        let rehydration_proto::v1alpha1::GetContextPathResponse {
+        let rehydration_proto::v1beta1::GetContextPathResponse {
             path_bundle,
             rendered,
             ..
@@ -907,7 +919,7 @@ async fn load_retry_path(
         })
         .await?
         .into_inner();
-    let rehydration_proto::v1alpha1::GetContextPathResponse {
+    let rehydration_proto::v1beta1::GetContextPathResponse {
         path_bundle,
         rendered,
         ..
@@ -1004,12 +1016,22 @@ fn find_relationship<'a>(
 
 fn relationship_explanation(
     relationship: &GraphRelationship,
-) -> Result<&rehydration_proto::v1alpha1::GraphRelationshipExplanation, Box<dyn Error + Send + Sync>>
-{
-    relationship
+) -> Result<RelationshipExplanationView, Box<dyn Error + Send + Sync>> {
+    let explanation = relationship
         .explanation
         .as_ref()
-        .ok_or_else(|| "relationship explanation should exist".to_string().into())
+        .ok_or_else(|| "relationship explanation should be present".to_string())?;
+
+    Ok(RelationshipExplanationView {
+        rationale: proto_string_field(explanation, |it| &it.rationale),
+        motivation: proto_string_field(explanation, |it| &it.motivation),
+        method: proto_string_field(explanation, |it| &it.method),
+        decision_id: proto_string_field(explanation, |it| &it.decision_id),
+        caused_by_node_id: proto_string_field(explanation, |it| &it.caused_by_node_id),
+        evidence: proto_string_field(explanation, |it| &it.evidence),
+        confidence: proto_string_field(explanation, |it| &it.confidence),
+        sequence: explanation.sequence,
+    })
 }
 
 fn metric_relationship(relationship: &GraphRelationship) -> PaperMetricRelationship {
@@ -1020,10 +1042,17 @@ fn metric_relationship(relationship: &GraphRelationship) -> PaperMetricRelations
     }
 }
 
+fn proto_string_field(
+    explanation: &GraphRelationshipExplanation,
+    selector: impl Fn(&GraphRelationshipExplanation) -> &str,
+) -> String {
+    selector(explanation).to_string()
+}
+
 fn proto_string(value: &str) -> Option<String> {
     if value.is_empty() {
-        return None;
+        None
+    } else {
+        Some(value.to_string())
     }
-
-    Some(value.to_string())
 }

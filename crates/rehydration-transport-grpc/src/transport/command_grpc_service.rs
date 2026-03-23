@@ -9,7 +9,7 @@ use rehydration_proto::v1alpha1::{
 };
 use tonic::{Request, Response, Status};
 
-use crate::transport::proto_mapping::proto_accepted_version;
+use crate::transport::proto_mapping_v1alpha1::proto_accepted_version;
 use crate::transport::support::map_application_error;
 
 #[derive(Debug, Clone)]

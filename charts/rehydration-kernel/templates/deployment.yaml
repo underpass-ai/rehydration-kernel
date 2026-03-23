@@ -110,7 +110,7 @@ spec:
                   key: {{ .Values.secrets.keys.natsUrl | quote }}
             {{- else if .Values.development.allowInlineConnections }}
             - name: REHYDRATION_GRAPH_URI
-              value: {{ .Values.connections.graphUri | quote }}
+              value: {{ default (include "rehydration-kernel.neo4j.uri" .) .Values.connections.graphUri | quote }}
             - name: REHYDRATION_DETAIL_URI
               value: {{ include "rehydration-kernel.inlineValkeyUri" (dict "uri" .Values.connections.detailUri "tls" .Values.valkeyTls) | quote }}
             - name: REHYDRATION_SNAPSHOT_URI

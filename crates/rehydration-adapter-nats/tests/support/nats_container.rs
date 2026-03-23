@@ -19,6 +19,8 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
 
 pub(crate) async fn start_nats_container()
 -> Result<testcontainers::ContainerAsync<GenericImage>, Box<dyn Error + Send + Sync>> {
+    install_rustls_crypto_provider();
+
     Ok(GenericImage::new(NATS_IMAGE, NATS_TAG)
         .with_exposed_port(NATS_INTERNAL_PORT.tcp())
         .with_wait_for(WaitFor::seconds(NATS_STARTUP_WAIT.as_secs()))
@@ -55,4 +57,8 @@ async fn connect_with_retry_inner(url: String) -> Result<Client, Box<dyn Error +
     }
 
     Err(last_error.expect("at least one connection attempt should fail"))
+}
+
+fn install_rustls_crypto_provider() {
+    let _ = tokio_rustls::rustls::crypto::aws_lc_rs::default_provider().install_default();
 }

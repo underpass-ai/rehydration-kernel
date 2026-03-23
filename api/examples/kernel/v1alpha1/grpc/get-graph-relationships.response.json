@@ -35,10 +35,10 @@
       "sourceNodeId": "node:workspace:billing-api",
       "targetNodeId": "node:task:retry-handler",
       "relationshipType": "contains",
-      "explanation": {
+      "properties": {
         "semantic_class": "structural",
         "rationale": "the retry handler is the primary work item inside this workspace",
-        "sequence": 1
+        "sequence": "1"
       }
     }
   ],

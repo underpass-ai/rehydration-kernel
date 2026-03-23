@@ -32,7 +32,7 @@ use rehydration_proto::fleet_context_v1::{
     UpdateContextRequest as CompatibilityUpdateContextRequest,
     ValidateScopeRequest as CompatibilityValidateScopeRequest,
 };
-use rehydration_proto::v1alpha1::{
+use rehydration_proto::v1beta1::{
     BundleRenderFormat, CommandMetadata, ContextChange, ContextChangeOperation,
     GetBundleSnapshotRequest, GetContextRequest, GetGraphRelationshipsRequest,
     GetNodeDetailRequest, GetProjectionStatusRequest, GetRehydrationDiagnosticsRequest, Phase,
@@ -499,7 +499,7 @@ async fn kernel_full_journey_covers_projection_query_compatibility_command_and_a
         assert!(!zoomed_rendered.content.contains(ROOT_DETAIL));
 
         let query_rehydrate = query_client
-            .rehydrate_session(rehydration_proto::v1alpha1::RehydrateSessionRequest {
+            .rehydrate_session(rehydration_proto::v1beta1::RehydrateSessionRequest {
                 root_node_id: ROOT_NODE_ID.to_string(),
                 roles: vec![DEVELOPER_ROLE.to_string()],
                 include_timeline: true,
@@ -551,7 +551,7 @@ async fn kernel_full_journey_covers_projection_query_compatibility_command_and_a
         );
 
         let leaf_rehydrate = query_client
-            .rehydrate_session(rehydration_proto::v1alpha1::RehydrateSessionRequest {
+            .rehydrate_session(rehydration_proto::v1beta1::RehydrateSessionRequest {
                 root_node_id: EXPLORER_LEAF_ID.to_string(),
                 roles: vec![DEVELOPER_ROLE.to_string()],
                 include_timeline: false,

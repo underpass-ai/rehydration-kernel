@@ -6,7 +6,7 @@ use async_nats::Client;
 use rehydration_adapter_neo4j::Neo4jProjectionStore;
 use rehydration_adapter_valkey::{ValkeyNodeDetailStore, ValkeySnapshotStore};
 use rehydration_proto::fleet_context_v1::context_service_client::ContextServiceClient;
-use rehydration_proto::v1alpha1::{
+use rehydration_proto::v1beta1::{
     BundleRenderFormat, GetContextRequest, Phase,
     context_admin_service_client::ContextAdminServiceClient,
     context_command_service_client::ContextCommandServiceClient,

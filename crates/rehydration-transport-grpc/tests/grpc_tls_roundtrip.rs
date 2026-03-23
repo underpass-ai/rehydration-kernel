@@ -9,7 +9,7 @@ use rehydration_domain::{
     ContextPathNeighborhood, GraphNeighborhoodReader, NodeDetailProjection, NodeDetailReader,
     NodeNeighborhood, PortError, RehydrationBundle, SnapshotSaveOptions, SnapshotStore,
 };
-use rehydration_proto::v1alpha1::{
+use rehydration_proto::v1beta1::{
     BundleRenderFormat, GetContextRequest, Phase,
     context_query_service_client::ContextQueryServiceClient,
 };
@@ -403,7 +403,7 @@ async fn connect_tls_channel(
 
 async fn get_context(
     client: &mut ContextQueryServiceClient<Channel>,
-) -> Result<tonic::Response<rehydration_proto::v1alpha1::GetContextResponse>, tonic::Status> {
+) -> Result<tonic::Response<rehydration_proto::v1beta1::GetContextResponse>, tonic::Status> {
     client
         .get_context(GetContextRequest {
             root_node_id: "case-123".to_string(),

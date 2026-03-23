@@ -13,7 +13,7 @@ use crate::agentic_support::context_bundle_generated_event::{
     context_bundle_generated_subject, parse_context_bundle_generated_event,
 };
 use crate::agentic_support::nats_container::connect_with_retry;
-use rehydration_proto::v1alpha1::{
+use rehydration_proto::v1beta1::{
     context_admin_service_client::ContextAdminServiceClient,
     context_query_service_client::ContextQueryServiceClient,
 };

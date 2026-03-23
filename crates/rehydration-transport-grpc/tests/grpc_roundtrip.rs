@@ -10,7 +10,7 @@ use rehydration_proto::fleet_context_v1::{
     ValidateScopeRequest as CompatibilityValidateScopeRequest,
     context_service_client::ContextServiceClient,
 };
-use rehydration_proto::v1alpha1::{
+use rehydration_proto::v1beta1::{
     BundleRenderFormat, ContextChange, ContextChangeOperation, GetBundleSnapshotRequest,
     GetContextPathRequest, GetContextRequest, GetProjectionStatusRequest, Phase,
     UpdateContextRequest, context_admin_service_client::ContextAdminServiceClient,

@@ -24,6 +24,7 @@ tokio-stream.workspace = true
 rehydration-testkit.workspace = true
 testcontainers = "0.24.0"
 tokio.workspace = true
+tokio-rustls = "0.26.4"
 
 [[test]]
 name = "runtime_integration"

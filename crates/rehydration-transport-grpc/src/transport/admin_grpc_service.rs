@@ -15,7 +15,7 @@ use rehydration_proto::v1alpha1::{
 };
 use tonic::{Request, Response, Status};
 
-use crate::transport::proto_mapping::{
+use crate::transport::proto_mapping_v1alpha1::{
     proto_bundle_snapshot_response, proto_graph_relationships_response,
     proto_projection_status_response, proto_rehydration_diagnostics_response,
     proto_replay_projection_response,

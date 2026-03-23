@@ -13,21 +13,21 @@ stringData:
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: neo4j
+  name: {{ include "rehydration-kernel.neo4j.fullname" . }}
   labels:
-    app: neo4j
-    app.kubernetes.io/component: neo4j
     {{- include "rehydration-kernel.labels" . | nindent 4 }}
+    app.kubernetes.io/component: neo4j
 spec:
   replicas: 1
-  serviceName: neo4j
+  serviceName: {{ include "rehydration-kernel.neo4j.fullname" . }}
   selector:
     matchLabels:
-      app: neo4j
+      {{- include "rehydration-kernel.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: neo4j
   template:
     metadata:
       labels:
-        app: neo4j
+        {{- include "rehydration-kernel.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: neo4j
     spec:
       automountServiceAccountToken: false
@@ -86,7 +86,8 @@ spec:
             runAsNonRoot: true
             runAsUser: 7474
             capabilities:
-              drop: ["ALL"]
+              drop:
+                - ALL
           volumeMounts:
             - name: neo4j-data
               mountPath: /data
@@ -94,10 +95,12 @@ spec:
     - metadata:
         name: neo4j-data
         labels:
-          app: neo4j
+          {{- include "rehydration-kernel.labels" . | nindent 10 }}
+          app.kubernetes.io/component: neo4j
       spec:
-        accessModes: ["ReadWriteOnce"]
-        storageClassName: {{ .Values.neo4j.persistence.storageClass }}
+        accessModes:
+          - ReadWriteOnce
+        storageClassName: {{ .Values.neo4j.persistence.storageClass | quote }}
         resources:
           requests:
             storage: {{ .Values.neo4j.persistence.size }}
@@ -105,14 +108,14 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: neo4j
+  name: {{ include "rehydration-kernel.neo4j.fullname" . }}
   labels:
-    app: neo4j
-    app.kubernetes.io/component: neo4j
     {{- include "rehydration-kernel.labels" . | nindent 4 }}
+    app.kubernetes.io/component: neo4j
 spec:
   selector:
-    app: neo4j
+    {{- include "rehydration-kernel.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: neo4j
   ports:
     - name: bolt
       port: 7687

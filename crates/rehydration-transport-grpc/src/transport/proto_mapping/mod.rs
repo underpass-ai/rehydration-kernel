@@ -20,10 +20,3 @@ pub(crate) use projection_mapping::{
 pub(crate) use rendered_mapping::{proto_rendered_context, proto_rendered_context_from_result};
 pub(crate) use scope_mapping::proto_scope_validation;
 pub(crate) use version_mapping::{proto_accepted_version, proto_bundle_version};
-
-#[cfg(test)]
-pub(crate) use diagnostics_mapping::proto_diagnostic;
-#[cfg(test)]
-pub(crate) use graph_mapping::proto_graph_relationship;
-#[cfg(test)]
-pub(crate) use projection_mapping::proto_projection_status;
