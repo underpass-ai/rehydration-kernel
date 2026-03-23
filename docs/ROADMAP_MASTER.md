@@ -60,6 +60,11 @@ Single source of truth for kernel maturity, technical debt, and next steps.
 | `observability/src/metrics.rs` | 49% | Noop meter unit test | Export only with real OTLP collector |
 | `adapter-nats/context_event_store.rs` | 0% (unit) | 3 container tests | I/O boundary, requires JetStream |
 
+## Pending — Testing
+
+- [ ] End-to-end mTLS integration test: gRPC mutual TLS with container-backed Neo4j, Valkey, and NATS — all TLS-encrypted
+- [ ] OTel collector integration test: container OTLP collector verifying trace and metric export
+
 ## Pending — Paper artifact
 
 - [ ] Recalculate paper metrics with cl100k_base tokenizer
