@@ -52,6 +52,12 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- $natsTlsCaKey := default "" .Values.natsTls.keys.ca -}}
 {{- $natsTlsCertKey := default "" .Values.natsTls.keys.cert -}}
 {{- $natsTlsKeyKey := default "" .Values.natsTls.keys.key -}}
+{{- $ingressEnabled := default false .Values.ingress.enabled -}}
+{{- $ingressHosts := default (list) .Values.ingress.hosts -}}
+{{- $neo4jTlsEnabled := default false .Values.neo4jTls.enabled -}}
+{{- $neo4jTlsSecret := default "" .Values.neo4jTls.existingSecret -}}
+{{- $neo4jTlsMountPath := default "" .Values.neo4jTls.mountPath -}}
+{{- $neo4jTlsCaKey := default "" .Values.neo4jTls.keys.ca -}}
 {{- $valkeyTlsEnabled := default false .Values.valkeyTls.enabled -}}
 {{- $valkeyTlsSecret := default "" .Values.valkeyTls.existingSecret -}}
 {{- $valkeyTlsMountPath := default "" .Values.valkeyTls.mountPath -}}
@@ -73,6 +79,18 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 {{- if and (eq (default "" .Values.secrets.existingSecret) "") (not $allowInlineConnections) -}}
 {{- fail "set secrets.existingSecret for connection URIs or explicitly enable development.allowInlineConnections=true" -}}
+{{- end -}}
+{{- if and $ingressEnabled (eq (len $ingressHosts) 0) -}}
+{{- fail "ingress.hosts must contain at least one host when ingress.enabled=true" -}}
+{{- end -}}
+{{- if and $neo4jTlsEnabled (eq $neo4jTlsSecret "") (ne $neo4jTlsCaKey "") -}}
+{{- fail "neo4jTls.existingSecret is required when neo4jTls.keys.ca is configured" -}}
+{{- end -}}
+{{- if and (ne $neo4jTlsSecret "") (eq $neo4jTlsMountPath "") -}}
+{{- fail "neo4jTls.mountPath is required when neo4jTls.existingSecret is set" -}}
+{{- end -}}
+{{- if and $neo4jTlsEnabled (eq $neo4jTlsCaKey "") -}}
+{{- fail "neo4jTls.keys.ca is required when neo4jTls.enabled=true" -}}
 {{- end -}}
 {{- if ne $grpcTlsMode "disabled" -}}
 {{- if eq (default "" .Values.tls.existingSecret) "" -}}
@@ -130,6 +148,11 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 {{- if eq (default "" .Values.connections.natsUrl) "" -}}
 {{- fail "connections.natsUrl is required when development.allowInlineConnections=true" -}}
+{{- end -}}
+{{- if $neo4jTlsEnabled -}}
+{{- if not (or (hasPrefix "bolt+s://" .Values.connections.graphUri) (hasPrefix "bolt+ssc://" .Values.connections.graphUri) (hasPrefix "neo4j+s://" .Values.connections.graphUri) (hasPrefix "neo4j+ssc://" .Values.connections.graphUri)) -}}
+{{- fail "neo4jTls.enabled requires connections.graphUri to use bolt+s://, bolt+ssc://, neo4j+s://, or neo4j+ssc:// when development.allowInlineConnections=true" -}}
+{{- end -}}
 {{- end -}}
 {{- if $valkeyTlsEnabled -}}
 {{- range $connection := list .Values.connections.detailUri .Values.connections.snapshotUri .Values.connections.runtimeStateUri -}}
@@ -195,6 +218,28 @@ underpassai
 {{- end -}}
 {{- else -}}
 {{- $secureUri -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "rehydration-kernel.inlineGraphUri" -}}
+{{- $uri := .uri -}}
+{{- $tls := .tls -}}
+{{- if not $tls.enabled -}}
+{{- $uri -}}
+{{- else -}}
+{{- $params := list -}}
+{{- if and (ne (default "" $tls.existingSecret) "") (ne (default "" $tls.keys.ca) "") -}}
+{{- $params = append $params (printf "tls_ca_path=%s/%s" $tls.mountPath $tls.keys.ca) -}}
+{{- end -}}
+{{- if gt (len $params) 0 -}}
+{{- if contains "?" $uri -}}
+{{- printf "%s&%s" $uri (join "&" $params) -}}
+{{- else -}}
+{{- printf "%s?%s" $uri (join "&" $params) -}}
+{{- end -}}
+{{- else -}}
+{{- $uri -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}
