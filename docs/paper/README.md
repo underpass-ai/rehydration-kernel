@@ -18,10 +18,7 @@ Primary entrypoints:
   [`../PAPER_SUBMISSION_DRAFT.md`](../PAPER_SUBMISSION_DRAFT.md)
 - ACL package guide:
   [`acl/README.md`](./acl/README.md)
-- ACL review PDF:
-  [`acl/main.pdf`](./acl/main.pdf)
-- ACL preprint PDF:
-  [`acl/main-preprint.pdf`](./acl/main-preprint.pdf)
+  (PDFs are built locally from LaTeX sources; not committed to preserve anonymity)
 
 The accompanying experimental artifact lives outside this directory under:
 

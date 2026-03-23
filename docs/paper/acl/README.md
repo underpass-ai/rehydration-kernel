@@ -14,8 +14,8 @@ The current manuscript covers four use cases:
 
 - `main.tex`: ACL review-mode draft, with line numbers
 - `main-preprint.tex`: ACL preprint-mode draft, without review line numbers
-- `main.pdf`: compiled ACL review PDF
-- `main-preprint.pdf`: compiled ACL preprint PDF
+- `main.pdf`: compiled ACL review PDF (build locally, not committed)
+- `main-preprint.pdf`: compiled ACL preprint PDF (build locally, not committed)
 - `references.bib`: bibliography used by the draft
 - `acl.sty`: official ACL style file vendored into the repo
 - `acl_natbib.bst`: official ACL bibliography style vendored into the repo

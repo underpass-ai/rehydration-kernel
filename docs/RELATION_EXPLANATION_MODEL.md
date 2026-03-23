@@ -1,6 +1,6 @@
 # Relation Explanation Model
 
-Status: Draft
+Status: Active (implemented in domain, proto, asyncapi, and paper artifact)
 
 ## Intent
 

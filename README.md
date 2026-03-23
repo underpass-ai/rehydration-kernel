@@ -102,10 +102,8 @@ Current paper materials:
   [`docs/PAPER_SUBMISSION_DRAFT.md`](./docs/PAPER_SUBMISSION_DRAFT.md)
 - ACL package index:
   [`docs/paper/README.md`](./docs/paper/README.md)
-- ACL review PDF:
-  [`docs/paper/acl/main.pdf`](./docs/paper/acl/main.pdf)
-- ACL preprint PDF:
-  [`docs/paper/acl/main-preprint.pdf`](./docs/paper/acl/main-preprint.pdf)
+- ACL LaTeX sources:
+  [`docs/paper/acl/`](./docs/paper/acl/) (build locally with `pdflatex`)
 - paper-use-case artifact summary:
   [`artifacts/paper-use-cases/summary.json`](./artifacts/paper-use-cases/summary.json)
 - paper-use-case rendered report:
