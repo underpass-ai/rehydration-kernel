@@ -1,5 +1,7 @@
 use std::sync::Arc;
+use std::time::Instant;
 
+use opentelemetry::KeyValue;
 use rehydration_application::{
     ContextRenderOptions, GetContextPathQuery, GetContextQuery, GetNodeDetailQuery,
     QueryApplicationService, RehydrateSessionQuery, ValidateScopeQuery,
@@ -43,6 +45,7 @@ where
         &self,
         request: Request<GetContextRequest>,
     ) -> Result<Response<GetContextResponse>, Status> {
+        let start = Instant::now();
         let request = request.into_inner();
         tracing::debug!(
             root_node_id = %request.root_node_id,
@@ -65,6 +68,31 @@ where
             })
             .await
             .map_err(map_application_error)?;
+
+        let meter = opentelemetry::global::meter("rehydration-kernel");
+        let attrs = &[KeyValue::new("rpc", "GetContext")];
+        meter
+            .f64_histogram("rehydration.rpc.duration")
+            .build()
+            .record(start.elapsed().as_secs_f64(), attrs);
+        meter
+            .u64_histogram("rehydration.bundle.nodes")
+            .build()
+            .record(result.bundle.stats().selected_nodes() as u64, attrs);
+        meter
+            .u64_histogram("rehydration.bundle.relationships")
+            .build()
+            .record(result.bundle.stats().selected_relationships() as u64, attrs);
+        meter
+            .u64_histogram("rehydration.rendered.tokens")
+            .build()
+            .record(result.rendered.token_count as u64, attrs);
+        if result.rendered.truncation.is_some() {
+            meter
+                .u64_counter("rehydration.truncation.total")
+                .build()
+                .add(1, attrs);
+        }
 
         Ok(Response::new(GetContextResponse {
             bundle: Some(proto_bundle_from_single_role_v1beta1(&result.bundle)),
@@ -133,6 +161,7 @@ where
         &self,
         request: Request<RehydrateSessionRequest>,
     ) -> Result<Response<RehydrateSessionResponse>, Status> {
+        let start = Instant::now();
         let request = request.into_inner();
         tracing::debug!(
             root_node_id = %request.root_node_id,
@@ -163,6 +192,13 @@ where
             })
             .await
             .map_err(map_application_error)?;
+
+        let meter = opentelemetry::global::meter("rehydration-kernel");
+        let attrs = &[KeyValue::new("rpc", "RehydrateSession")];
+        meter
+            .f64_histogram("rehydration.rpc.duration")
+            .build()
+            .record(start.elapsed().as_secs_f64(), attrs);
 
         Ok(Response::new(proto_rehydrate_session_response_v1beta1(
             &result,

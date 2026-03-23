@@ -2241,6 +2241,7 @@ version = "0.1.0"
 dependencies = [
  "async-nats",
  "neo4rs",
+ "opentelemetry",
  "prost-types",
  "rehydration-adapter-nats",
  "rehydration-adapter-neo4j",

@@ -34,7 +34,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     install_rustls_crypto_provider();
     let config = AppConfig::try_from_env()?;
     let projection_runtime_config = ProjectionRuntimeConfig::try_from_env()?;
-    let otel_provider = init_observability(&config.service_name);
+    let otel_guard = init_observability(&config.service_name);
 
     let graph_reader = Neo4jProjectionReader::new(config.graph_uri.clone())?;
     let detail_reader = ValkeyNodeDetailStore::new(config.detail_uri.clone())?;
@@ -74,7 +74,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }
     }
 
-    shutdown_observability(otel_provider);
+    shutdown_observability(otel_guard);
     Ok(())
 }
 
