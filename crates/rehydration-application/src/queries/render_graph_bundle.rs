@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 
-use rehydration_domain::{BundleNode, BundleNodeDetail, BundleRelationship, RehydrationBundle};
+use rehydration_domain::{
+    BundleNode, BundleNodeDetail, BundleRelationship, RehydrationBundle, TokenEstimator,
+};
 
 use crate::queries::ContextRenderOptions;
 
@@ -9,15 +11,52 @@ pub struct RenderedContext {
     pub content: String,
     pub token_count: u32,
     pub sections: Vec<String>,
+    pub truncation: Option<TruncationMetadata>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TruncationMetadata {
+    pub budget_requested: u32,
+    pub budget_used: u32,
+    pub total_before_truncation: u32,
+    pub sections_kept: u32,
+    pub sections_dropped: u32,
+    pub token_estimator: String,
+}
+
+/// Estimates tokens as `ceil(chars / 4)`. This approximates BPE tokenizers
+/// for English text without requiring a model-specific vocabulary.
+pub struct CharDivFourEstimator;
+
+impl TokenEstimator for CharDivFourEstimator {
+    fn estimate_tokens(&self, text: &str) -> u32 {
+        text.len().div_ceil(4) as u32
+    }
+
+    fn name(&self) -> &str {
+        "char_div_4"
+    }
 }
 
 pub fn render_graph_bundle(bundle: &RehydrationBundle) -> RenderedContext {
-    render_graph_bundle_with_options(bundle, &ContextRenderOptions::default())
+    render_graph_bundle_with_estimator(
+        bundle,
+        &ContextRenderOptions::default(),
+        &CharDivFourEstimator,
+    )
 }
 
 pub fn render_graph_bundle_with_options(
     bundle: &RehydrationBundle,
     options: &ContextRenderOptions,
+) -> RenderedContext {
+    render_graph_bundle_with_estimator(bundle, options, &CharDivFourEstimator)
+}
+
+pub fn render_graph_bundle_with_estimator(
+    bundle: &RehydrationBundle,
+    options: &ContextRenderOptions,
+    estimator: &dyn TokenEstimator,
 ) -> RenderedContext {
     let detail_by_node_id = bundle
         .node_details()
@@ -25,18 +64,20 @@ pub fn render_graph_bundle_with_options(
         .map(|detail| (detail.node_id(), detail))
         .collect::<BTreeMap<_, _>>();
 
-    let sections = limit_sections_by_token_budget(
-        ordered_sections(bundle, &detail_by_node_id, options),
-        options,
-    );
+    let all_sections = ordered_sections(bundle, &detail_by_node_id, options);
+    let total_sections = all_sections.len() as u32;
+
+    let (sections, truncation) =
+        limit_sections_by_token_budget(all_sections, options, estimator, total_sections);
 
     let content = sections.join("\n\n");
-    let token_count = content.split_whitespace().count() as u32;
+    let token_count = estimator.estimate_tokens(&content);
 
     RenderedContext {
         content,
         token_count,
         sections,
+        truncation,
     }
 }
 
@@ -60,16 +101,19 @@ fn ordered_sections(
         sections.push(render_node(node));
     }
 
+    // Explanatory relationships first (salience-based packing)
+    for relationship in prioritized_relationships(bundle, focus_node_id) {
+        sections.push(render_relationship(relationship));
+    }
+
+    // Remaining neighbor nodes
     for node in bundle.neighbor_nodes() {
         if Some(node.node_id()) != focus_node_id {
             sections.push(render_node(node));
         }
     }
 
-    for relationship in prioritized_relationships(bundle, focus_node_id) {
-        sections.push(render_relationship(relationship));
-    }
-
+    // Details last (lowest salience for truncation purposes)
     for detail in prioritized_details(bundle, focus_node_id) {
         sections.push(render_detail(detail, detail_by_node_id));
     }
@@ -130,16 +174,22 @@ fn prioritized_details<'a>(
 fn limit_sections_by_token_budget(
     sections: Vec<String>,
     options: &ContextRenderOptions,
-) -> Vec<String> {
+    estimator: &dyn TokenEstimator,
+    total_sections: u32,
+) -> (Vec<String>, Option<TruncationMetadata>) {
     let Some(token_budget) = options.token_budget else {
-        return sections;
+        return (sections, None);
     };
 
     let mut limited = Vec::new();
     let mut token_count = 0u32;
+    let total_before = sections
+        .iter()
+        .map(|s| estimator.estimate_tokens(s))
+        .sum::<u32>();
 
     for section in sections {
-        let section_tokens = section.split_whitespace().count() as u32;
+        let section_tokens = estimator.estimate_tokens(&section);
         if limited.is_empty() || token_count + section_tokens <= token_budget {
             token_count += section_tokens;
             limited.push(section);
@@ -148,7 +198,17 @@ fn limit_sections_by_token_budget(
         }
     }
 
-    limited
+    let sections_kept = limited.len() as u32;
+    let truncation = TruncationMetadata {
+        budget_requested: token_budget,
+        budget_used: token_count,
+        total_before_truncation: total_before,
+        sections_kept,
+        sections_dropped: total_sections - sections_kept,
+        token_estimator: estimator.name().to_string(),
+    };
+
+    (limited, Some(truncation))
 }
 
 fn render_node(node: &BundleNode) -> String {
@@ -231,7 +291,7 @@ mod tests {
     use super::{render_graph_bundle, render_graph_bundle_with_options};
 
     #[test]
-    fn render_graph_bundle_orders_root_neighbors_relationships_and_details() {
+    fn render_graph_bundle_orders_root_relationships_neighbors_and_details() {
         let bundle = RehydrationBundle::new(
             CaseId::new("case-123").expect("case id is valid"),
             Role::new("developer").expect("role is valid"),
@@ -273,8 +333,8 @@ mod tests {
 
         assert_eq!(rendered.sections.len(), 4);
         assert!(rendered.sections[0].starts_with("Node Root"));
-        assert!(rendered.sections[1].starts_with("Node Neighbor"));
-        assert!(rendered.sections[2].starts_with("Relationship"));
+        assert!(rendered.sections[1].starts_with("Relationship"));
+        assert!(rendered.sections[2].starts_with("Node Neighbor"));
         assert!(rendered.sections[3].starts_with("Detail case-123"));
     }
 
@@ -292,7 +352,7 @@ mod tests {
 
         assert!(rendered.sections[0].starts_with("Node Root"));
         assert!(rendered.sections[1].starts_with("Node Focused"));
-        assert!(rendered.sections[3].contains("node-2"));
+        assert!(rendered.sections[2].contains("node-2"));
     }
 
     #[test]
@@ -308,8 +368,41 @@ mod tests {
         );
 
         assert_eq!(rendered.sections.len(), 1);
-        assert!(rendered.token_count <= 8);
         assert!(rendered.content.starts_with("Node Root"));
+        let truncation = rendered
+            .truncation
+            .as_ref()
+            .expect("should have truncation metadata");
+        assert_eq!(truncation.budget_requested, 8);
+        assert!(truncation.sections_dropped > 0);
+        assert_eq!(truncation.token_estimator, "char_div_4");
+    }
+
+    #[test]
+    fn render_graph_bundle_uses_char_div_4_estimator() {
+        let bundle = RehydrationBundle::new(
+            CaseId::new("case-1").expect("case id is valid"),
+            Role::new("dev").expect("role is valid"),
+            BundleNode::new(
+                "case-1",
+                "case",
+                "Root",
+                "",
+                "ACTIVE",
+                vec![],
+                BTreeMap::new(),
+            ),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            BundleMetadata::initial("0.1.0"),
+        )
+        .expect("bundle should be valid");
+
+        let rendered = render_graph_bundle(&bundle);
+
+        // "Node Root (case)" = 16 chars => ceil(16/4) = 4 tokens
+        assert_eq!(rendered.token_count, 4);
     }
 
     fn sample_bundle() -> RehydrationBundle {

@@ -25,11 +25,18 @@ impl CommandGrpcServiceV1Beta1 {
 
 #[tonic::async_trait]
 impl ContextCommandService for CommandGrpcServiceV1Beta1 {
+    #[tracing::instrument(skip(self, request), fields(rpc = "UpdateContext"))]
     async fn update_context(
         &self,
         request: Request<UpdateContextRequest>,
     ) -> Result<Response<UpdateContextResponse>, Status> {
         let request = request.into_inner();
+        tracing::debug!(
+            root_node_id = %request.root_node_id,
+            role = %request.role,
+            changes = request.changes.len(),
+            "handling update_context"
+        );
         let metadata = request.metadata.unwrap_or(CommandMetadata {
             idempotency_key: String::new(),
             correlation_id: String::new(),

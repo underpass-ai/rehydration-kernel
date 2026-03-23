@@ -38,11 +38,19 @@ where
     D: NodeDetailReader + Send + Sync + 'static,
     S: SnapshotStore + Send + Sync + 'static,
 {
+    #[tracing::instrument(skip(self, request), fields(rpc = "GetContext"))]
     async fn get_context(
         &self,
         request: Request<GetContextRequest>,
     ) -> Result<Response<GetContextResponse>, Status> {
         let request = request.into_inner();
+        tracing::debug!(
+            root_node_id = %request.root_node_id,
+            role = %request.role,
+            depth = request.depth,
+            token_budget = request.token_budget,
+            "handling get_context"
+        );
         let result = self
             .application
             .get_context(GetContextQuery {
@@ -66,11 +74,18 @@ where
         }))
     }
 
+    #[tracing::instrument(skip(self, request), fields(rpc = "GetContextPath"))]
     async fn get_context_path(
         &self,
         request: Request<GetContextPathRequest>,
     ) -> Result<Response<GetContextPathResponse>, Status> {
         let request = request.into_inner();
+        tracing::debug!(
+            root_node_id = %request.root_node_id,
+            target_node_id = %request.target_node_id,
+            role = %request.role,
+            "handling get_context_path"
+        );
         let result = self
             .application
             .get_context_path(GetContextPathQuery {
@@ -92,11 +107,13 @@ where
         }))
     }
 
+    #[tracing::instrument(skip(self, request), fields(rpc = "GetNodeDetail"))]
     async fn get_node_detail(
         &self,
         request: Request<GetNodeDetailRequest>,
     ) -> Result<Response<GetNodeDetailResponse>, Status> {
         let request = request.into_inner();
+        tracing::debug!(node_id = %request.node_id, "handling get_node_detail");
         let result = self
             .application
             .get_node_detail(GetNodeDetailQuery {
@@ -111,11 +128,18 @@ where
         }))
     }
 
+    #[tracing::instrument(skip(self, request), fields(rpc = "RehydrateSession"))]
     async fn rehydrate_session(
         &self,
         request: Request<RehydrateSessionRequest>,
     ) -> Result<Response<RehydrateSessionResponse>, Status> {
         let request = request.into_inner();
+        tracing::debug!(
+            root_node_id = %request.root_node_id,
+            roles = ?request.roles,
+            persist_snapshot = request.persist_snapshot,
+            "handling rehydrate_session"
+        );
         // NOTE: `request.include_timeline` and `request.include_summaries` are
         // proto fields reserved for future use. They are intentionally not mapped
         // to application-layer queries in v1beta1.
@@ -145,6 +169,7 @@ where
         )))
     }
 
+    #[tracing::instrument(skip(self, request), fields(rpc = "ValidateScope"))]
     async fn validate_scope(
         &self,
         request: Request<ValidateScopeRequest>,

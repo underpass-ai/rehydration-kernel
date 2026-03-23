@@ -15,6 +15,7 @@ pub use projection::{
 pub use repositories::{
     GraphNeighborhoodReader, NodeDetailReader, PortError, ProcessedEventStore,
     ProjectionCheckpointStore, ProjectionWriter, SnapshotSaveOptions, SnapshotStore,
+    TokenEstimator,
 };
 pub use value_objects::{BundleMetadata, CaseId, Role};
 pub use value_objects::{RelationExplanation, RelationSemanticClass};

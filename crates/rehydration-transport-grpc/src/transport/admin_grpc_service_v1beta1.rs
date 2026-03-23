@@ -46,6 +46,7 @@ where
     G: GraphNeighborhoodReader + Send + Sync + 'static,
     D: NodeDetailReader + Send + Sync + 'static,
 {
+    #[tracing::instrument(skip(self, request), fields(rpc = "GetProjectionStatus"))]
     async fn get_projection_status(
         &self,
         request: Request<GetProjectionStatusRequest>,
@@ -62,6 +63,7 @@ where
         )))
     }
 
+    #[tracing::instrument(skip(self, request), fields(rpc = "ReplayProjection"))]
     async fn replay_projection(
         &self,
         request: Request<ReplayProjectionRequest>,
@@ -84,6 +86,7 @@ where
         )))
     }
 
+    #[tracing::instrument(skip(self, request), fields(rpc = "GetBundleSnapshot"))]
     async fn get_bundle_snapshot(
         &self,
         request: Request<GetBundleSnapshotRequest>,
@@ -103,6 +106,7 @@ where
         )))
     }
 
+    #[tracing::instrument(skip(self, request), fields(rpc = "GetGraphRelationships"))]
     async fn get_graph_relationships(
         &self,
         request: Request<GetGraphRelationshipsRequest>,
@@ -124,6 +128,7 @@ where
         )))
     }
 
+    #[tracing::instrument(skip(self, request), fields(rpc = "GetRehydrationDiagnostics"))]
     async fn get_rehydration_diagnostics(
         &self,
         request: Request<GetRehydrationDiagnosticsRequest>,

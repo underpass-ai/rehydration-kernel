@@ -18,8 +18,8 @@ use crate::projection_nats_runtime::connect_projection_runtime;
 async fn main() -> ExitCode {
     match run().await {
         Ok(()) => ExitCode::SUCCESS,
-        Err(_error) => {
-            eprintln!("rehydration-server failed");
+        Err(error) => {
+            tracing::error!(%error, "rehydration-server failed");
             ExitCode::FAILURE
         }
     }
@@ -49,13 +49,13 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     )
     .await?;
 
-    println!("{}", grpc_server.describe());
-    println!("{}", admin_server.describe());
-    println!("{}", events_consumer.describe());
-    println!("{}", projection_runtime.describe());
-    println!(
-        "query bootstrap role={}",
-        grpc_server.bootstrap_request().role
+    tracing::info!(grpc = %grpc_server.describe(), "server ready");
+    tracing::info!(admin = %admin_server.describe(), "admin ready");
+    tracing::info!(events = %events_consumer.describe(), "events ready");
+    tracing::info!(projection = %projection_runtime.describe(), "projection ready");
+    tracing::info!(
+        role = %grpc_server.bootstrap_request().role,
+        "query bootstrap"
     );
 
     let _warmup_bundle = grpc_server.warmup_bundle().await?;
