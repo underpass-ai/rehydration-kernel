@@ -30,3 +30,8 @@ tokio-rustls = "0.26.4"
 name = "runtime_integration"
 path = "tests/runtime_integration.rs"
 required-features = ["container-tests"]
+
+[[test]]
+name = "context_event_store_integration"
+path = "tests/context_event_store_integration.rs"
+required-features = ["container-tests"]

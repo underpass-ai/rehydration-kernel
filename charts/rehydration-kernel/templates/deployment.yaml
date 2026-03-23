@@ -60,6 +60,16 @@ spec:
               value: {{ .Values.config.adminBind | quote }}
             - name: REHYDRATION_EVENTS_PREFIX
               value: {{ .Values.config.eventsPrefix | quote }}
+            - name: REHYDRATION_LOG_FORMAT
+              value: {{ .Values.observability.logFormat | quote }}
+            {{- if ne (default "" .Values.observability.otlpEndpoint) "" }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.observability.otlpEndpoint | quote }}
+            {{- end }}
+            {{- if ne (default "" .Values.observability.serviceName) "" }}
+            - name: OTEL_SERVICE_NAME
+              value: {{ .Values.observability.serviceName | quote }}
+            {{- end }}
             {{- if ne .Values.natsTls.mode "disabled" }}
             - name: NATS_TLS_MODE
               value: {{ .Values.natsTls.mode | quote }}

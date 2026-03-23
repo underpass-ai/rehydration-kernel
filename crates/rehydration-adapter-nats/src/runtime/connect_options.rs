@@ -19,7 +19,7 @@ impl NatsClientTlsConfig {
     }
 }
 
-pub(crate) async fn connect_nats_client(
+pub async fn connect_nats_client(
     url: &str,
     tls: &NatsClientTlsConfig,
 ) -> Result<Client, NatsRuntimeError> {

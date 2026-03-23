@@ -11,4 +11,6 @@ mod tests;
 pub use consumer::NatsProjectionConsumer;
 pub use context_event_store::NatsContextEventStore;
 pub use error::NatsConsumerError;
-pub use runtime::{NatsClientTlsConfig, NatsProjectionRuntime, NatsRuntimeError};
+pub use runtime::{
+    NatsClientTlsConfig, NatsProjectionRuntime, NatsRuntimeError, connect_nats_client,
+};

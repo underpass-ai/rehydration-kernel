@@ -4,15 +4,19 @@ mod projection_nats_runtime;
 use std::process::ExitCode;
 use std::sync::Once;
 
-use rehydration_adapter_nats::NatsProjectionConsumer;
+use rehydration_adapter_nats::{
+    NatsContextEventStore, NatsProjectionConsumer, connect_nats_client,
+};
 use rehydration_adapter_neo4j::Neo4jProjectionReader;
 use rehydration_adapter_valkey::{
     ValkeyContextEventStore, ValkeyNodeDetailStore, ValkeySnapshotStore,
 };
 use rehydration_config::{AppConfig, ProjectionRuntimeConfig};
+use rehydration_domain::ContextEventStore;
 use rehydration_observability::{init_observability, shutdown_observability};
 use rehydration_transport_grpc::GrpcServer;
 
+use crate::nats_tls::adapter_nats_tls_config;
 use crate::projection_nats_runtime::connect_projection_runtime;
 
 #[tokio::main]
@@ -30,23 +34,90 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     install_rustls_crypto_provider();
     let config = AppConfig::try_from_env()?;
     let projection_runtime_config = ProjectionRuntimeConfig::try_from_env()?;
-    let otel_provider = init_observability(&config.service_name);
+    let otel_guard = init_observability(&config.service_name);
 
     let graph_reader = Neo4jProjectionReader::new(config.graph_uri.clone())?;
     let detail_reader = ValkeyNodeDetailStore::new(config.detail_uri.clone())?;
+    let snapshot_store = ValkeySnapshotStore::new(config.snapshot_uri.clone())?;
+
+    let event_store_backend =
+        std::env::var("REHYDRATION_EVENT_STORE_BACKEND").unwrap_or_else(|_| "valkey".to_string());
+
+    match event_store_backend.as_str() {
+        "nats" => {
+            let nats_tls = adapter_nats_tls_config(&projection_runtime_config.nats_tls);
+            let nats_client =
+                connect_nats_client(&projection_runtime_config.nats_url, &nats_tls).await?;
+            let event_store =
+                NatsContextEventStore::new(nats_client, &config.events_subject_prefix).await?;
+            run_server(ServerContext {
+                config,
+                graph_reader,
+                detail_reader,
+                snapshot_store,
+                event_store,
+                projection_config: projection_runtime_config,
+            })
+            .await?;
+        }
+        _ => {
+            let event_store = ValkeyContextEventStore::new(config.snapshot_uri.clone())?;
+            run_server(ServerContext {
+                config,
+                graph_reader,
+                detail_reader,
+                snapshot_store,
+                event_store,
+                projection_config: projection_runtime_config,
+            })
+            .await?;
+        }
+    }
+
+    shutdown_observability(otel_guard);
+    Ok(())
+}
+
+struct ServerContext<E, G, D> {
+    config: AppConfig,
+    graph_reader: G,
+    detail_reader: D,
+    snapshot_store: ValkeySnapshotStore,
+    event_store: E,
+    projection_config: ProjectionRuntimeConfig,
+}
+
+async fn run_server<E, G, D>(
+    ctx: ServerContext<E, G, D>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+where
+    E: ContextEventStore + Send + Sync + 'static + std::fmt::Debug,
+    G: rehydration_domain::GraphNeighborhoodReader
+        + rehydration_domain::ProjectionWriter
+        + Send
+        + Sync
+        + Clone
+        + 'static,
+    D: rehydration_domain::NodeDetailReader
+        + rehydration_domain::ProjectionWriter
+        + Send
+        + Sync
+        + Clone
+        + 'static,
+{
     let grpc_server = GrpcServer::new(
-        config.clone(),
-        graph_reader.clone(),
-        detail_reader.clone(),
-        ValkeySnapshotStore::new(config.snapshot_uri.clone())?,
-        ValkeyContextEventStore::new(config.snapshot_uri.clone())?,
+        ctx.config.clone(),
+        ctx.graph_reader.clone(),
+        ctx.detail_reader.clone(),
+        ctx.snapshot_store,
+        ctx.event_store,
     );
-    let events_consumer = NatsProjectionConsumer::new(config.events_subject_prefix.clone());
+    let events_consumer = NatsProjectionConsumer::new(ctx.config.events_subject_prefix.clone());
     let projection_runtime = connect_projection_runtime(
-        &projection_runtime_config,
-        &config.events_subject_prefix,
-        graph_reader,
-        detail_reader,
+        &ctx.projection_config,
+        &ctx.config.events_subject_prefix,
+        ctx.graph_reader,
+        ctx.detail_reader,
     )
     .await?;
 
@@ -67,7 +138,6 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             .map_err(|error| Box::new(error) as Box<dyn std::error::Error + Send + Sync>)
     })?;
 
-    shutdown_observability(otel_provider);
     Ok(())
 }
 

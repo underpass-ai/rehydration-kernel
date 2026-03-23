@@ -79,6 +79,11 @@ neo4jTls:
   keys:
     ca: ""
 
+observability:
+  logFormat: json
+  otlpEndpoint: ""
+  serviceName: ""
+
 config:
   serviceName: rehydration-kernel
   grpcBind: 0.0.0.0:50054

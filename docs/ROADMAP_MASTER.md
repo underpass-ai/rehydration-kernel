@@ -26,60 +26,53 @@ Single source of truth for kernel maturity, technical debt, and next steps.
 - [x] security-model.md (full TLS + mTLS, threat model)
 - [x] InMemoryContextEventStore in testkit
 
-### Current batch (PR #55 — checks running)
+### JetStream + tiktoken + OTel (PR #55)
 - [x] NatsContextEventStore adapter (NATS JetStream, pure — no Valkey dependency)
 - [x] Cl100kEstimator replacing CharDivFourEstimator (tiktoken-rs, cl100k_base BPE)
 - [x] OpenTelemetry traces via OTLP (opentelemetry + tracing-opentelemetry)
 - [x] THIRD_PARTY_NOTICES.md
 
-## Pending — Architecture refactoring (from audit)
+### Event store wiring + metrics + tests + refactoring (PR #56)
+- [x] Wire NatsContextEventStore in server composition root
+- [x] Config switch: `REHYDRATION_EVENT_STORE_BACKEND=nats|valkey`
+- [x] Integration test with NATS JetStream container (3 tests: append, conflict, idempotency)
+- [x] OTel metrics: rpc_duration, bundle_nodes, bundle_relationships, rendered_tokens, truncation_total, projection_lag
+- [x] Helm chart: `observability.logFormat`, `observability.otlpEndpoint`, `observability.serviceName`
+- [x] Validated in cluster
+- [x] Coverage tests: Cl100kEstimator, truncation metadata, revision conflict gRPC mapping
+- [x] SonarCloud coverage exclusions for runtime init (covered by IT)
+- [x] Refactor: split render_graph_bundle.rs (535 → 4 files)
+- [x] Refactor: split testkit/lib.rs (623 → 3 files)
 
-### Immediate (high impact)
+## Pending — Architecture (low priority, all test-only)
 
 | Task | File | Lines | Action |
 |------|------|-------|--------|
-| Split render_graph_bundle.rs | application/queries/ | 535 | Extract to bundle_renderer, bundle_truncator, bundle_prioritizer |
-| Split testkit/lib.rs | testkit/ | 623 | Docker setup → module, in-memory stores → separate files |
-| Extract UpdateContext validators | application/commands/ | 347 | IdempotencyChecker, RevisionValidator, ContentHashCalculator |
-
-### Short-term (medium impact)
-
-| Task | File | Lines | Action |
-|------|------|-------|--------|
-| Split transport tests | transport/tests.rs | 902 | Separate files by feature |
+| Split transport tests | transport/tests.rs | 902 | Separate files by feature (tests only, no prod impact) |
 | Extract RESP protocol | adapter-valkey/io.rs | 663 | Shared module for RESP encoding |
 | Extract TLS config | transport/grpc_server.rs | 222 | Separate TLS module |
-| Coverage: NatsContextEventStore | adapter-nats/context_event_store.rs | 172 | Container-backed integration test with JetStream |
-| Coverage: Cl100kEstimator | application/queries/render_graph_bundle.rs | 535 | Unit tests for BPE token counting edge cases |
-| Coverage: OTel init paths | observability/lib.rs | 90 | Test json/pretty/compact formats and OTel provider lifecycle |
 
-### Acceptable (no action needed)
+### Coverage gaps (accepted, documented)
 
-- RelationExplanation: 9 fields — acceptable with builder pattern
-- RehydrationBundle: 8 fields — at limit, acceptable
-- Domain layer: clean, no changes needed
-- Ports/repositories: exemplary ISP
+| File | Unit test | IT coverage | Reason |
+|------|-----------|-------------|--------|
+| `observability/src/lib.rs` | 19% | Deployed server | Global subscriber, single init per process |
+| `observability/src/metrics.rs` | 49% | Noop meter unit test | Export only with real OTLP collector |
+| `adapter-nats/context_event_store.rs` | 0% (unit) | 3 container tests | I/O boundary, requires JetStream |
 
-## Pending — Product features
+## Pending — Testing
 
-### Event store migration
-- [ ] Wire NatsContextEventStore in server composition root (currently uses Valkey)
-- [ ] Add config switch for event store backend (NATS vs Valkey)
-- [ ] Integration test with NATS JetStream container
+- [ ] End-to-end mTLS integration test: gRPC mutual TLS with container-backed Neo4j, Valkey, and NATS — all TLS-encrypted
+- [ ] OTel collector integration test: container OTLP collector verifying trace and metric export
 
-### Observability hardening
-- [ ] Per-RPC latency histograms (OpenTelemetry metrics)
-- [ ] Bundle size metrics (nodes, relationships, details, tokens)
-- [ ] Truncation rate counters
-- [ ] Projection lag metrics
+## Pending — Paper artifact
 
-### Paper artifact
 - [ ] Recalculate paper metrics with cl100k_base tokenizer
 - [ ] Add latency capture to paper harness
 - [ ] Expand meso variants to UC2-UC4
 - [ ] CI consistency check paper ↔ artifacts
 
-## Pending — Research (from ROADMAP_SOTA_CONTEXT_REHYDRATION.md)
+## Pending — Research
 
 ### Level 1 — Submission-ready
 - ~~Freeze artifact~~ (done)
@@ -96,7 +89,7 @@ Single source of truth for kernel maturity, technical debt, and next steps.
 - [ ] Two domains minimum
 - [ ] Pull and event-driven evaluation with same metrics
 - [ ] External baseline families
-- [ ] Vllm in the loop tests
+- [ ] vLLM in the loop tests
 - [ ] Dataset Generator
 
 ### Level 3 — SOTA push
