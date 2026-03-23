@@ -6,7 +6,7 @@ use rehydration_proto::v1beta1::{
 pub(crate) fn proto_rendered_context_from_result_v1beta1(
     result: &GetContextResult,
 ) -> ProtoRenderedContext {
-    proto_rendered_context_v1beta1(&result.rendered, &result.scope_validation.provided_scopes)
+    proto_rendered_context_v1beta1(&result.rendered, &result.requested_scopes)
 }
 
 pub(crate) fn proto_rendered_context_v1beta1(

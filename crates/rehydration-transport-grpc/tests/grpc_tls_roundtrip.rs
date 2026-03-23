@@ -215,15 +215,10 @@ async fn grpc_server_supports_tls_roundtrip() {
         .await
         .expect("TLS client should connect");
     let mut query_client = ContextQueryServiceClient::new(channel);
-    let response = get_context(&mut query_client)
+    let status = get_context(&mut query_client)
         .await
-        .expect("TLS roundtrip should succeed")
-        .into_inner();
-
-    assert_eq!(
-        response.bundle.expect("bundle should exist").root_node_id,
-        "case-123"
-    );
+        .expect_err("empty graph should return NOT_FOUND over TLS");
+    assert_eq!(status.code(), tonic::Code::NotFound);
 
     stop_server(running)
         .await
@@ -295,15 +290,10 @@ async fn grpc_server_accepts_clients_with_certificate_in_mutual_mode() {
         .await
         .expect("mTLS client should connect with a certificate");
     let mut query_client = ContextQueryServiceClient::new(channel);
-    let response = get_context(&mut query_client)
+    let status = get_context(&mut query_client)
         .await
-        .expect("mTLS roundtrip should succeed")
-        .into_inner();
-
-    assert_eq!(
-        response.bundle.expect("bundle should exist").root_node_id,
-        "case-123"
-    );
+        .expect_err("empty graph should return NOT_FOUND over mTLS");
+    assert_eq!(status.code(), tonic::Code::NotFound);
 
     stop_server(running)
         .await

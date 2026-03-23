@@ -61,7 +61,7 @@ where
         Ok(Response::new(GetContextResponse {
             bundle: Some(proto_bundle_from_single_role_v1beta1(&result.bundle)),
             rendered: Some(proto_rendered_context_from_result_v1beta1(&result)),
-            scope_validation: Some(proto_scope_validation_v1beta1(&result.scope_validation)),
+            scope_validation: None,
             served_at: Some(crate::transport::support::timestamp_from(result.served_at)),
         }))
     }
@@ -116,13 +116,25 @@ where
         request: Request<RehydrateSessionRequest>,
     ) -> Result<Response<RehydrateSessionResponse>, Status> {
         let request = request.into_inner();
+        // NOTE: `request.include_timeline` and `request.include_summaries` are
+        // proto fields reserved for future use. They are intentionally not mapped
+        // to application-layer queries in v1beta1.
+        let snapshot_ttl_seconds = match (request.persist_snapshot, request.snapshot_ttl) {
+            (true, None) => {
+                return Err(Status::invalid_argument(
+                    "snapshot_ttl is required when persist_snapshot is true",
+                ));
+            }
+            (_, Some(d)) => d.seconds.max(0) as u64,
+            (false, None) => 0,
+        };
         let result = self
             .application
             .rehydrate_session(RehydrateSessionQuery {
                 root_node_id: request.root_node_id,
                 roles: request.roles,
                 persist_snapshot: request.persist_snapshot,
-                snapshot_ttl_seconds: 900,
+                snapshot_ttl_seconds,
                 timeline_window: request.timeline_window,
             })
             .await

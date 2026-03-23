@@ -22,15 +22,7 @@ pub(crate) fn expected_get_context_response() -> GetContextResponse {
     GetContextResponse {
         bundle: Some(expected_bundle()),
         rendered: Some(rendered),
-        scope_validation: Some(ScopeValidationResult {
-            allowed: true,
-            required_scopes: vec!["graph".to_string()],
-            provided_scopes: vec!["graph".to_string()],
-            missing_scopes: Vec::new(),
-            extra_scopes: Vec::new(),
-            reason: "scope validation passed".to_string(),
-            diagnostics: Vec::new(),
-        }),
+        scope_validation: None,
         served_at: None,
     }
 }

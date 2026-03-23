@@ -273,7 +273,7 @@ async fn grpc_server_application_accessors_return_callable_services() {
         NoopSnapshotStore,
     );
 
-    let get_context = server
+    let get_context_err = server
         .query_application()
         .get_context(GetContextQuery {
             root_node_id: "node-123".to_string(),
@@ -282,9 +282,11 @@ async fn grpc_server_application_accessors_return_callable_services() {
             requested_scopes: vec!["graph".to_string()],
             render_options: Default::default(),
         })
-        .await
-        .expect("query application should respond");
-    assert_eq!(get_context.bundle.root_node_id().as_str(), "node-123");
+        .await;
+    assert!(
+        get_context_err.is_err(),
+        "empty graph should return NotFound"
+    );
 
     let update = server
         .command_application()
@@ -313,7 +315,7 @@ async fn query_service_returns_rendered_context() {
     ));
     let service = QueryGrpcServiceV1Beta1::new(application);
 
-    let response = service
+    let status = service
         .get_context(Request::new(GetContextRequest {
             root_node_id: "node-123".to_string(),
             role: "developer".to_string(),
@@ -326,25 +328,8 @@ async fn query_service_returns_rendered_context() {
             depth: 0,
         }))
         .await
-        .expect("get context should succeed")
-        .into_inner();
-
-    assert_eq!(
-        response
-            .bundle
-            .as_ref()
-            .expect("bundle should exist")
-            .root_node_id,
-        "node-123"
-    );
-    assert!(
-        response
-            .rendered
-            .as_ref()
-            .expect("rendered context should exist")
-            .content
-            .contains("node-123")
-    );
+        .expect_err("empty graph should return NOT_FOUND");
+    assert_eq!(status.code(), tonic::Code::NotFound);
 }
 
 #[tokio::test]
@@ -360,7 +345,7 @@ async fn query_service_forwards_requested_depth_to_application() {
     ));
     let service = QueryGrpcServiceV1Beta1::new(application);
 
-    service
+    let _ = service
         .get_context(Request::new(GetContextRequest {
             root_node_id: "node-123".to_string(),
             role: "developer".to_string(),
@@ -372,8 +357,7 @@ async fn query_service_forwards_requested_depth_to_application() {
             include_debug_sections: false,
             depth: 17,
         }))
-        .await
-        .expect("get context should succeed");
+        .await;
 
     assert_eq!(&*depths.lock().await, &[17]);
 }

@@ -7,7 +7,7 @@ use rehydration_domain::{
 };
 
 use crate::ApplicationError;
-use crate::queries::{BundleAssembler, NodeCentricProjectionReader, QueryApplicationService};
+use crate::queries::{NodeCentricProjectionReader, QueryApplicationService};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RehydrateSessionQuery {
@@ -89,7 +89,12 @@ where
             .await?
         {
             Some(bundle) => bundle,
-            None => BundleAssembler::placeholder(root_node_id, role, self.generator_version)?,
+            None => {
+                return Err(ApplicationError::NotFound(format!(
+                    "node '{}' not found",
+                    root_node_id
+                )));
+            }
         };
 
         if persist_snapshot {
@@ -281,6 +286,54 @@ mod tests {
         assert_eq!(
             snapshot_store.options.lock().await.as_slice(),
             &[SnapshotSaveOptions::new(Some(1800))]
+        );
+    }
+
+    struct EmptyGraphReader;
+
+    impl rehydration_domain::GraphNeighborhoodReader for EmptyGraphReader {
+        async fn load_neighborhood(
+            &self,
+            _root_node_id: &str,
+            _depth: u32,
+        ) -> Result<Option<NodeNeighborhood>, PortError> {
+            Ok(None)
+        }
+
+        async fn load_context_path(
+            &self,
+            _root_node_id: &str,
+            _target_node_id: &str,
+            _subtree_depth: u32,
+        ) -> Result<Option<ContextPathNeighborhood>, PortError> {
+            Ok(None)
+        }
+    }
+
+    #[tokio::test]
+    async fn rehydrate_session_returns_not_found_when_node_does_not_exist() {
+        let service = QueryApplicationService::new(
+            Arc::new(EmptyGraphReader),
+            Arc::new(SeededDetailReader),
+            Arc::new(RecordingSnapshotStore::default()),
+            "0.1.0",
+        );
+
+        let result = service
+            .rehydrate_session(RehydrateSessionQuery {
+                root_node_id: "nonexistent-node".to_string(),
+                roles: vec!["developer".to_string()],
+                persist_snapshot: false,
+                timeline_window: 0,
+                snapshot_ttl_seconds: 0,
+            })
+            .await;
+
+        assert!(result.is_err(), "should return an error for missing node");
+        let err = result.unwrap_err();
+        assert!(
+            matches!(err, crate::ApplicationError::NotFound(_)),
+            "error should be NotFound, got: {err:?}"
         );
     }
 }
