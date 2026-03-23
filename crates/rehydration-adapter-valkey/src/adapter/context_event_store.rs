@@ -1,0 +1,168 @@
+use rehydration_ports::{ContextEventStore, ContextUpdatedEvent, IdempotentOutcome, PortError};
+
+use crate::adapter::endpoint::ValkeyEndpoint;
+use crate::adapter::io::{execute_get_command, execute_set_command};
+
+const DEFAULT_KEY_PREFIX: &str = "rehydration:cmd";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ValkeyContextEventStore {
+    endpoint: ValkeyEndpoint,
+}
+
+impl ValkeyContextEventStore {
+    pub fn new(runtime_state_uri: impl Into<String>) -> Result<Self, PortError> {
+        let endpoint = ValkeyEndpoint::parse_with_default_key_prefix(
+            runtime_state_uri.into(),
+            "context event",
+            DEFAULT_KEY_PREFIX,
+        )?;
+        Ok(Self { endpoint })
+    }
+
+    fn revision_key(&self, root_node_id: &str, role: &str) -> String {
+        format!("{}:rev:{}:{}", self.endpoint.key_prefix, root_node_id, role)
+    }
+
+    fn hash_key(&self, root_node_id: &str, role: &str) -> String {
+        format!(
+            "{}:hash:{}:{}",
+            self.endpoint.key_prefix, root_node_id, role
+        )
+    }
+
+    fn idempotency_key(&self, key: &str) -> String {
+        format!("{}:idem:{}", self.endpoint.key_prefix, key)
+    }
+}
+
+impl ContextEventStore for ValkeyContextEventStore {
+    async fn append(
+        &self,
+        event: ContextUpdatedEvent,
+        expected_revision: u64,
+    ) -> Result<u64, PortError> {
+        let current = self
+            .current_revision(&event.root_node_id, &event.role)
+            .await?;
+        if current != expected_revision {
+            return Err(PortError::Conflict(format!(
+                "expected revision {expected_revision}, current is {current}"
+            )));
+        }
+
+        let new_revision = current + 1;
+        let rev_key = self.revision_key(&event.root_node_id, &event.role);
+        execute_set_command(&self.endpoint, &rev_key, &new_revision.to_string(), None).await?;
+
+        let hash_key = self.hash_key(&event.root_node_id, &event.role);
+        execute_set_command(&self.endpoint, &hash_key, &event.content_hash, None).await?;
+
+        if let Some(ref idem_key) = event.idempotency_key {
+            let key = self.idempotency_key(idem_key);
+            let value = encode_idempotent_value(new_revision, &event.content_hash);
+            execute_set_command(&self.endpoint, &key, &value, None).await?;
+        }
+
+        Ok(new_revision)
+    }
+
+    async fn current_revision(&self, root_node_id: &str, role: &str) -> Result<u64, PortError> {
+        let key = self.revision_key(root_node_id, role);
+        match execute_get_command(&self.endpoint, &key).await? {
+            Some(value) => parse_revision(&value),
+            None => Ok(0),
+        }
+    }
+
+    async fn find_by_idempotency_key(
+        &self,
+        key: &str,
+    ) -> Result<Option<IdempotentOutcome>, PortError> {
+        let valkey_key = self.idempotency_key(key);
+        match execute_get_command(&self.endpoint, &valkey_key).await? {
+            Some(value) => parse_idempotent_outcome(&value).map(Some),
+            None => Ok(None),
+        }
+    }
+}
+
+fn encode_idempotent_value(revision: u64, content_hash: &str) -> String {
+    format!("{revision}:{content_hash}")
+}
+
+fn parse_idempotent_outcome(value: &str) -> Result<IdempotentOutcome, PortError> {
+    let (revision_str, content_hash) = value
+        .split_once(':')
+        .ok_or_else(|| PortError::InvalidState(format!("malformed idempotency value: {value}")))?;
+    let revision = revision_str.parse::<u64>().map_err(|error| {
+        PortError::InvalidState(format!("invalid idempotency revision: {error}"))
+    })?;
+    Ok(IdempotentOutcome {
+        revision,
+        content_hash: content_hash.to_string(),
+    })
+}
+
+fn parse_revision(value: &str) -> Result<u64, PortError> {
+    value
+        .parse::<u64>()
+        .map_err(|error| PortError::InvalidState(format!("invalid revision value: {error}")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn key_construction_follows_prefix_pattern() {
+        let store =
+            ValkeyContextEventStore::new("redis://localhost:6379").expect("endpoint should parse");
+        assert_eq!(
+            store.revision_key("node-1", "developer"),
+            "rehydration:cmd:rev:node-1:developer"
+        );
+        assert_eq!(
+            store.hash_key("node-1", "developer"),
+            "rehydration:cmd:hash:node-1:developer"
+        );
+        assert_eq!(
+            store.idempotency_key("idem-abc"),
+            "rehydration:cmd:idem:idem-abc"
+        );
+    }
+
+    #[test]
+    fn encode_and_parse_idempotent_value_roundtrips() {
+        let encoded = encode_idempotent_value(42, "abc123");
+        assert_eq!(encoded, "42:abc123");
+
+        let parsed = parse_idempotent_outcome(&encoded).expect("should parse");
+        assert_eq!(parsed.revision, 42);
+        assert_eq!(parsed.content_hash, "abc123");
+    }
+
+    #[test]
+    fn parse_idempotent_outcome_rejects_malformed_value() {
+        let err = parse_idempotent_outcome("no-colon").expect_err("should fail");
+        assert!(err.to_string().contains("malformed"));
+    }
+
+    #[test]
+    fn parse_idempotent_outcome_rejects_non_numeric_revision() {
+        let err = parse_idempotent_outcome("abc:hash").expect_err("should fail");
+        assert!(err.to_string().contains("invalid idempotency revision"));
+    }
+
+    #[test]
+    fn parse_revision_accepts_valid_numbers() {
+        assert_eq!(parse_revision("0").expect("should parse"), 0);
+        assert_eq!(parse_revision("123").expect("should parse"), 123);
+    }
+
+    #[test]
+    fn parse_revision_rejects_invalid_input() {
+        let err = parse_revision("abc").expect_err("should fail");
+        assert!(err.to_string().contains("invalid revision value"));
+    }
+}

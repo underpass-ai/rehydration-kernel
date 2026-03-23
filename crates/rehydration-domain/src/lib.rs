@@ -13,9 +13,9 @@ pub use projection::{
     NodeRelationProjection, ProjectionCheckpoint, ProjectionMutation,
 };
 pub use repositories::{
-    GraphNeighborhoodReader, NodeDetailReader, PortError, ProcessedEventStore,
-    ProjectionCheckpointStore, ProjectionWriter, SnapshotSaveOptions, SnapshotStore,
-    TokenEstimator,
+    ContextEventChange, ContextEventStore, ContextUpdatedEvent, GraphNeighborhoodReader,
+    IdempotentOutcome, NodeDetailReader, PortError, ProcessedEventStore, ProjectionCheckpointStore,
+    ProjectionWriter, SnapshotSaveOptions, SnapshotStore, TokenEstimator,
 };
 pub use value_objects::{BundleMetadata, CaseId, Role};
 pub use value_objects::{RelationExplanation, RelationSemanticClass};

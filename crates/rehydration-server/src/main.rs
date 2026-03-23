@@ -6,11 +6,12 @@ use std::sync::Once;
 
 use rehydration_adapter_nats::NatsProjectionConsumer;
 use rehydration_adapter_neo4j::Neo4jProjectionReader;
-use rehydration_adapter_valkey::{ValkeyNodeDetailStore, ValkeySnapshotStore};
+use rehydration_adapter_valkey::{
+    ValkeyContextEventStore, ValkeyNodeDetailStore, ValkeySnapshotStore,
+};
 use rehydration_config::{AppConfig, ProjectionRuntimeConfig};
 use rehydration_observability::init_observability;
 use rehydration_transport_grpc::GrpcServer;
-use rehydration_transport_http_admin::HttpAdminServer;
 
 use crate::projection_nats_runtime::connect_projection_runtime;
 
@@ -38,8 +39,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         graph_reader.clone(),
         detail_reader.clone(),
         ValkeySnapshotStore::new(config.snapshot_uri.clone())?,
+        ValkeyContextEventStore::new(config.snapshot_uri.clone())?,
     );
-    let admin_server = HttpAdminServer::new(config.clone());
     let events_consumer = NatsProjectionConsumer::new(config.events_subject_prefix.clone());
     let projection_runtime = connect_projection_runtime(
         &projection_runtime_config,
@@ -50,7 +51,6 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     .await?;
 
     tracing::info!(grpc = %grpc_server.describe(), "server ready");
-    tracing::info!(admin = %admin_server.describe(), "admin ready");
     tracing::info!(events = %events_consumer.describe(), "events ready");
     tracing::info!(projection = %projection_runtime.describe(), "projection ready");
     tracing::info!(

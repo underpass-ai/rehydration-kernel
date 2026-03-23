@@ -11,7 +11,7 @@ use rehydration_application::{
 };
 use rehydration_config::{AppConfig, GrpcTlsConfig, GrpcTlsMode};
 use rehydration_domain::{
-    GraphNeighborhoodReader, NodeDetailReader, RehydrationBundle, SnapshotStore,
+    ContextEventStore, GraphNeighborhoodReader, NodeDetailReader, RehydrationBundle, SnapshotStore,
 };
 use rehydration_proto::v1beta1::{
     BundleRenderFormat, FILE_DESCRIPTOR_SET, GetContextRequest, Phase,
@@ -26,23 +26,30 @@ use tonic::transport::{Certificate, Identity, Server, ServerTlsConfig};
 use crate::transport::{AdminGrpcService, CommandGrpcService, QueryGrpcService};
 
 #[derive(Debug)]
-pub struct GrpcServer<G, D, S> {
+pub struct GrpcServer<G, D, S, E> {
     bind_addr: String,
     grpc_tls: GrpcTlsConfig,
     query_application: Arc<QueryApplicationService<G, D, S>>,
     admin_query_application: Arc<AdminQueryApplicationService<G, D>>,
     admin_command_application: Arc<AdminCommandApplicationService>,
-    command_application: Arc<CommandApplicationService>,
+    command_application: Arc<CommandApplicationService<E>>,
     capability_name: &'static str,
 }
 
-impl<G, D, S> GrpcServer<G, D, S>
+impl<G, D, S, E> GrpcServer<G, D, S, E>
 where
     G: GraphNeighborhoodReader + Send + Sync + 'static,
     D: NodeDetailReader + Send + Sync + 'static,
     S: SnapshotStore + Send + Sync + 'static,
+    E: ContextEventStore + Send + Sync + 'static,
 {
-    pub fn new(config: AppConfig, graph_reader: G, detail_reader: D, snapshot_store: S) -> Self {
+    pub fn new(
+        config: AppConfig,
+        graph_reader: G,
+        detail_reader: D,
+        snapshot_store: S,
+        event_store: E,
+    ) -> Self {
         let AppConfig {
             grpc_bind,
             grpc_tls,
@@ -51,8 +58,9 @@ where
         let graph_reader = Arc::new(graph_reader);
         let detail_reader = Arc::new(detail_reader);
         let snapshot_store = Arc::new(snapshot_store);
+        let event_store = Arc::new(event_store);
         let generator_version = env!("CARGO_PKG_VERSION");
-        let update_context = Arc::new(UpdateContextUseCase::new(generator_version));
+        let update_context = Arc::new(UpdateContextUseCase::new(event_store, generator_version));
 
         Self {
             bind_addr: grpc_bind,
@@ -105,7 +113,7 @@ where
         QueryGrpcService::new(Arc::clone(&self.query_application))
     }
 
-    pub fn command_service(&self) -> CommandGrpcService {
+    pub fn command_service(&self) -> CommandGrpcService<E> {
         CommandGrpcService::new(Arc::clone(&self.command_application))
     }
 
@@ -113,7 +121,7 @@ where
         Arc::clone(&self.query_application)
     }
 
-    pub fn command_application(&self) -> Arc<CommandApplicationService> {
+    pub fn command_application(&self) -> Arc<CommandApplicationService<E>> {
         Arc::clone(&self.command_application)
     }
 

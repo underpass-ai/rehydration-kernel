@@ -3,6 +3,7 @@ use std::sync::Arc;
 use rehydration_application::{
     CommandApplicationService, UpdateContextChange, UpdateContextCommand,
 };
+use rehydration_domain::ContextEventStore;
 use rehydration_proto::v1beta1::{
     CommandMetadata, RevisionPrecondition, UpdateContextRequest, UpdateContextResponse,
     context_command_service_server::ContextCommandService,
@@ -13,18 +14,21 @@ use crate::transport::proto_mapping_v1beta1::proto_accepted_version_v1beta1;
 use crate::transport::support::map_application_error;
 
 #[derive(Debug, Clone)]
-pub struct CommandGrpcServiceV1Beta1 {
-    application: Arc<CommandApplicationService>,
+pub struct CommandGrpcServiceV1Beta1<E> {
+    application: Arc<CommandApplicationService<E>>,
 }
 
-impl CommandGrpcServiceV1Beta1 {
-    pub fn new(application: Arc<CommandApplicationService>) -> Self {
+impl<E> CommandGrpcServiceV1Beta1<E> {
+    pub fn new(application: Arc<CommandApplicationService<E>>) -> Self {
         Self { application }
     }
 }
 
 #[tonic::async_trait]
-impl ContextCommandService for CommandGrpcServiceV1Beta1 {
+impl<E> ContextCommandService for CommandGrpcServiceV1Beta1<E>
+where
+    E: ContextEventStore + Send + Sync + 'static,
+{
     #[tracing::instrument(skip(self, request), fields(rpc = "UpdateContext"))]
     async fn update_context(
         &self,
@@ -76,6 +80,7 @@ impl ContextCommandService for CommandGrpcServiceV1Beta1 {
                 requested_by: (!metadata.requested_by.is_empty()).then_some(metadata.requested_by),
                 persist_snapshot: request.persist_snapshot,
             })
+            .await
             .map_err(map_application_error)?;
 
         Ok(Response::new(UpdateContextResponse {

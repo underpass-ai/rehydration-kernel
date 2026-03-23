@@ -16,7 +16,7 @@ Status of each RPC in the `v1beta1` contract surface.
 
 | RPC | Status | Notes |
 |-----|--------|-------|
-| `UpdateContext` | **Experimental** | Accepts commands but does not persist changes to the graph projection. Returns a synthetic version and content hash. No revision conflict detection. No idempotency enforcement. Warnings in the response document what is missing. |
+| `UpdateContext` | Production-ready | Persists events to the context event store with optimistic concurrency (revision checking) and idempotency key deduplication. Content hash is computed from actual change payloads. Returns `ABORTED` on revision conflict. |
 
 ## ContextAdminService (gRPC)
 
@@ -28,16 +28,12 @@ Status of each RPC in the `v1beta1` contract surface.
 | `GetGraphRelationships` | Production-ready | |
 | `GetRehydrationDiagnostics` | Production-ready | |
 
-## HTTP Admin
-
-**Status: Placeholder.** The `rehydration-transport-http-admin` crate is not functional.
-The gRPC `ContextAdminService` is the real admin surface.
-
 ## Known Limitations
 
-- Token counting uses whitespace splitting, not model-aware tokenization.
-- `UpdateContext` is aspirational; real persistence, revision control, and
-  idempotency are planned for a future phase.
+- Token counting uses `ceil(chars / 4)` approximation, not model-aware tokenization.
 - `RehydrateSession` does not implement timeline or summary filtering.
 - Scope validation has no authorization backend; `GetContext` omits it entirely
   and `ValidateScope` operates as a standalone set-comparison utility.
+- The context event store adapter uses Valkey; planned migration to NATS JetStream.
+- HTTP admin surface has been removed. The gRPC `ContextAdminService` is the
+  only admin interface.

@@ -6,10 +6,10 @@ use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use rehydration_domain::{
-    ContextPathNeighborhood, GraphNeighborhoodReader, NodeDetailProjection, NodeDetailReader,
-    NodeNeighborhood, PortError, ProcessedEventStore, ProjectionCheckpoint,
-    ProjectionCheckpointStore, ProjectionMutation, ProjectionWriter, RehydrationBundle,
-    SnapshotSaveOptions, SnapshotStore,
+    ContextEventStore, ContextPathNeighborhood, ContextUpdatedEvent, GraphNeighborhoodReader,
+    IdempotentOutcome, NodeDetailProjection, NodeDetailReader, NodeNeighborhood, PortError,
+    ProcessedEventStore, ProjectionCheckpoint, ProjectionCheckpointStore, ProjectionMutation,
+    ProjectionWriter, RehydrationBundle, SnapshotSaveOptions, SnapshotStore,
 };
 use tokio::sync::Mutex;
 
@@ -366,6 +366,77 @@ impl SnapshotStore for NoopSnapshotStore {
         _options: SnapshotSaveOptions,
     ) -> Result<(), PortError> {
         Ok(())
+    }
+}
+
+pub struct InMemoryContextEventStore {
+    revisions: Mutex<HashMap<String, u64>>,
+    hashes: Mutex<HashMap<String, String>>,
+    idempotency: Mutex<HashMap<String, IdempotentOutcome>>,
+}
+
+impl InMemoryContextEventStore {
+    pub fn new() -> Self {
+        Self {
+            revisions: Mutex::new(HashMap::new()),
+            hashes: Mutex::new(HashMap::new()),
+            idempotency: Mutex::new(HashMap::new()),
+        }
+    }
+
+    fn aggregate_key(root_node_id: &str, role: &str) -> String {
+        format!("{root_node_id}:{role}")
+    }
+}
+
+impl Default for InMemoryContextEventStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ContextEventStore for InMemoryContextEventStore {
+    async fn append(
+        &self,
+        event: ContextUpdatedEvent,
+        expected_revision: u64,
+    ) -> Result<u64, PortError> {
+        let key = Self::aggregate_key(&event.root_node_id, &event.role);
+        let mut revisions = self.revisions.lock().await;
+        let current = revisions.get(&key).copied().unwrap_or(0);
+        if current != expected_revision {
+            return Err(PortError::Conflict(format!(
+                "expected revision {expected_revision}, current is {current}"
+            )));
+        }
+        let new_revision = current + 1;
+        revisions.insert(key.clone(), new_revision);
+        self.hashes
+            .lock()
+            .await
+            .insert(key, event.content_hash.clone());
+        if let Some(ref idem_key) = event.idempotency_key {
+            self.idempotency.lock().await.insert(
+                idem_key.clone(),
+                IdempotentOutcome {
+                    revision: new_revision,
+                    content_hash: event.content_hash,
+                },
+            );
+        }
+        Ok(new_revision)
+    }
+
+    async fn current_revision(&self, root_node_id: &str, role: &str) -> Result<u64, PortError> {
+        let key = Self::aggregate_key(root_node_id, role);
+        Ok(self.revisions.lock().await.get(&key).copied().unwrap_or(0))
+    }
+
+    async fn find_by_idempotency_key(
+        &self,
+        key: &str,
+    ) -> Result<Option<IdempotentOutcome>, PortError> {
+        Ok(self.idempotency.lock().await.get(key).cloned())
     }
 }
 

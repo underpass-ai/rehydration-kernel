@@ -12,6 +12,7 @@ use rehydration_proto::v1beta1::{
     context_command_service_client::ContextCommandServiceClient,
     context_query_service_client::ContextQueryServiceClient,
 };
+use rehydration_testkit::InMemoryContextEventStore;
 use rehydration_transport_grpc::GrpcServer;
 use tokio::net::TcpListener;
 use tokio::sync::oneshot;
@@ -85,6 +86,7 @@ async fn grpc_server_supports_query_command_and_admin_roundtrip() {
         EmptyGraphNeighborhoodReader,
         EmptyNodeDetailReader,
         NoopSnapshotStore,
+        InMemoryContextEventStore::new(),
     );
     let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
 

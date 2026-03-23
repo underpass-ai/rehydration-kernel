@@ -1,6 +1,6 @@
 mod adapter;
 
 pub use adapter::{
-    ValkeyNodeDetailStore, ValkeyProcessedEventStore, ValkeyProjectionCheckpointStore,
-    ValkeySnapshotStore,
+    ValkeyContextEventStore, ValkeyNodeDetailStore, ValkeyProcessedEventStore,
+    ValkeyProjectionCheckpointStore, ValkeySnapshotStore,
 };

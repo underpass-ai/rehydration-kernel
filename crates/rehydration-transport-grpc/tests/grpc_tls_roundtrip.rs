@@ -13,6 +13,7 @@ use rehydration_proto::v1beta1::{
     BundleRenderFormat, GetContextRequest, Phase,
     context_query_service_client::ContextQueryServiceClient,
 };
+use rehydration_testkit::InMemoryContextEventStore;
 use rehydration_transport_grpc::GrpcServer;
 use tempfile::TempDir;
 use tokio::net::TcpListener;
@@ -325,6 +326,7 @@ async fn start_server(
         EmptyGraphNeighborhoodReader,
         EmptyNodeDetailReader,
         NoopSnapshotStore,
+        InMemoryContextEventStore::new(),
     );
     let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
     let server_task = tokio::spawn(async move {
