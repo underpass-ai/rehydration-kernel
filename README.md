@@ -14,6 +14,8 @@ concepts:
 
 The kernel does not own product-specific nouns. Integrating products are
 expected to map their own domain language to this graph model at the edge.
+The kernel also assumes its own infrastructure dependencies are present:
+Neo4j, Valkey, and NATS are required runtime components, not optional features.
 
 ## Current Status
 
@@ -61,16 +63,18 @@ Internal core language:
 Primary public artifacts:
 
 - gRPC proto:
-  - [`api/proto/underpass/rehydration/kernel/v1alpha1`](./api/proto/underpass/rehydration/kernel/v1alpha1)
+  - [`api/proto/underpass/rehydration/kernel/v1beta1`](./api/proto/underpass/rehydration/kernel/v1beta1)
 - async contract:
-  - [`api/asyncapi/context-projection.v1alpha1.yaml`](./api/asyncapi/context-projection.v1alpha1.yaml)
+  - [`api/asyncapi/context-projection.v1beta1.yaml`](./api/asyncapi/context-projection.v1beta1.yaml)
 - contract examples:
   - [`api/examples/README.md`](./api/examples/README.md)
 - runtime integration reference:
   - [`docs/migration/kernel-runtime-integration-reference.md`](./docs/migration/kernel-runtime-integration-reference.md)
 
 Historical migration and handoff docs live under [`docs/migration`](./docs/migration).
-They are useful for adopters, but they do not redefine the kernel domain.
+Many of them are historical after the `v1beta1` cut and compatibility removal.
+Use the active integration references first, and treat older migration notes as
+review-required unless they explicitly say otherwise.
 
 ## Repo Layout
 
@@ -145,15 +149,12 @@ Container-backed integration targets:
 ```bash
 bash scripts/ci/integration-valkey.sh
 bash scripts/ci/integration-neo4j.sh
-bash scripts/ci/integration-nats-compatibility.sh
-bash scripts/ci/integration-grpc-compatibility.sh
 bash scripts/ci/integration-agentic-context.sh
 bash scripts/ci/integration-agentic-event-context.sh
 ```
 
-For deployed kernels, the generic projection runtime is enabled separately from
-legacy compatibility NATS and persists its own state in Valkey through
-`REHYDRATION_RUNTIME_STATE_URI`.
+For deployed kernels, the generic projection runtime persists its own state in
+Valkey through `REHYDRATION_RUNTIME_STATE_URI`.
 
 Container image build check:
 

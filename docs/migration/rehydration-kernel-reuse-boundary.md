@@ -1,5 +1,10 @@
 # Rehydration Kernel Reuse Boundary
 
+> Review required. This note was written in the compatibility-era migration
+> context. The reuse advice may still contain useful architecture guidance, but
+> the target boundaries must be revalidated against the current beta-only
+> kernel contract.
+
 This note defines what from this repo can be reused in the Context Service Rust
 migration without allowing the internal kernel contract to become the external
 service contract by accident.
@@ -36,9 +41,9 @@ boundary unchanged.
 
 | Area | Why |
 | --- | --- |
-| `api/proto/underpass/rehydration/kernel/v1beta1/*` and `api/proto/underpass/rehydration/kernel/v1alpha1/*` | kernel transport packages are useful internally, but they are not the external Context Service contract |
+| `api/proto/underpass/rehydration/kernel/v1beta1/*` | kernel transport packages are useful internally, but they are not the external Context Service contract |
 | `crates/rehydration-transport-grpc` | transport plumbing is useful, but the public service and message shapes diverge |
-| `api/asyncapi/context-projection.v1alpha1.yaml` | useful for internal projection eventing, not for the external Context Service subjects |
+| `api/asyncapi/context-projection.v1beta1.yaml` | useful for internal projection eventing, not for the external Context Service subjects |
 | graph-native bundle responses | good internal output, wrong external response contract |
 
 ## Do not treat as source of truth
@@ -47,7 +52,6 @@ The migration must not treat any of the following as the external source of
 truth:
 
 - canonical `underpass.rehydration.kernel.v1beta1`
-- transitional `underpass.rehydration.kernel.v1alpha1`
 - `root_node_id` as a public replacement for `story_id` or `case_id`
 - current internal NATS subjects:
   - `graph.node.materialized`

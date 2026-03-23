@@ -2,6 +2,7 @@ use std::error::Error;
 use std::time::Duration;
 
 use async_nats::Client;
+use rehydration_testkit::ensure_testcontainers_runtime;
 use testcontainers::{
     GenericImage, ImageExt,
     core::{IntoContainerPort, WaitFor},
@@ -20,6 +21,7 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
 pub(crate) async fn start_nats_container()
 -> Result<testcontainers::ContainerAsync<GenericImage>, Box<dyn Error + Send + Sync>> {
     install_rustls_crypto_provider();
+    ensure_testcontainers_runtime()?;
 
     Ok(GenericImage::new(NATS_IMAGE, NATS_TAG)
         .with_exposed_port(NATS_INTERNAL_PORT.tcp())

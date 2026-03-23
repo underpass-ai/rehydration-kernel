@@ -1974,6 +1974,7 @@ dependencies = [
  "neo4rs",
  "rehydration-domain",
  "rehydration-ports",
+ "rehydration-testkit",
  "serde_json",
  "testcontainers",
  "tokio",
@@ -1985,6 +1986,7 @@ version = "0.1.0"
 dependencies = [
  "rehydration-domain",
  "rehydration-ports",
+ "rehydration-testkit",
  "rustls-native-certs 0.8.3",
  "rustls-pemfile",
  "serde",

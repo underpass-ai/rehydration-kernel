@@ -273,7 +273,7 @@ Method:
 
 Existing evidence:
 
-- compatibility tests already assert token-budget behavior
+- the existing use-case and ablation suites already assert token-budget behavior
 
 Expected measurable outcome:
 
@@ -678,8 +678,7 @@ That is the real bridge from graph retrieval to agent context management.
 - current success criteria are artifact-oriented, not benchmark-grade task
   scores
 - runtime diversity is still limited to two implementations
-- focus behavior is stronger in compatibility-style flows than in the generic
-  gRPC path today
+- focus behavior still needs broader measurement across more agent entrypoints
 
 These should be stated explicitly in the paper.
 

@@ -1,5 +1,9 @@
 # Context Service Golden Tests
 
+> Obsolete. These golden notes describe the removed compatibility boundary and
+> its historical test matrix. Do not use them as guidance for current kernel
+> tests.
+
 This catalog defines the minimum golden tests required to preserve the frozen
 external Context Service contract while the Rust implementation stays
 internally node-centric.

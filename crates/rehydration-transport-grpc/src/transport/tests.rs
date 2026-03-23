@@ -16,16 +16,6 @@ use rehydration_domain::{
     NodeNeighborhood, NodeProjection, NodeRelationProjection, PortError, RehydrationBundle,
     RelationExplanation, RelationSemanticClass, Role, SnapshotSaveOptions, SnapshotStore,
 };
-use rehydration_proto::fleet_context_v1::{
-    ContextChange as CompatibilityContextChange,
-    CreateStoryRequest as CompatibilityCreateStoryRequest,
-    GetContextRequest as CompatibilityGetContextRequest,
-    GetGraphRelationshipsRequest as CompatibilityGetGraphRelationshipsRequest,
-    RehydrateSessionRequest as CompatibilityRehydrateSessionRequest,
-    UpdateContextRequest as CompatibilityUpdateContextRequest,
-    ValidateScopeRequest as CompatibilityValidateScopeRequest,
-    context_service_server::ContextService,
-};
 use rehydration_proto::v1beta1::{
     BundleRenderFormat, ContextChange, ContextChangeOperation, GetBundleSnapshotRequest,
     GetContextPathRequest, GetContextRequest, GetNodeDetailRequest, GetProjectionStatusRequest,
@@ -39,7 +29,6 @@ use tonic::Request;
 
 use super::admin_grpc_service_v1beta1::AdminGrpcServiceV1Beta1;
 use super::command_grpc_service_v1beta1::CommandGrpcServiceV1Beta1;
-use super::context_service_compatibility::ContextCompatibilityGrpcService;
 use super::grpc_server::GrpcServer;
 use super::proto_mapping_v1beta1::{
     proto_accepted_version_v1beta1, proto_bundle_from_single_role_v1beta1,
@@ -51,8 +40,7 @@ use super::proto_mapping_v1beta1::{
 };
 use super::query_grpc_service_v1beta1::QueryGrpcServiceV1Beta1;
 use super::support::{
-    map_application_error, map_replay_mode_v1beta1, proto_duration, proto_replay_mode_v1beta1,
-    trim_to_option,
+    map_application_error, map_replay_mode, proto_duration, proto_replay_mode, trim_to_option,
 };
 
 struct EmptyGraphNeighborhoodReader;
@@ -637,190 +625,6 @@ async fn admin_service_returns_diagnostics_per_role() {
     );
 }
 
-#[tokio::test]
-async fn compatibility_service_returns_external_context_shape() {
-    let service = compatibility_service();
-
-    let response = service
-        .get_context(Request::new(CompatibilityGetContextRequest {
-            story_id: "node-123".to_string(),
-            role: "developer".to_string(),
-            phase: "BUILD".to_string(),
-            subtask_id: String::new(),
-            token_budget: 1024,
-        }))
-        .await
-        .expect("compatibility get context should succeed")
-        .into_inner();
-
-    assert!(response.context.contains("node-123"));
-    assert_eq!(response.version, "rev-1");
-    assert_eq!(
-        response.scopes,
-        vec![
-            "CASE_HEADER".to_string(),
-            "DECISIONS_RELEVANT_ROLE".to_string(),
-            "DEPS_RELEVANT".to_string(),
-            "PLAN_HEADER".to_string(),
-            "SUBTASKS_ROLE".to_string(),
-        ]
-    );
-    let blocks = response.blocks.expect("blocks");
-    assert_eq!(blocks.system, "role=developer");
-    assert!(blocks.tools.contains("CASE_HEADER"));
-}
-
-#[tokio::test]
-async fn compatibility_service_routes_rehydrate_session_and_builds_packs() {
-    let service = compatibility_service();
-
-    let response = service
-        .rehydrate_session(Request::new(CompatibilityRehydrateSessionRequest {
-            case_id: "node-123".to_string(),
-            roles: vec!["developer".to_string()],
-            include_timeline: true,
-            include_summaries: true,
-            timeline_events: 5,
-            persist_bundle: false,
-            ttl_seconds: 900,
-        }))
-        .await
-        .expect("compatibility rehydrate session should succeed")
-        .into_inner();
-
-    assert_eq!(response.case_id, "node-123");
-    assert!(response.packs.contains_key("developer"));
-    assert_eq!(response.stats.expect("stats").events, 5);
-}
-
-#[tokio::test]
-async fn compatibility_service_routes_update_context() {
-    let service = compatibility_service();
-
-    let response = service
-        .update_context(Request::new(CompatibilityUpdateContextRequest {
-            story_id: "node-123".to_string(),
-            task_id: "task-7".to_string(),
-            role: "developer".to_string(),
-            changes: vec![CompatibilityContextChange {
-                operation: "UPDATE".to_string(),
-                entity_type: "decision".to_string(),
-                entity_id: "decision-9".to_string(),
-                payload: "{\"status\":\"accepted\"}".to_string(),
-                reason: "refined".to_string(),
-            }],
-            timestamp: "2026-03-08T10:00:00Z".to_string(),
-        }))
-        .await
-        .expect("compatibility update context should succeed")
-        .into_inner();
-
-    assert_eq!(response.version, 1);
-    assert!(response.hash.contains("node-123"));
-}
-
-#[tokio::test]
-async fn compatibility_service_rejects_missing_graph_relationship_root() {
-    let service = compatibility_service();
-
-    let error = service
-        .get_graph_relationships(Request::new(CompatibilityGetGraphRelationshipsRequest {
-            node_id: "node-123".to_string(),
-            node_type: "Story".to_string(),
-            depth: 7,
-        }))
-        .await
-        .expect_err("compatibility graph relationships should reject missing nodes");
-
-    assert_eq!(error.code(), tonic::Code::InvalidArgument);
-    assert_eq!(error.message(), "Node not found: node-123");
-}
-
-#[tokio::test]
-async fn compatibility_service_validates_scope_via_external_contract() {
-    let service = compatibility_service();
-
-    let validate_scope = service
-        .validate_scope(Request::new(CompatibilityValidateScopeRequest {
-            role: "developer".to_string(),
-            phase: "BUILD".to_string(),
-            provided_scopes: vec![
-                "CASE_HEADER".to_string(),
-                "PLAN_HEADER".to_string(),
-                "SUBTASKS_ROLE".to_string(),
-                "DECISIONS_RELEVANT_ROLE".to_string(),
-                "DEPS_RELEVANT".to_string(),
-            ],
-        }))
-        .await
-        .expect("validate scope should succeed")
-        .into_inner();
-
-    assert!(validate_scope.allowed);
-    assert!(validate_scope.missing.is_empty());
-    assert!(validate_scope.extra.is_empty());
-    assert_eq!(validate_scope.reason, "All scopes are allowed");
-}
-
-#[tokio::test]
-async fn compatibility_service_returns_unimplemented_for_remaining_placeholder_rpcs() {
-    let service = compatibility_service();
-
-    let create_story = service
-        .create_story(Request::new(CompatibilityCreateStoryRequest {
-            story_id: "story-1".to_string(),
-            title: "Story".to_string(),
-            description: "Description".to_string(),
-            initial_phase: "DESIGN".to_string(),
-        }))
-        .await
-        .expect_err("create story should be unimplemented");
-    let create_task = service
-        .create_task(Request::new(
-            rehydration_proto::fleet_context_v1::CreateTaskRequest {
-                story_id: "story-1".to_string(),
-                task_id: "task-1".to_string(),
-                title: "Task".to_string(),
-                description: "Description".to_string(),
-                role: "DEV".to_string(),
-                dependencies: Vec::new(),
-                priority: 1,
-                estimated_hours: 4,
-            },
-        ))
-        .await
-        .expect_err("create task should be unimplemented");
-    let add_decision = service
-        .add_project_decision(Request::new(
-            rehydration_proto::fleet_context_v1::AddProjectDecisionRequest {
-                story_id: "story-1".to_string(),
-                decision_type: "ARCHITECTURE".to_string(),
-                title: "Decision".to_string(),
-                rationale: "Because".to_string(),
-                alternatives_considered: String::new(),
-                metadata: Default::default(),
-            },
-        ))
-        .await
-        .expect_err("add decision should be unimplemented");
-    let transition_phase = service
-        .transition_phase(Request::new(
-            rehydration_proto::fleet_context_v1::TransitionPhaseRequest {
-                story_id: "story-1".to_string(),
-                from_phase: "DESIGN".to_string(),
-                to_phase: "BUILD".to_string(),
-                rationale: "Ready".to_string(),
-            },
-        ))
-        .await
-        .expect_err("transition phase should be unimplemented");
-
-    assert_eq!(create_story.code(), tonic::Code::Unimplemented);
-    assert_eq!(create_task.code(), tonic::Code::Unimplemented);
-    assert_eq!(add_decision.code(), tonic::Code::Unimplemented);
-    assert_eq!(transition_phase.code(), tonic::Code::Unimplemented);
-}
-
 #[test]
 fn helper_mappers_cover_bundle_mapping() {
     let bundle = sample_bundle("node-123", "developer", "Projection-backed summary");
@@ -999,14 +803,8 @@ fn helper_mappers_cover_versions_errors_and_trim_logic() {
         map_application_error(ApplicationError::NotFound("missing".to_string())).code(),
         tonic::Code::NotFound
     );
-    assert_eq!(
-        proto_replay_mode_v1beta1(map_replay_mode_v1beta1(999)) as i32,
-        1
-    );
-    assert_eq!(
-        proto_replay_mode_v1beta1(ReplayModeSelection::Rebuild) as i32,
-        2
-    );
+    assert_eq!(proto_replay_mode(map_replay_mode(999)) as i32, 1);
+    assert_eq!(proto_replay_mode(ReplayModeSelection::Rebuild) as i32, 2);
 
     let response = proto_rehydrate_session_response_v1beta1(&RehydrateSessionResult {
         root_node_id: "node-123".to_string(),
@@ -1111,27 +909,4 @@ fn sample_node_neighborhood(node_id: &str, status: &str) -> NodeNeighborhood {
         neighbors: Vec::new(),
         relations: Vec::new(),
     }
-}
-
-fn compatibility_service() -> ContextCompatibilityGrpcService<
-    EmptyGraphNeighborhoodReader,
-    EmptyNodeDetailReader,
-    NoopSnapshotStore,
-> {
-    ContextCompatibilityGrpcService::new(
-        Arc::new(QueryApplicationService::new(
-            Arc::new(EmptyGraphNeighborhoodReader),
-            Arc::new(EmptyNodeDetailReader),
-            Arc::new(NoopSnapshotStore),
-            "0.1.0",
-        )),
-        Arc::new(AdminQueryApplicationService::new(
-            Arc::new(EmptyGraphNeighborhoodReader),
-            Arc::new(EmptyNodeDetailReader),
-            "0.1.0",
-        )),
-        Arc::new(CommandApplicationService::new(Arc::new(
-            rehydration_application::UpdateContextUseCase::new("0.1.0"),
-        ))),
-    )
 }

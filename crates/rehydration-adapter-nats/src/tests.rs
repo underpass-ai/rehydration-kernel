@@ -53,7 +53,7 @@ async fn consume_routes_prefixed_graph_node_subject() {
         "occurred_at": "2026-03-07T20:00:00Z",
         "aggregate_id": "node-123",
         "aggregate_type": "node",
-        "schema_version": "v1alpha1",
+        "schema_version": "v1beta1",
         "data": {
             "node_id": "node-123",
             "node_kind": "capability",
@@ -107,7 +107,7 @@ async fn consume_routes_node_detail_subject_without_prefix() {
         "occurred_at": "2026-03-07T20:01:00Z",
         "aggregate_id": "node-123",
         "aggregate_type": "node",
-        "schema_version": "v1alpha1",
+        "schema_version": "v1beta1",
         "data": {
             "node_id": "node-123",
             "detail": "Expanded node detail",
@@ -169,7 +169,7 @@ async fn consume_rejects_graph_nodes_missing_relation_explanation() {
         "occurred_at": "2026-03-07T20:02:00Z",
         "aggregate_id": "node-123",
         "aggregate_type": "node",
-        "schema_version": "v1alpha1",
+        "schema_version": "v1beta1",
         "data": {
             "node_id": "node-123",
             "node_kind": "capability",

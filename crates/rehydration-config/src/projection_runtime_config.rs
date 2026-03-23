@@ -6,7 +6,6 @@ use crate::{NatsTlsConfig, nats_tls_config::NatsEndpointConfig};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectionRuntimeConfig {
     pub nats_url: String,
-    pub enabled: bool,
     pub runtime_state_uri: String,
     pub nats_tls: NatsTlsConfig,
 }
@@ -28,24 +27,10 @@ impl ProjectionRuntimeConfig {
 
         Ok(Self {
             nats_url: endpoint.url,
-            enabled: lookup("ENABLE_PROJECTION_NATS")
-                .map(|value| crate::env_bool::parse_bool_value(&value))
-                .unwrap_or(true),
             runtime_state_uri: lookup("REHYDRATION_RUNTIME_STATE_URI")
                 .unwrap_or_else(|| "redis://localhost:6379".to_string()),
             nats_tls: endpoint.tls,
         })
-    }
-
-    pub fn disabled() -> Self {
-        let endpoint = NatsEndpointConfig::disabled();
-
-        Self {
-            nats_url: endpoint.url,
-            enabled: false,
-            runtime_state_uri: "redis://localhost:6379".to_string(),
-            nats_tls: endpoint.tls,
-        }
     }
 }
 
@@ -58,7 +43,6 @@ mod tests {
         let config = ProjectionRuntimeConfig::from_env();
 
         assert_eq!(config.nats_url, "nats://nats:4222");
-        assert!(config.enabled);
         assert_eq!(config.runtime_state_uri, "redis://localhost:6379");
         assert_eq!(config.nats_tls, crate::NatsTlsConfig::disabled());
     }

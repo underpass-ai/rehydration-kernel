@@ -2,6 +2,7 @@ use std::error::Error;
 use std::time::Duration;
 
 use neo4rs::{Graph, query};
+use rehydration_testkit::ensure_testcontainers_runtime;
 use testcontainers::{
     GenericImage, ImageExt,
     core::{IntoContainerPort, WaitFor},
@@ -21,6 +22,8 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
 
 pub(crate) async fn start_neo4j_container()
 -> Result<testcontainers::ContainerAsync<GenericImage>, Box<dyn Error + Send + Sync>> {
+    ensure_testcontainers_runtime()?;
+
     Ok(GenericImage::new(NEO4J_IMAGE, NEO4J_TAG)
         .with_exposed_port(NEO4J_INTERNAL_PORT.tcp())
         .with_wait_for(WaitFor::seconds(NEO4J_STARTUP_WAIT.as_secs()))
@@ -31,6 +34,8 @@ pub(crate) async fn start_neo4j_container()
 
 pub(crate) async fn start_valkey_container()
 -> Result<testcontainers::ContainerAsync<GenericImage>, Box<dyn Error + Send + Sync>> {
+    ensure_testcontainers_runtime()?;
+
     Ok(GenericImage::new("docker.io/valkey/valkey", "8.1.5-alpine")
         .with_exposed_port(VALKEY_INTERNAL_PORT.tcp())
         .with_wait_for(WaitFor::message_on_stdout("Ready to accept connections"))

@@ -48,6 +48,8 @@ The default values file is:
 - [`charts/rehydration-kernel/values.underpass-runtime.yaml`](../../charts/rehydration-kernel/values.underpass-runtime.yaml)
 
 That keeps the deploy path aligned with the sibling runtime environment.
+The kernel chart assumes Neo4j, Valkey, and NATS are required runtime
+dependencies; there are no transport disable flags in the deployment contract.
 
 ## Local Equivalent
 

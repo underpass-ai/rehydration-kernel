@@ -1,5 +1,9 @@
 # Context Service Phase 2 Read-Parity Report
 
+> Review required. This report compares against a migration target that no
+> longer exists in the kernel repo. It may still be useful as historical
+> analysis, but every conclusion should be revalidated before reuse.
+
 Status: Complete
 Scope reviewed: `GetContext`, `RehydrateSession`, `ValidateScope`, `GetGraphRelationships`
 

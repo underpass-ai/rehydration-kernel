@@ -60,10 +60,6 @@ spec:
               value: {{ .Values.config.adminBind | quote }}
             - name: REHYDRATION_EVENTS_PREFIX
               value: {{ .Values.config.eventsPrefix | quote }}
-            - name: ENABLE_NATS
-              value: {{ .Values.config.enableNats | quote }}
-            - name: ENABLE_PROJECTION_NATS
-              value: {{ .Values.config.enableProjectionNats | quote }}
             {{- if ne .Values.natsTls.mode "disabled" }}
             - name: NATS_TLS_MODE
               value: {{ .Values.natsTls.mode | quote }}

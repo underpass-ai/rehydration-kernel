@@ -69,8 +69,6 @@ config:
   grpcBind: 0.0.0.0:50054
   adminBind: 0.0.0.0:8080
   eventsPrefix: rehydration
-  enableNats: false
-  enableProjectionNats: true
 
 connections:
   graphUri: ""

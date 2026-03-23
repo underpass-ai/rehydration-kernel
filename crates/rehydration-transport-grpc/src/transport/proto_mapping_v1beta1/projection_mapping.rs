@@ -5,7 +5,7 @@ use rehydration_proto::v1beta1::{
     GetProjectionStatusResponse, ProjectionStatus, ReplayProjectionResponse,
 };
 
-use crate::transport::support::{proto_replay_mode_v1beta1, timestamp_from};
+use crate::transport::support::{proto_replay_mode, timestamp_from};
 
 pub(crate) fn proto_projection_status_response_v1beta1(
     result: &GetProjectionStatusResult,
@@ -26,7 +26,7 @@ pub(crate) fn proto_replay_projection_response_v1beta1(
     ReplayProjectionResponse {
         replay_id: result.replay_id.clone(),
         consumer_name: result.consumer_name.clone(),
-        replay_mode: proto_replay_mode_v1beta1(result.replay_mode) as i32,
+        replay_mode: proto_replay_mode(result.replay_mode) as i32,
         accepted_events: result.accepted_events,
         requested_at: Some(timestamp_from(result.requested_at)),
     }

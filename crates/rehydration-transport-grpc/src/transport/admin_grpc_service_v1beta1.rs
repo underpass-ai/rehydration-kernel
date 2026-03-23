@@ -20,7 +20,7 @@ use crate::transport::proto_mapping_v1beta1::{
     proto_projection_status_response_v1beta1, proto_rehydration_diagnostics_response_v1beta1,
     proto_replay_projection_response_v1beta1,
 };
-use crate::transport::support::{map_application_error, map_replay_mode_v1beta1, trim_to_option};
+use crate::transport::support::{map_application_error, map_replay_mode, trim_to_option};
 
 #[derive(Debug, Clone)]
 pub struct AdminGrpcServiceV1Beta1<G, D> {
@@ -74,7 +74,7 @@ where
                 stream_name: request.stream_name,
                 starting_after: trim_to_option(request.starting_after),
                 max_events: request.max_events,
-                replay_mode: map_replay_mode_v1beta1(request.replay_mode),
+                replay_mode: map_replay_mode(request.replay_mode),
                 requested_by: trim_to_option(request.requested_by),
             })
             .map_err(map_application_error)?;

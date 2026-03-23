@@ -1,6 +1,6 @@
 # Kernel Node-Centric Integration Contract
 
-Status: beta canonical, alpha transitional
+Status: beta canonical
 Scope: kernel-owned public boundary for generic external consumers
 
 ## Purpose
@@ -22,7 +22,6 @@ The kernel public boundary is split into two parts:
 Package:
 
 - canonical: `underpass.rehydration.kernel.v1beta1`
-- transitional: `underpass.rehydration.kernel.v1alpha1`
 
 Services:
 
@@ -52,7 +51,7 @@ Generic outbound subjects:
 
 These subjects are documented in:
 
-- [`api/asyncapi/context-projection.v1alpha1.yaml`](/home/tirso/ai/developents/rehydration-kernel/api/asyncapi/context-projection.v1alpha1.yaml)
+- [`api/asyncapi/context-projection.v1beta1.yaml`](/home/tirso/ai/developents/rehydration-kernel/api/asyncapi/context-projection.v1beta1.yaml)
 
 ## What External Consumers May Rely On
 
@@ -67,23 +66,15 @@ Consumers integrating directly with the kernel may treat these as stable:
 
 ## What Is Not The Generic Kernel Contract
 
-The following surfaces exist for compatibility or internal purposes, but should
+The following surfaces exist for internal purposes, but should
 not be treated as the preferred generic integration boundary:
 
-- `fleet.context.v1`
-- `context.update.request`
-- `context.rehydrate.request`
-- `context.update.response`
-- `context.rehydrate.response`
-- `context.events.updated`
-
-They remain useful for migration, but they are not the target contract for a
-new product integrating with the kernel.
+- runtime-specific consumer guidance under `api/examples/runtime-reference`
+- internal implementation details that are not versioned public contracts
 
 ## Stability Rules
 
-For `underpass.rehydration.kernel.v1beta1`, the transitional
-`underpass.rehydration.kernel.v1alpha1`, and the generic AsyncAPI subjects:
+For `underpass.rehydration.kernel.v1beta1` and the generic AsyncAPI subjects:
 
 - do not rename services, methods, or field names without an explicit contract
   version change
@@ -109,8 +100,7 @@ belongs in an anti-corruption layer outside the kernel.
 ## Versioning Guidance
 
 Use `underpass.rehydration.kernel.v1beta1` as the stable boundary for new
-integrations while `v1alpha1` remains available only to carry existing clients
-through the transition.
+integrations.
 
 Breaking examples:
 
@@ -130,10 +120,10 @@ Non-breaking examples:
 
 This contract is backed by:
 
-- proto definitions under [`api/proto/underpass/rehydration/kernel/v1beta1`](/home/tirso/ai/developents/rehydration-kernel/api/proto/underpass/rehydration/kernel/v1beta1) and [`api/proto/underpass/rehydration/kernel/v1alpha1`](/home/tirso/ai/developents/rehydration-kernel/api/proto/underpass/rehydration/kernel/v1alpha1)
-- async definitions under [`api/asyncapi/context-projection.v1alpha1.yaml`](/home/tirso/ai/developents/rehydration-kernel/api/asyncapi/context-projection.v1alpha1.yaml)
-- reference fixtures under [`api/examples/kernel/v1beta1`](/home/tirso/ai/developents/rehydration-kernel/api/examples/kernel/v1beta1) and [`api/examples/kernel/v1alpha1`](/home/tirso/ai/developents/rehydration-kernel/api/examples/kernel/v1alpha1)
-- descriptor and contract tests in [`crates/rehydration-proto/src/kernel_v1beta1_contract_tests.rs`](/home/tirso/ai/developents/rehydration-kernel/crates/rehydration-proto/src/kernel_v1beta1_contract_tests.rs), [`crates/rehydration-proto/src/kernel_contract_tests.rs`](/home/tirso/ai/developents/rehydration-kernel/crates/rehydration-proto/src/kernel_contract_tests.rs), and [`crates/rehydration-proto/src/asyncapi_contract_tests.rs`](/home/tirso/ai/developents/rehydration-kernel/crates/rehydration-proto/src/asyncapi_contract_tests.rs)
+- proto definitions under [`api/proto/underpass/rehydration/kernel/v1beta1`](/home/tirso/ai/developents/rehydration-kernel/api/proto/underpass/rehydration/kernel/v1beta1)
+- async definitions under [`api/asyncapi/context-projection.v1beta1.yaml`](/home/tirso/ai/developents/rehydration-kernel/api/asyncapi/context-projection.v1beta1.yaml)
+- reference fixtures under [`api/examples/kernel/v1beta1`](/home/tirso/ai/developents/rehydration-kernel/api/examples/kernel/v1beta1)
+- descriptor and contract tests in [`crates/rehydration-proto/src/kernel_v1beta1_contract_tests.rs`](/home/tirso/ai/developents/rehydration-kernel/crates/rehydration-proto/src/kernel_v1beta1_contract_tests.rs), [`crates/rehydration-proto/src/reference_fixture_contract_tests.rs`](/home/tirso/ai/developents/rehydration-kernel/crates/rehydration-proto/src/reference_fixture_contract_tests.rs), and [`crates/rehydration-proto/src/asyncapi_contract_tests.rs`](/home/tirso/ai/developents/rehydration-kernel/crates/rehydration-proto/src/asyncapi_contract_tests.rs)
 
 ## Exit Condition
 

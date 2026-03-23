@@ -212,8 +212,8 @@ EOF
 
   kubectl create configmap "${release_name}-grpc-proto" \
     -n "${NAMESPACE}" \
-    --from-file=query.proto=api/proto/underpass/rehydration/kernel/v1alpha1/query.proto \
-    --from-file=common.proto=api/proto/underpass/rehydration/kernel/v1alpha1/common.proto \
+    --from-file=query.proto=api/proto/underpass/rehydration/kernel/v1beta1/query.proto \
+    --from-file=common.proto=api/proto/underpass/rehydration/kernel/v1beta1/common.proto \
     --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 
   return 0
@@ -348,11 +348,11 @@ EOF
           "-import-path",
           "/proto",
           "-proto",
-          "underpass/rehydration/kernel/v1alpha1/query.proto"${auth_args_json},
+          "underpass/rehydration/kernel/v1beta1/query.proto"${auth_args_json},
           "-d",
           "${payload_json}",
           "${host}",
-          "underpass.rehydration.kernel.v1alpha1.ContextQueryService/RehydrateSession"
+          "underpass.rehydration.kernel.v1beta1.ContextQueryService/RehydrateSession"
         ],
         "volumeMounts": [
           {
@@ -376,11 +376,11 @@ EOF
           "items": [
             {
               "key": "query.proto",
-              "path": "underpass/rehydration/kernel/v1alpha1/query.proto"
+              "path": "underpass/rehydration/kernel/v1beta1/query.proto"
             },
             {
               "key": "common.proto",
-              "path": "underpass/rehydration/kernel/v1alpha1/common.proto"
+              "path": "underpass/rehydration/kernel/v1beta1/common.proto"
             }
           ]
         }

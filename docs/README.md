@@ -53,5 +53,6 @@ Current explorer-related entries:
 ## Other Areas
 
 - [`adr`](./adr/README.md)
-- [`migration`](./migration/README.md)
+- [`migration`](./migration/README.md) historical and review-heavy after the
+  `v1beta1` cut
 - [`runbooks`](./runbooks/README.md)

@@ -1,5 +1,5 @@
 asyncapi: 2.6.0
-id: urn:underpass:rehydration-kernel:context-projection:v1alpha1
+id: urn:underpass:rehydration-kernel:context-projection:v1beta1
 defaultContentType: application/json
 info:
   title: Rehydration Kernel Projection Events

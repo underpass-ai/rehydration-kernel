@@ -1255,6 +1255,6 @@ fn envelope(event_id: &str, aggregate_id: &str, aggregate_type: &str) -> Project
         occurred_at: "2026-03-18T12:00:00Z".to_string(),
         aggregate_id: aggregate_id.to_string(),
         aggregate_type: aggregate_type.to_string(),
-        schema_version: "v1alpha1".to_string(),
+        schema_version: "v1beta1".to_string(),
     }
 }

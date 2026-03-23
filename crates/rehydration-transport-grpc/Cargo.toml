@@ -37,11 +37,6 @@ tempfile = "3.26.0"
 testcontainers = "0.24.0"
 
 [[test]]
-name = "compatibility_integration"
-path = "tests/compatibility_integration.rs"
-required-features = ["container-tests"]
-
-[[test]]
 name = "agentic_integration"
 path = "tests/agentic_integration.rs"
 required-features = ["container-tests"]

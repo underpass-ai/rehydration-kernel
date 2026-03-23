@@ -1,4 +1,3 @@
-mod compatibility_nats_runtime;
 mod nats_tls;
 mod projection_nats_runtime;
 
@@ -8,12 +7,11 @@ use std::sync::Once;
 use rehydration_adapter_nats::NatsProjectionConsumer;
 use rehydration_adapter_neo4j::Neo4jProjectionReader;
 use rehydration_adapter_valkey::{ValkeyNodeDetailStore, ValkeySnapshotStore};
-use rehydration_config::{AppConfig, CompatibilityNatsConfig, ProjectionRuntimeConfig};
+use rehydration_config::{AppConfig, ProjectionRuntimeConfig};
 use rehydration_observability::init_observability;
 use rehydration_transport_grpc::GrpcServer;
 use rehydration_transport_http_admin::HttpAdminServer;
 
-use crate::compatibility_nats_runtime::connect_compatibility_runtime;
 use crate::projection_nats_runtime::connect_projection_runtime;
 
 #[tokio::main]
@@ -30,7 +28,6 @@ async fn main() -> ExitCode {
 async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     install_rustls_crypto_provider();
     let config = AppConfig::try_from_env()?;
-    let compatibility_nats_config = CompatibilityNatsConfig::try_from_env()?;
     let projection_runtime_config = ProjectionRuntimeConfig::try_from_env()?;
     init_observability(&config.service_name);
 
@@ -44,8 +41,6 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     );
     let admin_server = HttpAdminServer::new(config.clone());
     let events_consumer = NatsProjectionConsumer::new(config.events_subject_prefix.clone());
-    let compatibility_runtime =
-        connect_compatibility_runtime(&grpc_server, &compatibility_nats_config).await?;
     let projection_runtime = connect_projection_runtime(
         &projection_runtime_config,
         &config.events_subject_prefix,
@@ -57,7 +52,6 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("{}", grpc_server.describe());
     println!("{}", admin_server.describe());
     println!("{}", events_consumer.describe());
-    println!("{}", compatibility_runtime.describe());
     println!("{}", projection_runtime.describe());
     println!(
         "query bootstrap role={}",
@@ -66,11 +60,12 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let _warmup_bundle = grpc_server.warmup_bundle().await?;
 
-    tokio::try_join!(
-        async { grpc_server.run().await },
-        async { compatibility_runtime.run().await },
-        async { projection_runtime.run().await }
-    )?;
+    tokio::try_join!(async { grpc_server.run().await }, async {
+        projection_runtime
+            .run()
+            .await
+            .map_err(|error| Box::new(error) as Box<dyn std::error::Error + Send + Sync>)
+    })?;
 
     Ok(())
 }

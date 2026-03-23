@@ -9,6 +9,7 @@ use rehydration_ports::{
     GraphNeighborhoodReader, NodeProjection, NodeRelationProjection, ProjectionMutation,
     ProjectionWriter,
 };
+use rehydration_testkit::ensure_testcontainers_runtime;
 use testcontainers::{
     GenericImage, ImageExt,
     core::{IntoContainerPort, WaitFor},
@@ -402,6 +403,8 @@ where
 
 async fn start_neo4j_container()
 -> Result<testcontainers::ContainerAsync<GenericImage>, Box<dyn Error + Send + Sync>> {
+    ensure_testcontainers_runtime()?;
+
     Ok(GenericImage::new(NEO4J_IMAGE, NEO4J_TAG)
         .with_exposed_port(NEO4J_INTERNAL_PORT.tcp())
         .with_wait_for(WaitFor::seconds(5))

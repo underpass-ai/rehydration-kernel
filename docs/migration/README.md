@@ -1,5 +1,10 @@
 # Migration
 
+> Historical migration area. After the `v1beta1` cut and compatibility removal,
+> several files in this directory are obsolete or require detailed review
+> before reuse. Do not treat this folder as the primary source of truth for the
+> current kernel contract.
+
 Migration plans, parity reports, and shadow-mode notes will live here.
 
 Primary roadmap:
@@ -16,20 +21,9 @@ Primary roadmap:
 - `llm-response-determinism-strategy.md`
 - `transport-security-v1.md`
 
-Phase 0 baseline:
-
-- `context-service-phase0-contract-freeze.md`
-- `context-service-compatibility-matrix.md`
-- `context-service-golden-tests.md`
-- `context-service-phase2-read-parity-report.md`
-- `rehydration-kernel-reuse-boundary.md`
-
 Phase 0 status:
 
 - complete
-- `Phase 1 - Compatibility Shell`: complete
-- `Phase 2 - Read-Path Parity`: complete
-- `Phase 3 - Async NATS Parity`: complete for kernel-owned generic subjects
 - kernel contract freeze, contract CI, and reference fixtures: complete
 - generic agentic integration proof: complete
 - event-driven agentic trigger proof: complete
