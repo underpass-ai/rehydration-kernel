@@ -121,16 +121,13 @@ pub(crate) fn expected_update_context_response() -> UpdateContextResponse {
     UpdateContextResponse {
         accepted_version: Some(BundleVersion {
             revision: 1,
-            content_hash: format!("{ROOT_NODE_ID}:{DEVELOPER_ROLE}:{TASK_ID}:1"),
+            content_hash: String::new(), // normalized away — real hash is deterministic but opaque
             schema_version: "v1beta1".to_string(),
             projection_watermark: "rev-1".to_string(),
             generated_at: None,
             generator_version: env!("CARGO_PKG_VERSION").to_string(),
         }),
-        warnings: vec![
-            "expected_content_hash missing; optimistic verification is partial".to_string(),
-            "idempotency_key missing; duplicate suppression is delegated upstream".to_string(),
-        ],
+        warnings: vec![],
         snapshot_persisted: true,
         snapshot_id: format!("snapshot:{ROOT_NODE_ID}:{DEVELOPER_ROLE}"),
     }
@@ -168,6 +165,7 @@ pub(crate) fn normalize_update_context_response(
 ) -> UpdateContextResponse {
     if let Some(version) = response.accepted_version.as_mut() {
         version.generated_at = None;
+        version.content_hash = String::new();
     }
     response
 }

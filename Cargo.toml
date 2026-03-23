@@ -12,7 +12,6 @@ members = [
     "crates/rehydration-server",
     "crates/rehydration-testkit",
     "crates/rehydration-transport-grpc",
-    "crates/rehydration-transport-http-admin",
 ]
 resolver = "3"
 
@@ -37,7 +36,6 @@ rehydration-ports = { path = "crates/rehydration-ports" }
 rehydration-proto = { path = "crates/rehydration-proto" }
 rehydration-testkit = { path = "crates/rehydration-testkit" }
 rehydration-transport-grpc = { path = "crates/rehydration-transport-grpc" }
-rehydration-transport-http-admin = { path = "crates/rehydration-transport-http-admin" }
 prost = "0.13.5"
 prost-types = "0.13.5"
 serde = { version = "1.0.228", features = ["derive"] }

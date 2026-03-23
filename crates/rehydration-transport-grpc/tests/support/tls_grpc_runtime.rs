@@ -45,6 +45,7 @@ impl RunningTlsGrpcServer {
             graph_reader,
             detail_reader,
             snapshot_store,
+            rehydration_testkit::InMemoryContextEventStore::new(),
         );
         let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
         let server_task = tokio::spawn(async move {

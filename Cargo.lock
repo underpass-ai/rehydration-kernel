@@ -2081,7 +2081,6 @@ dependencies = [
  "rehydration-domain",
  "rehydration-observability",
  "rehydration-transport-grpc",
- "rehydration-transport-http-admin",
  "tokio",
  "tokio-rustls",
  "tracing",
@@ -2121,13 +2120,6 @@ dependencies = [
  "tokio-stream",
  "tonic",
  "tracing",
-]
-
-[[package]]
-name = "rehydration-transport-http-admin"
-version = "0.1.0"
-dependencies = [
- "rehydration-config",
 ]
 
 [[package]]

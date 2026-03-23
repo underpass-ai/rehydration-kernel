@@ -1,3 +1,4 @@
+pub mod context_event_store;
 pub mod graph_neighborhood_reader;
 pub mod node_detail_reader;
 pub mod port_error;
@@ -8,6 +9,9 @@ pub mod snapshot_save_options;
 pub mod snapshot_store;
 pub mod token_estimator;
 
+pub use context_event_store::{
+    ContextEventChange, ContextEventStore, ContextUpdatedEvent, IdempotentOutcome,
+};
 pub use graph_neighborhood_reader::GraphNeighborhoodReader;
 pub use node_detail_reader::NodeDetailReader;
 pub use port_error::PortError;

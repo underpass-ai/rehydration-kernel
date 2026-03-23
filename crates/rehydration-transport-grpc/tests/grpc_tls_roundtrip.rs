@@ -9,6 +9,7 @@ use rehydration_domain::{
     ContextPathNeighborhood, GraphNeighborhoodReader, NodeDetailProjection, NodeDetailReader,
     NodeNeighborhood, PortError, RehydrationBundle, SnapshotSaveOptions, SnapshotStore,
 };
+use rehydration_testkit::InMemoryContextEventStore;
 use rehydration_proto::v1beta1::{
     BundleRenderFormat, GetContextRequest, Phase,
     context_query_service_client::ContextQueryServiceClient,
@@ -325,6 +326,7 @@ async fn start_server(
         EmptyGraphNeighborhoodReader,
         EmptyNodeDetailReader,
         NoopSnapshotStore,
+        InMemoryContextEventStore::new(),
     );
     let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
     let server_task = tokio::spawn(async move {

@@ -16,6 +16,7 @@ use rehydration_domain::{
     NodeNeighborhood, NodeProjection, NodeRelationProjection, PortError, RehydrationBundle,
     RelationExplanation, RelationSemanticClass, Role, SnapshotSaveOptions, SnapshotStore,
 };
+use rehydration_testkit::InMemoryContextEventStore;
 use rehydration_proto::v1beta1::{
     BundleRenderFormat, ContextChange, ContextChangeOperation, GetBundleSnapshotRequest,
     GetContextPathRequest, GetContextRequest, GetNodeDetailRequest, GetProjectionStatusRequest,
@@ -246,6 +247,7 @@ fn describe_mentions_bind_address() {
         EmptyGraphNeighborhoodReader,
         EmptyNodeDetailReader,
         NoopSnapshotStore,
+        InMemoryContextEventStore::new(),
     );
 
     assert!(server.describe().contains("127.0.0.1:50054"));
@@ -271,6 +273,7 @@ async fn grpc_server_application_accessors_return_callable_services() {
         EmptyGraphNeighborhoodReader,
         EmptyNodeDetailReader,
         NoopSnapshotStore,
+        InMemoryContextEventStore::new(),
     );
 
     let get_context_err = server
@@ -301,6 +304,7 @@ async fn grpc_server_application_accessors_return_callable_services() {
             requested_by: None,
             persist_snapshot: false,
         })
+        .await
         .expect("command application should respond");
     assert_eq!(update.accepted_version.revision, 1);
 }
@@ -506,8 +510,9 @@ async fn query_service_validates_scope_diffs() {
 
 #[tokio::test]
 async fn command_service_accepts_update_context() {
+    let event_store = Arc::new(InMemoryContextEventStore::new());
     let service = CommandGrpcServiceV1Beta1::new(Arc::new(CommandApplicationService::new(
-        Arc::new(rehydration_application::UpdateContextUseCase::new("0.1.0")),
+        Arc::new(rehydration_application::UpdateContextUseCase::new(event_store, "0.1.0")),
     )));
 
     let response = service

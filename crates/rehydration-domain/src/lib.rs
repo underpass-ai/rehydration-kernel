@@ -13,7 +13,8 @@ pub use projection::{
     NodeRelationProjection, ProjectionCheckpoint, ProjectionMutation,
 };
 pub use repositories::{
-    GraphNeighborhoodReader, NodeDetailReader, PortError, ProcessedEventStore,
+    ContextEventChange, ContextEventStore, ContextUpdatedEvent, GraphNeighborhoodReader,
+    IdempotentOutcome, NodeDetailReader, PortError, ProcessedEventStore,
     ProjectionCheckpointStore, ProjectionWriter, SnapshotSaveOptions, SnapshotStore,
     TokenEstimator,
 };
