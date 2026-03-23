@@ -32,51 +32,42 @@ Single source of truth for kernel maturity, technical debt, and next steps.
 - [x] OpenTelemetry traces via OTLP (opentelemetry + tracing-opentelemetry)
 - [x] THIRD_PARTY_NOTICES.md
 
-### Event store wiring + observability metrics + tests (PR #56)
+### Event store wiring + metrics + tests + refactoring (PR #56)
 - [x] Wire NatsContextEventStore in server composition root
-- [x] Add config switch for event store backend (`REHYDRATION_EVENT_STORE_BACKEND=nats|valkey`)
+- [x] Config switch: `REHYDRATION_EVENT_STORE_BACKEND=nats|valkey`
 - [x] Integration test with NATS JetStream container (3 tests: append, conflict, idempotency)
 - [x] OTel metrics: rpc_duration, bundle_nodes, bundle_relationships, rendered_tokens, truncation_total, projection_lag
 - [x] Helm chart: `observability.logFormat`, `observability.otlpEndpoint`, `observability.serviceName`
-- [x] Validated in cluster (revision deployed, pod running)
+- [x] Validated in cluster
 - [x] Coverage tests: Cl100kEstimator, truncation metadata, revision conflict gRPC mapping
-- [x] SonarCloud coverage exclusions for runtime init (observability, NATS adapter — covered by IT)
+- [x] SonarCloud coverage exclusions for runtime init (covered by IT)
+- [x] Refactor: split render_graph_bundle.rs (535 → 4 files)
+- [x] Refactor: split testkit/lib.rs (623 → 3 files)
 
-## Pending — Architecture refactoring (from audit)
-
-### Immediate (high impact)
-
-| Task | File | Lines | Action |
-|------|------|-------|--------|
-| Split render_graph_bundle.rs | application/queries/ | 535 | Extract to bundle_renderer, bundle_truncator, bundle_prioritizer |
-| Split testkit/lib.rs | testkit/ | 623 | Docker setup → module, in-memory stores → separate files |
-| Extract UpdateContext validators | application/commands/ | 347 | IdempotencyChecker, RevisionValidator, ContentHashCalculator |
-
-### Short-term (medium impact)
+## Pending — Architecture (low priority, all test-only)
 
 | Task | File | Lines | Action |
 |------|------|-------|--------|
-| Split transport tests | transport/tests.rs | 902 | Separate files by feature |
+| Split transport tests | transport/tests.rs | 902 | Separate files by feature (tests only, no prod impact) |
 | Extract RESP protocol | adapter-valkey/io.rs | 663 | Shared module for RESP encoding |
 | Extract TLS config | transport/grpc_server.rs | 222 | Separate TLS module |
 
 ### Coverage gaps (accepted, documented)
 
-| File | Unit test coverage | IT coverage | Reason for exclusion |
-|------|-------------------|-------------|---------------------|
-| `observability/src/lib.rs` | 19% | Not automated (global subscriber) | Runtime init, validated by deployed server |
+| File | Unit test | IT coverage | Reason |
+|------|-----------|-------------|--------|
+| `observability/src/lib.rs` | 19% | Deployed server | Global subscriber, single init per process |
 | `observability/src/metrics.rs` | 49% | Noop meter unit test | Export only with real OTLP collector |
 | `adapter-nats/context_event_store.rs` | 0% (unit) | 3 container tests | I/O boundary, requires JetStream |
 
-## Pending — Product features
+## Pending — Paper artifact
 
-### Paper artifact
 - [ ] Recalculate paper metrics with cl100k_base tokenizer
 - [ ] Add latency capture to paper harness
 - [ ] Expand meso variants to UC2-UC4
 - [ ] CI consistency check paper ↔ artifacts
 
-## Pending — Research (from ROADMAP_SOTA_CONTEXT_REHYDRATION.md)
+## Pending — Research
 
 ### Level 1 — Submission-ready
 - ~~Freeze artifact~~ (done)
