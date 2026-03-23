@@ -26,11 +26,21 @@ Single source of truth for kernel maturity, technical debt, and next steps.
 - [x] security-model.md (full TLS + mTLS, threat model)
 - [x] InMemoryContextEventStore in testkit
 
-### Current batch (PR #55 — checks running)
+### JetStream + tiktoken + OTel (PR #55)
 - [x] NatsContextEventStore adapter (NATS JetStream, pure — no Valkey dependency)
 - [x] Cl100kEstimator replacing CharDivFourEstimator (tiktoken-rs, cl100k_base BPE)
 - [x] OpenTelemetry traces via OTLP (opentelemetry + tracing-opentelemetry)
 - [x] THIRD_PARTY_NOTICES.md
+
+### Event store wiring + observability metrics + tests (PR #56)
+- [x] Wire NatsContextEventStore in server composition root
+- [x] Add config switch for event store backend (`REHYDRATION_EVENT_STORE_BACKEND=nats|valkey`)
+- [x] Integration test with NATS JetStream container (3 tests: append, conflict, idempotency)
+- [x] OTel metrics: rpc_duration, bundle_nodes, bundle_relationships, rendered_tokens, truncation_total, projection_lag
+- [x] Helm chart: `observability.logFormat`, `observability.otlpEndpoint`, `observability.serviceName`
+- [x] Validated in cluster (revision deployed, pod running)
+- [x] Coverage tests: Cl100kEstimator, truncation metadata, revision conflict gRPC mapping
+- [x] SonarCloud coverage exclusions for runtime init (observability, NATS adapter — covered by IT)
 
 ## Pending — Architecture refactoring (from audit)
 
@@ -49,29 +59,16 @@ Single source of truth for kernel maturity, technical debt, and next steps.
 | Split transport tests | transport/tests.rs | 902 | Separate files by feature |
 | Extract RESP protocol | adapter-valkey/io.rs | 663 | Shared module for RESP encoding |
 | Extract TLS config | transport/grpc_server.rs | 222 | Separate TLS module |
-| ~~Coverage: NatsContextEventStore~~ | ~~adapter-nats/context_event_store.rs~~ | ~~172~~ | ~~done: container integration test~~ |
-| ~~Coverage: Cl100kEstimator~~ | ~~application/queries/render_graph_bundle.rs~~ | ~~535~~ | ~~done: unit tests for BPE counts~~ |
-| Coverage: OTel init paths | observability/lib.rs | 90 | Test json/pretty/compact formats and OTel provider lifecycle |
 
-### Acceptable (no action needed)
+### Coverage gaps (accepted, documented)
 
-- RelationExplanation: 9 fields — acceptable with builder pattern
-- RehydrationBundle: 8 fields — at limit, acceptable
-- Domain layer: clean, no changes needed
-- Ports/repositories: exemplary ISP
+| File | Unit test coverage | IT coverage | Reason for exclusion |
+|------|-------------------|-------------|---------------------|
+| `observability/src/lib.rs` | 19% | Not automated (global subscriber) | Runtime init, validated by deployed server |
+| `observability/src/metrics.rs` | 49% | Noop meter unit test | Export only with real OTLP collector |
+| `adapter-nats/context_event_store.rs` | 0% (unit) | 3 container tests | I/O boundary, requires JetStream |
 
 ## Pending — Product features
-
-### Event store migration
-- [x] Wire NatsContextEventStore in server composition root
-- [x] Add config switch for event store backend (`REHYDRATION_EVENT_STORE_BACKEND=nats|valkey`)
-- [x] Integration test with NATS JetStream container
-
-### Observability hardening
-- [ ] Per-RPC latency histograms (OpenTelemetry metrics)
-- [ ] Bundle size metrics (nodes, relationships, details, tokens)
-- [ ] Truncation rate counters
-- [ ] Projection lag metrics
 
 ### Paper artifact
 - [ ] Recalculate paper metrics with cl100k_base tokenizer
@@ -96,7 +93,7 @@ Single source of truth for kernel maturity, technical debt, and next steps.
 - [ ] Two domains minimum
 - [ ] Pull and event-driven evaluation with same metrics
 - [ ] External baseline families
-- [ ] Vllm in the loop tests
+- [ ] vLLM in the loop tests
 - [ ] Dataset Generator
 
 ### Level 3 — SOTA push
