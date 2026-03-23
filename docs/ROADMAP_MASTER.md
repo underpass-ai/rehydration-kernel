@@ -49,6 +49,9 @@ Single source of truth for kernel maturity, technical debt, and next steps.
 | Split transport tests | transport/tests.rs | 902 | Separate files by feature |
 | Extract RESP protocol | adapter-valkey/io.rs | 663 | Shared module for RESP encoding |
 | Extract TLS config | transport/grpc_server.rs | 222 | Separate TLS module |
+| Coverage: NatsContextEventStore | adapter-nats/context_event_store.rs | 172 | Container-backed integration test with JetStream |
+| Coverage: Cl100kEstimator | application/queries/render_graph_bundle.rs | 535 | Unit tests for BPE token counting edge cases |
+| Coverage: OTel init paths | observability/lib.rs | 90 | Test json/pretty/compact formats and OTel provider lifecycle |
 
 ### Acceptable (no action needed)
 
@@ -93,6 +96,8 @@ Single source of truth for kernel maturity, technical debt, and next steps.
 - [ ] Two domains minimum
 - [ ] Pull and event-driven evaluation with same metrics
 - [ ] External baseline families
+- [ ] Vllm in the loop tests
+- [ ] Dataset Generator
 
 ### Level 3 — SOTA push
 - [ ] Public benchmark
