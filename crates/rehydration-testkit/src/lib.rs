@@ -200,7 +200,7 @@ fn path_is_socket(path: &Path) -> Result<bool, Box<dyn std::error::Error + Send 
     {
         use std::os::unix::fs::FileTypeExt;
 
-        return Ok(fs::metadata(path)?.file_type().is_socket());
+        Ok(fs::metadata(path)?.file_type().is_socket())
     }
 
     #[cfg(not(unix))]
