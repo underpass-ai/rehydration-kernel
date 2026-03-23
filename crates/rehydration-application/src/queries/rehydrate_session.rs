@@ -329,11 +329,9 @@ mod tests {
             })
             .await;
 
-        assert!(result.is_err(), "should return an error for missing node");
-        let err = result.unwrap_err();
-        assert!(
-            matches!(err, crate::ApplicationError::NotFound(_)),
-            "error should be NotFound, got: {err:?}"
-        );
+        match result {
+            Err(crate::ApplicationError::NotFound(_)) => {}
+            other => panic!("expected NotFound, got: {other:?}"),
+        }
     }
 }
