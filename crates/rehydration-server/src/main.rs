@@ -10,7 +10,7 @@ use rehydration_adapter_valkey::{
     ValkeyContextEventStore, ValkeyNodeDetailStore, ValkeySnapshotStore,
 };
 use rehydration_config::{AppConfig, ProjectionRuntimeConfig};
-use rehydration_observability::init_observability;
+use rehydration_observability::{init_observability, shutdown_observability};
 use rehydration_transport_grpc::GrpcServer;
 
 use crate::projection_nats_runtime::connect_projection_runtime;
@@ -30,7 +30,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     install_rustls_crypto_provider();
     let config = AppConfig::try_from_env()?;
     let projection_runtime_config = ProjectionRuntimeConfig::try_from_env()?;
-    init_observability(&config.service_name);
+    let otel_provider = init_observability(&config.service_name);
 
     let graph_reader = Neo4jProjectionReader::new(config.graph_uri.clone())?;
     let detail_reader = ValkeyNodeDetailStore::new(config.detail_uri.clone())?;
@@ -67,6 +67,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             .map_err(|error| Box::new(error) as Box<dyn std::error::Error + Send + Sync>)
     })?;
 
+    shutdown_observability(otel_provider);
     Ok(())
 }
 

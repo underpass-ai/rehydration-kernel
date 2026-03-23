@@ -1,0 +1,39 @@
+# Third-Party Notices
+
+This project uses the following third-party libraries. We are grateful to
+their authors and contributors.
+
+## Runtime Dependencies
+
+| Crate | License | Purpose |
+|-------|---------|---------|
+| [async-nats](https://crates.io/crates/async-nats) | Apache-2.0 | NATS client and JetStream |
+| [neo4rs](https://crates.io/crates/neo4rs) | MIT | Neo4j graph database driver |
+| [opentelemetry](https://crates.io/crates/opentelemetry) | Apache-2.0 | OpenTelemetry API |
+| [opentelemetry-otlp](https://crates.io/crates/opentelemetry-otlp) | Apache-2.0 | OTLP trace exporter |
+| [opentelemetry_sdk](https://crates.io/crates/opentelemetry_sdk) | Apache-2.0 | OpenTelemetry SDK |
+| [prost](https://crates.io/crates/prost) | Apache-2.0 | Protocol Buffers |
+| [reqwest](https://crates.io/crates/reqwest) | MIT/Apache-2.0 | HTTP client |
+| [serde](https://crates.io/crates/serde) | MIT/Apache-2.0 | Serialization framework |
+| [serde_json](https://crates.io/crates/serde_json) | MIT/Apache-2.0 | JSON serialization |
+| [tiktoken-rs](https://crates.io/crates/tiktoken-rs) | MIT | BPE tokenizer (cl100k_base) |
+| [tokio](https://crates.io/crates/tokio) | MIT | Async runtime |
+| [tokio-rustls](https://crates.io/crates/tokio-rustls) | MIT/Apache-2.0 | TLS for Tokio |
+| [tonic](https://crates.io/crates/tonic) | MIT | gRPC framework |
+| [tracing](https://crates.io/crates/tracing) | MIT | Structured diagnostics |
+| [tracing-opentelemetry](https://crates.io/crates/tracing-opentelemetry) | MIT | OpenTelemetry bridge for tracing |
+| [tracing-subscriber](https://crates.io/crates/tracing-subscriber) | MIT | Tracing output formatting |
+
+## Build Dependencies
+
+| Crate | License | Purpose |
+|-------|---------|---------|
+| [prost-build](https://crates.io/crates/prost-build) | Apache-2.0 | Protocol Buffers code generation |
+| [tonic-build](https://crates.io/crates/tonic-build) | MIT | gRPC code generation |
+
+## Dev/Test Dependencies
+
+| Crate | License | Purpose |
+|-------|---------|---------|
+| [tempfile](https://crates.io/crates/tempfile) | MIT/Apache-2.0 | Temporary files for tests |
+| [testcontainers](https://crates.io/crates/testcontainers) | Apache-2.0 | Container-backed integration tests |
