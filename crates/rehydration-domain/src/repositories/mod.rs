@@ -6,6 +6,7 @@ pub mod projection_checkpoint_store;
 pub mod projection_writer;
 pub mod snapshot_save_options;
 pub mod snapshot_store;
+pub mod token_estimator;
 
 pub use graph_neighborhood_reader::GraphNeighborhoodReader;
 pub use node_detail_reader::NodeDetailReader;
@@ -15,3 +16,4 @@ pub use projection_checkpoint_store::ProjectionCheckpointStore;
 pub use projection_writer::ProjectionWriter;
 pub use snapshot_save_options::SnapshotSaveOptions;
 pub use snapshot_store::SnapshotStore;
+pub use token_estimator::TokenEstimator;

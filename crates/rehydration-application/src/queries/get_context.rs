@@ -6,8 +6,8 @@ use rehydration_domain::{
 use crate::ApplicationError;
 pub use crate::queries::render_graph_bundle::RenderedContext;
 use crate::queries::{
-    ContextRenderOptions, QueryApplicationService, RehydrateSessionUseCase, ScopeValidation,
-    ValidateScopeUseCase, clamp_native_graph_traversal_depth, render_graph_bundle_with_options,
+    ContextRenderOptions, QueryApplicationService, RehydrateSessionUseCase,
+    clamp_native_graph_traversal_depth, render_graph_bundle_with_options,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -23,7 +23,7 @@ pub struct GetContextQuery {
 pub struct GetContextResult {
     pub bundle: RehydrationBundle,
     pub rendered: RenderedContext,
-    pub scope_validation: ScopeValidation,
+    pub requested_scopes: Vec<String>,
     pub served_at: std::time::SystemTime,
 }
 
@@ -61,12 +61,11 @@ where
             )
             .await?;
         let rendered = render_graph_bundle_with_options(&bundle, render_options);
-        let scope_validation = ValidateScopeUseCase::execute(requested_scopes, requested_scopes);
 
         Ok(GetContextResult {
             bundle,
             rendered,
-            scope_validation,
+            requested_scopes: requested_scopes.to_vec(),
             served_at: std::time::SystemTime::now(),
         })
     }

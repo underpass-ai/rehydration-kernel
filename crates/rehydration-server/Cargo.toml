@@ -19,3 +19,4 @@ rehydration-transport-grpc.workspace = true
 rehydration-transport-http-admin.workspace = true
 tokio.workspace = true
 tokio-rustls = "0.26.4"
+tracing.workspace = true

@@ -102,7 +102,7 @@ async fn grpc_server_supports_query_command_and_admin_roundtrip() {
     let mut command_client = ContextCommandServiceClient::new(channel.clone());
     let mut admin_client = ContextAdminServiceClient::new(channel);
 
-    let get_context = query_client
+    let get_context_err = query_client
         .get_context(GetContextRequest {
             root_node_id: "case-123".to_string(),
             role: "developer".to_string(),
@@ -115,18 +115,10 @@ async fn grpc_server_supports_query_command_and_admin_roundtrip() {
             depth: 0,
         })
         .await
-        .expect("query service should respond")
-        .into_inner();
-    assert_eq!(
-        get_context
-            .bundle
-            .as_ref()
-            .expect("bundle should exist")
-            .root_node_id,
-        "case-123"
-    );
+        .expect_err("empty graph should return NOT_FOUND");
+    assert_eq!(get_context_err.code(), tonic::Code::NotFound);
 
-    let get_context_path = query_client
+    let get_context_path_err = query_client
         .get_context_path(GetContextPathRequest {
             root_node_id: "case-123".to_string(),
             target_node_id: "case-456".to_string(),
@@ -134,16 +126,8 @@ async fn grpc_server_supports_query_command_and_admin_roundtrip() {
             token_budget: 1024,
         })
         .await
-        .expect("query path service should respond")
-        .into_inner();
-    assert_eq!(
-        get_context_path
-            .path_bundle
-            .as_ref()
-            .expect("path bundle should exist")
-            .root_node_id,
-        "case-456"
-    );
+        .expect_err("empty graph should return NOT_FOUND for unknown path target");
+    assert_eq!(get_context_path_err.code(), tonic::Code::NotFound);
 
     let update_context = command_client
         .update_context(UpdateContextRequest {
