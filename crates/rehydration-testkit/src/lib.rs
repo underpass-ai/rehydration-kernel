@@ -427,11 +427,7 @@ impl ContextEventStore for InMemoryContextEventStore {
         Ok(new_revision)
     }
 
-    async fn current_revision(
-        &self,
-        root_node_id: &str,
-        role: &str,
-    ) -> Result<u64, PortError> {
+    async fn current_revision(&self, root_node_id: &str, role: &str) -> Result<u64, PortError> {
         let key = Self::aggregate_key(root_node_id, role);
         Ok(self.revisions.lock().await.get(&key).copied().unwrap_or(0))
     }

@@ -6,7 +6,9 @@ use std::sync::Once;
 
 use rehydration_adapter_nats::NatsProjectionConsumer;
 use rehydration_adapter_neo4j::Neo4jProjectionReader;
-use rehydration_adapter_valkey::{ValkeyContextEventStore, ValkeyNodeDetailStore, ValkeySnapshotStore};
+use rehydration_adapter_valkey::{
+    ValkeyContextEventStore, ValkeyNodeDetailStore, ValkeySnapshotStore,
+};
 use rehydration_config::{AppConfig, ProjectionRuntimeConfig};
 use rehydration_observability::init_observability;
 use rehydration_transport_grpc::GrpcServer;

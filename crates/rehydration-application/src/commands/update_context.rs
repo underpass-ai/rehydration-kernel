@@ -133,10 +133,7 @@ where
         };
 
         // Append with optimistic concurrency
-        let new_revision = self
-            .event_store
-            .append(event, current_revision)
-            .await?;
+        let new_revision = self.event_store.append(event, current_revision).await?;
 
         Ok(UpdateContextOutcome {
             accepted_version: AcceptedVersion {

@@ -9,11 +9,11 @@ use rehydration_domain::{
     ContextPathNeighborhood, GraphNeighborhoodReader, NodeDetailProjection, NodeDetailReader,
     NodeNeighborhood, PortError, RehydrationBundle, SnapshotSaveOptions, SnapshotStore,
 };
-use rehydration_testkit::InMemoryContextEventStore;
 use rehydration_proto::v1beta1::{
     BundleRenderFormat, GetContextRequest, Phase,
     context_query_service_client::ContextQueryServiceClient,
 };
+use rehydration_testkit::InMemoryContextEventStore;
 use rehydration_transport_grpc::GrpcServer;
 use tempfile::TempDir;
 use tokio::net::TcpListener;

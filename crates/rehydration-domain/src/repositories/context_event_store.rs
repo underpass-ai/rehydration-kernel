@@ -72,14 +72,8 @@ where
         self.as_ref().append(event, expected_revision).await
     }
 
-    async fn current_revision(
-        &self,
-        root_node_id: &str,
-        role: &str,
-    ) -> Result<u64, PortError> {
-        self.as_ref()
-            .current_revision(root_node_id, role)
-            .await
+    async fn current_revision(&self, root_node_id: &str, role: &str) -> Result<u64, PortError> {
+        self.as_ref().current_revision(root_node_id, role).await
     }
 
     async fn find_by_idempotency_key(

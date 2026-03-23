@@ -11,9 +11,9 @@ pub enum PortError {
 impl fmt::Display for PortError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::InvalidState(message)
-            | Self::Unavailable(message)
-            | Self::Conflict(message) => f.write_str(message),
+            Self::InvalidState(message) | Self::Unavailable(message) | Self::Conflict(message) => {
+                f.write_str(message)
+            }
         }
     }
 }

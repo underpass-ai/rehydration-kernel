@@ -16,7 +16,6 @@ use rehydration_domain::{
     NodeNeighborhood, NodeProjection, NodeRelationProjection, PortError, RehydrationBundle,
     RelationExplanation, RelationSemanticClass, Role, SnapshotSaveOptions, SnapshotStore,
 };
-use rehydration_testkit::InMemoryContextEventStore;
 use rehydration_proto::v1beta1::{
     BundleRenderFormat, ContextChange, ContextChangeOperation, GetBundleSnapshotRequest,
     GetContextPathRequest, GetContextRequest, GetNodeDetailRequest, GetProjectionStatusRequest,
@@ -25,6 +24,7 @@ use rehydration_proto::v1beta1::{
     context_command_service_server::ContextCommandService,
     context_query_service_server::ContextQueryService,
 };
+use rehydration_testkit::InMemoryContextEventStore;
 use tokio::sync::Mutex;
 use tonic::Request;
 
@@ -511,9 +511,10 @@ async fn query_service_validates_scope_diffs() {
 #[tokio::test]
 async fn command_service_accepts_update_context() {
     let event_store = Arc::new(InMemoryContextEventStore::new());
-    let service = CommandGrpcServiceV1Beta1::new(Arc::new(CommandApplicationService::new(
-        Arc::new(rehydration_application::UpdateContextUseCase::new(event_store, "0.1.0")),
-    )));
+    let service =
+        CommandGrpcServiceV1Beta1::new(Arc::new(CommandApplicationService::new(Arc::new(
+            rehydration_application::UpdateContextUseCase::new(event_store, "0.1.0"),
+        ))));
 
     let response = service
         .update_context(Request::new(UpdateContextRequest {

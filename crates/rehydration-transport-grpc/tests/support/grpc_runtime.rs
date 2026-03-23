@@ -2,7 +2,9 @@ use std::error::Error;
 use std::time::Duration;
 
 use rehydration_config::{AppConfig, GrpcTlsConfig};
-use rehydration_domain::{ContextEventStore, GraphNeighborhoodReader, NodeDetailReader, SnapshotStore};
+use rehydration_domain::{
+    ContextEventStore, GraphNeighborhoodReader, NodeDetailReader, SnapshotStore,
+};
 use rehydration_testkit::InMemoryContextEventStore;
 use rehydration_transport_grpc::GrpcServer;
 use tokio::net::TcpListener;
@@ -40,7 +42,13 @@ impl RunningGrpcServer {
             snapshot_uri: "redis://localhost:6379".to_string(),
             events_subject_prefix: "rehydration".to_string(),
         };
-        let server = GrpcServer::new(config, graph_reader, detail_reader, snapshot_store, InMemoryContextEventStore::new());
+        let server = GrpcServer::new(
+            config,
+            graph_reader,
+            detail_reader,
+            snapshot_store,
+            InMemoryContextEventStore::new(),
+        );
         let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
         let server_task = tokio::spawn(async move {
             server
