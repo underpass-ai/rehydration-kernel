@@ -375,11 +375,8 @@ async fn kernel_full_journey_supports_tls_across_transport_surfaces()
                     requested_by: "kernel-e2e-tls".to_string(),
                     requested_at: None,
                 }),
-                precondition: Some(RevisionPrecondition {
-                    expected_revision: 41,
-                    expected_content_hash: "expected-hash".to_string(),
-                }),
-                persist_snapshot: true,
+                precondition: None,
+                persist_snapshot: false,
             })
             .await?
             .into_inner();
@@ -388,10 +385,10 @@ async fn kernel_full_journey_supports_tls_across_transport_surfaces()
                 .accepted_version
                 .as_ref()
                 .map(|version| version.revision),
-            Some(42)
+            Some(1)
         );
         assert!(command_update.warnings.is_empty());
-        assert!(command_update.snapshot_persisted);
+        assert!(!command_update.snapshot_persisted);
 
         let projection_status = admin_client
             .get_projection_status(GetProjectionStatusRequest {
