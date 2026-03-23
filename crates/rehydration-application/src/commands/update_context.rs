@@ -171,7 +171,9 @@ mod tests {
         Arc::new(InMemoryContextEventStore::new())
     }
 
-    fn use_case(store: Arc<InMemoryContextEventStore>) -> UpdateContextUseCase<InMemoryContextEventStore> {
+    fn use_case(
+        store: Arc<InMemoryContextEventStore>,
+    ) -> UpdateContextUseCase<InMemoryContextEventStore> {
         UpdateContextUseCase::new(store, "0.1.0")
     }
 
@@ -270,8 +272,14 @@ mod tests {
             .await
             .expect("second call should return cached outcome");
 
-        assert_eq!(first.accepted_version.revision, second.accepted_version.revision);
-        assert_eq!(first.accepted_version.content_hash, second.accepted_version.content_hash);
+        assert_eq!(
+            first.accepted_version.revision,
+            second.accepted_version.revision
+        );
+        assert_eq!(
+            first.accepted_version.content_hash,
+            second.accepted_version.content_hash
+        );
     }
 
     #[tokio::test]
