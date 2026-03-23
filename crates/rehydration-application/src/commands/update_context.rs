@@ -158,3 +158,182 @@ fn compute_content_hash(changes: &[UpdateContextChange]) -> String {
     }
     format!("{:016x}", hasher.finish())
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use rehydration_testkit::InMemoryContextEventStore;
+
+    use super::*;
+
+    fn event_store() -> Arc<InMemoryContextEventStore> {
+        Arc::new(InMemoryContextEventStore::new())
+    }
+
+    fn use_case(store: Arc<InMemoryContextEventStore>) -> UpdateContextUseCase<InMemoryContextEventStore> {
+        UpdateContextUseCase::new(store, "0.1.0")
+    }
+
+    fn sample_change() -> UpdateContextChange {
+        UpdateContextChange {
+            operation: "UPDATE".to_string(),
+            entity_kind: "node_detail".to_string(),
+            entity_id: "node-1".to_string(),
+            payload_json: r#"{"status":"ACTIVE"}"#.to_string(),
+            reason: "test".to_string(),
+            scopes: vec!["graph".to_string()],
+        }
+    }
+
+    #[tokio::test]
+    async fn execute_appends_event_and_returns_revision_one() {
+        let store = event_store();
+        let uc = use_case(Arc::clone(&store));
+
+        let outcome = uc
+            .execute(UpdateContextCommand {
+                root_node_id: "node-1".to_string(),
+                role: "developer".to_string(),
+                work_item_id: "task-1".to_string(),
+                changes: vec![sample_change()],
+                expected_revision: None,
+                expected_content_hash: None,
+                idempotency_key: None,
+                requested_by: None,
+                persist_snapshot: false,
+            })
+            .await
+            .expect("should succeed");
+
+        assert_eq!(outcome.accepted_version.revision, 1);
+        assert!(!outcome.accepted_version.content_hash.is_empty());
+        assert!(outcome.warnings.is_empty());
+    }
+
+    #[tokio::test]
+    async fn execute_rejects_wrong_expected_revision() {
+        let store = event_store();
+        let uc = use_case(Arc::clone(&store));
+
+        let err = uc
+            .execute(UpdateContextCommand {
+                root_node_id: "node-1".to_string(),
+                role: "developer".to_string(),
+                work_item_id: "task-1".to_string(),
+                changes: vec![sample_change()],
+                expected_revision: Some(99),
+                expected_content_hash: None,
+                idempotency_key: None,
+                requested_by: None,
+                persist_snapshot: false,
+            })
+            .await;
+
+        assert!(err.is_err());
+        let msg = err.expect_err("should fail").to_string();
+        assert!(msg.contains("expected revision 99"));
+    }
+
+    #[tokio::test]
+    async fn execute_returns_cached_outcome_for_duplicate_idempotency_key() {
+        let store = event_store();
+        let uc = use_case(Arc::clone(&store));
+
+        let first = uc
+            .execute(UpdateContextCommand {
+                root_node_id: "node-1".to_string(),
+                role: "developer".to_string(),
+                work_item_id: "task-1".to_string(),
+                changes: vec![sample_change()],
+                expected_revision: None,
+                expected_content_hash: None,
+                idempotency_key: Some("idem-1".to_string()),
+                requested_by: None,
+                persist_snapshot: false,
+            })
+            .await
+            .expect("first call should succeed");
+
+        let second = uc
+            .execute(UpdateContextCommand {
+                root_node_id: "node-1".to_string(),
+                role: "developer".to_string(),
+                work_item_id: "task-1".to_string(),
+                changes: vec![sample_change()],
+                expected_revision: None,
+                expected_content_hash: None,
+                idempotency_key: Some("idem-1".to_string()),
+                requested_by: None,
+                persist_snapshot: false,
+            })
+            .await
+            .expect("second call should return cached outcome");
+
+        assert_eq!(first.accepted_version.revision, second.accepted_version.revision);
+        assert_eq!(first.accepted_version.content_hash, second.accepted_version.content_hash);
+    }
+
+    #[tokio::test]
+    async fn execute_warns_on_empty_changes() {
+        let store = event_store();
+        let uc = use_case(Arc::clone(&store));
+
+        let outcome = uc
+            .execute(UpdateContextCommand {
+                root_node_id: "node-1".to_string(),
+                role: "developer".to_string(),
+                work_item_id: "task-1".to_string(),
+                changes: vec![],
+                expected_revision: None,
+                expected_content_hash: None,
+                idempotency_key: None,
+                requested_by: None,
+                persist_snapshot: false,
+            })
+            .await
+            .expect("empty changes should succeed with warning");
+
+        assert_eq!(outcome.warnings.len(), 1);
+        assert!(outcome.warnings[0].contains("no changes supplied"));
+    }
+
+    #[tokio::test]
+    async fn execute_increments_revision_on_sequential_calls() {
+        let store = event_store();
+        let uc = use_case(Arc::clone(&store));
+
+        let first = uc
+            .execute(UpdateContextCommand {
+                root_node_id: "node-1".to_string(),
+                role: "developer".to_string(),
+                work_item_id: "task-1".to_string(),
+                changes: vec![sample_change()],
+                expected_revision: None,
+                expected_content_hash: None,
+                idempotency_key: None,
+                requested_by: None,
+                persist_snapshot: false,
+            })
+            .await
+            .expect("first should succeed");
+
+        let second = uc
+            .execute(UpdateContextCommand {
+                root_node_id: "node-1".to_string(),
+                role: "developer".to_string(),
+                work_item_id: "task-2".to_string(),
+                changes: vec![sample_change()],
+                expected_revision: Some(1),
+                expected_content_hash: None,
+                idempotency_key: None,
+                requested_by: None,
+                persist_snapshot: false,
+            })
+            .await
+            .expect("second should succeed");
+
+        assert_eq!(first.accepted_version.revision, 1);
+        assert_eq!(second.accepted_version.revision, 2);
+    }
+}
