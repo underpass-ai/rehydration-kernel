@@ -49,8 +49,8 @@ Single source of truth for kernel maturity, technical debt, and next steps.
 | Split transport tests | transport/tests.rs | 902 | Separate files by feature |
 | Extract RESP protocol | adapter-valkey/io.rs | 663 | Shared module for RESP encoding |
 | Extract TLS config | transport/grpc_server.rs | 222 | Separate TLS module |
-| Coverage: NatsContextEventStore | adapter-nats/context_event_store.rs | 172 | Container-backed integration test with JetStream |
-| Coverage: Cl100kEstimator | application/queries/render_graph_bundle.rs | 535 | Unit tests for BPE token counting edge cases |
+| ~~Coverage: NatsContextEventStore~~ | ~~adapter-nats/context_event_store.rs~~ | ~~172~~ | ~~done: container integration test~~ |
+| ~~Coverage: Cl100kEstimator~~ | ~~application/queries/render_graph_bundle.rs~~ | ~~535~~ | ~~done: unit tests for BPE counts~~ |
 | Coverage: OTel init paths | observability/lib.rs | 90 | Test json/pretty/compact formats and OTel provider lifecycle |
 
 ### Acceptable (no action needed)
@@ -63,9 +63,9 @@ Single source of truth for kernel maturity, technical debt, and next steps.
 ## Pending — Product features
 
 ### Event store migration
-- [ ] Wire NatsContextEventStore in server composition root (currently uses Valkey)
-- [ ] Add config switch for event store backend (NATS vs Valkey)
-- [ ] Integration test with NATS JetStream container
+- [x] Wire NatsContextEventStore in server composition root
+- [x] Add config switch for event store backend (`REHYDRATION_EVENT_STORE_BACKEND=nats|valkey`)
+- [x] Integration test with NATS JetStream container
 
 ### Observability hardening
 - [ ] Per-RPC latency histograms (OpenTelemetry metrics)
