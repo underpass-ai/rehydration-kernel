@@ -130,8 +130,8 @@ Relevant assets:
   - `crates/rehydration-transport-grpc/tests/agentic_event_integration.rs`
 - minimal generic seed scenario:
   - `crates/rehydration-transport-grpc/tests/support/generic_seed_data.rs`
-- richer graph scenario:
-  - `crates/rehydration-transport-grpc/src/starship_e2e.rs`
+- explanatory relation seed scenarios:
+  - `crates/rehydration-transport-grpc/tests/support/explanatory_seed_data.rs`
 - zoomed bounded-context behavior:
   - `crates/rehydration-transport-grpc/tests/kernel_full_journey_integration.rs`
 
@@ -385,36 +385,41 @@ Expected measurable outcome:
 
 ## Preliminary Results
 
-The current paper harness now produces direct evidence for the two explanatory
-use cases plus two ablations:
+The current paper harness produces direct evidence for four explanatory use
+cases across multiple ablation variants:
 
 - full explanatory relations with detail
-- structural-only relations with detail
 - full explanatory relations without detail
+- detail-only relations with detail
+- structural-only relations with detail
+- meso-scale (denser noisy graph) variant for UC1
+- token-budget constrained variants (96 tokens) for UC4
 
 Current results from `artifacts/paper-use-cases/summary.json` and
 `artifacts/paper-use-cases/results.md` show a clean pattern.
 
 ### Result R1. Explanatory Relations Matter More Than Detail Removal
 
-For both use cases:
+Across all four use cases (UC1-UC4):
 
 - full explanatory context reaches `explanation_roundtrip_fidelity = 1.0`
 - full explanatory context reaches `causal_reconstruction_score = 1.0`
-- structural-only context drops to `causal_reconstruction_score = 0.142857`
+- structural-only context drops to `causal_reconstruction_score = 0.143`
+- detail-only context reaches `causal_reconstruction_score = 0.429`
 
 Interpretation:
 
 - removing explanation destroys most of the causal or motivational signal even
   when node detail is still present
 - detail alone is not enough to reconstruct why the next node exists
+- detail-only recovers more than structural-only but far less than explanatory
 
 ### Result R2. Detail Still Matters, But Less Than Explanatory Edges
 
-For both use cases:
+Across UC1-UC3:
 
 - explanatory-without-detail keeps `explanation_roundtrip_fidelity = 1.0`
-- explanatory-without-detail drops to `causal_reconstruction_score = 0.857142`
+- explanatory-without-detail drops to `causal_reconstruction_score = 0.857`
 
 Interpretation:
 
@@ -427,25 +432,27 @@ Interpretation:
 
 Observed rendered token counts:
 
-- UC1 full: `135`
-- UC1 structural-only: `97`
-- UC1 without-detail: `116`
-- UC2 full: `126`
-- UC2 structural-only: `91`
-- UC2 without-detail: `111`
+- UC1 full: `135`, structural-only: `97`, without-detail: `116`
+- UC2 full: `126`, structural-only: `91`, without-detail: `111`
+- UC3 full: `260`, structural-only: `169`, without-detail: `234`
+- UC4 full: `122`, full@96: `89`, structural@96: `64`
 
 Interpretation:
 
 - structural-only edges make the prompt shorter, but that shorter prompt is
   materially worse for diagnosis and implementation-trace recovery
 - removing detail gives a smaller token reduction and a smaller quality drop
+- UC4 shows that even under extreme token pressure (96 tokens), explanatory
+  context preserves `1.0` causal reconstruction while structural drops to
+  `0.125`
 
 ### Result R4. Rehydration-Point Discovery Depends On Explanatory Linkage
 
-For UC1:
+For UC1 and UC3:
 
-- full explanatory context finds the rehydration point correctly
-- structural-only context loses rehydration-point recovery entirely
+- full explanatory context finds the rehydration or continuation point correctly
+- structural-only context loses recovery entirely
+- detail-only context also loses recovery entirely
 - explanatory-without-detail still recovers the correct upstream node
 
 Interpretation:
@@ -453,6 +460,31 @@ Interpretation:
 - `decision_id` and `caused_by_node_id` are carrying the recovery signal
 - this is direct evidence for the kernel value proposition in restartable
   agent workflows
+
+### Result R5. Closed-Loop Retry Success Depends On Explanation
+
+For UC1 and UC3:
+
+- explanatory variants reach `retry_success_rate = 1.0` including no-detail
+- structural-only and detail-only variants stay at `0.0`
+
+Interpretation:
+
+- detail-only context can preserve fragments of why-trace text but does not
+  expose a stable machine-readable anchor for restart or resume
+- the closed-loop signal is sharper than continuation-point hit alone
+
+### Result R6. Meso-Scale Robustness
+
+For UC1 under a denser noisy graph:
+
+- `causal_reconstruction_score = 1.0` (same as micro)
+- `retry_success_rate = 1.0` (same as micro)
+- rendered token count: `135` (same as micro)
+
+Interpretation:
+
+- the explanatory signal survives distractor branches in the meso graph
 
 ## Primary Metrics
 
@@ -502,17 +534,20 @@ generic query and async contracts. The kernel models context as nodes with
 optional detail plus typed relationship explanations that preserve why
 downstream nodes exist, including rationale, motivation, method, and
 decision linkage. We evaluate the system with container-backed end-to-end
-workflows across pull-driven and event-driven runtimes and two explanatory
-use cases: failure diagnosis with rehydration-point recovery, and
-reconstruction of why a task was implemented in a particular way. In both use
-cases, full explanatory context achieves `1.0` explanation roundtrip fidelity
-and `1.0` causal reconstruction score. Removing node detail preserves
-explanation fidelity but reduces causal reconstruction to `0.857`, while
-replacing explanatory relations with structural edges reduces causal
-reconstruction to `0.143` and eliminates rehydration-point recovery. These
-results indicate that explanatory relationships carry the dominant signal for
-restartable and auditable agent workflows, while node detail improves
-completeness.
+workflows across pull-driven and event-driven runtimes and four explanatory
+use cases: failure diagnosis with rehydration-point recovery, reconstruction
+of why a task was implemented in a particular way, interrupted handoff with
+resumable execution, and constraint-preserving retrieval under token pressure.
+Across these use cases, full explanatory context achieves `1.0` explanation
+roundtrip fidelity and `1.0` causal reconstruction in the full-detail setting,
+while retaining `1.0` causal reconstruction under a `96`-token budget in the
+constraint-preserving case. Removing node detail preserves explanation fidelity
+but reduces causal reconstruction to `0.857`, while replacing explanatory
+relations with structural edges reduces causal reconstruction to `0.143`,
+eliminates rehydration-point recovery, and fails to preserve the dominant
+reason under budget pressure. These results indicate that explanatory
+relationships carry the dominant signal for restartable and auditable agent
+workflows, while node detail primarily improves completeness.
 
 ## Results Summary
 
@@ -520,27 +555,34 @@ The strongest result in the current artifact is not just that the kernel can
 round-trip relationship explanations, but that those explanations dominate
 task-relevant context quality.
 
-For both explanatory use cases, `full_explanatory_with_detail` reaches perfect
-`explanation_roundtrip_fidelity = 1.0` and
+Across all four explanatory use cases, `full_explanatory_with_detail` reaches
+perfect `explanation_roundtrip_fidelity = 1.0` and
 `causal_reconstruction_score = 1.0`. When detail is removed but explanatory
 relations remain, causal reconstruction drops only to `0.857`. When
 explanatory relations are replaced by structural edges while detail is kept,
 causal reconstruction collapses to `0.143`. The net effect is an absolute
 drop of `0.857` from losing explanation, versus `0.143` from losing detail.
 
-This pattern also appears in recovery behavior. In UC1, both explanatory
-variants recover the correct rehydration point, while the structural-only
-variant loses rehydration-point recovery entirely. That means the decisive
-recovery signal is carried by relationship explanation fields such as
-`decision_id` and `caused_by_node_id`, not by node detail alone.
+This pattern also appears in recovery behavior. In UC1 and UC3, both
+explanatory variants recover the correct rehydration or continuation point,
+while structural-only and detail-only variants lose recovery entirely. The
+closed-loop retry signal is even sharper: explanatory variants reach
+`retry_success_rate = 1.0` while structural-only and detail-only stay at
+`0.0`. That means the decisive recovery signal is carried by relationship
+explanation fields such as `decision_id` and `caused_by_node_id`, not by
+node detail alone.
+
+UC4 provides the strongest bounded-retrieval result. The full explanatory
+context rendered at `96` tokens still reaches `1.0` causal reconstruction
+and preserves the dominant reason, while the structural-only variant at the
+same budget drops to `0.125`.
 
 The token results reinforce the same conclusion. Structural-only context is
 shorter, but the reduction comes with a severe quality collapse: UC1 falls
-from `135` to `97` rendered tokens and UC2 from `126` to `91`, while causal
-reconstruction drops from `1.0` to `0.143` in both cases. Removing detail
-gives a smaller token reduction, from `135` to `116` in UC1 and from `126` to
-`111` in UC2, alongside a much smaller quality drop. The generated report and
-figures are written to:
+from `135` to `97` rendered tokens, UC2 from `126` to `91`, and UC3 from
+`260` to `169`, while causal reconstruction drops from `1.0` to `0.143` in
+all cases. Removing detail gives a smaller token reduction alongside a much
+smaller quality drop. The generated report and figures are written to:
 
 - `artifacts/paper-use-cases/results.md`
 - `artifacts/paper-use-cases/results.csv`
@@ -555,20 +597,22 @@ node detail when the task is to diagnose, justify, or restart agent work.
 The current repository now supports a concrete and defensible systems claim:
 context rehydration can be isolated into a reusable kernel, and explanatory
 relations materially improve the usefulness of that context for agent
-diagnosis and recovery. The experimental evidence is small but clean. Across
-both use cases, explanatory relations preserve the causal trace needed to
-explain why a task happened, identify which relationships were suspect, and
-select a correct rehydration point. Detail remains useful, but it behaves as a
-completeness amplifier rather than the primary carrier of intent.
+diagnosis and recovery. The experimental evidence spans four use cases with
+multiple ablation variants. Across all use cases, explanatory relations
+preserve the causal trace needed to explain why a task happened, identify
+which relationships were suspect, select a correct rehydration point, and
+preserve the dominant reason under token pressure. Detail remains useful, but
+it behaves as a completeness amplifier rather than the primary carrier of
+intent.
 
 That gives the paper a sharper contribution than generic GraphRAG positioning.
 The kernel is not only retrieving nearby nodes; it is preserving an
 application-supplied explanation of transition between nodes and making that
 explanation available through event, storage, query, and rendered-context
 boundaries. The next step for a stronger submission is not to redesign the
-model, but to widen the evaluation: add larger graphs, add flat-detail and
-root-only baselines, and measure intervention quality after selecting a
-rehydration point.
+model, but to widen the evaluation: larger graphs, stronger baselines,
+unified cross-runtime metrics, and experiments that measure whether the
+selected rehydration point leads to a corrected retry at scale.
 
 ## Draft Paper Outline
 
@@ -686,17 +730,19 @@ These should be stated explicitly in the paper.
 
 ### Required For A Credible v1 Submission
 
-- add cross-runtime metrics to the same paper artifact used for UC1 and UC2
+- add cross-runtime metrics to the same paper artifact used for UC1-UC4
 - capture end-to-end latency in the paper summary
-- add one denser graph scenario beyond the current four-node local bundles
 - freeze the current artifacts into a release-ready paper appendix
+
+Note: a denser meso graph (UC1) and detail-only baseline are now included in
+the artifact.
 
 ### Required For The Stronger Explanatory Submission
 
 - add root-only and flat-detail baselines alongside structural-only edges
-- measure whether the selected rehydration point leads to a corrected retry
-- widen UC1 and UC2 beyond synthetic local graphs
+- widen UC1-UC4 beyond synthetic local graphs
 - add one longer causal chain with multiple competing decisions
+- expand meso-scale variants to UC2-UC4
 
 ## Reproducibility Plan
 
@@ -743,11 +789,13 @@ That sequencing keeps the paper technically honest while still aligning with
 the direction you want: relationships that explain the decision that produced
 the next node.
 
-For the paper narrative, lead with the two use cases:
+For the paper narrative, lead with the four use cases:
 
 - diagnose a wrong implementation and recover from the correct rehydration
   point
 - explain why a task was implemented in a particular way
+- recover from an interrupted handoff and resume execution
+- preserve the dominant constraint reason under token pressure
 
-Those two stories are concrete, easy to evaluate, and tightly aligned with the
-new relation model.
+Those four stories are concrete, easy to evaluate, and tightly aligned with the
+explanatory relation model.

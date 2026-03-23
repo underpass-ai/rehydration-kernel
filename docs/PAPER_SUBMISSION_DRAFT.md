@@ -268,12 +268,12 @@ keeps only the comparison needed for the central claim. The `detail-only` and
 | UC1 | structural | 4096 | 0.000 | 1.000 | 0.143 | 0 | 0 | 97 |
 | UC2 | full+detail | 4096 | 1.000 | 1.000 | 1.000 | n/a | n/a | 126 |
 | UC2 | full-no-detail | 4096 | 1.000 | 0.000 | 0.857 | n/a | n/a | 111 |
-| UC2 | detail-only | 4096 | 0.000 | 1.000 | 0.429 | n/a | n/a | 118 |
+| UC2 | detail-only | 4096 | 0.000 | 1.000 | 0.429 | n/a | n/a | 111 |
 | UC2 | structural | 4096 | 0.000 | 1.000 | 0.143 | n/a | n/a | 91 |
-| UC3 | full+detail | 4096 | 1.000 | 1.000 | 1.000 | 1 | 1 | 221 |
-| UC3 | full-no-detail | 4096 | 1.000 | 0.000 | 0.857 | 1 | 1 | 195 |
-| UC3 | detail-only | 4096 | 0.000 | 1.000 | 0.429 | 0 | 0 | 188 |
-| UC3 | structural | 4096 | 0.000 | 1.000 | 0.143 | 0 | 0 | 149 |
+| UC3 | full+detail | 4096 | 1.000 | 1.000 | 1.000 | 1 | 1 | 260 |
+| UC3 | full-no-detail | 4096 | 1.000 | 0.000 | 0.857 | 1 | 1 | 234 |
+| UC3 | detail-only | 4096 | 0.000 | 1.000 | 0.429 | 0 | 0 | 208 |
+| UC3 | structural | 4096 | 0.000 | 1.000 | 0.143 | 0 | 0 | 169 |
 | UC4 | full+detail | 4096 | 1.000 | 1.000 | 1.000 | n/a | 1 | 122 |
 | UC4 | full@96 | 96 | 1.000 | 0.000 | 1.000 | n/a | 1 | 89 |
 | UC4 | structural@96 | 96 | 0.000 | 0.000 | 0.125 | n/a | 0 | 64 |
@@ -289,8 +289,8 @@ but secondary to the main story. The same values are listed here for reference.
 | --- | --- | --- | ---: | ---: | ---: | ---: |
 | UC1 | detail-only | micro | 0.429 | 0 | 0 | 113 |
 | UC1 | full+detail | meso | 1.000 | 1 | 1 | 135 |
-| UC2 | detail-only | micro | 0.429 | n/a | n/a | 118 |
-| UC3 | detail-only | micro | 0.429 | 0 | 0 | 188 |
+| UC2 | detail-only | micro | 0.429 | n/a | n/a | 111 |
+| UC3 | detail-only | micro | 0.429 | 0 | 0 | 208 |
 
 ### 7.1 Explanatory Relations Carry The Dominant Signal
 
@@ -348,7 +348,7 @@ explanation should survive before detail.
 
 Structural-only context is shorter, but materially less useful. In UC1 the
 rendered context falls from `135` to `97` tokens. In UC2 it falls from `126`
-to `91`. In UC3 it falls from `221` to `149`. In UC4 the explanatory `@96`
+to `91`. In UC3 it falls from `260` to `169`. In UC4 the explanatory `@96`
 variant uses `89` tokens, while the structural-only `@96` variant uses `64`.
 In all cases that shorter context coincides with severe degradation of causal
 reconstruction or loss of the dominant reason.
@@ -383,7 +383,7 @@ hidden inside prompt construction logic.
 The current evidence has several limitations.
 
 - The quantitative use cases are small and synthetic.
-- The measured local bundles remain small, ranging from three to six nodes.
+- The measured local bundles remain small, ranging from three to seven nodes.
 - The current artifact includes only a limited meso-scale distractor graph for `UC1`, so it does not yet establish behavior across substantially denser retrieval neighborhoods.
 - The current metrics center on explanatory use cases rather than the full
   pull-driven and event-driven suite.

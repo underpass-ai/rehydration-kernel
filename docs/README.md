@@ -7,6 +7,7 @@ Kernel documentation lives here.
 - [`PLAN_GRAPH_EXPLORER.md`](./PLAN_GRAPH_EXPLORER.md)
 - [`REQUIREMENTS_GRAPH_EXPLORER.md`](./REQUIREMENTS_GRAPH_EXPLORER.md)
 - [`BUG_DEPTH_TRAVERSAL.md`](./BUG_DEPTH_TRAVERSAL.md)
+- [`REPORT_GRAPH_ORDERING.md`](./REPORT_GRAPH_ORDERING.md)
 - [`PAPER_AGENTIC_CONTEXT_REHYDRATION.md`](./PAPER_AGENTIC_CONTEXT_REHYDRATION.md)
 - [`PAPER_SUBMISSION_DRAFT.md`](./PAPER_SUBMISSION_DRAFT.md)
 - [`paper/README.md`](./paper/README.md)
@@ -24,10 +25,7 @@ The current paper track is organized as follows:
   [`PAPER_SUBMISSION_DRAFT.md`](./PAPER_SUBMISSION_DRAFT.md)
 - ACL review/preprint package:
   [`paper/acl/README.md`](./paper/acl/README.md)
-- generated ACL review PDF:
-  [`paper/acl/main.pdf`](./paper/acl/main.pdf)
-- generated ACL preprint PDF:
-  [`paper/acl/main-preprint.pdf`](./paper/acl/main-preprint.pdf)
+  (PDFs are built locally from LaTeX sources; not committed to preserve anonymity)
 - experimental artifact outputs:
   [`../artifacts/paper-use-cases/results.md`](../artifacts/paper-use-cases/results.md)
   [`../artifacts/paper-use-cases/summary.json`](../artifacts/paper-use-cases/summary.json)

@@ -17,7 +17,6 @@ The gap is not primarily conceptual. The gap is empirical:
 
 - too few external baselines
 - graphs are still small and synthetic
-- no closed-loop retry metric yet
 - limited runtime and domain diversity
 - no public benchmark or dataset
 
@@ -60,48 +59,35 @@ without overclaiming.
 
 ### Required Work
 
-- Freeze the current paper artifact:
-  - `summary.json`
-  - `results.md`
-  - `results.csv`
-  - `results-figures.md`
-- Keep the current four use cases stable:
-  - `UC1` failure diagnosis
-  - `UC2` implementation trace
-  - `UC3` interrupted handoff
-  - `UC4` token-pressure constraint preservation
-- Add one denser `meso` graph per use case family:
-  - target size `20-40` nodes
-  - include distractor branches
-  - preserve explicit ground truth
-- Add one additional baseline beyond structural-only:
-  - `detail_only`
-  - or `root_plus_detail_without_edges`
+- ~~Freeze the current paper artifact~~ (done)
+- ~~Keep the current four use cases stable~~ (done: UC1-UC4)
+- ~~Add one denser `meso` graph per use case family~~ (done: UC1 meso variant)
+  - remaining: expand meso to UC2-UC4 and target `20-40` nodes
+- ~~Add one additional baseline beyond structural-only~~ (done: `detail_only`)
 - Add latency capture to the same artifact:
   - query latency
   - render latency
   - total end-to-end latency
-- Unify wording across paper and repo:
-  - use `explanatory relation`
-  - use `rehydration point`
-  - use `dominant reason`
+- ~~Unify wording across paper and repo~~ (done)
 
 ### Metrics Required
 
-- `explanation_roundtrip_fidelity`
-- `detail_roundtrip_fidelity`
-- `causal_reconstruction_score`
-- `rehydration_point_hit`
-- `dominant_reason_hit`
-- `rendered_token_count`
-- `latency_ms`
+- ~~`explanation_roundtrip_fidelity`~~ (done)
+- ~~`detail_roundtrip_fidelity`~~ (done)
+- ~~`causal_reconstruction_score`~~ (done)
+- ~~`rehydration_point_hit`~~ (done)
+- ~~`dominant_reason_hit`~~ (done)
+- ~~`rendered_token_count`~~ (done)
+- ~~`retry_success_hit`~~ (done)
+- ~~`retry_success_rate`~~ (done)
+- `latency_ms` (remaining)
 
 ### Exit Criteria
 
-- all paper-use-case tests pass in CI
-- one dense noisy graph is included in the artifact
-- at least one non-structural baseline is reported
-- the paper only makes bounded systems claims
+- ~~all paper-use-case tests pass in CI~~ (done)
+- ~~one dense noisy graph is included in the artifact~~ (done: UC1 meso)
+- ~~at least one non-structural baseline is reported~~ (done: detail-only)
+- ~~the paper only makes bounded systems claims~~ (done)
 
 ### Claim You Can Defend
 
@@ -288,10 +274,11 @@ If the goal is to publish fast without drifting:
 ## Immediate Next Steps
 
 - keep `UC1-UC4` as the stable micro suite
-- add parameterized seed generators for `meso` graphs
-- add `detail_only` baseline
-- add `retry_success_rate` to UC1 and UC3
-- update the paper with dense-graph and closed-loop plans
+- add parameterized seed generators for `meso` graphs (UC2-UC4 still need meso)
+- ~~add `detail_only` baseline~~ (done)
+- ~~add `retry_success_rate` to UC1 and UC3~~ (done)
+- add latency capture to the paper artifact
+- expand meso variants beyond UC1
 
 ## Non-Goals For Now
 
