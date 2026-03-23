@@ -29,6 +29,12 @@ resolve_breaking_ref() {
 BREAKING_REF="$(resolve_breaking_ref)"
 
 buf lint api
-buf breaking api --against ".git#ref=${BREAKING_REF},subdir=api"
+(
+  cd api
+  buf breaking . \
+    --against "file://${ROOT_DIR}/.git#ref=${BREAKING_REF},subdir=api" \
+    --limit-to-input-files \
+    --path proto/underpass/rehydration/kernel/v1beta1
+)
 bash scripts/ci/check-kernel-contract-policy.sh
 cargo test -p rehydration-proto --locked

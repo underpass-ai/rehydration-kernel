@@ -1,10 +1,6 @@
 image:
   pullPolicy: Always
 
-config:
-  enableNats: false
-  enableProjectionNats: true
-
 connections:
   graphUri: neo4j://neo4j:underpassai@neo4j.swe-ai-fleet.svc.cluster.local:7687
   detailUri: redis://valkey.underpass-runtime.svc.cluster.local:6379

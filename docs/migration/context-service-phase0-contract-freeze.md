@@ -1,5 +1,9 @@
 # Context Service Phase 0 Contract Freeze
 
+> Obsolete. This freeze captured the removed compatibility boundary. It remains
+> useful only as historical evidence and should not be treated as a current
+> kernel contract.
+
 Status: Complete
 Source of truth: [`CONTEXT_SERVICE_RUST_MIGRATION_PLAN.md`](../../CONTEXT_SERVICE_RUST_MIGRATION_PLAN.md)
 

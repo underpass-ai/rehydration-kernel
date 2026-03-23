@@ -68,13 +68,6 @@ impl NatsEndpointConfig {
             tls: NatsTlsConfig::from_lookup(lookup)?,
         })
     }
-
-    pub(crate) fn disabled() -> Self {
-        Self {
-            url: "nats://nats:4222".to_string(),
-            tls: NatsTlsConfig::disabled(),
-        }
-    }
 }
 
 fn validate_tls_first(mode: NatsTlsMode, tls_first: bool) -> io::Result<()> {

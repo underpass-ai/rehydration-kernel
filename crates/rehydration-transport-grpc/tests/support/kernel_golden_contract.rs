@@ -289,8 +289,7 @@ fn expected_relationships() -> Vec<GraphRelationship> {
             relationship_type: HAS_TASK_RELATION.to_string(),
             explanation: Some(GraphRelationshipExplanation {
                 semantic_class: GraphRelationshipSemanticClass::Motivational as i32,
-                rationale: "the task operationalizes the selected compatibility approach"
-                    .to_string(),
+                rationale: "the task operationalizes the selected beta kernel approach".to_string(),
                 motivation: String::new(),
                 method: String::new(),
                 decision_id: String::new(),
@@ -323,7 +322,7 @@ fn expected_rendered_context(scopes: &[String]) -> RenderedContext {
             "Relationship {ROOT_NODE_ID} --{RECORDS_RELATION}--> {DECISION_ID} [structural] step=1"
         ),
         format!(
-            "Relationship {ROOT_NODE_ID} --{HAS_TASK_RELATION}--> {TASK_ID} [motivational] because the task operationalizes the selected compatibility approach step=2"
+            "Relationship {ROOT_NODE_ID} --{HAS_TASK_RELATION}--> {TASK_ID} [motivational] because the task operationalizes the selected beta kernel approach step=2"
         ),
         format!("Detail {ROOT_NODE_ID} [rev {ROOT_DETAIL_REVISION}]: {ROOT_DETAIL}"),
         format!("Detail {DECISION_ID} [rev {DECISION_DETAIL_REVISION}]: {DECISION_DETAIL}"),

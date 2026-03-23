@@ -22,6 +22,7 @@ tokio.workspace = true
 tokio-rustls = "0.26.4"
 
 [dev-dependencies]
+rehydration-testkit.workspace = true
 tempfile = "3.26.0"
 testcontainers = "0.24.0"
 

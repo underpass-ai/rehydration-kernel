@@ -1,6 +1,6 @@
 # AsyncAPI Contracts
 
-The first event contract lives in `context-projection.v1alpha1.yaml`.
+The first event contract lives in `context-projection.v1beta1.yaml`.
 
 It documents:
 
@@ -9,8 +9,6 @@ It documents:
 - outbound notifications emitted after bundle generation.
 
 This AsyncAPI contract is the generic kernel-owned async boundary.
-Legacy compatibility subjects used during migration should not be treated as the
-preferred integration contract for a new product.
 
 The contract gate validates that this boundary stays free of product-specific
 legacy nouns and remains aligned with the descriptor tests in
@@ -18,4 +16,4 @@ legacy nouns and remains aligned with the descriptor tests in
 
 Reference event fixtures live under:
 
-- [`api/examples/kernel/v1alpha1/async`](/home/tirso/ai/developents/rehydration-kernel/api/examples/kernel/v1alpha1/async)
+- [`api/examples/kernel/v1beta1/async`](/home/tirso/ai/developents/rehydration-kernel/api/examples/kernel/v1beta1/async)

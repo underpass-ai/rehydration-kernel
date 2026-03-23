@@ -41,16 +41,11 @@ The image sets container-oriented defaults:
 - `REHYDRATION_SNAPSHOT_URI=redis://valkey:6379`
 - `REHYDRATION_RUNTIME_STATE_URI=redis://valkey:6379`
 - `REHYDRATION_EVENTS_PREFIX=rehydration`
-- `ENABLE_NATS=false`
-- `ENABLE_PROJECTION_NATS=true`
 - `NATS_URL=nats://nats:4222`
 
-`ENABLE_NATS=false` is intentional for standalone evaluation. Integrators can
-override it when they want compatibility NATS flows enabled.
-
-`ENABLE_PROJECTION_NATS=true` is the generic kernel default. The projection
-runtime persists deduplication markers and checkpoints in Valkey under dedicated
-prefixes.
+The kernel image assumes its required infrastructure is present. The projection
+runtime is always active and persists deduplication markers and checkpoints in
+Valkey under dedicated prefixes.
 
 The admin bind setting is carried in config for forward compatibility, but the
 standalone image currently exposes only the gRPC port.
@@ -72,20 +67,6 @@ docker run --rm \
   -e REHYDRATION_DETAIL_URI=redis://host.docker.internal:6379 \
   -e REHYDRATION_SNAPSHOT_URI=redis://host.docker.internal:6379 \
   -e REHYDRATION_RUNTIME_STATE_URI=redis://host.docker.internal:6379 \
-  ghcr.io/underpass-ai/rehydration-kernel:latest
-```
-
-To enable both the generic projection runtime and compatibility NATS flows:
-
-```bash
-docker run --rm \
-  -p 50054:50054 \
-  -e REHYDRATION_GRAPH_URI=neo4j://host.docker.internal:7687 \
-  -e REHYDRATION_DETAIL_URI=redis://host.docker.internal:6379 \
-  -e REHYDRATION_SNAPSHOT_URI=redis://host.docker.internal:6379 \
-  -e REHYDRATION_RUNTIME_STATE_URI=redis://host.docker.internal:6379 \
-  -e ENABLE_NATS=true \
-  -e ENABLE_PROJECTION_NATS=true \
   -e NATS_URL=nats://host.docker.internal:4222 \
   ghcr.io/underpass-ai/rehydration-kernel:latest
 ```
@@ -129,6 +110,7 @@ Security posture of the chart:
 
 - it does not default to `latest`
 - it expects `secrets.existingSecret` for backend URIs in non-development installs
+- it always expects NATS connectivity for the projection runtime
 - it expects a Valkey-backed `runtimeStateUri` for projection deduplication and checkpoints
 - inline `connections.*` are reserved for development-only overrides such as
   [`values.dev.yaml`](../../charts/rehydration-kernel/values.dev.yaml)

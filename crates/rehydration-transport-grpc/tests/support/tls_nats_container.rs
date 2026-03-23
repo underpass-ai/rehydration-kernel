@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use async_nats::{Client, ConnectOptions};
 use rehydration_adapter_nats::NatsClientTlsConfig;
+use rehydration_testkit::ensure_testcontainers_runtime;
 use testcontainers::{
     GenericImage, ImageExt,
     core::{IntoContainerPort, WaitFor},
@@ -26,6 +27,7 @@ pub(crate) async fn start_nats_tls_container(
     tls_material: &TlsMaterial,
 ) -> Result<testcontainers::ContainerAsync<GenericImage>, Box<dyn Error + Send + Sync>> {
     debug_log("starting tls nats container");
+    ensure_testcontainers_runtime()?;
     fs::write(
         tls_material.dir().join("nats.conf"),
         r#"listen: 0.0.0.0:4222

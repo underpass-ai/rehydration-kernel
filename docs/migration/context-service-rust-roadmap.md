@@ -1,5 +1,10 @@
 # Context Service Rust Roadmap
 
+> Review required. This roadmap was written for the compatibility-era migration
+> plan. Parts of it are historical after the `v1beta1` cut and removal of the
+> compatibility layer. Revalidate every action against the current kernel
+> contract before reusing it.
+
 Status: Active
 Source of truth: [`CONTEXT_SERVICE_RUST_MIGRATION_PLAN.md`](../../CONTEXT_SERVICE_RUST_MIGRATION_PLAN.md)
 

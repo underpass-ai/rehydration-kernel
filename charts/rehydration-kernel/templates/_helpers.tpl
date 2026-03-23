@@ -128,6 +128,9 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- if eq (default "" .Values.connections.runtimeStateUri) "" -}}
 {{- fail "connections.runtimeStateUri is required when development.allowInlineConnections=true" -}}
 {{- end -}}
+{{- if eq (default "" .Values.connections.natsUrl) "" -}}
+{{- fail "connections.natsUrl is required when development.allowInlineConnections=true" -}}
+{{- end -}}
 {{- if $valkeyTlsEnabled -}}
 {{- range $connection := list .Values.connections.detailUri .Values.connections.snapshotUri .Values.connections.runtimeStateUri -}}
 {{- if not (or (hasPrefix "redis://" $connection) (hasPrefix "valkey://" $connection) (hasPrefix "rediss://" $connection) (hasPrefix "valkeys://" $connection)) -}}

@@ -1,5 +1,9 @@
 # Context Service Compatibility Matrix
 
+> Obsolete. This document describes a compatibility surface that has been
+> removed from the kernel repo after the `v1beta1` cut. Keep it only as
+> migration history; do not use it to drive current implementation changes.
+
 This matrix compares the external Context Service contract frozen in Phase 0
 against the current `main` branch of this repo.
 
@@ -22,7 +26,7 @@ Status values:
 
 | Surface | External source of truth | Current repo state | Status | Required action | Target phase |
 | --- | --- | --- | --- | --- | --- |
-| package name | `fleet.context.v1` | `underpass.rehydration.kernel.v1alpha1` | diverged | add compatibility proto package and transport shell | Phase 1 |
+| package name | `fleet.context.v1` | `underpass.rehydration.kernel.v1beta1` | diverged | add compatibility proto package and transport shell | Phase 1 |
 | service shape | one `ContextService` | three services: query, command, admin | diverged | expose one compatibility service at the edge | Phase 1 |
 | read RPC family | `GetContext`, `RehydrateSession`, `ValidateScope`, `GetGraphRelationships` | compatibility facade routes the frozen read RPCs over the node-centric application layer | match | keep parity with golden tests and parity report | Phase 2 |
 | write RPC family | `UpdateContext`, `CreateStory`, `CreateTask`, `AddProjectDecision`, `TransitionPhase` | only `UpdateContext` exists in current public transport | partial | add missing command paths and edge mapping | Phase 4 |

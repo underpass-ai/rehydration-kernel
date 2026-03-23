@@ -6,8 +6,7 @@ These examples describe a reference runtime shape for consumers that use
 They are intentionally separate from the kernel-owned contract examples under:
 
 - `kernel/v1beta1/grpc`
-- `kernel/v1alpha1/grpc`
-- `kernel/v1alpha1/async`
+- `kernel/v1beta1/async`
 
 This folder is consumer-side guidance, not a formal kernel API commitment.
 

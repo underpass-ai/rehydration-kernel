@@ -4,6 +4,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use neo4rs::{ConfigBuilder, Graph, query};
+use rehydration_testkit::ensure_testcontainers_runtime;
 use testcontainers::{
     GenericImage, ImageExt,
     core::{IntoContainerPort, WaitFor, logs::LogFrame},
@@ -25,6 +26,7 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
 pub(crate) async fn start_neo4j_tls_container(
     tls_material: &TlsMaterial,
 ) -> Result<testcontainers::ContainerAsync<GenericImage>, Box<dyn Error + Send + Sync>> {
+    ensure_testcontainers_runtime()?;
     let ssl_dir = prepare_neo4j_ssl_directory(tls_material)?;
 
     let image = GenericImage::new(NEO4J_IMAGE, NEO4J_TAG)

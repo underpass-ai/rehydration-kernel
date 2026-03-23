@@ -8,10 +8,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_nats::ConnectOptions;
 use rehydration_config::{GrpcTlsMode, NatsTlsMode};
-use rehydration_proto::fleet_context_v1::{
-    GetContextRequest as CompatibilityGetContextRequest,
-    context_service_client::ContextServiceClient,
-};
 use rehydration_proto::v1beta1::{
     BundleRenderFormat, GetBundleSnapshotRequest, GetContextRequest, GetGraphRelationshipsRequest,
     GetNodeDetailRequest, GetProjectionStatusRequest, GetRehydrationDiagnosticsRequest, Phase,
@@ -19,14 +15,13 @@ use rehydration_proto::v1beta1::{
     context_query_service_client::ContextQueryServiceClient,
 };
 use rehydration_transport_grpc::starship_e2e::{
-    CHIEF_ENGINEER_TITLE, DECISION_DETAIL, DECISION_ID, DECISION_TITLE, DEFAULT_SUBJECT_PREFIX,
-    EXPECTED_DETAIL_COUNT, EXPECTED_NEIGHBOR_COUNT, EXPECTED_RELATIONSHIP_COUNT,
-    EXPECTED_SELECTED_NODE_COUNT, EXPECTED_SELECTED_RELATIONSHIP_COUNT, EXPLORER_CHECKLIST_ID,
-    EXPLORER_CHECKLIST_TITLE, EXPLORER_LEAF_DETAIL, EXPLORER_LEAF_ID, EXPLORER_LEAF_TITLE,
-    EXPLORER_WORKSTREAM_DETAIL, EXPLORER_WORKSTREAM_ID, EXPLORER_WORKSTREAM_TITLE, POWER_TASK_ID,
-    PROPULSION_SUBSYSTEM_TITLE, RELATION_DECISION_REQUIRES, RELATION_DEPENDS_ON, RELATION_IMPACTS,
-    ROOT_DETAIL, ROOT_LABEL, ROOT_NODE_ID, ROOT_TITLE, TASK_DETAIL, TASK_ID, TASK_TITLE,
-    publish_projection_events_for_run,
+    DECISION_DETAIL, DECISION_ID, DEFAULT_SUBJECT_PREFIX, EXPECTED_DETAIL_COUNT,
+    EXPECTED_NEIGHBOR_COUNT, EXPECTED_RELATIONSHIP_COUNT, EXPECTED_SELECTED_NODE_COUNT,
+    EXPECTED_SELECTED_RELATIONSHIP_COUNT, EXPLORER_CHECKLIST_ID, EXPLORER_CHECKLIST_TITLE,
+    EXPLORER_LEAF_DETAIL, EXPLORER_LEAF_ID, EXPLORER_LEAF_TITLE, EXPLORER_WORKSTREAM_DETAIL,
+    EXPLORER_WORKSTREAM_ID, EXPLORER_WORKSTREAM_TITLE, POWER_TASK_ID, RELATION_DECISION_REQUIRES,
+    RELATION_DEPENDS_ON, RELATION_IMPACTS, ROOT_DETAIL, ROOT_LABEL, ROOT_NODE_ID, ROOT_TITLE,
+    TASK_DETAIL, TASK_ID, publish_projection_events_for_run,
 };
 use serde::Serialize;
 use tokio::time::sleep;
@@ -37,7 +32,6 @@ const DEFAULT_NATS_URL: &str = "nats://127.0.0.1:4222";
 const DEFAULT_ROLE: &str = "developer";
 const REVIEWER_ROLE: &str = "reviewer";
 const DEFAULT_PHASE: i32 = Phase::Build as i32;
-const DEFAULT_TOKEN_BUDGET: u32 = 2048;
 const EXPLORER_TOKEN_BUDGET: u32 = 8192;
 const DEFAULT_TIMELINE_WINDOW: u32 = 11;
 const DEFAULT_SNAPSHOT_TTL_SECONDS: i64 = 900;
@@ -86,7 +80,6 @@ struct VerificationSummary {
     relationships: usize,
     details: usize,
     rendered_token_count: u32,
-    compatibility_token_count: i32,
     projection_healthy: bool,
     snapshot_id: String,
     diagnostics: Vec<DiagnosticSummary>,
@@ -129,12 +122,11 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     publish_projection_events_for_run(&publisher, &config.subject_prefix, &run_id).await?;
 
     let channel = connect_grpc_channel(&config.grpc_endpoint, &config.grpc_tls).await?;
-    let compatibility_client = ContextServiceClient::new(channel.clone());
     let query_client = ContextQueryServiceClient::new(channel.clone());
     let admin_client = ContextAdminServiceClient::new(channel);
 
     wait_for_context_ready(query_client.clone()).await?;
-    let summary = verify(compatibility_client, query_client, admin_client).await?;
+    let summary = verify(query_client, admin_client).await?;
     println!("{}", serde_json::to_string_pretty(&summary)?);
 
     Ok(())
@@ -437,33 +429,9 @@ async fn wait_for_context_ready(
 }
 
 async fn verify(
-    mut compatibility_client: ContextServiceClient<Channel>,
     mut query_client: ContextQueryServiceClient<Channel>,
     mut admin_client: ContextAdminServiceClient<Channel>,
 ) -> Result<VerificationSummary, Box<dyn Error + Send + Sync>> {
-    let compatibility_context = compatibility_client
-        .get_context(CompatibilityGetContextRequest {
-            story_id: ROOT_NODE_ID.to_string(),
-            role: DEFAULT_ROLE.to_string(),
-            phase: "BUILD".to_string(),
-            subtask_id: TASK_ID.to_string(),
-            token_budget: DEFAULT_TOKEN_BUDGET as i32,
-        })
-        .await?
-        .into_inner();
-    assert!(compatibility_context.context.contains(ROOT_TITLE));
-    assert!(compatibility_context.context.contains(TASK_TITLE));
-    assert!(compatibility_context.context.contains(TASK_DETAIL));
-    assert!(compatibility_context.context.contains(ROOT_DETAIL));
-    assert!(compatibility_context.context.contains(DECISION_TITLE));
-    assert!(compatibility_context.context.contains(DECISION_DETAIL));
-    assert!(
-        compatibility_context
-            .context
-            .contains(PROPULSION_SUBSYSTEM_TITLE)
-    );
-    assert!(compatibility_context.context.contains(CHIEF_ENGINEER_TITLE));
-
     let query_context = query_client
         .get_context(GetContextRequest {
             root_node_id: ROOT_NODE_ID.to_string(),
@@ -781,7 +749,6 @@ async fn verify(
         relationships: query_role_bundle.relationships.len(),
         details: query_role_bundle.node_details.len(),
         rendered_token_count: rendered_query_context.token_count,
-        compatibility_token_count: compatibility_context.token_count,
         projection_healthy: projection_status.projections[0].healthy,
         snapshot_id: bundle_snapshot.snapshot_id,
         diagnostics: diagnostics

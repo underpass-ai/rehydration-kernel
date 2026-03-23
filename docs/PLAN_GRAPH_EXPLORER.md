@@ -1,5 +1,9 @@
 # Plan: Graph Explorer
 
+> Historical implementation plan. Completed and retained for traceability.
+> Review the current explorer contracts and code before using this plan to
+> justify new work.
+
 **Status:** completed
 **Priority:** P0
 **Date:** 2026-03-18
@@ -41,8 +45,7 @@ Delivered:
 Implemented as planned.
 
 - explorer reads use the kernel-native package, now canonically
-  `underpass.rehydration.kernel.v1beta1` with `v1alpha1` kept during
-  transition
+  `underpass.rehydration.kernel.v1beta1`
 - compatibility `fleet.context.v1` remains unchanged
 - compatibility `GetGraphRelationships.depth` still clamps to `1..3`
 

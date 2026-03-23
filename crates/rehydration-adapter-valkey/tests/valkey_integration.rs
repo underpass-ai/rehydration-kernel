@@ -13,6 +13,7 @@ use rehydration_ports::{
     NodeDetailProjection, NodeDetailReader, ProcessedEventStore, ProjectionCheckpoint,
     ProjectionCheckpointStore, ProjectionMutation, ProjectionWriter, SnapshotStore,
 };
+use rehydration_testkit::ensure_testcontainers_runtime;
 use serde_json::{Value, json};
 use testcontainers::{
     GenericImage,
@@ -24,13 +25,20 @@ use tokio::net::TcpStream;
 
 const VALKEY_INTERNAL_PORT: u16 = 6379;
 
-#[tokio::test]
-async fn save_bundle_persists_snapshot_in_valkey() -> Result<(), Box<dyn Error + Send + Sync>> {
-    let container = GenericImage::new("docker.io/valkey/valkey", "8.1.5-alpine")
+async fn start_valkey_container()
+-> Result<testcontainers::ContainerAsync<GenericImage>, Box<dyn Error + Send + Sync>> {
+    ensure_testcontainers_runtime()?;
+
+    Ok(GenericImage::new("docker.io/valkey/valkey", "8.1.5-alpine")
         .with_exposed_port(VALKEY_INTERNAL_PORT.tcp())
         .with_wait_for(WaitFor::message_on_stdout("Ready to accept connections"))
         .start()
-        .await?;
+        .await?)
+}
+
+#[tokio::test]
+async fn save_bundle_persists_snapshot_in_valkey() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let container = start_valkey_container().await?;
 
     let host = container.get_host().await?;
     let port = container.get_host_port_ipv4(VALKEY_INTERNAL_PORT).await?;
@@ -128,11 +136,7 @@ async fn save_bundle_persists_snapshot_in_valkey() -> Result<(), Box<dyn Error +
 
 #[tokio::test]
 async fn save_bundle_respects_request_ttl_override() -> Result<(), Box<dyn Error + Send + Sync>> {
-    let container = GenericImage::new("docker.io/valkey/valkey", "8.1.5-alpine")
-        .with_exposed_port(VALKEY_INTERNAL_PORT.tcp())
-        .with_wait_for(WaitFor::message_on_stdout("Ready to accept connections"))
-        .start()
-        .await?;
+    let container = start_valkey_container().await?;
 
     let host = container.get_host().await?;
     let port = container.get_host_port_ipv4(VALKEY_INTERNAL_PORT).await?;
@@ -185,11 +189,7 @@ async fn save_bundle_respects_request_ttl_override() -> Result<(), Box<dyn Error
 #[tokio::test]
 async fn node_detail_roundtrip_reads_expanded_detail_from_valkey()
 -> Result<(), Box<dyn Error + Send + Sync>> {
-    let container = GenericImage::new("docker.io/valkey/valkey", "8.1.5-alpine")
-        .with_exposed_port(VALKEY_INTERNAL_PORT.tcp())
-        .with_wait_for(WaitFor::message_on_stdout("Ready to accept connections"))
-        .start()
-        .await?;
+    let container = start_valkey_container().await?;
 
     let host = container.get_host().await?;
     let port = container.get_host_port_ipv4(VALKEY_INTERNAL_PORT).await?;
@@ -232,11 +232,7 @@ async fn node_detail_roundtrip_reads_expanded_detail_from_valkey()
 #[tokio::test]
 async fn processed_event_store_roundtrip_uses_real_valkey()
 -> Result<(), Box<dyn Error + Send + Sync>> {
-    let container = GenericImage::new("docker.io/valkey/valkey", "8.1.5-alpine")
-        .with_exposed_port(VALKEY_INTERNAL_PORT.tcp())
-        .with_wait_for(WaitFor::message_on_stdout("Ready to accept connections"))
-        .start()
-        .await?;
+    let container = start_valkey_container().await?;
 
     let host = container.get_host().await?;
     let port = container.get_host_port_ipv4(VALKEY_INTERNAL_PORT).await?;
@@ -278,11 +274,7 @@ async fn processed_event_store_roundtrip_uses_real_valkey()
 #[tokio::test]
 async fn projection_checkpoint_store_roundtrip_uses_real_valkey()
 -> Result<(), Box<dyn Error + Send + Sync>> {
-    let container = GenericImage::new("docker.io/valkey/valkey", "8.1.5-alpine")
-        .with_exposed_port(VALKEY_INTERNAL_PORT.tcp())
-        .with_wait_for(WaitFor::message_on_stdout("Ready to accept connections"))
-        .start()
-        .await?;
+    let container = start_valkey_container().await?;
 
     let host = container.get_host().await?;
     let port = container.get_host_port_ipv4(VALKEY_INTERNAL_PORT).await?;

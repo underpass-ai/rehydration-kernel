@@ -13,12 +13,6 @@ use rehydration_config::{AppConfig, GrpcTlsConfig, GrpcTlsMode};
 use rehydration_domain::{
     GraphNeighborhoodReader, NodeDetailReader, RehydrationBundle, SnapshotStore,
 };
-use rehydration_proto::fleet_context_v1::context_service_server::ContextServiceServer;
-use rehydration_proto::v1alpha1::{
-    context_admin_service_server::ContextAdminServiceServer as ContextAdminServiceServerV1Alpha1,
-    context_command_service_server::ContextCommandServiceServer as ContextCommandServiceServerV1Alpha1,
-    context_query_service_server::ContextQueryServiceServer as ContextQueryServiceServerV1Alpha1,
-};
 use rehydration_proto::v1beta1::{
     BundleRenderFormat, FILE_DESCRIPTOR_SET, GetContextRequest, Phase,
     context_admin_service_server::ContextAdminServiceServer,
@@ -29,10 +23,7 @@ use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::transport::{Certificate, Identity, Server, ServerTlsConfig};
 
-use crate::transport::{
-    AdminGrpcService, AdminGrpcServiceV1Alpha1, CommandGrpcService, CommandGrpcServiceV1Alpha1,
-    ContextCompatibilityGrpcService, QueryGrpcService, QueryGrpcServiceV1Alpha1,
-};
+use crate::transport::{AdminGrpcService, CommandGrpcService, QueryGrpcService};
 
 #[derive(Debug)]
 pub struct GrpcServer<G, D, S> {
@@ -114,16 +105,8 @@ where
         QueryGrpcService::new(Arc::clone(&self.query_application))
     }
 
-    pub fn query_service_v1alpha1(&self) -> QueryGrpcServiceV1Alpha1<G, D, S> {
-        QueryGrpcServiceV1Alpha1::new(Arc::clone(&self.query_application))
-    }
-
     pub fn command_service(&self) -> CommandGrpcService {
         CommandGrpcService::new(Arc::clone(&self.command_application))
-    }
-
-    pub fn command_service_v1alpha1(&self) -> CommandGrpcServiceV1Alpha1 {
-        CommandGrpcServiceV1Alpha1::new(Arc::clone(&self.command_application))
     }
 
     pub fn query_application(&self) -> Arc<QueryApplicationService<G, D, S>> {
@@ -138,21 +121,6 @@ where
         AdminGrpcService::new(
             Arc::clone(&self.admin_query_application),
             Arc::clone(&self.admin_command_application),
-        )
-    }
-
-    pub fn admin_service_v1alpha1(&self) -> AdminGrpcServiceV1Alpha1<G, D> {
-        AdminGrpcServiceV1Alpha1::new(
-            Arc::clone(&self.admin_query_application),
-            Arc::clone(&self.admin_command_application),
-        )
-    }
-
-    pub fn compatibility_service(&self) -> ContextCompatibilityGrpcService<G, D, S> {
-        ContextCompatibilityGrpcService::new(
-            Arc::clone(&self.query_application),
-            Arc::clone(&self.admin_query_application),
-            Arc::clone(&self.command_application),
         )
     }
 
@@ -176,16 +144,6 @@ where
         F: Future<Output = ()> + Send + 'static,
     {
         self.transport_builder()?
-            .add_service(ContextServiceServer::new(self.compatibility_service()))
-            .add_service(ContextQueryServiceServerV1Alpha1::new(
-                self.query_service_v1alpha1(),
-            ))
-            .add_service(ContextCommandServiceServerV1Alpha1::new(
-                self.command_service_v1alpha1(),
-            ))
-            .add_service(ContextAdminServiceServerV1Alpha1::new(
-                self.admin_service_v1alpha1(),
-            ))
             .add_service(ContextQueryServiceServer::new(self.query_service()))
             .add_service(ContextCommandServiceServer::new(self.command_service()))
             .add_service(ContextAdminServiceServer::new(self.admin_service()))

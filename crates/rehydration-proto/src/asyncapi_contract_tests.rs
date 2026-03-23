@@ -1,5 +1,5 @@
 const ASYNCAPI_CONTRACT: &str =
-    include_str!("../../../api/asyncapi/context-projection.v1alpha1.yaml");
+    include_str!("../../../api/asyncapi/context-projection.v1beta1.yaml");
 
 #[test]
 fn asyncapi_declares_expected_metadata() {

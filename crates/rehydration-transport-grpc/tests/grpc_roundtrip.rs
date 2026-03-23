@@ -5,11 +5,6 @@ use rehydration_domain::{
     ContextPathNeighborhood, GraphNeighborhoodReader, NodeDetailProjection, NodeDetailReader,
     NodeNeighborhood, PortError, RehydrationBundle, SnapshotSaveOptions, SnapshotStore,
 };
-use rehydration_proto::fleet_context_v1::{
-    GetContextRequest as CompatibilityGetContextRequest,
-    ValidateScopeRequest as CompatibilityValidateScopeRequest,
-    context_service_client::ContextServiceClient,
-};
 use rehydration_proto::v1beta1::{
     BundleRenderFormat, ContextChange, ContextChangeOperation, GetBundleSnapshotRequest,
     GetContextPathRequest, GetContextRequest, GetProjectionStatusRequest, Phase,
@@ -103,41 +98,9 @@ async fn grpc_server_supports_query_command_and_admin_roundtrip() {
 
     let endpoint = format!("http://{}", addr);
     let channel = connect_channel(endpoint).await;
-    let mut compatibility_client = ContextServiceClient::new(channel.clone());
     let mut query_client = ContextQueryServiceClient::new(channel.clone());
     let mut command_client = ContextCommandServiceClient::new(channel.clone());
     let mut admin_client = ContextAdminServiceClient::new(channel);
-
-    let compatibility_context = compatibility_client
-        .get_context(CompatibilityGetContextRequest {
-            story_id: "case-123".to_string(),
-            role: "developer".to_string(),
-            phase: "BUILD".to_string(),
-            subtask_id: String::new(),
-            token_budget: 1024,
-        })
-        .await
-        .expect("compatibility service should respond")
-        .into_inner();
-    assert!(compatibility_context.context.contains("case-123"));
-
-    let validate_scope = compatibility_client
-        .validate_scope(CompatibilityValidateScopeRequest {
-            role: "developer".to_string(),
-            phase: "BUILD".to_string(),
-            provided_scopes: vec![
-                "CASE_HEADER".to_string(),
-                "PLAN_HEADER".to_string(),
-                "SUBTASKS_ROLE".to_string(),
-                "DECISIONS_RELEVANT_ROLE".to_string(),
-                "DEPS_RELEVANT".to_string(),
-            ],
-        })
-        .await
-        .expect("compatibility validate scope should respond")
-        .into_inner();
-    assert!(validate_scope.allowed);
-    assert_eq!(validate_scope.reason, "All scopes are allowed");
 
     let get_context = query_client
         .get_context(GetContextRequest {

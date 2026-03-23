@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::collections::BTreeMap;
 
 use rehydration_domain::{
@@ -16,7 +18,7 @@ pub(crate) const ROOT_PLAN_ID: &str = "plan-42";
 
 pub(crate) const DECISION_ID: &str = "decision-1";
 pub(crate) const DECISION_KIND: &str = "decision";
-pub(crate) const DECISION_TITLE: &str = "Use compatibility shell";
+pub(crate) const DECISION_TITLE: &str = "Use beta kernel contract";
 pub(crate) const DECISION_SUMMARY: &str = "Decision summary";
 pub(crate) const DECISION_STATUS: &str = "ACCEPTED";
 pub(crate) const DECISION_LABEL: &str = "Decision";
@@ -132,7 +134,7 @@ fn graph_mutations() -> Vec<ProjectionMutation> {
             relation_type: HAS_TASK_RELATION.to_string(),
             explanation: RelationExplanation::new(RelationSemanticClass::Motivational)
                 .with_sequence(2)
-                .with_rationale("the task operationalizes the selected compatibility approach"),
+                .with_rationale("the task operationalizes the selected beta kernel approach"),
         }),
     ]
 }

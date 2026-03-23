@@ -32,8 +32,8 @@ ENV REHYDRATION_SERVICE_NAME=rehydration-kernel \
     REHYDRATION_GRAPH_URI=neo4j://neo4j:7687 \
     REHYDRATION_DETAIL_URI=redis://valkey:6379 \
     REHYDRATION_SNAPSHOT_URI=redis://valkey:6379 \
+    REHYDRATION_RUNTIME_STATE_URI=redis://valkey:6379 \
     REHYDRATION_EVENTS_PREFIX=rehydration \
-    ENABLE_NATS=false \
     NATS_URL=nats://nats:4222
 
 EXPOSE 50054

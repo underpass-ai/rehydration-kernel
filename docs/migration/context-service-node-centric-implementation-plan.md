@@ -54,7 +54,7 @@ That hybrid layer is the main target for removal.
 
 ### Transport
 
-`api/proto/underpass/rehydration/kernel/v1alpha1/common.proto`
+`api/proto/underpass/rehydration/kernel/v1beta1/common.proto`
 
 - bundle contract is still hybrid
 
@@ -219,9 +219,9 @@ Replace assembly, rendering, session flow, and diagnostics:
 
 Replace proto and transport mapping:
 
-- `api/proto/underpass/rehydration/kernel/v1alpha1/common.proto`
-- `api/proto/underpass/rehydration/kernel/v1alpha1/query.proto`
-- `api/proto/underpass/rehydration/kernel/v1alpha1/admin.proto`
+- `api/proto/underpass/rehydration/kernel/v1beta1/common.proto`
+- `api/proto/underpass/rehydration/kernel/v1beta1/query.proto`
+- `api/proto/underpass/rehydration/kernel/v1beta1/admin.proto`
 - `crates/rehydration-transport-grpc/src/transport/proto_mapping.rs`
 
 ### Step 5

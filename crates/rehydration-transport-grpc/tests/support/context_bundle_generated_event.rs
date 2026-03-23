@@ -84,7 +84,7 @@ fn bundle_generated_event(roles: &[&str]) -> ContextBundleGeneratedEventPayload 
         occurred_at: "2026-03-10T12:05:00Z".to_string(),
         aggregate_id: ROOT_NODE_ID.to_string(),
         aggregate_type: "bundle".to_string(),
-        schema_version: "v1alpha1".to_string(),
+        schema_version: "v1beta1".to_string(),
         data: ContextBundleGeneratedDataPayload {
             root_node_id: ROOT_NODE_ID.to_string(),
             roles: roles.iter().map(|role| (*role).to_string()).collect(),

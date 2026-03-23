@@ -25,7 +25,7 @@ grpcurl -plaintext -d '{
   "role": "implementer",
   "token_budget": 4000
 }' localhost:50054 \
-  underpass.rehydration.kernel.v1alpha1.ContextQueryService/GetContext
+  underpass.rehydration.kernel.v1beta1.ContextQueryService/GetContext
 
 # Expected: 8 nodes (root + 7 descendants)
 # Actual:   3 nodes (root + 2 direct children only)

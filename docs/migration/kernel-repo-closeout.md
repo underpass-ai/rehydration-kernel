@@ -1,5 +1,9 @@
 # Kernel Repo Closeout
 
+> Review required. This closeout is still directionally useful, but it was
+> written before the latest removal of compatibility surfaces and alpha-era
+> assumptions. Re-check ownership and handoff statements before relying on it.
+
 Status: complete for this repo
 Scope: `rehydration-kernel`
 

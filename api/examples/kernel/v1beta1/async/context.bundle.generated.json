@@ -5,7 +5,7 @@
   "occurred_at": "2026-03-10T10:32:00Z",
   "aggregate_id": "node:workspace:billing-api",
   "aggregate_type": "bundle",
-  "schema_version": "v1alpha1",
+  "schema_version": "v1beta1",
   "data": {
     "root_node_id": "node:workspace:billing-api",
     "roles": [

@@ -1,6 +1,7 @@
 use std::error::Error;
 use std::fs;
 
+use rehydration_testkit::ensure_testcontainers_runtime;
 use testcontainers::{
     GenericImage, ImageExt,
     core::{IntoContainerPort, WaitFor},
@@ -14,6 +15,7 @@ pub(crate) const VALKEY_INTERNAL_PORT: u16 = 6379;
 pub(crate) async fn start_valkey_tls_container(
     tls_material: &TlsMaterial,
 ) -> Result<testcontainers::ContainerAsync<GenericImage>, Box<dyn Error + Send + Sync>> {
+    ensure_testcontainers_runtime()?;
     fs::write(
         tls_material.dir().join("valkey.conf"),
         r#"port 0

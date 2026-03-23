@@ -9,7 +9,6 @@ use rehydration_adapter_valkey::{ValkeyNodeDetailStore, ValkeySnapshotStore};
 use rehydration_application::{ProjectionApplicationService, RoutingProjectionWriter};
 use rehydration_config::{GrpcTlsConfig, GrpcTlsMode};
 use rehydration_domain::ProjectionWriter;
-use rehydration_proto::fleet_context_v1::context_service_client::ContextServiceClient;
 use rehydration_proto::v1beta1::{
     BundleRenderFormat, GetContextRequest, Phase,
     context_admin_service_client::ContextAdminServiceClient,
@@ -43,7 +42,6 @@ pub(crate) struct KernelTlsFixture {
     _nats: testcontainers::ContainerAsync<GenericImage>,
     projection_runtime: RunningTlsProjectionRuntime,
     server: RunningTlsGrpcServer,
-    compatibility_client: ContextServiceClient<Channel>,
     query_client: ContextQueryServiceClient<Channel>,
     command_client: ContextCommandServiceClient<Channel>,
     admin_client: ContextAdminServiceClient<Channel>,
@@ -118,7 +116,6 @@ impl KernelTlsFixture {
         debug_log("tls grpc server started");
         let channel = server.connect_channel(&tls, true).await?;
         debug_log("tls grpc channel connected");
-        let compatibility_client = ContextServiceClient::new(channel.clone());
         let query_client = ContextQueryServiceClient::new(channel.clone());
         let command_client = ContextCommandServiceClient::new(channel.clone());
         let admin_client = ContextAdminServiceClient::new(channel);
@@ -136,15 +133,10 @@ impl KernelTlsFixture {
             _nats: nats,
             projection_runtime,
             server,
-            compatibility_client,
             query_client,
             command_client,
             admin_client,
         })
-    }
-
-    pub(crate) fn compatibility_client(&self) -> ContextServiceClient<Channel> {
-        self.compatibility_client.clone()
     }
 
     pub(crate) fn query_client(&self) -> ContextQueryServiceClient<Channel> {

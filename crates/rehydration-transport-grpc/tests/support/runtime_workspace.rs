@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::collections::BTreeMap;
 use std::io;
 use std::sync::{Arc, Mutex};
