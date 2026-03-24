@@ -36,7 +36,7 @@ handoff with resumable execution, and constraint-preserving retrieval under
 token pressure. Across these use cases, full explanatory context achieves
 \mbox{1.0} explanation roundtrip fidelity and \mbox{1.0} causal
 reconstruction in the full-detail setting, while retaining \mbox{1.0} causal
-reconstruction under a \mbox{96}-token budget in the constraint-preserving
+reconstruction under a \mbox{192}-token budget in the constraint-preserving
 case. Removing node detail preserves explanation fidelity but reduces causal
 reconstruction to \mbox{0.857}, while replacing explanatory relations with
 structural edges reduces causal reconstruction to \mbox{0.143}, eliminates
@@ -199,10 +199,11 @@ budget?
 UC1--UC3 are executed under three variants: full explanatory context with
 detail, full explanatory context without detail, and structural-only context
 with detail. UC4 adds a budgeted comparison: a full explanatory baseline at
-\mbox{4096} tokens, a full explanatory variant at \mbox{96} tokens, and a
-structural-only variant at \mbox{96} tokens. This isolates the contribution
-of explanatory relationships from the contribution of extended node detail and
-tests whether those relationships survive bounded retrieval.
+\mbox{4096} tokens, a full explanatory variant at \mbox{192} tokens, a full
+explanatory variant at \mbox{96} tokens, and a structural-only variant at
+\mbox{96} tokens. This isolates the contribution of explanatory relationships
+from the contribution of extended node detail and tests whether those
+relationships survive bounded retrieval.
 
 \subsection{Metrics}
 
@@ -231,21 +232,22 @@ Appendix~\ref{sec:extended-artifact-results}.
 \toprule
 Use case & Variant & Budget & Expl. fid. & Detail fid. & Causal & Retry & Aux. hit & Tokens \\
 \midrule
-UC1 & full+detail & 4096 & 1.000 & 1.000 & 1.000 & 1 & 1 & 135 \\
-UC1 & full-no-detail & 4096 & 1.000 & 0.000 & 0.857 & 1 & 1 & 116 \\
-UC1 & detail-only & 4096 & 0.000 & 1.000 & 0.429 & 0 & 0 & 113 \\
-UC1 & structural & 4096 & 0.000 & 1.000 & 0.143 & 0 & 0 & 97 \\
-UC2 & full+detail & 4096 & 1.000 & 1.000 & 1.000 & n/a & n/a & 126 \\
-UC2 & full-no-detail & 4096 & 1.000 & 0.000 & 0.857 & n/a & n/a & 111 \\
-UC2 & detail-only & 4096 & 0.000 & 1.000 & 0.429 & n/a & n/a & 111 \\
-UC2 & structural & 4096 & 0.000 & 1.000 & 0.143 & n/a & n/a & 91 \\
-UC3 & full+detail & 4096 & 1.000 & 1.000 & 1.000 & 1 & 1 & 260 \\
-UC3 & full-no-detail & 4096 & 1.000 & 0.000 & 0.857 & 1 & 1 & 234 \\
-UC3 & detail-only & 4096 & 0.000 & 1.000 & 0.429 & 0 & 0 & 208 \\
-UC3 & structural & 4096 & 0.000 & 1.000 & 0.143 & 0 & 0 & 169 \\
-UC4 & full+detail & 4096 & 1.000 & 1.000 & 1.000 & n/a & 1 & 122 \\
+UC1 & full+detail & 4096 & 1.000 & 1.000 & 1.000 & 1 & 1 & 282 \\
+UC1 & full-no-detail & 4096 & 1.000 & 0.000 & 0.857 & 1 & 1 & 252 \\
+UC1 & detail-only & 4096 & 0.000 & 1.000 & 0.429 & 0 & 0 & 245 \\
+UC1 & structural & 4096 & 0.000 & 1.000 & 0.143 & 0 & 0 & 200 \\
+UC2 & full+detail & 4096 & 1.000 & 1.000 & 1.000 & n/a & n/a & 285 \\
+UC2 & full-no-detail & 4096 & 1.000 & 0.000 & 0.857 & n/a & n/a & 255 \\
+UC2 & detail-only & 4096 & 0.000 & 1.000 & 0.429 & n/a & n/a & 247 \\
+UC2 & structural & 4096 & 0.000 & 1.000 & 0.143 & n/a & n/a & 203 \\
+UC3 & full+detail & 4096 & 1.000 & 1.000 & 1.000 & 1 & 1 & 575 \\
+UC3 & full-no-detail & 4096 & 1.000 & 0.000 & 0.857 & 1 & 1 & 535 \\
+UC3 & detail-only & 4096 & 0.000 & 1.000 & 0.429 & 0 & 0 & 441 \\
+UC3 & structural & 4096 & 0.000 & 1.000 & 0.143 & 0 & 0 & 374 \\
+UC4 & full+detail & 4096 & 1.000 & 1.000 & 1.000 & n/a & 1 & 223 \\
+UC4 & full@192 & 192 & 1.000 & 0.000 & 1.000 & n/a & 1 & 175 \\
 UC4 & full@96 & 96 & 1.000 & 0.000 & 1.000 & n/a & 1 & 89 \\
-UC4 & structural@96 & 96 & 0.000 & 0.000 & 0.125 & n/a & 0 & 64 \\
+UC4 & structural@96 & 96 & 0.000 & 0.000 & 0.125 & n/a & 0 & 73 \\
 \bottomrule
 \end{tabular}
 \caption{Explanatory-use-case results from the current repository artifact.
@@ -268,7 +270,7 @@ therefore not absence of detail. It is absence of relationship explanation.
 Detail still matters. The repeated drop from \mbox{1.0} to \mbox{0.857} in
 UC1--UC3 shows that explanatory relations do not fully replace node detail.
 However, detail behaves as a completeness amplifier rather than the primary
-carrier of intent. The same pattern appears in UC4: at a \mbox{96}-token
+carrier of intent. The same pattern appears in UC4: at a \mbox{192}-token
 budget, the explanatory variant loses detail fidelity entirely while
 preserving both causal reconstruction and the dominant reason. This suggests
 that token budgets should prefer preserving explanatory edges before
@@ -292,18 +294,18 @@ from which the system can restart or resume execution.
 \subsection{Bounded Retrieval Preserves Reasons When Explanation Survives}
 
 UC4 provides the strongest bounded-retrieval result. The full explanatory
-context rendered at \mbox{96} tokens still reaches \mbox{1.0} causal
+context rendered at \mbox{192} tokens still reaches \mbox{1.0} causal
 reconstruction and preserves the dominant reason, even though detail fidelity
-falls to \mbox{0.0}. The structural-only variant at the same budget drops to
+falls to \mbox{0.0}. The structural-only variant at \mbox{96} tokens drops to
 \mbox{0.125}. This is exactly the systems behavior we want: when budget forces
 truncation, explanation should survive before detail.
 
 \subsection{Shorter Context Can Be Worse Context}
 
 Structural-only context is shorter, but materially less useful. In UC1 the
-rendered context falls from 135 to 97 tokens. In UC2 it falls from 126 to 91.
-In UC3 it falls from 260 to 169. In UC4 the explanatory \mbox{@96} variant
-uses 89 tokens, while the structural-only \mbox{@96} variant uses 64. In all
+rendered context falls from 282 to 200 tokens. In UC2 it falls from 285 to 203.
+In UC3 it falls from 575 to 374. In UC4 the explanatory \mbox{@192} variant
+uses 175 tokens, while the structural-only \mbox{@96} variant uses 73. In all
 cases that shorter context coincides with severe degradation of causal
 reconstruction or loss of the dominant reason.
 
@@ -384,9 +386,9 @@ corrected retry.
 \toprule
 Case & Causal & Retry & Tokens \\
 \midrule
-UC1 & 0.429 \metricbar{4.3} & 0 & 113 \\
-UC2 & 0.429 \metricbar{4.3} & n/a & 111 \\
-UC3 & 0.429 \metricbar{4.3} & 0 & 208 \\
+UC1 & 0.429 \metricbar{4.3} & 0 & 245 \\
+UC2 & 0.429 \metricbar{4.3} & n/a & 247 \\
+UC3 & 0.429 \metricbar{4.3} & 0 & 441 \\
 \bottomrule
 \end{tabular}
 \end{minipage}\hfill
@@ -397,8 +399,8 @@ UC3 & 0.429 \metricbar{4.3} & 0 & 208 \\
 \toprule
 Variant & Causal & Retry & Tokens \\
 \midrule
-UC1 micro & 1.000 \metricbar{10.0} & 1 & 135 \\
-UC1 meso & 1.000 \metricbar{10.0} & 1 & 135 \\
+UC1 micro & 1.000 \metricbar{10.0} & 1 & 282 \\
+UC1 meso & 1.000 \metricbar{10.0} & 1 & 282 \\
 \bottomrule
 \end{tabular}
 \end{minipage}

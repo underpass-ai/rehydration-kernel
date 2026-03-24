@@ -6,7 +6,7 @@ use std::error::Error;
 
 use agentic_support::paper_metrics::emit_metric;
 use agentic_support::paper_use_case_harness::{
-    DEFAULT_TOKEN_BUDGET, LOW_TOKEN_BUDGET, PaperUseCaseVariant,
+    DEFAULT_TOKEN_BUDGET, LOW_TOKEN_BUDGET, PaperUseCaseVariant, STRUCTURAL_LOW_TOKEN_BUDGET,
     observe_constraint_under_token_pressure_use_case, observe_failure_diagnosis_use_case,
     observe_interrupted_handoff_use_case, observe_why_task_was_implemented_that_way,
 };
@@ -221,7 +221,7 @@ async fn constraint_reason_under_token_pressure_degrades_with_budget_and_structu
     .await?;
     let structural_low_budget = observe_constraint_under_token_pressure_use_case(
         PaperUseCaseVariant::STRUCTURAL_ONLY_WITH_DETAIL,
-        LOW_TOKEN_BUDGET,
+        STRUCTURAL_LOW_TOKEN_BUDGET,
     )
     .await?;
 
@@ -245,7 +245,7 @@ async fn constraint_reason_under_token_pressure_degrades_with_budget_and_structu
     assert_eq!(low_budget.metric.detail_roundtrip_fidelity, 0.0);
     assert_eq!(structural_low_budget.metric.detail_roundtrip_fidelity, 0.0);
     assert!(low_budget.metric.rendered_token_count <= LOW_TOKEN_BUDGET);
-    assert!(structural_low_budget.metric.rendered_token_count <= LOW_TOKEN_BUDGET);
+    assert!(structural_low_budget.metric.rendered_token_count <= STRUCTURAL_LOW_TOKEN_BUDGET);
 
     emit_metric(&baseline.metric)?;
     emit_metric(&low_budget.metric)?;

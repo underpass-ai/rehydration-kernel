@@ -393,7 +393,7 @@ cases across multiple ablation variants:
 - detail-only relations with detail
 - structural-only relations with detail
 - meso-scale (denser noisy graph) variant for UC1
-- token-budget constrained variants (96 tokens) for UC4
+- token-budget constrained variants (192 and 96 tokens) for UC4
 
 Current results from `artifacts/paper-use-cases/summary.json` and
 `artifacts/paper-use-cases/results.md` show a clean pattern.
@@ -432,19 +432,19 @@ Interpretation:
 
 Observed rendered token counts:
 
-- UC1 full: `135`, structural-only: `97`, without-detail: `116`
-- UC2 full: `126`, structural-only: `91`, without-detail: `111`
-- UC3 full: `260`, structural-only: `169`, without-detail: `234`
-- UC4 full: `122`, full@96: `89`, structural@96: `64`
+- UC1 full: `282`, structural-only: `200`, without-detail: `252`
+- UC2 full: `285`, structural-only: `203`, without-detail: `255`
+- UC3 full: `575`, structural-only: `374`, without-detail: `535`
+- UC4 full: `223`, full@192: `175`, full@96: `89`, structural@96: `73`
 
 Interpretation:
 
 - structural-only edges make the prompt shorter, but that shorter prompt is
   materially worse for diagnosis and implementation-trace recovery
 - removing detail gives a smaller token reduction and a smaller quality drop
-- UC4 shows that even under extreme token pressure (96 tokens), explanatory
-  context preserves `1.0` causal reconstruction while structural drops to
-  `0.125`
+- UC4 shows that even under token pressure (192 tokens), explanatory
+  context preserves `1.0` causal reconstruction while structural at 96 tokens
+  drops to `0.125`
 
 ### Result R4. Rehydration-Point Discovery Depends On Explanatory Linkage
 
@@ -480,7 +480,7 @@ For UC1 under a denser noisy graph:
 
 - `causal_reconstruction_score = 1.0` (same as micro)
 - `retry_success_rate = 1.0` (same as micro)
-- rendered token count: `135` (same as micro)
+- rendered token count: `282` (same as micro)
 
 Interpretation:
 
@@ -540,7 +540,7 @@ of why a task was implemented in a particular way, interrupted handoff with
 resumable execution, and constraint-preserving retrieval under token pressure.
 Across these use cases, full explanatory context achieves `1.0` explanation
 roundtrip fidelity and `1.0` causal reconstruction in the full-detail setting,
-while retaining `1.0` causal reconstruction under a `96`-token budget in the
+while retaining `1.0` causal reconstruction under a `192`-token budget in the
 constraint-preserving case. Removing node detail preserves explanation fidelity
 but reduces causal reconstruction to `0.857`, while replacing explanatory
 relations with structural edges reduces causal reconstruction to `0.143`,
@@ -573,14 +573,14 @@ explanation fields such as `decision_id` and `caused_by_node_id`, not by
 node detail alone.
 
 UC4 provides the strongest bounded-retrieval result. The full explanatory
-context rendered at `96` tokens still reaches `1.0` causal reconstruction
-and preserves the dominant reason, while the structural-only variant at the
-same budget drops to `0.125`.
+context rendered at `192` tokens still reaches `1.0` causal reconstruction
+and preserves the dominant reason, while the structural-only variant at `96`
+tokens drops to `0.125`.
 
 The token results reinforce the same conclusion. Structural-only context is
 shorter, but the reduction comes with a severe quality collapse: UC1 falls
-from `135` to `97` rendered tokens, UC2 from `126` to `91`, and UC3 from
-`260` to `169`, while causal reconstruction drops from `1.0` to `0.143` in
+from `282` to `200` rendered tokens, UC2 from `285` to `203`, and UC3 from
+`575` to `374`, while causal reconstruction drops from `1.0` to `0.143` in
 all cases. Removing detail gives a smaller token reduction alongside a much
 smaller quality drop. The generated report and figures are written to:
 
