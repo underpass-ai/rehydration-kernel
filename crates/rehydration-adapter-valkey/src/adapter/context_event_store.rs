@@ -75,6 +75,15 @@ impl ContextEventStore for ValkeyContextEventStore {
         }
     }
 
+    async fn current_content_hash(
+        &self,
+        root_node_id: &str,
+        role: &str,
+    ) -> Result<Option<String>, PortError> {
+        let key = self.hash_key(root_node_id, role);
+        execute_get_command(&self.endpoint, &key).await
+    }
+
     async fn find_by_idempotency_key(
         &self,
         key: &str,

@@ -1,15 +1,15 @@
-use rehydration_application::{BundleSnapshotResult, RehydrateSessionResult};
+use rehydration_application::RehydrateSessionResult;
 use rehydration_domain::RehydrationBundle;
 use rehydration_proto::v1beta1::{
-    BundleSnapshot, GetBundleSnapshotResponse, GraphRoleBundle, RehydrateSessionResponse,
-    RehydrationBundle as ProtoRehydrationBundle, RehydrationStats,
+    GraphRoleBundle, RehydrateSessionResponse, RehydrationBundle as ProtoRehydrationBundle,
+    RehydrationStats,
 };
 
 use crate::transport::proto_mapping_v1beta1::{
     proto_bundle_node_detail_v1beta1, proto_bundle_node_v1beta1, proto_bundle_relationship_v1beta1,
     proto_bundle_version_v1beta1,
 };
-use crate::transport::support::{proto_duration, timestamp_from};
+use crate::transport::support::timestamp_from;
 
 pub(crate) fn proto_rehydrate_session_response_v1beta1(
     result: &RehydrateSessionResult,
@@ -28,22 +28,6 @@ pub(crate) fn proto_rehydrate_session_response_v1beta1(
         snapshot_persisted: result.snapshot_persisted,
         snapshot_id: result.snapshot_id.clone().unwrap_or_default(),
         generated_at: Some(timestamp_from(result.generated_at)),
-    }
-}
-
-pub(crate) fn proto_bundle_snapshot_response_v1beta1(
-    result: &BundleSnapshotResult,
-) -> GetBundleSnapshotResponse {
-    GetBundleSnapshotResponse {
-        snapshot: Some(BundleSnapshot {
-            snapshot_id: result.snapshot_id.clone(),
-            root_node_id: result.root_node_id.clone(),
-            role: result.role.clone(),
-            bundle: Some(proto_bundle_from_single_role_v1beta1(&result.bundle)),
-            created_at: Some(timestamp_from(result.created_at)),
-            expires_at: Some(timestamp_from(result.expires_at)),
-            ttl: Some(proto_duration(result.ttl_seconds)),
-        }),
     }
 }
 

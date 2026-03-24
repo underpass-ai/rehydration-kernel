@@ -141,6 +141,17 @@ impl ContextEventStore for NatsContextEventStore {
         }
     }
 
+    async fn current_content_hash(
+        &self,
+        root_node_id: &str,
+        role: &str,
+    ) -> Result<Option<String>, PortError> {
+        match self.last_event_for(root_node_id, role).await? {
+            Some((_, hash)) if !hash.is_empty() => Ok(Some(hash)),
+            _ => Ok(None),
+        }
+    }
+
     async fn find_by_idempotency_key(
         &self,
         key: &str,

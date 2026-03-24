@@ -24,8 +24,8 @@ pub(crate) fn proto_rendered_context_v1beta1(
             .map(|(index, section)| BundleSection {
                 key: format!("section_{index}"),
                 title: format!("Section {}", index + 1),
-                content: section.clone(),
-                token_count: section.split_whitespace().count() as u32,
+                content: section.content.clone(),
+                token_count: section.token_count,
                 scopes: scopes.to_vec(),
             })
             .collect(),

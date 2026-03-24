@@ -1,8 +1,7 @@
 use std::io;
 
 use rehydration_proto::v1beta1::{
-    GetContextRequest, GetGraphRelationshipsRequest, GraphNode,
-    context_admin_service_client::ContextAdminServiceClient,
+    BundleRenderFormat, GetContextRequest, Phase,
     context_query_service_client::ContextQueryServiceClient,
 };
 use serde_json::json;
@@ -15,7 +14,6 @@ use crate::agentic_reference::runtime_contract::{AgentRuntime, RuntimeResult, To
 
 pub struct BasicContextAgent<R> {
     query_client: ContextQueryServiceClient<Channel>,
-    admin_client: ContextAdminServiceClient<Channel>,
     runtime: R,
 }
 
@@ -23,14 +21,9 @@ impl<R> BasicContextAgent<R>
 where
     R: AgentRuntime,
 {
-    pub fn new(
-        query_client: ContextQueryServiceClient<Channel>,
-        admin_client: ContextAdminServiceClient<Channel>,
-        runtime: R,
-    ) -> Self {
+    pub fn new(query_client: ContextQueryServiceClient<Channel>, runtime: R) -> Self {
         Self {
             query_client,
-            admin_client,
             runtime,
         }
     }
@@ -53,21 +46,21 @@ where
         );
         ensure_runtime_supports_context_workflow(&tools)?;
 
-        let focus_node = self
-            .select_focus_node(
+        let focus_node_id = self
+            .select_focus_node_id(
                 &request.root_node_id,
-                &request.root_node_kind,
+                &request.role,
                 &request.focus_node_kind,
             )
             .await?;
-        debug_log_value("selected focus node", &focus_node.node_id);
+        debug_log_value("selected focus node", &focus_node_id);
         let response = self
             .query_client
             .get_context(GetContextRequest {
                 root_node_id: request.root_node_id,
                 role: request.role,
                 phase: request.phase as i32,
-                work_item_id: focus_node.node_id.clone(),
+                work_item_id: focus_node_id.clone(),
                 token_budget: request.token_budget,
                 requested_scopes: request.requested_scopes,
                 render_format: request.render_format as i32,
@@ -88,7 +81,7 @@ where
         let focus_detail = role_bundle
             .node_details
             .iter()
-            .find(|detail| detail.node_id == focus_node.node_id)
+            .find(|detail| detail.node_id == focus_node_id)
             .ok_or_else(|| io::Error::other("missing focused node detail"))?;
         let rendered = response
             .rendered
@@ -101,7 +94,7 @@ where
                 .as_ref()
                 .map(|node| node.title.as_str())
                 .unwrap_or("unknown"),
-            focus_node.title,
+            focus_node_id,
             focus_detail.detail,
             rendered.content,
         );
@@ -132,35 +125,61 @@ where
         debug_log_value("runtime fs.list output", &listed_files.output);
 
         Ok(AgentExecution {
-            selected_node_id: focus_node.node_id,
+            selected_node_id: focus_node_id,
             written_path: summary_path,
             written_content: read_back.output,
             listed_files: listed_files.output,
         })
     }
 
-    async fn select_focus_node(
+    async fn select_focus_node_id(
         &mut self,
         root_node_id: &str,
-        root_node_kind: &str,
+        role: &str,
         focus_node_kind: &str,
-    ) -> RuntimeResult<GraphNode> {
+    ) -> RuntimeResult<String> {
         let response = self
-            .admin_client
-            .get_graph_relationships(GetGraphRelationshipsRequest {
-                node_id: root_node_id.to_string(),
-                node_kind: root_node_kind.to_string(),
+            .query_client
+            .get_context(GetContextRequest {
+                root_node_id: root_node_id.to_string(),
+                role: role.to_string(),
+                phase: Phase::Build as i32,
+                work_item_id: String::new(),
+                token_budget: 0,
+                requested_scopes: Vec::new(),
+                render_format: BundleRenderFormat::Structured as i32,
+                include_debug_sections: false,
                 depth: 1,
-                include_reverse_edges: false,
             })
             .await?
             .into_inner();
-        debug_log_value("graph neighbors count", response.neighbors.len());
+        debug_log_value(
+            "focus lookup neighbors",
+            response
+                .bundle
+                .as_ref()
+                .map(|b| {
+                    b.bundles
+                        .first()
+                        .map(|rb| rb.neighbor_nodes.len())
+                        .unwrap_or(0)
+                })
+                .unwrap_or(0),
+        );
 
-        response
-            .neighbors
-            .into_iter()
+        let bundle = response
+            .bundle
+            .ok_or_else(|| io::Error::other("missing bundle in focus lookup"))?;
+        let role_bundle = bundle
+            .bundles
+            .first()
+            .ok_or_else(|| io::Error::other("missing role bundle in focus lookup"))?;
+
+        role_bundle
+            .neighbor_nodes
+            .iter()
             .find(|node| node.node_kind == focus_node_kind)
+            .map(|node| node.node_id.clone())
             .ok_or_else(|| {
                 io::Error::new(
                     io::ErrorKind::NotFound,

@@ -13,10 +13,7 @@ use crate::agentic_support::context_bundle_generated_event::{
     context_bundle_generated_subject, parse_context_bundle_generated_event,
 };
 use crate::agentic_support::nats_container::connect_with_retry;
-use rehydration_proto::v1beta1::{
-    context_admin_service_client::ContextAdminServiceClient,
-    context_query_service_client::ContextQueryServiceClient,
-};
+use rehydration_proto::v1beta1::context_query_service_client::ContextQueryServiceClient;
 
 pub(crate) struct EventDrivenRuntimeTrigger<R> {
     agent: BasicContextAgent<R>,
@@ -30,13 +27,12 @@ where
 {
     pub(crate) fn new(
         query_client: ContextQueryServiceClient<Channel>,
-        admin_client: ContextAdminServiceClient<Channel>,
         runtime: R,
         nats_url: impl Into<String>,
         request_template: AgentRequest,
     ) -> Self {
         Self {
-            agent: BasicContextAgent::new(query_client, admin_client, runtime),
+            agent: BasicContextAgent::new(query_client, runtime),
             nats_url: nats_url.into(),
             request_template,
         }

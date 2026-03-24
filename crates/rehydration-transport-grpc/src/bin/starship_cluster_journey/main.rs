@@ -9,9 +9,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use async_nats::ConnectOptions;
 use rehydration_config::{GrpcTlsMode, NatsTlsMode};
 use rehydration_proto::v1beta1::{
-    BundleRenderFormat, GetBundleSnapshotRequest, GetContextRequest, GetGraphRelationshipsRequest,
-    GetNodeDetailRequest, GetProjectionStatusRequest, GetRehydrationDiagnosticsRequest, Phase,
-    RehydrateSessionRequest, context_admin_service_client::ContextAdminServiceClient,
+    BundleRenderFormat, GetContextRequest, GetNodeDetailRequest, Phase, RehydrateSessionRequest,
     context_query_service_client::ContextQueryServiceClient,
 };
 use rehydration_transport_grpc::starship_e2e::{
@@ -20,8 +18,8 @@ use rehydration_transport_grpc::starship_e2e::{
     EXPECTED_SELECTED_RELATIONSHIP_COUNT, EXPLORER_CHECKLIST_ID, EXPLORER_CHECKLIST_TITLE,
     EXPLORER_LEAF_DETAIL, EXPLORER_LEAF_ID, EXPLORER_LEAF_TITLE, EXPLORER_WORKSTREAM_DETAIL,
     EXPLORER_WORKSTREAM_ID, EXPLORER_WORKSTREAM_TITLE, POWER_TASK_ID, RELATION_DECISION_REQUIRES,
-    RELATION_DEPENDS_ON, RELATION_IMPACTS, ROOT_DETAIL, ROOT_LABEL, ROOT_NODE_ID, ROOT_TITLE,
-    TASK_DETAIL, TASK_ID, publish_projection_events_for_run,
+    RELATION_DEPENDS_ON, RELATION_IMPACTS, ROOT_DETAIL, ROOT_NODE_ID, ROOT_TITLE, TASK_DETAIL,
+    TASK_ID, publish_projection_events_for_run,
 };
 use serde::Serialize;
 use tokio::time::sleep;
@@ -30,7 +28,6 @@ use tonic::transport::{Certificate, Channel, ClientTlsConfig, Endpoint, Identity
 const DEFAULT_GRPC_ENDPOINT: &str = "http://127.0.0.1:50054";
 const DEFAULT_NATS_URL: &str = "nats://127.0.0.1:4222";
 const DEFAULT_ROLE: &str = "developer";
-const REVIEWER_ROLE: &str = "reviewer";
 const DEFAULT_PHASE: i32 = Phase::Build as i32;
 const EXPLORER_TOKEN_BUDGET: u32 = 8192;
 const DEFAULT_TIMELINE_WINDOW: u32 = 11;
@@ -55,15 +52,6 @@ struct NatsClientTlsOptions {
 }
 
 #[derive(Serialize)]
-struct DiagnosticSummary {
-    role: String,
-    selected_nodes: u32,
-    selected_relationships: u32,
-    detailed_nodes: u32,
-    estimated_tokens: u32,
-}
-
-#[derive(Serialize)]
 struct ExplorerSummary {
     zoom_root: String,
     zoom_neighbors: usize,
@@ -80,9 +68,6 @@ struct VerificationSummary {
     relationships: usize,
     details: usize,
     rendered_token_count: u32,
-    projection_healthy: bool,
-    snapshot_id: String,
-    diagnostics: Vec<DiagnosticSummary>,
     explorer: ExplorerSummary,
 }
 
@@ -122,11 +107,10 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     publish_projection_events_for_run(&publisher, &config.subject_prefix, &run_id).await?;
 
     let channel = connect_grpc_channel(&config.grpc_endpoint, &config.grpc_tls).await?;
-    let query_client = ContextQueryServiceClient::new(channel.clone());
-    let admin_client = ContextAdminServiceClient::new(channel);
+    let query_client = ContextQueryServiceClient::new(channel);
 
     wait_for_context_ready(query_client.clone()).await?;
-    let summary = verify(query_client, admin_client).await?;
+    let summary = verify(query_client).await?;
     println!("{}", serde_json::to_string_pretty(&summary)?);
 
     Ok(())
@@ -430,7 +414,6 @@ async fn wait_for_context_ready(
 
 async fn verify(
     mut query_client: ContextQueryServiceClient<Channel>,
-    mut admin_client: ContextAdminServiceClient<Channel>,
 ) -> Result<VerificationSummary, Box<dyn Error + Send + Sync>> {
     let query_context = query_client
         .get_context(GetContextRequest {
@@ -669,99 +652,12 @@ async fn verify(
         EXPECTED_DETAIL_COUNT as u32
     );
 
-    let projection_status = admin_client
-        .get_projection_status(GetProjectionStatusRequest {
-            consumer_names: vec!["context-projection".to_string()],
-        })
-        .await?
-        .into_inner();
-    assert_eq!(projection_status.projections.len(), 1);
-    assert_eq!(
-        projection_status.projections[0].consumer_name,
-        "context-projection"
-    );
-    assert!(projection_status.projections[0].healthy);
-
-    let bundle_snapshot = admin_client
-        .get_bundle_snapshot(GetBundleSnapshotRequest {
-            root_node_id: ROOT_NODE_ID.to_string(),
-            role: DEFAULT_ROLE.to_string(),
-        })
-        .await?
-        .into_inner()
-        .snapshot
-        .expect("admin snapshot should exist");
-    assert_eq!(
-        bundle_snapshot.snapshot_id,
-        format!("snapshot:{ROOT_NODE_ID}:{DEFAULT_ROLE}")
-    );
-    assert_eq!(
-        bundle_snapshot.ttl.as_ref().map(|ttl| ttl.seconds),
-        Some(DEFAULT_SNAPSHOT_TTL_SECONDS)
-    );
-
-    let admin_graph = admin_client
-        .get_graph_relationships(GetGraphRelationshipsRequest {
-            node_id: ROOT_NODE_ID.to_string(),
-            node_kind: ROOT_LABEL.to_string(),
-            depth: 3,
-            include_reverse_edges: false,
-        })
-        .await?
-        .into_inner();
-    assert_eq!(admin_graph.neighbors.len(), EXPECTED_NEIGHBOR_COUNT);
-    assert_eq!(admin_graph.relationships.len(), EXPECTED_RELATIONSHIP_COUNT);
-    assert!(admin_graph.relationships.iter().any(|edge| {
-        edge.source_node_id == DECISION_ID
-            && edge.target_node_id == TASK_ID
-            && edge.relationship_type == RELATION_IMPACTS
-    }));
-    assert!(admin_graph.relationships.iter().any(|edge| {
-        edge.source_node_id == POWER_TASK_ID
-            && edge.target_node_id == TASK_ID
-            && edge.relationship_type == RELATION_DEPENDS_ON
-    }));
-    assert!(admin_graph.relationships.iter().any(|edge| {
-        edge.source_node_id == "decision:delay-jump-window"
-            && edge.target_node_id == DECISION_ID
-            && edge.relationship_type == RELATION_DECISION_REQUIRES
-    }));
-
-    let diagnostics = admin_client
-        .get_rehydration_diagnostics(GetRehydrationDiagnosticsRequest {
-            root_node_id: ROOT_NODE_ID.to_string(),
-            roles: vec![DEFAULT_ROLE.to_string(), REVIEWER_ROLE.to_string()],
-            phase: DEFAULT_PHASE,
-        })
-        .await?
-        .into_inner();
-    assert_eq!(diagnostics.diagnostics.len(), 2);
-    assert!(diagnostics.diagnostics.iter().all(|item| {
-        item.selected_nodes == EXPECTED_SELECTED_NODE_COUNT
-            && item.selected_relationships == EXPECTED_SELECTED_RELATIONSHIP_COUNT
-            && item.detailed_nodes == EXPECTED_DETAIL_COUNT as u32
-            && item.estimated_tokens > EXPECTED_SELECTED_NODE_COUNT * 10
-    }));
-
     Ok(VerificationSummary {
         release_root: ROOT_NODE_ID.to_string(),
         neighbors: query_role_bundle.neighbor_nodes.len(),
         relationships: query_role_bundle.relationships.len(),
         details: query_role_bundle.node_details.len(),
         rendered_token_count: rendered_query_context.token_count,
-        projection_healthy: projection_status.projections[0].healthy,
-        snapshot_id: bundle_snapshot.snapshot_id,
-        diagnostics: diagnostics
-            .diagnostics
-            .into_iter()
-            .map(|item| DiagnosticSummary {
-                role: item.role,
-                selected_nodes: item.selected_nodes,
-                selected_relationships: item.selected_relationships,
-                detailed_nodes: item.detailed_nodes,
-                estimated_tokens: item.estimated_tokens,
-            })
-            .collect(),
         explorer: ExplorerSummary {
             zoom_root: zoomed_bundle.root_node_id,
             zoom_neighbors: zoomed_role_bundle.neighbor_nodes.len(),

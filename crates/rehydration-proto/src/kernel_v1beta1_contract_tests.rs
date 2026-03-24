@@ -35,23 +35,6 @@ fn v1beta1_command_service_surface_is_stable() {
 }
 
 #[test]
-fn v1beta1_admin_service_surface_is_stable() {
-    let descriptor_set = decode_kernel_descriptor_set();
-    let admin_file = kernel_file(&descriptor_set, "admin.proto");
-
-    assert_eq!(
-        service_method_names(admin_file, "ContextAdminService"),
-        vec![
-            "GetProjectionStatus",
-            "ReplayProjection",
-            "GetBundleSnapshot",
-            "GetGraphRelationships",
-            "GetRehydrationDiagnostics",
-        ]
-    );
-}
-
-#[test]
 fn v1beta1_graph_relationship_fields_are_stable() {
     let descriptor_set = decode_kernel_descriptor_set();
     let common_file = kernel_file(&descriptor_set, "common.proto");

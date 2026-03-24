@@ -232,6 +232,15 @@ impl ContextEventStore for InMemoryContextEventStore {
         Ok(self.revisions.lock().await.get(&key).copied().unwrap_or(0))
     }
 
+    async fn current_content_hash(
+        &self,
+        root_node_id: &str,
+        role: &str,
+    ) -> Result<Option<String>, PortError> {
+        let key = Self::aggregate_key(root_node_id, role);
+        Ok(self.hashes.lock().await.get(&key).cloned())
+    }
+
     async fn find_by_idempotency_key(
         &self,
         key: &str,

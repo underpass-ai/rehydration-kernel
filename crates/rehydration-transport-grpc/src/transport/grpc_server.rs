@@ -5,9 +5,8 @@ use std::path::Path;
 use std::sync::Arc;
 
 use rehydration_application::{
-    AdminCommandApplicationService, AdminQueryApplicationService, ApplicationError,
-    CommandApplicationService, DEFAULT_NATIVE_GRAPH_TRAVERSAL_DEPTH, QueryApplicationService,
-    RehydrationApplication, UpdateContextUseCase,
+    ApplicationError, CommandApplicationService, DEFAULT_NATIVE_GRAPH_TRAVERSAL_DEPTH,
+    QueryApplicationService, RehydrationApplication, UpdateContextUseCase,
 };
 use rehydration_config::{AppConfig, GrpcTlsConfig, GrpcTlsMode};
 use rehydration_domain::{
@@ -15,7 +14,6 @@ use rehydration_domain::{
 };
 use rehydration_proto::v1beta1::{
     BundleRenderFormat, FILE_DESCRIPTOR_SET, GetContextRequest, Phase,
-    context_admin_service_server::ContextAdminServiceServer,
     context_command_service_server::ContextCommandServiceServer,
     context_query_service_server::ContextQueryServiceServer,
 };
@@ -23,15 +21,13 @@ use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::transport::{Certificate, Identity, Server, ServerTlsConfig};
 
-use crate::transport::{AdminGrpcService, CommandGrpcService, QueryGrpcService};
+use crate::transport::{CommandGrpcService, QueryGrpcService};
 
 #[derive(Debug)]
 pub struct GrpcServer<G, D, S, E> {
     bind_addr: String,
     grpc_tls: GrpcTlsConfig,
     query_application: Arc<QueryApplicationService<G, D, S>>,
-    admin_query_application: Arc<AdminQueryApplicationService<G, D>>,
-    admin_command_application: Arc<AdminCommandApplicationService>,
     command_application: Arc<CommandApplicationService<E>>,
     capability_name: &'static str,
 }
@@ -71,12 +67,6 @@ where
                 Arc::clone(&snapshot_store),
                 generator_version,
             )),
-            admin_query_application: Arc::new(AdminQueryApplicationService::new(
-                Arc::clone(&graph_reader),
-                Arc::clone(&detail_reader),
-                generator_version,
-            )),
-            admin_command_application: Arc::new(AdminCommandApplicationService),
             command_application: Arc::new(CommandApplicationService::new(update_context)),
             capability_name: RehydrationApplication::capability_name(),
         }
@@ -125,13 +115,6 @@ where
         Arc::clone(&self.command_application)
     }
 
-    pub fn admin_service(&self) -> AdminGrpcService<G, D> {
-        AdminGrpcService::new(
-            Arc::clone(&self.admin_query_application),
-            Arc::clone(&self.admin_command_application),
-        )
-    }
-
     pub async fn warmup_bundle(&self) -> Result<RehydrationBundle, ApplicationError> {
         self.query_application.warmup_bundle().await
     }
@@ -154,7 +137,6 @@ where
         self.transport_builder()?
             .add_service(ContextQueryServiceServer::new(self.query_service()))
             .add_service(ContextCommandServiceServer::new(self.command_service()))
-            .add_service(ContextAdminServiceServer::new(self.admin_service()))
             .serve_with_incoming_shutdown(TcpListenerStream::new(listener), shutdown)
             .await?;
 

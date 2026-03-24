@@ -7,7 +7,6 @@ use rehydration_adapter_neo4j::Neo4jProjectionStore;
 use rehydration_adapter_valkey::{ValkeyNodeDetailStore, ValkeySnapshotStore};
 use rehydration_proto::v1beta1::{
     BundleRenderFormat, GetContextRequest, Phase,
-    context_admin_service_client::ContextAdminServiceClient,
     context_command_service_client::ContextCommandServiceClient,
     context_query_service_client::ContextQueryServiceClient,
 };
@@ -39,7 +38,6 @@ pub(crate) struct AgenticFixture {
     query_client: ContextQueryServiceClient<Channel>,
     #[allow(dead_code)]
     command_client: ContextCommandServiceClient<Channel>,
-    admin_client: ContextAdminServiceClient<Channel>,
 }
 
 impl AgenticFixture {
@@ -121,8 +119,7 @@ impl AgenticFixture {
         let channel = server.connect_channel().await?;
         debug_log("grpc channel connected");
         let query_client = ContextQueryServiceClient::new(channel.clone());
-        let command_client = ContextCommandServiceClient::new(channel.clone());
-        let admin_client = ContextAdminServiceClient::new(channel);
+        let command_client = ContextCommandServiceClient::new(channel);
 
         let publisher = connect_with_retry(&nats_url).await?;
         seed_projection(publisher.clone()).await?;
@@ -145,7 +142,6 @@ impl AgenticFixture {
             nats_url,
             query_client,
             command_client,
-            admin_client,
         })
     }
 
@@ -156,10 +152,6 @@ impl AgenticFixture {
     #[allow(dead_code)]
     pub(crate) fn command_client(&self) -> ContextCommandServiceClient<Channel> {
         self.command_client.clone()
-    }
-
-    pub(crate) fn admin_client(&self) -> ContextAdminServiceClient<Channel> {
-        self.admin_client.clone()
     }
 
     pub(crate) fn nats_url(&self) -> &str {

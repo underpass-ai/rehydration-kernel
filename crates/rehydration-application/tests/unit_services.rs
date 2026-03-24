@@ -1,9 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-use rehydration_application::{
-    AdminCommandApplicationService, ApplicationError, ReplayModeSelection, ReplayProjectionCommand,
-    RoutingProjectionWriter,
-};
+use rehydration_application::{ApplicationError, RoutingProjectionWriter};
 use rehydration_domain::{
     DomainError, NodeDetailProjection, NodeProjection, PortError, ProjectionMutation,
     ProjectionWriter,
@@ -18,63 +15,6 @@ fn application_error_formats_wrapped_and_validation_messages() {
     assert_eq!(domain.to_string(), "root_node_id cannot be empty");
     assert_eq!(ports.to_string(), "valkey down");
     assert_eq!(validation.to_string(), "invalid replay request");
-}
-
-#[test]
-fn replay_projection_trims_inputs_and_builds_identifier() {
-    let service = AdminCommandApplicationService;
-    let outcome = service
-        .replay_projection(ReplayProjectionCommand {
-            consumer_name: "  context-projection  ".to_string(),
-            stream_name: "  rehydration.events  ".to_string(),
-            starting_after: None,
-            max_events: 25,
-            replay_mode: ReplayModeSelection::Rebuild,
-            requested_by: Some("operator".to_string()),
-        })
-        .expect("replay request should succeed");
-
-    assert_eq!(
-        outcome.replay_id,
-        "replay:context-projection:rehydration.events"
-    );
-    assert_eq!(outcome.consumer_name, "context-projection");
-    assert_eq!(outcome.accepted_events, 25);
-    assert_eq!(outcome.replay_mode, ReplayModeSelection::Rebuild);
-}
-
-#[test]
-fn replay_projection_rejects_blank_consumer_and_stream_names() {
-    let service = AdminCommandApplicationService;
-    let consumer_error = service
-        .replay_projection(ReplayProjectionCommand {
-            consumer_name: "   ".to_string(),
-            stream_name: "rehydration.events".to_string(),
-            starting_after: None,
-            max_events: 1,
-            replay_mode: ReplayModeSelection::DryRun,
-            requested_by: None,
-        })
-        .expect_err("blank consumer names must fail");
-    let stream_error = service
-        .replay_projection(ReplayProjectionCommand {
-            consumer_name: "context-projection".to_string(),
-            stream_name: "   ".to_string(),
-            starting_after: None,
-            max_events: 1,
-            replay_mode: ReplayModeSelection::DryRun,
-            requested_by: None,
-        })
-        .expect_err("blank stream names must fail");
-
-    assert!(matches!(
-        consumer_error,
-        ApplicationError::Validation(message) if message == "consumer_name cannot be empty"
-    ));
-    assert!(matches!(
-        stream_error,
-        ApplicationError::Validation(message) if message == "stream_name cannot be empty"
-    ));
 }
 
 #[tokio::test]

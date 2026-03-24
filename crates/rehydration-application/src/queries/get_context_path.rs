@@ -308,7 +308,7 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["root-node", "mid-node", "target-node"]
         );
-        assert!(result.rendered.sections[1].contains("Target"));
+        assert!(result.rendered.sections[1].content.contains("Target"));
     }
 
     #[tokio::test]

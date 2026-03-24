@@ -53,6 +53,13 @@ pub trait ContextEventStore {
         role: &str,
     ) -> impl Future<Output = Result<u64, PortError>> + Send;
 
+    /// Returns the content hash of the last accepted event, or None if no events exist.
+    fn current_content_hash(
+        &self,
+        root_node_id: &str,
+        role: &str,
+    ) -> impl Future<Output = Result<Option<String>, PortError>> + Send;
+
     /// Checks if an event with this idempotency key was already accepted.
     fn find_by_idempotency_key(
         &self,
@@ -74,6 +81,14 @@ where
 
     async fn current_revision(&self, root_node_id: &str, role: &str) -> Result<u64, PortError> {
         self.as_ref().current_revision(root_node_id, role).await
+    }
+
+    async fn current_content_hash(
+        &self,
+        root_node_id: &str,
+        role: &str,
+    ) -> Result<Option<String>, PortError> {
+        self.as_ref().current_content_hash(root_node_id, role).await
     }
 
     async fn find_by_idempotency_key(

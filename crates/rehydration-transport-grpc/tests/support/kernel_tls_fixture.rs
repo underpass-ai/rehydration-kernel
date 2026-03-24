@@ -11,7 +11,6 @@ use rehydration_config::{GrpcTlsConfig, GrpcTlsMode};
 use rehydration_domain::ProjectionWriter;
 use rehydration_proto::v1beta1::{
     BundleRenderFormat, GetContextRequest, Phase,
-    context_admin_service_client::ContextAdminServiceClient,
     context_command_service_client::ContextCommandServiceClient,
     context_query_service_client::ContextQueryServiceClient,
 };
@@ -44,7 +43,6 @@ pub(crate) struct KernelTlsFixture {
     server: RunningTlsGrpcServer,
     query_client: ContextQueryServiceClient<Channel>,
     command_client: ContextCommandServiceClient<Channel>,
-    admin_client: ContextAdminServiceClient<Channel>,
 }
 
 impl KernelTlsFixture {
@@ -117,8 +115,7 @@ impl KernelTlsFixture {
         let channel = server.connect_channel(&tls, true).await?;
         debug_log("tls grpc channel connected");
         let query_client = ContextQueryServiceClient::new(channel.clone());
-        let command_client = ContextCommandServiceClient::new(channel.clone());
-        let admin_client = ContextAdminServiceClient::new(channel);
+        let command_client = ContextCommandServiceClient::new(channel);
 
         let publisher = connect_with_tls_retry(&nats_url, &tls).await?;
         seed_projection(publisher.clone()).await?;
@@ -135,7 +132,6 @@ impl KernelTlsFixture {
             server,
             query_client,
             command_client,
-            admin_client,
         })
     }
 
@@ -145,10 +141,6 @@ impl KernelTlsFixture {
 
     pub(crate) fn command_client(&self) -> ContextCommandServiceClient<Channel> {
         self.command_client.clone()
-    }
-
-    pub(crate) fn admin_client(&self) -> ContextAdminServiceClient<Channel> {
-        self.admin_client.clone()
     }
 
     pub(crate) async fn shutdown(self) -> Result<(), Box<dyn Error + Send + Sync>> {

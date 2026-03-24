@@ -8,10 +8,16 @@ use crate::queries::bundle_truncator::{TruncationMetadata, limit_sections_by_tok
 use crate::queries::cl100k_estimator::Cl100kEstimator;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RenderedSection {
+    pub content: String,
+    pub token_count: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RenderedContext {
     pub content: String,
     pub token_count: u32,
-    pub sections: Vec<String>,
+    pub sections: Vec<RenderedSection>,
     pub truncation: Option<TruncationMetadata>,
 }
 
@@ -44,11 +50,22 @@ pub fn render_graph_bundle_with_estimator(
     let all_sections = ordered_sections(bundle, &detail_by_node_id, options);
     let total_sections = all_sections.len() as u32;
 
-    let (sections, truncation) =
+    let (section_strings, truncation) =
         limit_sections_by_token_budget(all_sections, options, estimator, total_sections);
 
-    let content = sections.join("\n\n");
+    let content = section_strings.join("\n\n");
     let token_count = estimator.estimate_tokens(&content);
+
+    let sections = section_strings
+        .into_iter()
+        .map(|s| {
+            let tc = estimator.estimate_tokens(&s);
+            RenderedSection {
+                content: s,
+                token_count: tc,
+            }
+        })
+        .collect();
 
     RenderedContext {
         content,
@@ -113,10 +130,10 @@ mod tests {
         let rendered = render_graph_bundle(&bundle);
 
         assert_eq!(rendered.sections.len(), 4);
-        assert!(rendered.sections[0].starts_with("Node Root"));
-        assert!(rendered.sections[1].starts_with("Relationship"));
-        assert!(rendered.sections[2].starts_with("Node Neighbor"));
-        assert!(rendered.sections[3].starts_with("Detail case-123"));
+        assert!(rendered.sections[0].content.starts_with("Node Root"));
+        assert!(rendered.sections[1].content.starts_with("Relationship"));
+        assert!(rendered.sections[2].content.starts_with("Node Neighbor"));
+        assert!(rendered.sections[3].content.starts_with("Detail case-123"));
     }
 
     #[test]
@@ -131,9 +148,9 @@ mod tests {
             },
         );
 
-        assert!(rendered.sections[0].starts_with("Node Root"));
-        assert!(rendered.sections[1].starts_with("Node Focused"));
-        assert!(rendered.sections[2].contains("node-2"));
+        assert!(rendered.sections[0].content.starts_with("Node Root"));
+        assert!(rendered.sections[1].content.starts_with("Node Focused"));
+        assert!(rendered.sections[2].content.contains("node-2"));
     }
 
     #[test]
@@ -317,5 +334,93 @@ mod tests {
         assert_eq!(truncation.sections_dropped, 0);
         assert_eq!(truncation.token_estimator, "cl100k_base");
         assert!(truncation.budget_used <= 1000);
+    }
+
+    #[test]
+    fn causal_relationships_render_before_structural() {
+        let bundle = RehydrationBundle::new(
+            CaseId::new("root").expect("valid"),
+            Role::new("dev").expect("valid"),
+            BundleNode::new(
+                "root",
+                "case",
+                "Root",
+                "",
+                "ACTIVE",
+                vec![],
+                BTreeMap::new(),
+            ),
+            vec![
+                BundleNode::new("a", "task", "A", "", "ACTIVE", vec![], BTreeMap::new()),
+                BundleNode::new("b", "task", "B", "", "ACTIVE", vec![], BTreeMap::new()),
+            ],
+            vec![
+                BundleRelationship::new(
+                    "root",
+                    "a",
+                    "CONTAINS",
+                    RelationExplanation::new(RelationSemanticClass::Structural),
+                ),
+                BundleRelationship::new(
+                    "root",
+                    "b",
+                    "CAUSED",
+                    RelationExplanation::new(RelationSemanticClass::Causal)
+                        .with_rationale("failure triggered reroute"),
+                ),
+            ],
+            Vec::new(),
+            BundleMetadata::initial("0.1.0"),
+        )
+        .expect("valid");
+
+        let rendered = render_graph_bundle(&bundle);
+
+        // Causal relationship must appear before structural in rendered output
+        let causal_pos = rendered
+            .content
+            .find("[causal]")
+            .expect("causal should be present");
+        let structural_pos = rendered
+            .content
+            .find("[structural]")
+            .expect("structural should be present");
+        assert!(
+            causal_pos < structural_pos,
+            "causal ({causal_pos}) must render before structural ({structural_pos})"
+        );
+    }
+
+    #[test]
+    fn section_token_counts_use_cl100k_base_not_whitespace() {
+        let bundle = sample_bundle();
+        let rendered = render_graph_bundle(&bundle);
+
+        for section in &rendered.sections {
+            // Whitespace count and cl100k_base count differ for most text.
+            // The important invariant: token_count is computed by cl100k_base,
+            // NOT by split_whitespace. For structured text like "Node Root (case):
+            // Root summary", cl100k_base produces fewer tokens than words.
+            let whitespace_count = section.content.split_whitespace().count() as u32;
+            // cl100k_base should differ from whitespace count for most sections
+            // (they're not equal for structured text). At minimum, token_count > 0.
+            assert!(
+                section.token_count > 0,
+                "section token_count should be positive"
+            );
+            // The key test: the section token_count should NOT equal whitespace count
+            // for sections with punctuation (which is most of ours)
+            if section.content.contains('(') || section.content.contains('[') {
+                assert_ne!(
+                    section.token_count,
+                    whitespace_count,
+                    "section '{}' token_count {} should differ from whitespace count {} \
+                     (proves cl100k_base, not split_whitespace)",
+                    &section.content[..section.content.len().min(40)],
+                    section.token_count,
+                    whitespace_count
+                );
+            }
+        }
     }
 }
