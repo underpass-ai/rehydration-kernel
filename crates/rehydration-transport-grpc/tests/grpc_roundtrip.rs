@@ -144,12 +144,13 @@ async fn grpc_server_supports_query_and_command_roundtrip() {
             }],
             metadata: None,
             precondition: None,
-            persist_snapshot: true,
+            persist_snapshot: false,
         })
         .await
         .expect("command service should respond")
         .into_inner();
-    assert_eq!(update_context.snapshot_id, "snapshot:case-123:developer");
+    assert!(!update_context.snapshot_persisted);
+    assert!(update_context.snapshot_id.is_empty());
 
     let _ = shutdown_tx.send(());
     let result = server_task.await.expect("server task should join cleanly");

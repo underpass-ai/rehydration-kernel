@@ -16,7 +16,7 @@ Status of each RPC in the `v1beta1` contract surface.
 
 | RPC | Status | Notes |
 |-----|--------|-------|
-| `UpdateContext` | Production-ready | Persists full domain events (changes, requested_by, occurred_at) to the context event store as JSON. Optimistic concurrency via `expected_revision`. Content hash validated via `expected_content_hash`. Idempotency via `idempotency_key`. Returns `ABORTED` on revision or hash conflict. |
+| `UpdateContext` | Production-ready | Persists full domain events (changes, requested_by, occurred_at) to the context event store as JSON. Optimistic concurrency via `expected_revision`. Content hash validated via `expected_content_hash`. Idempotency via `idempotency_key`. Returns `ABORTED` on revision or hash conflict. Proto field `persist_snapshot` is accepted but not acted upon — snapshot persistence is the responsibility of the query path (`RehydrateSession`). |
 
 ## Removed
 

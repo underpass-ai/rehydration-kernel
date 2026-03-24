@@ -22,17 +22,6 @@ where
         &self,
         command: UpdateContextCommand,
     ) -> Result<UpdateContextOutcome, ApplicationError> {
-        let snapshot_id = if command.persist_snapshot {
-            Some(format!(
-                "snapshot:{}:{}",
-                command.root_node_id, command.role
-            ))
-        } else {
-            None
-        };
-
-        let mut outcome = self.update_context.execute(command).await?;
-        outcome.snapshot_id = snapshot_id;
-        Ok(outcome)
+        self.update_context.execute(command).await
     }
 }
