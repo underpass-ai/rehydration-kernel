@@ -75,6 +75,9 @@ Single source of truth for kernel maturity, technical debt, and next steps.
 - [ ] End-to-end mTLS integration test: gRPC mutual TLS with container-backed Neo4j, Valkey, and NATS — all TLS-encrypted
 - [ ] OTel collector integration test: container OTLP collector verifying trace and metric export
 - [ ] OpenTelemetry instrumentation for vLLM server: E2E traces from kernel gRPC → render → vLLM inference → evaluation
+- [ ] vLLM backpressure: rate limiting, queue depth monitoring, retry with backoff, circuit breaker for parallel/scale benchmarks
+- [ ] Refine LLM-as-judge prompt: less strict on node IDs, more demanding on rationale preservation
+- [ ] Larger judge model: use 2-3 GPUs with tensor-parallel for a stronger evaluator (e.g. Qwen3-30B or 70B)
 
 ## Pending — Paper artifact
 
