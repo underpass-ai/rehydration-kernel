@@ -74,6 +74,7 @@ Single source of truth for kernel maturity, technical debt, and next steps.
 
 - [ ] End-to-end mTLS integration test: gRPC mutual TLS with container-backed Neo4j, Valkey, and NATS — all TLS-encrypted
 - [ ] OTel collector integration test: container OTLP collector verifying trace and metric export
+- [ ] OpenTelemetry instrumentation for vLLM server: E2E traces from kernel gRPC → render → vLLM inference → evaluation
 
 ## Pending — Paper artifact
 
