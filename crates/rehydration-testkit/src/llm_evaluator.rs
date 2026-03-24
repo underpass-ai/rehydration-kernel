@@ -26,6 +26,10 @@ pub struct LlmEvaluatorConfig {
     pub tls_key_path: Option<String>,
     /// Whether to skip TLS verification.
     pub tls_insecure: bool,
+    /// Separate endpoint for the LLM-as-judge. Falls back to main endpoint.
+    pub judge_endpoint: Option<String>,
+    /// Separate model for the judge. Falls back to main model.
+    pub judge_model: Option<String>,
 }
 
 impl LlmEvaluatorConfig {
@@ -47,6 +51,8 @@ impl LlmEvaluatorConfig {
             tls_insecure: std::env::var("LLM_TLS_INSECURE")
                 .map(|v| v == "true" || v == "1")
                 .unwrap_or(false),
+            judge_endpoint: std::env::var("LLM_JUDGE_ENDPOINT").ok(),
+            judge_model: std::env::var("LLM_JUDGE_MODEL").ok(),
         }
     }
 }
@@ -168,8 +174,13 @@ pub async fn evaluate_with_llm(
         completion_tokens: 0,
     });
 
-    // LLM-as-judge: ask the same model to evaluate the response
-    let judge_result = judge_response(config, &client, &content, ground_truth)
+    // LLM-as-judge: use separate judge endpoint if configured
+    let judge_client = if config.judge_endpoint.is_some() {
+        build_http_client(config)?
+    } else {
+        client
+    };
+    let judge_result = judge_response(config, &judge_client, &content, ground_truth)
         .await
         .unwrap_or(JudgeVerdict {
             task_correct: false,
@@ -234,8 +245,11 @@ async fn judge_response(
         serde_json::Value::Bool(false),
     );
 
+    let judge_endpoint = config.judge_endpoint.as_deref().unwrap_or(&config.endpoint);
+    let judge_model = config.judge_model.as_deref().unwrap_or(&config.model);
+
     let request = ChatRequest {
-        model: config.model.clone(),
+        model: judge_model.to_string(),
         messages: vec![ChatMessage {
             role: "user".to_string(),
             content: judge_prompt,
@@ -245,7 +259,7 @@ async fn judge_response(
         chat_template_kwargs: Some(disable_thinking),
     };
 
-    let response = client.post(&config.endpoint).json(&request).send().await?;
+    let response = client.post(judge_endpoint).json(&request).send().await?;
     if !response.status().is_success() {
         return Err("judge request failed".into());
     }
