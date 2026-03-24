@@ -1,0 +1,376 @@
+//! Parameterized graph seed generator for benchmark evaluation.
+//!
+//! Generates NATS projection event payloads from a config, enabling
+//! micro/meso/stress graph scales without hand-written fixtures.
+
+use std::collections::BTreeMap;
+
+use rehydration_domain::RelationSemanticClass;
+
+/// Configuration for a generated graph seed.
+#[derive(Debug, Clone)]
+pub struct GraphSeedConfig {
+    /// Depth of the causal chain from root to leaf.
+    pub chain_length: usize,
+    /// Number of distractor branches per decision node.
+    pub noise_branches: usize,
+    /// Fraction of nodes that have extended detail (0.0 - 1.0).
+    pub detail_density: f64,
+    /// Mix of relation types in the graph.
+    pub relation_mix: RelationMix,
+    /// Domain vocabulary for node kinds and rationale text.
+    pub domain: Domain,
+    /// Prefix for all node IDs.
+    pub id_prefix: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RelationMix {
+    /// All relationships carry full explanatory metadata.
+    Explanatory,
+    /// Relationships are structural only (no rationale, motivation, etc).
+    Structural,
+    /// Mix of explanatory and structural.
+    Mixed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Domain {
+    Operations,
+    SoftwareDebugging,
+}
+
+/// A generated node in the seed graph.
+#[derive(Debug, Clone)]
+pub struct GeneratedNode {
+    pub node_id: String,
+    pub node_kind: String,
+    pub title: String,
+    pub summary: String,
+    pub detail: Option<String>,
+    pub labels: Vec<String>,
+    pub properties: BTreeMap<String, String>,
+}
+
+/// A generated relationship in the seed graph.
+#[derive(Debug, Clone)]
+pub struct GeneratedRelation {
+    pub source_node_id: String,
+    pub target_node_id: String,
+    pub relation_type: String,
+    pub semantic_class: RelationSemanticClass,
+    pub rationale: Option<String>,
+    pub motivation: Option<String>,
+    pub method: Option<String>,
+    pub decision_id: Option<String>,
+    pub caused_by_node_id: Option<String>,
+    pub sequence: Option<u32>,
+}
+
+/// Complete generated graph seed.
+#[derive(Debug, Clone)]
+pub struct GeneratedSeed {
+    pub root: GeneratedNode,
+    pub nodes: Vec<GeneratedNode>,
+    pub relations: Vec<GeneratedRelation>,
+    pub config: GraphSeedConfig,
+}
+
+impl GeneratedSeed {
+    pub fn total_nodes(&self) -> usize {
+        1 + self.nodes.len()
+    }
+
+    pub fn total_relations(&self) -> usize {
+        self.relations.len()
+    }
+
+    pub fn nodes_with_detail(&self) -> usize {
+        let root_detail = if self.root.detail.is_some() { 1 } else { 0 };
+        root_detail + self.nodes.iter().filter(|n| n.detail.is_some()).count()
+    }
+}
+
+impl GraphSeedConfig {
+    pub fn micro(domain: Domain) -> Self {
+        Self {
+            chain_length: 3,
+            noise_branches: 0,
+            detail_density: 1.0,
+            relation_mix: RelationMix::Explanatory,
+            domain,
+            id_prefix: "micro".to_string(),
+        }
+    }
+
+    pub fn meso(domain: Domain) -> Self {
+        Self {
+            chain_length: 5,
+            noise_branches: 3,
+            detail_density: 0.6,
+            relation_mix: RelationMix::Explanatory,
+            domain,
+            id_prefix: "meso".to_string(),
+        }
+    }
+
+    pub fn stress(domain: Domain) -> Self {
+        Self {
+            chain_length: 8,
+            noise_branches: 5,
+            detail_density: 0.3,
+            relation_mix: RelationMix::Explanatory,
+            domain,
+            id_prefix: "stress".to_string(),
+        }
+    }
+}
+
+/// Generate a complete graph seed from the config.
+pub fn generate_seed(config: GraphSeedConfig) -> GeneratedSeed {
+    let vocab = domain_vocabulary(config.domain);
+    let mut nodes = Vec::new();
+    let mut relations = Vec::new();
+
+    let root = GeneratedNode {
+        node_id: format!("{}:root", config.id_prefix),
+        node_kind: vocab.root_kind.to_string(),
+        title: format!("{} root", vocab.root_kind),
+        summary: vocab.root_summary.to_string(),
+        detail: if config.detail_density >= 1.0 {
+            Some(vocab.root_detail.to_string())
+        } else {
+            None
+        },
+        labels: vec![vocab.root_kind.to_string()],
+        properties: BTreeMap::new(),
+    };
+
+    let mut previous_id = root.node_id.clone();
+
+    // Build the causal chain
+    for depth in 0..config.chain_length {
+        let kind_index = depth % vocab.chain_kinds.len();
+        let kind = vocab.chain_kinds[kind_index];
+        let node_id = format!("{}:chain-{}", config.id_prefix, depth);
+        let has_detail = config.detail_density >= 1.0
+            || (depth as f64) < (config.chain_length as f64 * config.detail_density);
+
+        let semantic_class = match config.relation_mix {
+            RelationMix::Structural => RelationSemanticClass::Structural,
+            RelationMix::Explanatory => {
+                vocab.chain_semantic_classes[kind_index % vocab.chain_semantic_classes.len()]
+            }
+            RelationMix::Mixed => {
+                if depth % 2 == 0 {
+                    vocab.chain_semantic_classes[kind_index % vocab.chain_semantic_classes.len()]
+                } else {
+                    RelationSemanticClass::Structural
+                }
+            }
+        };
+
+        let relation = GeneratedRelation {
+            source_node_id: previous_id.clone(),
+            target_node_id: node_id.clone(),
+            relation_type: vocab.chain_relation_types
+                [kind_index % vocab.chain_relation_types.len()]
+            .to_string(),
+            semantic_class,
+            rationale: if config.relation_mix != RelationMix::Structural {
+                Some(format!("{} at depth {depth}", vocab.chain_rationale))
+            } else {
+                None
+            },
+            motivation: None,
+            method: if config.relation_mix != RelationMix::Structural {
+                Some(format!("{} verification", kind))
+            } else {
+                None
+            },
+            decision_id: Some(format!("{}:decision-{}", config.id_prefix, depth)),
+            caused_by_node_id: Some(previous_id.clone()),
+            sequence: Some(depth as u32),
+        };
+
+        let node = GeneratedNode {
+            node_id: node_id.clone(),
+            node_kind: kind.to_string(),
+            title: format!("{kind} {depth}"),
+            summary: format!("{} step {depth}", vocab.chain_summary),
+            detail: if has_detail {
+                Some(format!("{} detail for step {depth}", vocab.chain_detail))
+            } else {
+                None
+            },
+            labels: vec![kind.to_string()],
+            properties: BTreeMap::new(),
+        };
+
+        relations.push(relation);
+        nodes.push(node);
+        previous_id = node_id;
+    }
+
+    // Add noise branches per decision node
+    for branch in 0..config.noise_branches {
+        for depth in 0..config.chain_length {
+            let noise_id = format!("{}:noise-{}-{}", config.id_prefix, depth, branch);
+            let source_id = if depth == 0 {
+                root.node_id.clone()
+            } else {
+                format!("{}:chain-{}", config.id_prefix, depth - 1)
+            };
+
+            relations.push(GeneratedRelation {
+                source_node_id: source_id,
+                target_node_id: noise_id.clone(),
+                relation_type: "DISTRACTOR".to_string(),
+                semantic_class: RelationSemanticClass::Structural,
+                rationale: Some(format!("distractor branch {branch} at depth {depth}")),
+                motivation: None,
+                method: None,
+                decision_id: None,
+                caused_by_node_id: None,
+                sequence: Some(100 + branch as u32),
+            });
+
+            nodes.push(GeneratedNode {
+                node_id: noise_id,
+                node_kind: "distractor".to_string(),
+                title: format!("noise {branch} at {depth}"),
+                summary: format!("distractor branch {branch} depth {depth}"),
+                detail: None,
+                labels: vec!["distractor".to_string()],
+                properties: BTreeMap::new(),
+            });
+        }
+    }
+
+    GeneratedSeed {
+        root,
+        nodes,
+        relations,
+        config,
+    }
+}
+
+struct DomainVocabulary {
+    root_kind: &'static str,
+    root_summary: &'static str,
+    root_detail: &'static str,
+    chain_kinds: &'static [&'static str],
+    chain_relation_types: &'static [&'static str],
+    chain_semantic_classes: &'static [RelationSemanticClass],
+    chain_rationale: &'static str,
+    chain_summary: &'static str,
+    chain_detail: &'static str,
+}
+
+fn domain_vocabulary(domain: Domain) -> DomainVocabulary {
+    match domain {
+        Domain::Operations => DomainVocabulary {
+            root_kind: "incident",
+            root_summary: "System incident requiring diagnosis and recovery",
+            root_detail: "Critical system event detected; causal chain under investigation",
+            chain_kinds: &["decision", "task", "artifact", "evidence"],
+            chain_relation_types: &["TRIGGERS", "AUTHORIZES", "PRODUCES", "VERIFIED_BY"],
+            chain_semantic_classes: &[
+                RelationSemanticClass::Causal,
+                RelationSemanticClass::Motivational,
+                RelationSemanticClass::Procedural,
+                RelationSemanticClass::Evidential,
+            ],
+            chain_rationale: "operational response required",
+            chain_summary: "operational",
+            chain_detail: "operational execution",
+        },
+        Domain::SoftwareDebugging => DomainVocabulary {
+            root_kind: "bug_report",
+            root_summary: "Software defect requiring root cause analysis",
+            root_detail: "User-reported defect; reproduction and fix chain under investigation",
+            chain_kinds: &["hypothesis", "investigation", "fix", "test"],
+            chain_relation_types: &["SUSPECTS", "INVESTIGATES", "FIXES", "VALIDATES"],
+            chain_semantic_classes: &[
+                RelationSemanticClass::Causal,
+                RelationSemanticClass::Evidential,
+                RelationSemanticClass::Procedural,
+                RelationSemanticClass::Evidential,
+            ],
+            chain_rationale: "debugging step",
+            chain_summary: "debug",
+            chain_detail: "debug investigation",
+        },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn micro_generates_expected_node_count() {
+        let seed = generate_seed(GraphSeedConfig::micro(Domain::Operations));
+        // chain_length=3, noise=0, root=1 → 4 total
+        assert_eq!(seed.total_nodes(), 4);
+        assert_eq!(seed.total_relations(), 3);
+        assert_eq!(seed.nodes_with_detail(), 4); // density=1.0
+    }
+
+    #[test]
+    fn meso_generates_noise_branches() {
+        let seed = generate_seed(GraphSeedConfig::meso(Domain::Operations));
+        // chain=5, noise=3 per depth → 5 chain + 15 noise = 20 + root = 21
+        assert_eq!(seed.total_nodes(), 21);
+        assert!(seed.total_relations() >= 20);
+    }
+
+    #[test]
+    fn stress_generates_large_graph() {
+        let seed = generate_seed(GraphSeedConfig::stress(Domain::SoftwareDebugging));
+        // chain=8, noise=5 per depth → 8 + 40 = 48 + root = 49
+        assert_eq!(seed.total_nodes(), 49);
+        assert!(seed.total_relations() > 40);
+    }
+
+    #[test]
+    fn structural_mix_has_no_rationale() {
+        let seed = generate_seed(GraphSeedConfig {
+            chain_length: 3,
+            noise_branches: 0,
+            detail_density: 0.0,
+            relation_mix: RelationMix::Structural,
+            domain: Domain::Operations,
+            id_prefix: "test".to_string(),
+        });
+
+        for rel in &seed.relations {
+            assert_eq!(rel.semantic_class, RelationSemanticClass::Structural);
+            assert!(rel.rationale.is_none());
+        }
+    }
+
+    #[test]
+    fn two_domains_produce_different_vocabularies() {
+        let ops = generate_seed(GraphSeedConfig::micro(Domain::Operations));
+        let debug = generate_seed(GraphSeedConfig::micro(Domain::SoftwareDebugging));
+
+        assert_eq!(ops.root.node_kind, "incident");
+        assert_eq!(debug.root.node_kind, "bug_report");
+    }
+
+    #[test]
+    fn detail_density_controls_detail_count() {
+        let full = generate_seed(GraphSeedConfig {
+            detail_density: 1.0,
+            ..GraphSeedConfig::micro(Domain::Operations)
+        });
+        let sparse = generate_seed(GraphSeedConfig {
+            detail_density: 0.0,
+            ..GraphSeedConfig::micro(Domain::Operations)
+        });
+
+        assert_eq!(full.nodes_with_detail(), 4);
+        assert_eq!(sparse.nodes_with_detail(), 0);
+    }
+}

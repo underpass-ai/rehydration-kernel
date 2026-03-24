@@ -1,7 +1,12 @@
 mod container_runtime;
+pub mod dataset_generator;
 mod in_memory_stores;
 
 pub use container_runtime::ensure_testcontainers_runtime;
+pub use dataset_generator::{
+    Domain, GeneratedNode, GeneratedRelation, GeneratedSeed, GraphSeedConfig, RelationMix,
+    generate_seed,
+};
 pub use in_memory_stores::{
     InMemoryContextEventStore, InMemoryGraphNeighborhoodReader, InMemoryNodeDetailReader,
     InMemoryProcessedEventStore, InMemoryProjectionCheckpointStore, InMemoryProjectionWriter,
