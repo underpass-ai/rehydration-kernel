@@ -57,3 +57,8 @@ required-features = ["container-tests"]
 name = "kernel_golden_integration"
 path = "tests/kernel_golden_integration.rs"
 required-features = ["container-tests"]
+
+[[test]]
+name = "vllm_benchmark_integration"
+path = "tests/vllm_benchmark_integration.rs"
+required-features = ["container-tests"]
