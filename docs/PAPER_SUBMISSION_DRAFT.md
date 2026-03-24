@@ -24,7 +24,7 @@ handoff with resumable execution, and constraint-preserving retrieval under
 token pressure. Across these use cases, full explanatory context achieves
 `1.0` explanation roundtrip fidelity and `1.0` causal reconstruction in the
 full-detail setting, while retaining `1.0` causal reconstruction under a
-`96`-token budget in the constraint-preserving case. Removing node detail
+`192`-token budget in the constraint-preserving case. Removing node detail
 preserves explanation fidelity but reduces causal reconstruction to `0.857`,
 while replacing explanatory relations with structural edges reduces causal
 reconstruction to `0.143`, eliminates rehydration-point recovery, and fails
@@ -218,6 +218,7 @@ UC1-UC3 are executed under three variants:
 UC4 adds a budgeted comparison:
 
 - `full_explanatory_with_detail`
+- `full_explanatory_with_detail__budget_192`
 - `full_explanatory_with_detail__budget_96`
 - `structural_only_with_detail__budget_96`
 
@@ -262,21 +263,22 @@ keeps only the comparison needed for the central claim. The `detail-only` and
 
 | Use case | Variant | Budget | Explanation fidelity | Detail fidelity | Causal score | Retry | Aux. hit | Tokens |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| UC1 | full+detail | 4096 | 1.000 | 1.000 | 1.000 | 1 | 1 | 135 |
-| UC1 | full-no-detail | 4096 | 1.000 | 0.000 | 0.857 | 1 | 1 | 116 |
-| UC1 | detail-only | 4096 | 0.000 | 1.000 | 0.429 | 0 | 0 | 113 |
-| UC1 | structural | 4096 | 0.000 | 1.000 | 0.143 | 0 | 0 | 97 |
-| UC2 | full+detail | 4096 | 1.000 | 1.000 | 1.000 | n/a | n/a | 126 |
-| UC2 | full-no-detail | 4096 | 1.000 | 0.000 | 0.857 | n/a | n/a | 111 |
-| UC2 | detail-only | 4096 | 0.000 | 1.000 | 0.429 | n/a | n/a | 111 |
-| UC2 | structural | 4096 | 0.000 | 1.000 | 0.143 | n/a | n/a | 91 |
-| UC3 | full+detail | 4096 | 1.000 | 1.000 | 1.000 | 1 | 1 | 260 |
-| UC3 | full-no-detail | 4096 | 1.000 | 0.000 | 0.857 | 1 | 1 | 234 |
-| UC3 | detail-only | 4096 | 0.000 | 1.000 | 0.429 | 0 | 0 | 208 |
-| UC3 | structural | 4096 | 0.000 | 1.000 | 0.143 | 0 | 0 | 169 |
-| UC4 | full+detail | 4096 | 1.000 | 1.000 | 1.000 | n/a | 1 | 122 |
+| UC1 | full+detail | 4096 | 1.000 | 1.000 | 1.000 | 1 | 1 | 282 |
+| UC1 | full-no-detail | 4096 | 1.000 | 0.000 | 0.857 | 1 | 1 | 252 |
+| UC1 | detail-only | 4096 | 0.000 | 1.000 | 0.429 | 0 | 0 | 245 |
+| UC1 | structural | 4096 | 0.000 | 1.000 | 0.143 | 0 | 0 | 200 |
+| UC2 | full+detail | 4096 | 1.000 | 1.000 | 1.000 | n/a | n/a | 285 |
+| UC2 | full-no-detail | 4096 | 1.000 | 0.000 | 0.857 | n/a | n/a | 255 |
+| UC2 | detail-only | 4096 | 0.000 | 1.000 | 0.429 | n/a | n/a | 247 |
+| UC2 | structural | 4096 | 0.000 | 1.000 | 0.143 | n/a | n/a | 203 |
+| UC3 | full+detail | 4096 | 1.000 | 1.000 | 1.000 | 1 | 1 | 575 |
+| UC3 | full-no-detail | 4096 | 1.000 | 0.000 | 0.857 | 1 | 1 | 535 |
+| UC3 | detail-only | 4096 | 0.000 | 1.000 | 0.429 | 0 | 0 | 441 |
+| UC3 | structural | 4096 | 0.000 | 1.000 | 0.143 | 0 | 0 | 374 |
+| UC4 | full+detail | 4096 | 1.000 | 1.000 | 1.000 | n/a | 1 | 223 |
+| UC4 | full@192 | 192 | 1.000 | 0.000 | 1.000 | n/a | 1 | 175 |
 | UC4 | full@96 | 96 | 1.000 | 0.000 | 1.000 | n/a | 1 | 89 |
-| UC4 | structural@96 | 96 | 0.000 | 0.000 | 0.125 | n/a | 0 | 64 |
+| UC4 | structural@96 | 96 | 0.000 | 0.000 | 0.125 | n/a | 0 | 73 |
 
 `Retry` reports corrected retry or resume success for UC1 and UC3. `Aux. hit`
 reports rehydration or continuation-point hit for UC1 and UC3, and
@@ -287,10 +289,10 @@ but secondary to the main story. The same values are listed here for reference.
 
 | Use case | Variant | Scale | Causal score | Retry | Aux. hit | Tokens |
 | --- | --- | --- | ---: | ---: | ---: | ---: |
-| UC1 | detail-only | micro | 0.429 | 0 | 0 | 113 |
-| UC1 | full+detail | meso | 1.000 | 1 | 1 | 135 |
-| UC2 | detail-only | micro | 0.429 | n/a | n/a | 111 |
-| UC3 | detail-only | micro | 0.429 | 0 | 0 | 208 |
+| UC1 | detail-only | micro | 0.429 | 0 | 0 | 245 |
+| UC1 | full+detail | meso | 1.000 | 1 | 1 | 282 |
+| UC2 | detail-only | micro | 0.429 | n/a | n/a | 247 |
+| UC3 | detail-only | micro | 0.429 | 0 | 0 | 441 |
 
 ### 7.1 Explanatory Relations Carry The Dominant Signal
 
@@ -312,7 +314,7 @@ intent.
 
 This is a useful systems result. It suggests that token budgets should prefer
 preserving explanatory edges before preserving every extended detail block.
-UC4 makes that concrete: at a `96`-token budget, the explanatory variant loses
+UC4 makes that concrete: at a `192`-token budget, the explanatory variant loses
 detail fidelity entirely while preserving both causal reconstruction and the
 dominant reason.
 
@@ -336,9 +338,9 @@ runtime can retry or resume execution.
 ### 7.4 Bounded Retrieval Preserves Reasons When Explanation Survives
 
 UC4 provides the strongest bounded-retrieval result. The full explanatory
-context rendered at `96` tokens still reaches `1.0`
+context rendered at `192` tokens still reaches `1.0`
 `causal_reconstruction_score` and preserves the dominant reason, even though
-detail fidelity falls to `0.0`. The structural-only variant at the same budget
+detail fidelity falls to `0.0`. The structural-only variant at `96` tokens
 drops to `0.125`.
 
 This is exactly the systems behavior we want: when budget forces truncation,
@@ -347,9 +349,9 @@ explanation should survive before detail.
 ### 7.5 Shorter Context Can Be Worse Context
 
 Structural-only context is shorter, but materially less useful. In UC1 the
-rendered context falls from `135` to `97` tokens. In UC2 it falls from `126`
-to `91`. In UC3 it falls from `260` to `169`. In UC4 the explanatory `@96`
-variant uses `89` tokens, while the structural-only `@96` variant uses `64`.
+rendered context falls from `282` to `200` tokens. In UC2 it falls from `285`
+to `203`. In UC3 it falls from `575` to `374`. In UC4 the explanatory `@192`
+variant uses `175` tokens, while the structural-only `@96` variant uses `73`.
 In all cases that shorter context coincides with severe degradation of causal
 reconstruction or loss of the dominant reason.
 

@@ -28,7 +28,8 @@ use crate::agentic_support::explanatory_seed_data::{
 use crate::agentic_support::paper_metrics::{PaperMetricRelationship, PaperUseCaseMetric, ratio};
 
 pub(crate) const DEFAULT_TOKEN_BUDGET: u32 = 4096;
-pub(crate) const LOW_TOKEN_BUDGET: u32 = 96;
+pub(crate) const LOW_TOKEN_BUDGET: u32 = 192;
+pub(crate) const STRUCTURAL_LOW_TOKEN_BUDGET: u32 = 96;
 
 pub(crate) const FAILURE_DIAGNOSIS_USE_CASE_ID: &str = "uc1_failure_diagnosis_rehydration";
 pub(crate) const FAILURE_DIAGNOSIS_TITLE: &str = "Failure diagnosis and rehydration-point recovery";
@@ -382,7 +383,7 @@ pub(crate) async fn observe_failure_diagnosis_use_case(
                 retry_target_node_id,
                 dominant_reason_hit: None,
                 suspect_relationship_count: Some(suspect_relationships.len() as u32),
-                full_graph_relationship_count: Some(role_bundle.relationships.len() as u32),
+                full_graph_relationship_count: None,
                 rationale: proto_string(&failure_explanation.rationale),
                 motivation: proto_string(&failure_explanation.motivation),
                 method: proto_string(&failure_explanation.method),

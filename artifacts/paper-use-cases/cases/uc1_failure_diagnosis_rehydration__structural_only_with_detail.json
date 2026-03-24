@@ -13,7 +13,7 @@
   "bundle_nodes": 4,
   "bundle_relationships": 3,
   "detailed_nodes": 1,
-  "rendered_token_count": 97,
+  "rendered_token_count": 200,
   "explanation_roundtrip_fidelity": 0.0,
   "detail_roundtrip_fidelity": 1.0,
   "causal_reconstruction_score": 0.14285714285714285,
@@ -24,6 +24,5 @@
   "retry_success_hit": false,
   "retry_success_rate": 0.0,
   "retry_target_node_id": "node:artifact:telemetry-capture",
-  "suspect_relationship_count": 0,
-  "full_graph_relationship_count": 6
+  "suspect_relationship_count": 0
 }
