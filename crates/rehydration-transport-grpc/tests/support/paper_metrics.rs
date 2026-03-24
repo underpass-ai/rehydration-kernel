@@ -30,6 +30,10 @@ pub(crate) struct PaperUseCaseMetric {
     pub(crate) bundle_relationships: u32,
     pub(crate) detailed_nodes: u32,
     pub(crate) rendered_token_count: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) query_latency_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) total_latency_ms: Option<f64>,
     pub(crate) explanation_roundtrip_fidelity: f64,
     pub(crate) detail_roundtrip_fidelity: f64,
     pub(crate) causal_reconstruction_score: f64,

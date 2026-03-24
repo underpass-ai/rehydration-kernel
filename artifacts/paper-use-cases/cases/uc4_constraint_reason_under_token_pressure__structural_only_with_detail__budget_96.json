@@ -14,6 +14,8 @@
   "bundle_relationships": 2,
   "detailed_nodes": 1,
   "rendered_token_count": 73,
+  "query_latency_ms": 810.885578,
+  "total_latency_ms": 810.917659,
   "explanation_roundtrip_fidelity": 0.0,
   "detail_roundtrip_fidelity": 0.0,
   "causal_reconstruction_score": 0.125,

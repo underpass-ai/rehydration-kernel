@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 use std::error::Error;
+use std::time::Instant;
 
 use rehydration_proto::v1beta1::{
     GetContextPathRequest, GraphRelationship, GraphRelationshipExplanation, GraphRoleBundle,
@@ -192,7 +193,9 @@ pub(crate) async fn observe_failure_diagnosis_use_case(
     .await?;
 
     let result: Result<FailureDiagnosisObservation, Box<dyn Error + Send + Sync>> = async {
+        let total_start = Instant::now();
         let mut query_client = fixture.query_client();
+        let query_start = Instant::now();
         let path = query_client
             .get_context_path(GetContextPathRequest {
                 root_node_id: ROOT_NODE_ID.to_string(),
@@ -202,6 +205,7 @@ pub(crate) async fn observe_failure_diagnosis_use_case(
             })
             .await?
             .into_inner();
+        let query_latency_ms = query_start.elapsed().as_secs_f64() * 1000.0;
         let rehydration_proto::v1beta1::GetContextPathResponse {
             path_bundle,
             rendered,
@@ -353,6 +357,7 @@ pub(crate) async fn observe_failure_diagnosis_use_case(
             7,
         );
 
+        let total_latency_ms = total_start.elapsed().as_secs_f64() * 1000.0;
         Ok(FailureDiagnosisObservation {
             metric: PaperUseCaseMetric {
                 use_case_id: FAILURE_DIAGNOSIS_USE_CASE_ID.to_string(),
@@ -370,6 +375,8 @@ pub(crate) async fn observe_failure_diagnosis_use_case(
                 bundle_relationships: role_bundle.relationships.len() as u32,
                 detailed_nodes: role_bundle.node_details.len() as u32,
                 rendered_token_count: rendered.token_count,
+                query_latency_ms: Some(query_latency_ms),
+                total_latency_ms: Some(total_latency_ms),
                 explanation_roundtrip_fidelity,
                 detail_roundtrip_fidelity,
                 causal_reconstruction_score,
@@ -418,7 +425,9 @@ pub(crate) async fn observe_why_task_was_implemented_that_way(
     .await?;
 
     let result: Result<ImplementationWhyObservation, Box<dyn Error + Send + Sync>> = async {
+        let total_start = Instant::now();
         let mut query_client = fixture.query_client();
+        let query_start = Instant::now();
         let path = query_client
             .get_context_path(GetContextPathRequest {
                 root_node_id: ROOT_NODE_ID.to_string(),
@@ -428,6 +437,7 @@ pub(crate) async fn observe_why_task_was_implemented_that_way(
             })
             .await?
             .into_inner();
+        let query_latency_ms = query_start.elapsed().as_secs_f64() * 1000.0;
         let rehydration_proto::v1beta1::GetContextPathResponse {
             path_bundle,
             rendered,
@@ -483,6 +493,7 @@ pub(crate) async fn observe_why_task_was_implemented_that_way(
             7,
         );
 
+        let total_latency_ms = total_start.elapsed().as_secs_f64() * 1000.0;
         Ok(ImplementationWhyObservation {
             metric: PaperUseCaseMetric {
                 use_case_id: WHY_IMPLEMENTED_USE_CASE_ID.to_string(),
@@ -500,6 +511,8 @@ pub(crate) async fn observe_why_task_was_implemented_that_way(
                 bundle_relationships: role_bundle.relationships.len() as u32,
                 detailed_nodes: role_bundle.node_details.len() as u32,
                 rendered_token_count: rendered.token_count,
+                query_latency_ms: Some(query_latency_ms),
+                total_latency_ms: Some(total_latency_ms),
                 explanation_roundtrip_fidelity,
                 detail_roundtrip_fidelity,
                 causal_reconstruction_score,
@@ -550,7 +563,9 @@ pub(crate) async fn observe_interrupted_handoff_use_case(
     .await?;
 
     let result: Result<HandoffResumeObservation, Box<dyn Error + Send + Sync>> = async {
+        let total_start = Instant::now();
         let mut query_client = fixture.query_client();
+        let query_start = Instant::now();
         let path = query_client
             .get_context_path(GetContextPathRequest {
                 root_node_id: HANDOFF_ROOT_NODE_ID.to_string(),
@@ -560,6 +575,7 @@ pub(crate) async fn observe_interrupted_handoff_use_case(
             })
             .await?
             .into_inner();
+        let query_latency_ms = query_start.elapsed().as_secs_f64() * 1000.0;
         let rehydration_proto::v1beta1::GetContextPathResponse {
             path_bundle,
             rendered,
@@ -697,6 +713,7 @@ pub(crate) async fn observe_interrupted_handoff_use_case(
             7,
         );
 
+        let total_latency_ms = total_start.elapsed().as_secs_f64() * 1000.0;
         Ok(HandoffResumeObservation {
             metric: PaperUseCaseMetric {
                 use_case_id: HANDOFF_RESUME_USE_CASE_ID.to_string(),
@@ -714,6 +731,8 @@ pub(crate) async fn observe_interrupted_handoff_use_case(
                 bundle_relationships: role_bundle.relationships.len() as u32,
                 detailed_nodes: role_bundle.node_details.len() as u32,
                 rendered_token_count: rendered.token_count,
+                query_latency_ms: Some(query_latency_ms),
+                total_latency_ms: Some(total_latency_ms),
                 explanation_roundtrip_fidelity,
                 detail_roundtrip_fidelity,
                 causal_reconstruction_score,
@@ -764,7 +783,9 @@ pub(crate) async fn observe_constraint_under_token_pressure_use_case(
     .await?;
 
     let result: Result<ConstraintPressureObservation, Box<dyn Error + Send + Sync>> = async {
+        let total_start = Instant::now();
         let mut query_client = fixture.query_client();
+        let query_start = Instant::now();
         let path = query_client
             .get_context_path(GetContextPathRequest {
                 root_node_id: CONSTRAINT_ROOT_NODE_ID.to_string(),
@@ -774,6 +795,7 @@ pub(crate) async fn observe_constraint_under_token_pressure_use_case(
             })
             .await?
             .into_inner();
+        let query_latency_ms = query_start.elapsed().as_secs_f64() * 1000.0;
         let rehydration_proto::v1beta1::GetContextPathResponse {
             path_bundle,
             rendered,
@@ -839,6 +861,7 @@ pub(crate) async fn observe_constraint_under_token_pressure_use_case(
             8,
         );
 
+        let total_latency_ms = total_start.elapsed().as_secs_f64() * 1000.0;
         Ok(ConstraintPressureObservation {
             metric: PaperUseCaseMetric {
                 use_case_id: CONSTRAINT_PRESSURE_USE_CASE_ID.to_string(),
@@ -856,6 +879,8 @@ pub(crate) async fn observe_constraint_under_token_pressure_use_case(
                 bundle_relationships: role_bundle.relationships.len() as u32,
                 detailed_nodes: role_bundle.node_details.len() as u32,
                 rendered_token_count: rendered.token_count,
+                query_latency_ms: Some(query_latency_ms),
+                total_latency_ms: Some(total_latency_ms),
                 explanation_roundtrip_fidelity,
                 detail_roundtrip_fidelity,
                 causal_reconstruction_score,
