@@ -78,6 +78,7 @@ Single source of truth for kernel maturity, technical debt, and next steps.
 - [ ] vLLM backpressure: rate limiting, queue depth monitoring, retry with backoff, circuit breaker for parallel/scale benchmarks
 - [ ] Refine LLM-as-judge prompt: less strict on node IDs, more demanding on rationale preservation
 - [ ] Larger judge model: use 2-3 GPUs with tensor-parallel for a stronger evaluator (e.g. Qwen3-30B or 70B)
+- [ ] Benchmark with frontier models for README: Claude Opus 4.6 (Anthropic API) + GPT-4.5 (OpenAI API) as inference and judge — API keys available
 
 ## Pending — Paper artifact
 
