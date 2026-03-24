@@ -290,7 +290,6 @@ async fn grpc_server_application_accessors_return_callable_services() {
             expected_content_hash: None,
             idempotency_key: None,
             requested_by: None,
-            persist_snapshot: false,
         })
         .await
         .expect("command application should respond");
@@ -519,7 +518,6 @@ async fn command_service_accepts_update_context() {
             }],
             metadata: None,
             precondition: None,
-            persist_snapshot: true,
         }))
         .await
         .expect("update context should succeed")
@@ -533,8 +531,6 @@ async fn command_service_accepts_update_context() {
             .revision,
         1
     );
-    assert!(response.snapshot_persisted);
-    assert_eq!(response.snapshot_id, "snapshot:node-123:developer");
 }
 
 #[tokio::test]
@@ -556,7 +552,6 @@ async fn command_service_returns_aborted_on_revision_conflict() {
                 expected_revision: 99,
                 expected_content_hash: String::new(),
             }),
-            persist_snapshot: false,
         }))
         .await
         .expect_err("wrong revision should fail");

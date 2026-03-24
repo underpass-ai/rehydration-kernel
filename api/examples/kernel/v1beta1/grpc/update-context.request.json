@@ -25,6 +25,5 @@
   "precondition": {
     "expectedRevision": "41",
     "expectedContentHash": "sha256:bundle-v41"
-  },
-  "persistSnapshot": true
+  }
 }

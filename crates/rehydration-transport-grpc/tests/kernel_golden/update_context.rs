@@ -30,7 +30,6 @@ async fn grpc_update_context_matches_v1beta1_golden_contract()
                 }],
                 metadata: None,
                 precondition: None,
-                persist_snapshot: true,
             })
             .await?
             .into_inner();

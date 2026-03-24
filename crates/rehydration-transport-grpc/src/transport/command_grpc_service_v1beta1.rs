@@ -78,7 +78,6 @@ where
                 idempotency_key: (!metadata.idempotency_key.is_empty())
                     .then_some(metadata.idempotency_key),
                 requested_by: (!metadata.requested_by.is_empty()).then_some(metadata.requested_by),
-                persist_snapshot: request.persist_snapshot,
             })
             .await
             .map_err(map_application_error)?;
@@ -86,8 +85,6 @@ where
         Ok(Response::new(UpdateContextResponse {
             accepted_version: Some(proto_accepted_version_v1beta1(&outcome.accepted_version)),
             warnings: outcome.warnings,
-            snapshot_persisted: outcome.snapshot_persisted,
-            snapshot_id: outcome.snapshot_id.unwrap_or_default(),
         }))
     }
 }

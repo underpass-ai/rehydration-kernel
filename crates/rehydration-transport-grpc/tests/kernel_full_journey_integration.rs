@@ -273,8 +273,8 @@ async fn kernel_full_journey_covers_projection_query_and_command()
                 roles: vec![DEVELOPER_ROLE.to_string()],
                 include_timeline: true,
                 include_summaries: true,
-                timeline_window: 11,
                 persist_snapshot: true,
+                timeline_window: 11,
                 snapshot_ttl: Some(Duration {
                     seconds: 600,
                     nanos: 0,
@@ -325,8 +325,8 @@ async fn kernel_full_journey_covers_projection_query_and_command()
                 roles: vec![DEVELOPER_ROLE.to_string()],
                 include_timeline: false,
                 include_summaries: true,
-                timeline_window: 0,
                 persist_snapshot: false,
+                timeline_window: 0,
                 snapshot_ttl: None,
             })
             .await?
@@ -371,7 +371,6 @@ async fn kernel_full_journey_covers_projection_query_and_command()
                     requested_at: None,
                 }),
                 precondition: None,
-                persist_snapshot: false,
             })
             .await?
             .into_inner();

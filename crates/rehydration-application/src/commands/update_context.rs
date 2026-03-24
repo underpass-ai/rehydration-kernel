@@ -29,7 +29,6 @@ pub struct UpdateContextCommand {
     pub expected_content_hash: Option<String>,
     pub idempotency_key: Option<String>,
     pub requested_by: Option<String>,
-    pub persist_snapshot: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -43,8 +42,6 @@ pub struct AcceptedVersion {
 pub struct UpdateContextOutcome {
     pub accepted_version: AcceptedVersion,
     pub warnings: Vec<String>,
-    pub snapshot_persisted: bool,
-    pub snapshot_id: Option<String>,
 }
 
 #[derive(Debug)]
@@ -82,8 +79,6 @@ where
                     generator_version: self.generator_version.to_string(),
                 },
                 warnings: vec![],
-                snapshot_persisted: command.persist_snapshot,
-                snapshot_id: None,
             });
         }
 
@@ -157,8 +152,6 @@ where
                 generator_version: self.generator_version.to_string(),
             },
             warnings,
-            snapshot_persisted: command.persist_snapshot,
-            snapshot_id: None,
         })
     }
 }
@@ -218,7 +211,6 @@ mod tests {
                 expected_content_hash: None,
                 idempotency_key: None,
                 requested_by: None,
-                persist_snapshot: false,
             })
             .await
             .expect("should succeed");
@@ -243,7 +235,6 @@ mod tests {
                 expected_content_hash: None,
                 idempotency_key: None,
                 requested_by: None,
-                persist_snapshot: false,
             })
             .await;
 
@@ -267,7 +258,6 @@ mod tests {
                 expected_content_hash: None,
                 idempotency_key: Some("idem-1".to_string()),
                 requested_by: None,
-                persist_snapshot: false,
             })
             .await
             .expect("first call should succeed");
@@ -282,7 +272,6 @@ mod tests {
                 expected_content_hash: None,
                 idempotency_key: Some("idem-1".to_string()),
                 requested_by: None,
-                persist_snapshot: false,
             })
             .await
             .expect("second call should return cached outcome");
@@ -312,7 +301,6 @@ mod tests {
                 expected_content_hash: None,
                 idempotency_key: None,
                 requested_by: None,
-                persist_snapshot: false,
             })
             .await
             .expect("empty changes should succeed with warning");
@@ -336,7 +324,6 @@ mod tests {
                 expected_content_hash: None,
                 idempotency_key: None,
                 requested_by: None,
-                persist_snapshot: false,
             })
             .await
             .expect("first should succeed");
@@ -351,7 +338,6 @@ mod tests {
                 expected_content_hash: None,
                 idempotency_key: None,
                 requested_by: None,
-                persist_snapshot: false,
             })
             .await
             .expect("second should succeed");
@@ -376,7 +362,6 @@ mod tests {
                 expected_content_hash: None,
                 idempotency_key: None,
                 requested_by: None,
-                persist_snapshot: false,
             })
             .await
             .expect("first should succeed");
@@ -392,7 +377,6 @@ mod tests {
                 expected_content_hash: Some("wrong-hash".to_string()),
                 idempotency_key: None,
                 requested_by: None,
-                persist_snapshot: false,
             })
             .await;
 
@@ -411,7 +395,6 @@ mod tests {
                 expected_content_hash: Some(first.accepted_version.content_hash.clone()),
                 idempotency_key: None,
                 requested_by: None,
-                persist_snapshot: false,
             })
             .await
             .expect("correct hash should succeed");
