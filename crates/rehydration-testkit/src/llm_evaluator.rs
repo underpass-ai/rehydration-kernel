@@ -168,35 +168,105 @@ pub async fn evaluate_with_llm(
         completion_tokens: 0,
     });
 
-    let content_lower = content.to_lowercase();
-
-    let llm_task_success = ground_truth
-        .expected_failure_point
-        .as_ref()
-        .map(|fp| content_lower.contains(&fp.to_lowercase()))
-        .unwrap_or(true);
-
-    let llm_restart_accuracy = ground_truth
-        .expected_restart_node
-        .as_ref()
-        .map(|rn| content_lower.contains(&rn.to_lowercase()))
-        .unwrap_or(true);
-
-    let llm_reason_preserved = ground_truth
-        .expected_reason
-        .as_ref()
-        .map(|r| content_lower.contains(&r.to_lowercase()))
-        .unwrap_or(true);
+    // LLM-as-judge: ask the same model to evaluate the response
+    let judge_result = judge_response(config, &client, &content, ground_truth)
+        .await
+        .unwrap_or(JudgeVerdict {
+            task_correct: false,
+            restart_correct: false,
+            reason_preserved: false,
+        });
 
     Ok(LlmEvaluationResult {
         llm_response: content,
-        llm_task_success,
-        llm_restart_accuracy,
-        llm_reason_preserved,
+        llm_task_success: judge_result.task_correct,
+        llm_restart_accuracy: judge_result.restart_correct,
+        llm_reason_preserved: judge_result.reason_preserved,
         llm_latency_ms: latency_ms,
         llm_prompt_tokens: usage.prompt_tokens,
         llm_completion_tokens: usage.completion_tokens,
     })
+}
+
+#[derive(Debug, Deserialize)]
+struct JudgeVerdict {
+    task_correct: bool,
+    restart_correct: bool,
+    reason_preserved: bool,
+}
+
+async fn judge_response(
+    config: &LlmEvaluatorConfig,
+    client: &reqwest::Client,
+    llm_response: &str,
+    ground_truth: &EvaluationGroundTruth,
+) -> Result<JudgeVerdict, Box<dyn Error + Send + Sync>> {
+    let expected_failure = ground_truth
+        .expected_failure_point
+        .as_deref()
+        .unwrap_or("not specified");
+    let expected_restart = ground_truth
+        .expected_restart_node
+        .as_deref()
+        .unwrap_or("not specified");
+    let expected_reason = ground_truth
+        .expected_reason
+        .as_deref()
+        .unwrap_or("not specified");
+
+    let judge_prompt = format!(
+        "You are an evaluation judge. Compare the LLM response against the ground truth.\n\n\
+         LLM Response:\n{llm_response}\n\n\
+         Ground Truth:\n\
+         - Expected failure point: {expected_failure}\n\
+         - Expected restart node: {expected_restart}\n\
+         - Expected reason/rationale: {expected_reason}\n\n\
+         Evaluate semantically (not exact string match). \
+         The response is correct if it identifies the same concept, \
+         even with different wording.\n\n\
+         Answer ONLY with JSON, no other text:\n\
+         {{\"task_correct\": true/false, \"restart_correct\": true/false, \"reason_preserved\": true/false}}"
+    );
+
+    let mut disable_thinking = HashMap::new();
+    disable_thinking.insert(
+        "enable_thinking".to_string(),
+        serde_json::Value::Bool(false),
+    );
+
+    let request = ChatRequest {
+        model: config.model.clone(),
+        messages: vec![ChatMessage {
+            role: "user".to_string(),
+            content: judge_prompt,
+        }],
+        max_tokens: 50,
+        temperature: 0.0,
+        chat_template_kwargs: Some(disable_thinking),
+    };
+
+    let response = client.post(&config.endpoint).json(&request).send().await?;
+    if !response.status().is_success() {
+        return Err("judge request failed".into());
+    }
+
+    let chat_response: ChatResponse = response.json().await?;
+    let judge_content = chat_response
+        .choices
+        .first()
+        .map(|c| c.message.content.clone())
+        .unwrap_or_default();
+
+    // Parse JSON from the judge response — handle potential markdown wrapping
+    let json_str = judge_content
+        .trim()
+        .trim_start_matches("```json")
+        .trim_start_matches("```")
+        .trim_end_matches("```")
+        .trim();
+
+    serde_json::from_str(json_str)
+        .map_err(|e| format!("failed to parse judge response '{judge_content}': {e}").into())
 }
 
 fn build_http_client(
