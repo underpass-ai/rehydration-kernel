@@ -2231,6 +2231,7 @@ dependencies = [
 name = "rehydration-testkit"
 version = "0.1.0"
 dependencies = [
+ "rehydration-application",
  "rehydration-domain",
  "reqwest",
  "serde",

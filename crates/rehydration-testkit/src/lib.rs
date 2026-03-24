@@ -2,6 +2,7 @@ mod container_runtime;
 pub mod dataset_generator;
 mod in_memory_stores;
 pub mod llm_evaluator;
+pub mod seed_publisher;
 
 pub use container_runtime::ensure_testcontainers_runtime;
 pub use dataset_generator::{

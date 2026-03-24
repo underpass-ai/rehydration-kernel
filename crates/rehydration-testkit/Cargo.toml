@@ -8,6 +8,7 @@ rust-version.workspace = true
 workspace = true
 
 [dependencies]
+rehydration-application.workspace = true
 rehydration-domain.workspace = true
 reqwest = { version = "0.12.24", default-features = false, features = ["json", "rustls-tls"] }
 serde.workspace = true
