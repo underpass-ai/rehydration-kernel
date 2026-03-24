@@ -141,3 +141,49 @@ neo4j:
   persistence:
     storageClass: local-path
     size: 10Gi
+  tls:
+    enabled: false
+    existingSecret: ""
+    caSecret: ""
+
+# Optional NATS server managed by this chart.
+nats:
+  enabled: false
+  image:
+    repository: docker.io/library/nats
+    tag: "2.10-alpine"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  persistence:
+    storageClass: local-path
+    size: 5Gi
+  tls:
+    enabled: false
+    existingSecret: ""
+    caSecret: ""
+
+# Optional Valkey server managed by this chart.
+valkey:
+  enabled: false
+  image:
+    repository: docker.io/valkey/valkey
+    tag: "8.1-alpine"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  persistence:
+    storageClass: local-path
+    size: 5Gi
+  tls:
+    enabled: false
+    existingSecret: ""
+    caSecret: ""

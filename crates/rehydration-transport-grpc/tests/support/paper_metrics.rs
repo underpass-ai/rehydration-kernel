@@ -68,6 +68,14 @@ pub(crate) struct PaperUseCaseMetric {
     pub(crate) caused_by_node_id: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) suspect_relationships: Vec<PaperMetricRelationship>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) llm_task_success: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) llm_restart_accuracy: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) llm_reason_preserved: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) llm_latency_ms: Option<f64>,
 }
 
 pub(crate) fn ratio(hits: usize, total: usize) -> f64 {

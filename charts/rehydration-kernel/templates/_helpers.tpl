@@ -137,24 +137,24 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- if and (not $neo4jEnabled) (eq (default "" .Values.connections.graphUri) "") -}}
 {{- fail "connections.graphUri is required when development.allowInlineConnections=true" -}}
 {{- end -}}
-{{- if eq (default "" .Values.connections.detailUri) "" -}}
-{{- fail "connections.detailUri is required when development.allowInlineConnections=true" -}}
+{{- if and (not .Values.valkey.enabled) (eq (default "" .Values.connections.detailUri) "") -}}
+{{- fail "connections.detailUri is required when development.allowInlineConnections=true and valkey.enabled=false" -}}
 {{- end -}}
-{{- if eq (default "" .Values.connections.snapshotUri) "" -}}
-{{- fail "connections.snapshotUri is required when development.allowInlineConnections=true" -}}
+{{- if and (not .Values.valkey.enabled) (eq (default "" .Values.connections.snapshotUri) "") -}}
+{{- fail "connections.snapshotUri is required when development.allowInlineConnections=true and valkey.enabled=false" -}}
 {{- end -}}
-{{- if eq (default "" .Values.connections.runtimeStateUri) "" -}}
-{{- fail "connections.runtimeStateUri is required when development.allowInlineConnections=true" -}}
+{{- if and (not .Values.valkey.enabled) (eq (default "" .Values.connections.runtimeStateUri) "") -}}
+{{- fail "connections.runtimeStateUri is required when development.allowInlineConnections=true and valkey.enabled=false" -}}
 {{- end -}}
-{{- if eq (default "" .Values.connections.natsUrl) "" -}}
-{{- fail "connections.natsUrl is required when development.allowInlineConnections=true" -}}
+{{- if and (not .Values.nats.enabled) (eq (default "" .Values.connections.natsUrl) "") -}}
+{{- fail "connections.natsUrl is required when development.allowInlineConnections=true and nats.enabled=false" -}}
 {{- end -}}
 {{- if $neo4jTlsEnabled -}}
 {{- if not (or (hasPrefix "bolt+s://" .Values.connections.graphUri) (hasPrefix "bolt+ssc://" .Values.connections.graphUri) (hasPrefix "neo4j+s://" .Values.connections.graphUri) (hasPrefix "neo4j+ssc://" .Values.connections.graphUri)) -}}
 {{- fail "neo4jTls.enabled requires connections.graphUri to use bolt+s://, bolt+ssc://, neo4j+s://, or neo4j+ssc:// when development.allowInlineConnections=true" -}}
 {{- end -}}
 {{- end -}}
-{{- if $valkeyTlsEnabled -}}
+{{- if and $valkeyTlsEnabled (not .Values.valkey.enabled) -}}
 {{- range $connection := list .Values.connections.detailUri .Values.connections.snapshotUri .Values.connections.runtimeStateUri -}}
 {{- if not (or (hasPrefix "redis://" $connection) (hasPrefix "valkey://" $connection) (hasPrefix "rediss://" $connection) (hasPrefix "valkeys://" $connection)) -}}
 {{- fail "valkeyTls.enabled requires Valkey connection URIs to use redis://, valkey://, rediss://, or valkeys:// when development.allowInlineConnections=true" -}}
@@ -188,6 +188,30 @@ underpassai
 
 {{- define "rehydration-kernel.neo4j.uri" -}}
 {{- printf "neo4j://%s:%s@%s:7687" (include "rehydration-kernel.neo4j.username" .) (include "rehydration-kernel.neo4j.password" .) (include "rehydration-kernel.neo4j.fullname" .) -}}
+{{- end -}}
+
+{{- define "rehydration-kernel.nats.fullname" -}}
+{{- printf "%s-nats" (include "rehydration-kernel.fullname" .) -}}
+{{- end -}}
+
+{{- define "rehydration-kernel.nats.uri" -}}
+{{- if .Values.nats.tls.enabled -}}
+{{- printf "tls://%s:4222" (include "rehydration-kernel.nats.fullname" .) -}}
+{{- else -}}
+{{- printf "nats://%s:4222" (include "rehydration-kernel.nats.fullname" .) -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "rehydration-kernel.valkey.fullname" -}}
+{{- printf "%s-valkey" (include "rehydration-kernel.fullname" .) -}}
+{{- end -}}
+
+{{- define "rehydration-kernel.valkey.uri" -}}
+{{- if .Values.valkey.tls.enabled -}}
+{{- printf "rediss://%s:6379" (include "rehydration-kernel.valkey.fullname" .) -}}
+{{- else -}}
+{{- printf "redis://%s:6379" (include "rehydration-kernel.valkey.fullname" .) -}}
+{{- end -}}
 {{- end -}}
 
 {{- define "rehydration-kernel.inlineValkeyUri" -}}
