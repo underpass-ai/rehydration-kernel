@@ -358,6 +358,16 @@ pub(crate) async fn observe_failure_diagnosis_use_case(
         );
 
         let total_latency_ms = total_start.elapsed().as_secs_f64() * 1000.0;
+
+        let llm_eval = maybe_evaluate_with_llm(
+            &rendered.content,
+            FAILURE_DIAGNOSIS_QUESTION,
+            Some(BAD_DECISION_NODE_ID),
+            Some(BAD_DECISION_NODE_ID),
+            Some("containment"),
+        )
+        .await;
+
         Ok(FailureDiagnosisObservation {
             metric: PaperUseCaseMetric {
                 use_case_id: FAILURE_DIAGNOSIS_USE_CASE_ID.to_string(),
@@ -397,6 +407,10 @@ pub(crate) async fn observe_failure_diagnosis_use_case(
                 decision_id: proto_string(&failure_explanation.decision_id),
                 caused_by_node_id: proto_string(&failure_explanation.caused_by_node_id),
                 suspect_relationships: suspect_relationships.clone(),
+                llm_task_success: llm_eval.as_ref().map(|e| e.llm_task_success),
+                llm_restart_accuracy: llm_eval.as_ref().map(|e| e.llm_restart_accuracy),
+                llm_reason_preserved: llm_eval.as_ref().map(|e| e.llm_reason_preserved),
+                llm_latency_ms: llm_eval.as_ref().map(|e| e.llm_latency_ms),
             },
             suspect_relationships,
             rehydration_node_id,
@@ -494,6 +508,16 @@ pub(crate) async fn observe_why_task_was_implemented_that_way(
         );
 
         let total_latency_ms = total_start.elapsed().as_secs_f64() * 1000.0;
+
+        let llm_eval = maybe_evaluate_with_llm(
+            &rendered.content,
+            WHY_IMPLEMENTED_QUESTION,
+            None,
+            None,
+            Some("rationale"),
+        )
+        .await;
+
         Ok(ImplementationWhyObservation {
             metric: PaperUseCaseMetric {
                 use_case_id: WHY_IMPLEMENTED_USE_CASE_ID.to_string(),
@@ -533,6 +557,10 @@ pub(crate) async fn observe_why_task_was_implemented_that_way(
                 decision_id: proto_string(&explanation.decision_id),
                 caused_by_node_id: proto_string(&explanation.caused_by_node_id),
                 suspect_relationships: Vec::new(),
+                llm_task_success: llm_eval.as_ref().map(|e| e.llm_task_success),
+                llm_restart_accuracy: llm_eval.as_ref().map(|e| e.llm_restart_accuracy),
+                llm_reason_preserved: llm_eval.as_ref().map(|e| e.llm_reason_preserved),
+                llm_latency_ms: llm_eval.as_ref().map(|e| e.llm_latency_ms),
             },
             rationale: explanation.rationale.clone(),
             motivation: explanation.motivation.clone(),
@@ -714,6 +742,16 @@ pub(crate) async fn observe_interrupted_handoff_use_case(
         );
 
         let total_latency_ms = total_start.elapsed().as_secs_f64() * 1000.0;
+
+        let llm_eval = maybe_evaluate_with_llm(
+            &rendered.content,
+            HANDOFF_RESUME_QUESTION,
+            Some(HANDOFF_BLOCKER_NODE_ID),
+            Some(HANDOFF_BLOCKER_NODE_ID),
+            Some("blocked"),
+        )
+        .await;
+
         Ok(HandoffResumeObservation {
             metric: PaperUseCaseMetric {
                 use_case_id: HANDOFF_RESUME_USE_CASE_ID.to_string(),
@@ -753,6 +791,10 @@ pub(crate) async fn observe_interrupted_handoff_use_case(
                 decision_id: proto_string(&resume_explanation.decision_id),
                 caused_by_node_id: proto_string(&resume_explanation.caused_by_node_id),
                 suspect_relationships: Vec::new(),
+                llm_task_success: llm_eval.as_ref().map(|e| e.llm_task_success),
+                llm_restart_accuracy: llm_eval.as_ref().map(|e| e.llm_restart_accuracy),
+                llm_reason_preserved: llm_eval.as_ref().map(|e| e.llm_reason_preserved),
+                llm_latency_ms: llm_eval.as_ref().map(|e| e.llm_latency_ms),
             },
             continuation_node_id,
             blocker_rationale: blocker_explanation.rationale.clone(),
@@ -862,6 +904,16 @@ pub(crate) async fn observe_constraint_under_token_pressure_use_case(
         );
 
         let total_latency_ms = total_start.elapsed().as_secs_f64() * 1000.0;
+
+        let llm_eval = maybe_evaluate_with_llm(
+            &rendered.content,
+            CONSTRAINT_PRESSURE_QUESTION,
+            None,
+            None,
+            Some(CONSTRAINT_RATIONALE),
+        )
+        .await;
+
         Ok(ConstraintPressureObservation {
             metric: PaperUseCaseMetric {
                 use_case_id: CONSTRAINT_PRESSURE_USE_CASE_ID.to_string(),
@@ -901,6 +953,10 @@ pub(crate) async fn observe_constraint_under_token_pressure_use_case(
                 decision_id: proto_string(&implementation_explanation.decision_id),
                 caused_by_node_id: proto_string(&implementation_explanation.caused_by_node_id),
                 suspect_relationships: Vec::new(),
+                llm_task_success: llm_eval.as_ref().map(|e| e.llm_task_success),
+                llm_restart_accuracy: llm_eval.as_ref().map(|e| e.llm_restart_accuracy),
+                llm_reason_preserved: llm_eval.as_ref().map(|e| e.llm_reason_preserved),
+                llm_latency_ms: llm_eval.as_ref().map(|e| e.llm_latency_ms),
             },
             constraint_rationale: constraint_explanation.rationale.clone(),
             implementation_rationale: implementation_explanation.rationale.clone(),
@@ -1069,5 +1125,36 @@ fn proto_string(value: &str) -> Option<String> {
         None
     } else {
         Some(value.to_string())
+    }
+}
+
+/// Optionally evaluate rendered context with an LLM if LLM_ENDPOINT is configured.
+/// Returns None if LLM evaluation is not configured or fails.
+pub(crate) async fn maybe_evaluate_with_llm(
+    rendered_content: &str,
+    question: &str,
+    expected_failure_point: Option<&str>,
+    expected_restart_node: Option<&str>,
+    expected_reason: Option<&str>,
+) -> Option<rehydration_testkit::LlmEvaluationResult> {
+    if std::env::var("LLM_ENDPOINT").is_err() {
+        return None;
+    }
+
+    let config = rehydration_testkit::LlmEvaluatorConfig::from_env();
+    let ground_truth = rehydration_testkit::EvaluationGroundTruth {
+        expected_failure_point: expected_failure_point.map(str::to_string),
+        expected_restart_node: expected_restart_node.map(str::to_string),
+        expected_reason: expected_reason.map(str::to_string),
+    };
+
+    match rehydration_testkit::evaluate_with_llm(&config, rendered_content, question, &ground_truth)
+        .await
+    {
+        Ok(result) => Some(result),
+        Err(error) => {
+            eprintln!("LLM evaluation failed (non-fatal): {error}");
+            None
+        }
     }
 }
