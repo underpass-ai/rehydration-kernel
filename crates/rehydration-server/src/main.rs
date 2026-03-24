@@ -129,7 +129,10 @@ where
         "query bootstrap"
     );
 
-    let _warmup_bundle = grpc_server.warmup_bundle().await?;
+    match grpc_server.warmup_bundle().await {
+        Ok(_) => tracing::info!("warmup bundle loaded"),
+        Err(error) => tracing::warn!(%error, "warmup bundle skipped (node may not exist yet)"),
+    }
 
     tokio::try_join!(async { grpc_server.run().await }, async {
         projection_runtime

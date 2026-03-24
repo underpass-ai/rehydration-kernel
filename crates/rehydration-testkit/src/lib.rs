@@ -1,6 +1,8 @@
 mod container_runtime;
 pub mod dataset_generator;
 mod in_memory_stores;
+pub mod llm_evaluator;
+pub mod seed_publisher;
 
 pub use container_runtime::ensure_testcontainers_runtime;
 pub use dataset_generator::{
@@ -11,6 +13,9 @@ pub use in_memory_stores::{
     InMemoryContextEventStore, InMemoryGraphNeighborhoodReader, InMemoryNodeDetailReader,
     InMemoryProcessedEventStore, InMemoryProjectionCheckpointStore, InMemoryProjectionWriter,
     NoopSnapshotStore,
+};
+pub use llm_evaluator::{
+    EvaluationGroundTruth, LlmEvaluationResult, LlmEvaluatorConfig, evaluate_with_llm,
 };
 
 #[cfg(test)]

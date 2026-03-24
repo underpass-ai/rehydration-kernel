@@ -118,13 +118,13 @@ spec:
             - name: REHYDRATION_GRAPH_URI
               value: {{ include "rehydration-kernel.inlineGraphUri" (dict "uri" (default (include "rehydration-kernel.neo4j.uri" .) .Values.connections.graphUri) "tls" .Values.neo4jTls) | quote }}
             - name: REHYDRATION_DETAIL_URI
-              value: {{ include "rehydration-kernel.inlineValkeyUri" (dict "uri" .Values.connections.detailUri "tls" .Values.valkeyTls) | quote }}
+              value: {{ include "rehydration-kernel.inlineValkeyUri" (dict "uri" (default (include "rehydration-kernel.valkey.uri" .) .Values.connections.detailUri) "tls" .Values.valkeyTls) | quote }}
             - name: REHYDRATION_SNAPSHOT_URI
-              value: {{ include "rehydration-kernel.inlineValkeyUri" (dict "uri" .Values.connections.snapshotUri "tls" .Values.valkeyTls) | quote }}
+              value: {{ include "rehydration-kernel.inlineValkeyUri" (dict "uri" (default (include "rehydration-kernel.valkey.uri" .) .Values.connections.snapshotUri) "tls" .Values.valkeyTls) | quote }}
             - name: REHYDRATION_RUNTIME_STATE_URI
-              value: {{ include "rehydration-kernel.inlineValkeyUri" (dict "uri" .Values.connections.runtimeStateUri "tls" .Values.valkeyTls) | quote }}
+              value: {{ include "rehydration-kernel.inlineValkeyUri" (dict "uri" (default (include "rehydration-kernel.valkey.uri" .) .Values.connections.runtimeStateUri) "tls" .Values.valkeyTls) | quote }}
             - name: NATS_URL
-              value: {{ .Values.connections.natsUrl | quote }}
+              value: {{ default (include "rehydration-kernel.nats.uri" .) .Values.connections.natsUrl | quote }}
             {{- end }}
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
