@@ -518,7 +518,6 @@ async fn command_service_accepts_update_context() {
             }],
             metadata: None,
             precondition: None,
-            persist_snapshot: true,
         }))
         .await
         .expect("update context should succeed")
@@ -532,8 +531,6 @@ async fn command_service_accepts_update_context() {
             .revision,
         1
     );
-    assert!(!response.snapshot_persisted);
-    assert!(response.snapshot_id.is_empty());
 }
 
 #[tokio::test]
@@ -555,7 +552,6 @@ async fn command_service_returns_aborted_on_revision_conflict() {
                 expected_revision: 99,
                 expected_content_hash: String::new(),
             }),
-            persist_snapshot: false,
         }))
         .await
         .expect_err("wrong revision should fail");

@@ -48,12 +48,11 @@ message UpdateContextRequest {
   repeated ContextChange changes = 4;
   CommandMetadata metadata = 5;
   RevisionPrecondition precondition = 6;
-  bool persist_snapshot = 7;
+  reserved 7;
 }
 
 message UpdateContextResponse {
   BundleVersion accepted_version = 1;
   repeated string warnings = 2;
-  bool snapshot_persisted = 3;
-  string snapshot_id = 4;
+  reserved 3, 4;
 }

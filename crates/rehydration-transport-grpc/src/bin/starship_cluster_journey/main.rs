@@ -589,8 +589,8 @@ async fn verify(
             roles: vec![DEFAULT_ROLE.to_string()],
             include_timeline: false,
             include_summaries: true,
-            timeline_window: 0,
             persist_snapshot: false,
+            timeline_window: 0,
             snapshot_ttl: None,
         })
         .await?
@@ -621,8 +621,8 @@ async fn verify(
             roles: vec![DEFAULT_ROLE.to_string()],
             include_timeline: true,
             include_summaries: true,
-            timeline_window: DEFAULT_TIMELINE_WINDOW,
             persist_snapshot: true,
+            timeline_window: DEFAULT_TIMELINE_WINDOW,
             snapshot_ttl: Some(prost_types::Duration {
                 seconds: DEFAULT_SNAPSHOT_TTL_SECONDS,
                 nanos: 0,

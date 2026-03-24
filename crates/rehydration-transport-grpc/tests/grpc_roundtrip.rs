@@ -129,7 +129,7 @@ async fn grpc_server_supports_query_and_command_roundtrip() {
         .expect_err("empty graph should return NOT_FOUND for unknown path target");
     assert_eq!(get_context_path_err.code(), tonic::Code::NotFound);
 
-    let update_context = command_client
+    let _update_context = command_client
         .update_context(UpdateContextRequest {
             root_node_id: "case-123".to_string(),
             role: "developer".to_string(),
@@ -144,13 +144,9 @@ async fn grpc_server_supports_query_and_command_roundtrip() {
             }],
             metadata: None,
             precondition: None,
-            persist_snapshot: false,
         })
         .await
-        .expect("command service should respond")
-        .into_inner();
-    assert!(!update_context.snapshot_persisted);
-    assert!(update_context.snapshot_id.is_empty());
+        .expect("command service should respond");
 
     let _ = shutdown_tx.send(());
     let result = server_task.await.expect("server task should join cleanly");

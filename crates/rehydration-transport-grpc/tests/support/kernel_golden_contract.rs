@@ -128,8 +128,6 @@ pub(crate) fn expected_update_context_response() -> UpdateContextResponse {
             generator_version: env!("CARGO_PKG_VERSION").to_string(),
         }),
         warnings: vec![],
-        snapshot_persisted: false,
-        snapshot_id: String::new(),
     }
 }
 

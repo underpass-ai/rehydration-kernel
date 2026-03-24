@@ -19,7 +19,7 @@ Neo4j, Valkey, and NATS are required runtime components, not optional features.
 
 ## Current Status
 
-This repo is a usable beta with the kernel-owned migration scope complete.
+This repo is functionally complete for the kernel-owned migration scope.
 Known limitations on reserved query fields are documented in
 [`docs/beta-status.md`](./docs/beta-status.md).
 
