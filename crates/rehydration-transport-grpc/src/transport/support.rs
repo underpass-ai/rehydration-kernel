@@ -1,24 +1,10 @@
 use std::time::SystemTime;
 
-use prost_types::{Duration as ProtoDuration, Timestamp};
-use rehydration_application::{ApplicationError, ReplayModeSelection};
-use rehydration_proto::v1beta1::ReplayMode;
+#[cfg(test)]
+use prost_types::Duration as ProtoDuration;
+use prost_types::Timestamp;
+use rehydration_application::ApplicationError;
 use tonic::Status;
-
-pub(crate) fn map_replay_mode(value: i32) -> ReplayModeSelection {
-    match ReplayMode::try_from(value).unwrap_or(ReplayMode::DryRun) {
-        ReplayMode::DryRun => ReplayModeSelection::DryRun,
-        ReplayMode::Rebuild => ReplayModeSelection::Rebuild,
-        ReplayMode::Unspecified => ReplayModeSelection::DryRun,
-    }
-}
-
-pub(crate) fn proto_replay_mode(value: ReplayModeSelection) -> ReplayMode {
-    match value {
-        ReplayModeSelection::DryRun => ReplayMode::DryRun,
-        ReplayModeSelection::Rebuild => ReplayMode::Rebuild,
-    }
-}
 
 pub(crate) fn map_application_error(error: ApplicationError) -> Status {
     match error {
@@ -41,6 +27,7 @@ pub(crate) fn timestamp_from(value: SystemTime) -> Timestamp {
     Timestamp::from(value)
 }
 
+#[cfg(test)]
 pub(crate) fn proto_duration(seconds: u64) -> ProtoDuration {
     ProtoDuration {
         seconds: seconds as i64,
@@ -48,6 +35,7 @@ pub(crate) fn proto_duration(seconds: u64) -> ProtoDuration {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn trim_to_option(value: String) -> Option<String> {
     let trimmed = value.trim();
     if trimmed.is_empty() {

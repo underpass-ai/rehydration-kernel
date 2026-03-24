@@ -3,10 +3,7 @@ mod config;
 use serde_json::json;
 
 use crate::config::AppConfig;
-use rehydration_proto::v1beta1::{
-    context_admin_service_client::ContextAdminServiceClient,
-    context_query_service_client::ContextQueryServiceClient,
-};
+use rehydration_proto::v1beta1::context_query_service_client::ContextQueryServiceClient;
 use rehydration_transport_grpc::agentic_reference::{BasicContextAgent, UnderpassRuntimeClient};
 
 #[tokio::main]
@@ -14,11 +11,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let config = AppConfig::from_env()?;
     let request = config.request.clone();
 
-    let query_client =
-        ContextQueryServiceClient::connect(config.kernel_grpc_endpoint.clone()).await?;
-    let admin_client = ContextAdminServiceClient::connect(config.kernel_grpc_endpoint).await?;
+    let query_client = ContextQueryServiceClient::connect(config.kernel_grpc_endpoint).await?;
     let runtime = UnderpassRuntimeClient::connect(config.runtime_base_url).await?;
-    let mut agent = BasicContextAgent::new(query_client, admin_client, runtime);
+    let mut agent = BasicContextAgent::new(query_client, runtime);
     let execution = agent.execute(request.clone()).await?;
 
     println!(

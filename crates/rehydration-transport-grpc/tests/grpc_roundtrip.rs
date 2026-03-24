@@ -6,9 +6,8 @@ use rehydration_domain::{
     NodeNeighborhood, PortError, RehydrationBundle, SnapshotSaveOptions, SnapshotStore,
 };
 use rehydration_proto::v1beta1::{
-    BundleRenderFormat, ContextChange, ContextChangeOperation, GetBundleSnapshotRequest,
-    GetContextPathRequest, GetContextRequest, GetProjectionStatusRequest, Phase,
-    UpdateContextRequest, context_admin_service_client::ContextAdminServiceClient,
+    BundleRenderFormat, ContextChange, ContextChangeOperation, GetContextPathRequest,
+    GetContextRequest, Phase, UpdateContextRequest,
     context_command_service_client::ContextCommandServiceClient,
     context_query_service_client::ContextQueryServiceClient,
 };
@@ -64,7 +63,7 @@ impl SnapshotStore for NoopSnapshotStore {
 }
 
 #[tokio::test]
-async fn grpc_server_supports_query_command_and_admin_roundtrip() {
+async fn grpc_server_supports_query_and_command_roundtrip() {
     let listener = match TcpListener::bind("127.0.0.1:0").await {
         Ok(listener) => listener,
         Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => return,
@@ -101,8 +100,7 @@ async fn grpc_server_supports_query_command_and_admin_roundtrip() {
     let endpoint = format!("http://{}", addr);
     let channel = connect_channel(endpoint).await;
     let mut query_client = ContextQueryServiceClient::new(channel.clone());
-    let mut command_client = ContextCommandServiceClient::new(channel.clone());
-    let mut admin_client = ContextAdminServiceClient::new(channel);
+    let mut command_client = ContextCommandServiceClient::new(channel);
 
     let get_context_err = query_client
         .get_context(GetContextRequest {
@@ -152,33 +150,6 @@ async fn grpc_server_supports_query_command_and_admin_roundtrip() {
         .expect("command service should respond")
         .into_inner();
     assert_eq!(update_context.snapshot_id, "snapshot:case-123:developer");
-
-    let projection_status = admin_client
-        .get_projection_status(GetProjectionStatusRequest {
-            consumer_names: vec!["context-projection".to_string()],
-        })
-        .await
-        .expect("admin projection status should respond")
-        .into_inner();
-    assert_eq!(projection_status.projections.len(), 1);
-    assert!(projection_status.projections[0].healthy);
-
-    let snapshot = admin_client
-        .get_bundle_snapshot(GetBundleSnapshotRequest {
-            root_node_id: "case-123".to_string(),
-            role: "developer".to_string(),
-        })
-        .await
-        .expect("admin snapshot should respond")
-        .into_inner();
-    assert_eq!(
-        snapshot
-            .snapshot
-            .as_ref()
-            .expect("snapshot should exist")
-            .snapshot_id,
-        "snapshot:case-123:developer"
-    );
 
     let _ = shutdown_tx.send(());
     let result = server_task.await.expect("server task should join cleanly");

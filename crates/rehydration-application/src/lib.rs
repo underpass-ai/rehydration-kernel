@@ -6,9 +6,8 @@ pub mod rehydration_application;
 
 pub use application_error::ApplicationError;
 pub use commands::{
-    AcceptedVersion, AdminCommandApplicationService, CommandApplicationService,
-    ReplayModeSelection, ReplayProjectionCommand, ReplayProjectionOutcome, UpdateContextChange,
-    UpdateContextCommand, UpdateContextOutcome, UpdateContextUseCase,
+    AcceptedVersion, CommandApplicationService, UpdateContextChange, UpdateContextCommand,
+    UpdateContextOutcome, UpdateContextUseCase,
 };
 pub use projection::{
     GraphNodeMaterializedData, GraphNodeMaterializedEvent, NodeDetailMaterializedData,
@@ -17,18 +16,14 @@ pub use projection::{
     RelatedNodeExplanationData, RelatedNodeReference, RoutingProjectionWriter,
 };
 pub use queries::{
-    AdminQueryApplicationService, BundleAssembler, BundleSnapshotResult, ContextRenderOptions,
-    DEFAULT_NATIVE_GRAPH_TRAVERSAL_DEPTH, GetBundleSnapshotQuery, GetBundleSnapshotUseCase,
+    BundleAssembler, ContextRenderOptions, DEFAULT_NATIVE_GRAPH_TRAVERSAL_DEPTH,
     GetContextPathQuery, GetContextPathResult, GetContextPathUseCase, GetContextQuery,
     GetContextResult, GetContextUseCase, GetGraphRelationshipsQuery, GetGraphRelationshipsResult,
     GetGraphRelationshipsUseCase, GetNodeDetailQuery, GetNodeDetailResult, GetNodeDetailUseCase,
-    GetProjectionStatusQuery, GetProjectionStatusResult, GetProjectionStatusUseCase,
-    GetRehydrationDiagnosticsQuery, GetRehydrationDiagnosticsResult,
-    GetRehydrationDiagnosticsUseCase, GraphNodeView, GraphRelationshipView,
-    MAX_NATIVE_GRAPH_TRAVERSAL_DEPTH, MIN_NATIVE_GRAPH_TRAVERSAL_DEPTH,
-    NodeCentricProjectionReader, NodeDetailView, ProjectionStatusView, QueryApplicationService,
-    RehydrateSessionQuery, RehydrateSessionResult, RehydrateSessionUseCase,
-    RehydrationDiagnosticView, RenderedContext, ScopeValidation, ValidateScopeQuery,
+    GraphNodeView, GraphRelationshipView, MAX_NATIVE_GRAPH_TRAVERSAL_DEPTH,
+    MIN_NATIVE_GRAPH_TRAVERSAL_DEPTH, NodeCentricProjectionReader, NodeDetailView,
+    QueryApplicationService, RehydrateSessionQuery, RehydrateSessionResult,
+    RehydrateSessionUseCase, RenderedContext, ScopeValidation, ValidateScopeQuery,
     ValidateScopeUseCase, clamp_native_graph_traversal_depth, render_graph_bundle_with_options,
 };
 pub use rehydration_application::RehydrationApplication;

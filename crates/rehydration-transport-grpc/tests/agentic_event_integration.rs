@@ -31,7 +31,6 @@ async fn bundle_generated_event_triggers_recording_runtime_workflow() {
     let runtime_observer = runtime.clone();
     let trigger = EventDrivenRuntimeTrigger::new(
         fixture.query_client(),
-        fixture.admin_client(),
         runtime,
         fixture.nats_url(),
         AgentRequest::reference_defaults(ROOT_NODE_ID, ROOT_NODE_KIND),
@@ -84,7 +83,6 @@ async fn bundle_generated_event_triggers_underpass_runtime_contract_workflow() {
         .expect("runtime client should connect");
     let trigger = EventDrivenRuntimeTrigger::new(
         fixture.query_client(),
-        fixture.admin_client(),
         runtime,
         fixture.nats_url(),
         AgentRequest::reference_defaults(ROOT_NODE_ID, ROOT_NODE_KIND),

@@ -1,34 +1,11 @@
-use rehydration_application::{
-    GetGraphRelationshipsResult, GraphNodeView, GraphRelationshipView, NodeDetailView,
-};
+use rehydration_application::{GraphNodeView, NodeDetailView};
 use rehydration_domain::{
     BundleNode, BundleNodeDetail, BundleRelationship, RelationExplanation, RelationSemanticClass,
 };
 use rehydration_proto::v1beta1::{
-    BundleNodeDetail as ProtoBundleNodeDetail, GetGraphRelationshipsResponse, GraphNode,
-    GraphRelationship, GraphRelationshipExplanation, GraphRelationshipSemanticClass,
+    BundleNodeDetail as ProtoBundleNodeDetail, GraphNode, GraphRelationship,
+    GraphRelationshipExplanation, GraphRelationshipSemanticClass,
 };
-
-use crate::transport::support::timestamp_from;
-
-pub(crate) fn proto_graph_relationships_response_v1beta1(
-    result: &GetGraphRelationshipsResult,
-) -> GetGraphRelationshipsResponse {
-    GetGraphRelationshipsResponse {
-        root: Some(proto_graph_node_v1beta1(&result.root)),
-        neighbors: result
-            .neighbors
-            .iter()
-            .map(proto_graph_node_v1beta1)
-            .collect(),
-        relationships: result
-            .relationships
-            .iter()
-            .map(proto_graph_relationship_v1beta1)
-            .collect(),
-        observed_at: Some(timestamp_from(result.observed_at)),
-    }
-}
 
 pub(crate) fn proto_graph_node_v1beta1(node: &GraphNodeView) -> GraphNode {
     GraphNode {
@@ -39,19 +16,6 @@ pub(crate) fn proto_graph_node_v1beta1(node: &GraphNodeView) -> GraphNode {
         status: node.status.clone(),
         labels: node.labels.clone(),
         properties: node.properties.clone().into_iter().collect(),
-    }
-}
-
-pub(crate) fn proto_graph_relationship_v1beta1(
-    relationship: &GraphRelationshipView,
-) -> GraphRelationship {
-    GraphRelationship {
-        source_node_id: relationship.source_node_id.clone(),
-        target_node_id: relationship.target_node_id.clone(),
-        relationship_type: relationship.relationship_type.clone(),
-        explanation: Some(proto_graph_relationship_explanation_v1beta1(
-            &relationship.explanation,
-        )),
     }
 }
 

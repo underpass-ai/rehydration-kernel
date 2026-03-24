@@ -3,7 +3,6 @@ use std::collections::BTreeMap;
 use rehydration_domain::{GraphNeighborhoodReader, NodeNeighborhood, RelationExplanation};
 
 use crate::ApplicationError;
-use crate::queries::AdminQueryApplicationService;
 use crate::queries::clamp_native_graph_traversal_depth;
 use crate::queries::ordered_neighborhood::ordered_neighborhood;
 
@@ -85,20 +84,6 @@ where
                 .collect(),
             observed_at: std::time::SystemTime::now(),
         })
-    }
-}
-
-impl<G, D> AdminQueryApplicationService<G, D>
-where
-    G: GraphNeighborhoodReader + Send + Sync,
-{
-    pub async fn get_graph_relationships(
-        &self,
-        query: GetGraphRelationshipsQuery,
-    ) -> Result<GetGraphRelationshipsResult, ApplicationError> {
-        GetGraphRelationshipsUseCase::new(std::sync::Arc::clone(&self.graph_reader))
-            .execute(query)
-            .await
     }
 }
 

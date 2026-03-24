@@ -38,4 +38,21 @@ impl RelationSemanticClass {
             Self::Constraint => "constraint",
         }
     }
+
+    /// Returns a salience rank for token-budget packing.
+    ///
+    /// Lower values are higher priority. Explanatory classes (causal,
+    /// motivational, evidential, constraint) rank before structural and
+    /// procedural because the paper's core claim is that explanatory
+    /// relationships carry the dominant signal for diagnosis and recovery.
+    pub fn salience_rank(&self) -> u8 {
+        match self {
+            Self::Causal => 0,
+            Self::Motivational => 1,
+            Self::Evidential => 2,
+            Self::Constraint => 3,
+            Self::Procedural => 4,
+            Self::Structural => 5,
+        }
+    }
 }

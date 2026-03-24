@@ -67,12 +67,18 @@ fn prioritized_relationships<'a>(
     bundle: &'a RehydrationBundle,
     focus_node_id: Option<&'a str>,
 ) -> Vec<&'a BundleRelationship> {
+    let mut relationships: Vec<_> = bundle.relationships().iter().collect();
+
+    // Sort by semantic salience: causal/motivational before structural
+    relationships.sort_by_key(|r| r.explanation().semantic_class().salience_rank());
+
     let Some(focus_node_id) = focus_node_id else {
-        return bundle.relationships().iter().collect();
+        return relationships;
     };
 
+    // Within each salience tier, focused relationships come first
     let (focused, remaining): (Vec<_>, Vec<_>) =
-        bundle.relationships().iter().partition(|relationship| {
+        relationships.into_iter().partition(|relationship| {
             relationship.source_node_id() == focus_node_id
                 || relationship.target_node_id() == focus_node_id
         });

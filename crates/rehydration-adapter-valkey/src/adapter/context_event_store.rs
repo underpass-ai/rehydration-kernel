@@ -34,6 +34,13 @@ impl ValkeyContextEventStore {
     fn idempotency_key(&self, key: &str) -> String {
         format!("{}:idem:{}", self.endpoint.key_prefix, key)
     }
+
+    fn event_key(&self, root_node_id: &str, role: &str, revision: u64) -> String {
+        format!(
+            "{}:evt:{}:{}:{}",
+            self.endpoint.key_prefix, root_node_id, role, revision
+        )
+    }
 }
 
 impl ContextEventStore for ValkeyContextEventStore {
@@ -52,6 +59,15 @@ impl ContextEventStore for ValkeyContextEventStore {
         }
 
         let new_revision = current + 1;
+
+        // Persist the full event as JSON
+        let event_key = self.event_key(&event.root_node_id, &event.role, new_revision);
+        let event_json = serde_json::to_string(&event).map_err(|error| {
+            PortError::InvalidState(format!("failed to serialize context event: {error}"))
+        })?;
+        execute_set_command(&self.endpoint, &event_key, &event_json, None).await?;
+
+        // Update revision and hash indexes
         let rev_key = self.revision_key(&event.root_node_id, &event.role);
         execute_set_command(&self.endpoint, &rev_key, &new_revision.to_string(), None).await?;
 
@@ -73,6 +89,15 @@ impl ContextEventStore for ValkeyContextEventStore {
             Some(value) => parse_revision(&value),
             None => Ok(0),
         }
+    }
+
+    async fn current_content_hash(
+        &self,
+        root_node_id: &str,
+        role: &str,
+    ) -> Result<Option<String>, PortError> {
+        let key = self.hash_key(root_node_id, role);
+        execute_get_command(&self.endpoint, &key).await
     }
 
     async fn find_by_idempotency_key(

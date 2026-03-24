@@ -3,9 +3,8 @@
 use std::error::Error;
 
 use rehydration_proto::v1beta1::{
-    GetContextPathRequest, GetGraphRelationshipsRequest, GraphRelationship,
-    GraphRelationshipExplanation, GraphRoleBundle, RehydrationBundle, RenderedContext,
-    context_query_service_client::ContextQueryServiceClient,
+    GetContextPathRequest, GraphRelationship, GraphRelationshipExplanation, GraphRoleBundle,
+    RehydrationBundle, RenderedContext, context_query_service_client::ContextQueryServiceClient,
 };
 use tonic::transport::Channel;
 
@@ -193,7 +192,6 @@ pub(crate) async fn observe_failure_diagnosis_use_case(
 
     let result: Result<FailureDiagnosisObservation, Box<dyn Error + Send + Sync>> = async {
         let mut query_client = fixture.query_client();
-        let mut admin_client = fixture.admin_client();
         let path = query_client
             .get_context_path(GetContextPathRequest {
                 root_node_id: ROOT_NODE_ID.to_string(),
@@ -304,15 +302,6 @@ pub(crate) async fn observe_failure_diagnosis_use_case(
             } else {
                 (Some(false), Some(0.0), Some(ARTIFACT_NODE_ID.to_string()))
             };
-        let full_graph = admin_client
-            .get_graph_relationships(GetGraphRelationshipsRequest {
-                node_id: ROOT_NODE_ID.to_string(),
-                node_kind: ROOT_NODE_KIND.to_string(),
-                depth: 6,
-                include_reverse_edges: false,
-            })
-            .await?
-            .into_inner();
         let rendered = expect_rendered_context(rendered)?;
         let rendered_contains_expected_rationale =
             rendered.content.contains(FAILURE_EVIDENCE_RATIONALE);
@@ -393,7 +382,7 @@ pub(crate) async fn observe_failure_diagnosis_use_case(
                 retry_target_node_id,
                 dominant_reason_hit: None,
                 suspect_relationship_count: Some(suspect_relationships.len() as u32),
-                full_graph_relationship_count: Some(full_graph.relationships.len() as u32),
+                full_graph_relationship_count: Some(role_bundle.relationships.len() as u32),
                 rationale: proto_string(&failure_explanation.rationale),
                 motivation: proto_string(&failure_explanation.motivation),
                 method: proto_string(&failure_explanation.method),

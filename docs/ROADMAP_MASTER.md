@@ -44,6 +44,16 @@ Single source of truth for kernel maturity, technical debt, and next steps.
 - [x] Refactor: split render_graph_bundle.rs (535 → 4 files)
 - [x] Refactor: split testkit/lib.rs (623 → 3 files)
 
+### Honesty pass (PR #57)
+- [x] Fix BundleSection.token_count: cl100k_base everywhere (was split_whitespace in proto mapping)
+- [x] Remove admin gRPC service entirely (admin.proto, 5 RPCs, all use cases, -1782 lines)
+- [x] Validate expected_content_hash in UpdateContext (returns Conflict on mismatch)
+- [x] Salience by semantic_class: causal > motivational > evidential > constraint > procedural > structural
+- [x] Persist full ContextUpdatedEvent as JSON (was revision+hash only)
+- [x] Delete stale BUG_DEPTH_TRAVERSAL.md
+- [x] Update beta-status.md: document ignored proto fields, remove admin section
+- [x] 3 evidence tests: content_hash validation, causal-before-structural, cl100k_base per-section
+
 ## Pending — Architecture (low priority, all test-only)
 
 | Task | File | Lines | Action |

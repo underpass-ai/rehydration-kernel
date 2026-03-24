@@ -13,11 +13,6 @@ const REHYDRATE_SESSION_REQUEST_FIXTURE: &str =
     include_str!("../../../api/examples/kernel/v1beta1/grpc/rehydrate-session.request.json");
 const UPDATE_CONTEXT_REQUEST_FIXTURE: &str =
     include_str!("../../../api/examples/kernel/v1beta1/grpc/update-context.request.json");
-const GET_GRAPH_RELATIONSHIPS_REQUEST_FIXTURE: &str =
-    include_str!("../../../api/examples/kernel/v1beta1/grpc/get-graph-relationships.request.json");
-const GET_GRAPH_RELATIONSHIPS_RESPONSE_FIXTURE: &str =
-    include_str!("../../../api/examples/kernel/v1beta1/grpc/get-graph-relationships.response.json");
-
 const GRAPH_NODE_MATERIALIZED_FIXTURE: &str =
     include_str!("../../../api/examples/kernel/v1beta1/async/graph.node.materialized.json");
 const NODE_DETAIL_MATERIALIZED_FIXTURE: &str =
@@ -34,8 +29,6 @@ fn grpc_reference_fixtures_match_protojson_contract() {
             get_context_response: GET_CONTEXT_RESPONSE_FIXTURE,
             rehydrate_session_request: REHYDRATE_SESSION_REQUEST_FIXTURE,
             update_context_request: UPDATE_CONTEXT_REQUEST_FIXTURE,
-            get_graph_relationships_request: GET_GRAPH_RELATIONSHIPS_REQUEST_FIXTURE,
-            get_graph_relationships_response: GET_GRAPH_RELATIONSHIPS_RESPONSE_FIXTURE,
         },
     );
 }
@@ -126,8 +119,6 @@ fn reference_fixtures_do_not_reintroduce_legacy_product_nouns() {
         parse_fixture(GET_CONTEXT_RESPONSE_FIXTURE),
         parse_fixture(REHYDRATE_SESSION_REQUEST_FIXTURE),
         parse_fixture(UPDATE_CONTEXT_REQUEST_FIXTURE),
-        parse_fixture(GET_GRAPH_RELATIONSHIPS_REQUEST_FIXTURE),
-        parse_fixture(GET_GRAPH_RELATIONSHIPS_RESPONSE_FIXTURE),
         parse_fixture(GRAPH_NODE_MATERIALIZED_FIXTURE),
         parse_fixture(NODE_DETAIL_MATERIALIZED_FIXTURE),
         parse_fixture(CONTEXT_BUNDLE_GENERATED_FIXTURE),
@@ -154,8 +145,6 @@ struct GrpcFixtureSet<'a> {
     get_context_response: &'a str,
     rehydrate_session_request: &'a str,
     update_context_request: &'a str,
-    get_graph_relationships_request: &'a str,
-    get_graph_relationships_response: &'a str,
 }
 
 fn assert_grpc_reference_fixtures_match_protojson_contract(
@@ -181,16 +170,6 @@ fn assert_grpc_reference_fixtures_match_protojson_contract(
         descriptor_set,
         "UpdateContextRequest",
         &parse_fixture(fixtures.update_context_request),
-    );
-    assert_fixture_keys_match_message(
-        descriptor_set,
-        "GetGraphRelationshipsRequest",
-        &parse_fixture(fixtures.get_graph_relationships_request),
-    );
-    assert_fixture_keys_match_message(
-        descriptor_set,
-        "GetGraphRelationshipsResponse",
-        &parse_fixture(fixtures.get_graph_relationships_response),
     );
 }
 

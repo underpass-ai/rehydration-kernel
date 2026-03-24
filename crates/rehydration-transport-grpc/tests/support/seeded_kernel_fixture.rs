@@ -3,7 +3,6 @@ use std::error::Error;
 use rehydration_adapter_neo4j::Neo4jProjectionReader;
 use rehydration_adapter_valkey::{ValkeyNodeDetailStore, ValkeySnapshotStore};
 use rehydration_proto::v1beta1::{
-    context_admin_service_client::ContextAdminServiceClient,
     context_command_service_client::ContextCommandServiceClient,
     context_query_service_client::ContextQueryServiceClient,
 };
@@ -22,7 +21,6 @@ pub(crate) struct SeededKernelFixture {
     _valkey: testcontainers::ContainerAsync<GenericImage>,
     server: RunningGrpcServer,
     query_client: ContextQueryServiceClient<Channel>,
-    admin_client: ContextAdminServiceClient<Channel>,
     command_client: ContextCommandServiceClient<Channel>,
 }
 
@@ -64,17 +62,12 @@ impl SeededKernelFixture {
             _valkey: valkey,
             server,
             query_client: ContextQueryServiceClient::new(channel.clone()),
-            admin_client: ContextAdminServiceClient::new(channel.clone()),
             command_client: ContextCommandServiceClient::new(channel),
         })
     }
 
     pub(crate) fn query_client(&mut self) -> &mut ContextQueryServiceClient<Channel> {
         &mut self.query_client
-    }
-
-    pub(crate) fn admin_client(&mut self) -> &mut ContextAdminServiceClient<Channel> {
-        &mut self.admin_client
     }
 
     pub(crate) fn command_client(&mut self) -> &mut ContextCommandServiceClient<Channel> {

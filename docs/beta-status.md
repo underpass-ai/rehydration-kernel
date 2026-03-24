@@ -6,35 +6,28 @@ Status of each RPC in the `v1beta1` contract surface.
 
 | RPC | Status | Notes |
 |-----|--------|-------|
-| `GetContext` | Production-ready | `scope_validation` is intentionally `None`; no authorization backend exists. Use `ValidateScope` separately. |
+| `GetContext` | Production-ready | Proto fields `phase`, `work_item_id`, `render_format`, and `include_debug_sections` are accepted but do not alter query behavior in v1beta1. `scope_validation` is `None` (no authorization backend). |
 | `GetContextPath` | Production-ready | Returns `NOT_FOUND` when neither the path nor the target node exist. |
 | `GetNodeDetail` | Production-ready | |
-| `RehydrateSession` | Production-ready | `include_timeline` and `include_summaries` are reserved for future use and currently ignored. `snapshot_ttl` is required when `persist_snapshot` is true. |
-| `ValidateScope` | Production-ready | Standalone scope comparison. No authorization backend integration. |
+| `RehydrateSession` | Production-ready | `include_timeline` and `include_summaries` are reserved for future use and currently ignored. `timeline_window` is echoed in the response but does not filter events. `snapshot_ttl` is required when `persist_snapshot` is true. |
+| `ValidateScope` | Production-ready | Standalone set comparison. Proto fields `role` and `phase` are accepted but do not affect the comparison — only `required_scopes` and `provided_scopes` are evaluated. |
 
 ## ContextCommandService
 
 | RPC | Status | Notes |
 |-----|--------|-------|
-| `UpdateContext` | Production-ready | Persists events to the context event store with optimistic concurrency (revision checking) and idempotency key deduplication. Content hash is computed from actual change payloads. Returns `ABORTED` on revision conflict. |
+| `UpdateContext` | Production-ready | Persists full domain events (changes, requested_by, occurred_at) to the context event store as JSON. Optimistic concurrency via `expected_revision`. Content hash validated via `expected_content_hash`. Idempotency via `idempotency_key`. Returns `ABORTED` on revision or hash conflict. |
 
-## ContextAdminService (gRPC)
+## Removed
 
-| RPC | Status | Notes |
-|-----|--------|-------|
-| `GetProjectionStatus` | Production-ready | |
-| `ReplayProjection` | Production-ready | |
-| `GetBundleSnapshot` | Production-ready | |
-| `GetGraphRelationships` | Production-ready | |
-| `GetRehydrationDiagnostics` | Production-ready | |
+- **ContextAdminService** — removed entirely. The admin RPCs (`GetProjectionStatus`, `ReplayProjection`, `GetBundleSnapshot`, `GetGraphRelationships`, `GetRehydrationDiagnostics`) were placeholder-backed and have been deleted.
+- **HTTP admin** — never implemented; crate deleted.
 
 ## Known Limitations
 
-- Token counting uses `cl100k_base` BPE tokenizer (via `tiktoken-rs`).
+- Token counting uses `cl100k_base` BPE tokenizer (via `tiktoken-rs`). Both global and per-section counts use the same estimator.
 - `RehydrateSession` does not implement timeline or summary filtering.
-- Scope validation has no authorization backend; `GetContext` omits it entirely
-  and `ValidateScope` operates as a standalone set-comparison utility.
-- Context event store has adapters for Valkey and NATS JetStream.
-- HTTP admin surface has been removed. The gRPC `ContextAdminService` is the
-  only admin interface.
-- OpenTelemetry traces exported via OTLP when `OTEL_EXPORTER_OTLP_ENDPOINT` is set.
+- Scope validation has no authorization backend; `GetContext` omits it entirely and `ValidateScope` is a pure set-comparison utility.
+- Context event store has adapters for Valkey and NATS JetStream. Backend selected via `REHYDRATION_EVENT_STORE_BACKEND`.
+- Relationship rendering is ordered by semantic salience: causal > motivational > evidential > constraint > procedural > structural.
+- OpenTelemetry traces and metrics exported via OTLP when `OTEL_EXPORTER_OTLP_ENDPOINT` is set.

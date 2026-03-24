@@ -2,10 +2,12 @@ use std::future::Future;
 use std::sync::Arc;
 use std::time::SystemTime;
 
+use serde::{Deserialize, Serialize};
+
 use crate::PortError;
 
 /// Domain event emitted when a context update is accepted.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ContextUpdatedEvent {
     pub root_node_id: String,
     pub role: String,
@@ -14,10 +16,11 @@ pub struct ContextUpdatedEvent {
     pub changes: Vec<ContextEventChange>,
     pub idempotency_key: Option<String>,
     pub requested_by: Option<String>,
+    #[serde(with = "system_time_serde")]
     pub occurred_at: SystemTime,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ContextEventChange {
     pub operation: String,
     pub entity_kind: String,
@@ -26,7 +29,7 @@ pub struct ContextEventChange {
 }
 
 /// Outcome previously accepted for a given idempotency key.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct IdempotentOutcome {
     pub revision: u64,
     pub content_hash: String,
@@ -53,6 +56,13 @@ pub trait ContextEventStore {
         role: &str,
     ) -> impl Future<Output = Result<u64, PortError>> + Send;
 
+    /// Returns the content hash of the last accepted event, or None if no events exist.
+    fn current_content_hash(
+        &self,
+        root_node_id: &str,
+        role: &str,
+    ) -> impl Future<Output = Result<Option<String>, PortError>> + Send;
+
     /// Checks if an event with this idempotency key was already accepted.
     fn find_by_idempotency_key(
         &self,
@@ -76,10 +86,43 @@ where
         self.as_ref().current_revision(root_node_id, role).await
     }
 
+    async fn current_content_hash(
+        &self,
+        root_node_id: &str,
+        role: &str,
+    ) -> Result<Option<String>, PortError> {
+        self.as_ref().current_content_hash(root_node_id, role).await
+    }
+
     async fn find_by_idempotency_key(
         &self,
         key: &str,
     ) -> Result<Option<IdempotentOutcome>, PortError> {
         self.as_ref().find_by_idempotency_key(key).await
+    }
+}
+
+mod system_time_serde {
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S>(time: &SystemTime, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let millis = time
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or(Duration::ZERO)
+            .as_millis() as u64;
+        millis.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<SystemTime, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let millis = u64::deserialize(deserializer)?;
+        Ok(UNIX_EPOCH + Duration::from_millis(millis))
     }
 }

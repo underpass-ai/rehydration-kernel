@@ -12,19 +12,17 @@ use agentic_support::kernel_e2e_seed::{
     EXPLORER_LEAF_DETAIL, EXPLORER_LEAF_ID, EXPLORER_LEAF_TITLE, EXPLORER_WORKSTREAM_DETAIL,
     EXPLORER_WORKSTREAM_ID, EXPLORER_WORKSTREAM_TITLE, JUMP_DECISION_ID, POWER_TASK_ID,
     PROPULSION_SUBSYSTEM_TITLE, RELATION_DECISION_REQUIRES, RELATION_DEPENDS_ON, RELATION_IMPACTS,
-    ROOT_DETAIL, ROOT_LABEL, ROOT_NODE_ID, ROOT_TITLE, TASK_DETAIL, TASK_ID,
+    ROOT_DETAIL, ROOT_NODE_ID, ROOT_TITLE, TASK_DETAIL, TASK_ID,
     publish_kernel_e2e_projection_events,
 };
 use agentic_support::seed_data::DEVELOPER_ROLE;
 use prost_types::Duration;
 use rehydration_proto::v1beta1::{
-    BundleRenderFormat, CommandMetadata, ContextChange, ContextChangeOperation,
-    GetBundleSnapshotRequest, GetContextRequest, GetGraphRelationshipsRequest,
-    GetNodeDetailRequest, GetProjectionStatusRequest, GetRehydrationDiagnosticsRequest, Phase,
-    ReplayMode, ReplayProjectionRequest, RevisionPrecondition, UpdateContextRequest,
+    BundleRenderFormat, CommandMetadata, ContextChange, ContextChangeOperation, GetContextRequest,
+    GetNodeDetailRequest, Phase, UpdateContextRequest,
 };
 #[tokio::test]
-async fn kernel_full_journey_covers_projection_query_command_and_admin()
+async fn kernel_full_journey_covers_projection_query_and_command()
 -> Result<(), Box<dyn Error + Send + Sync>> {
     let fixture = AgenticFixture::start_with_seed(ROOT_NODE_ID, TASK_ID, |publisher| async move {
         publish_kernel_e2e_projection_events(&publisher).await
@@ -34,7 +32,6 @@ async fn kernel_full_journey_covers_projection_query_command_and_admin()
     let result = async {
         let mut query_client = fixture.query_client();
         let mut command_client = fixture.command_client();
-        let mut admin_client = fixture.admin_client();
 
         let shallow_query_context = query_client
             .get_context(GetContextRequest {
@@ -387,135 +384,6 @@ async fn kernel_full_journey_covers_projection_query_command_and_admin()
         );
         assert!(command_update.warnings.is_empty());
         assert!(!command_update.snapshot_persisted);
-
-        let projection_status = admin_client
-            .get_projection_status(GetProjectionStatusRequest {
-                consumer_names: vec!["context-projection".to_string()],
-            })
-            .await?
-            .into_inner();
-        assert_eq!(projection_status.projections.len(), 1);
-        assert_eq!(
-            projection_status.projections[0].consumer_name,
-            "context-projection"
-        );
-        assert!(projection_status.projections[0].healthy);
-
-        let bundle_snapshot = admin_client
-            .get_bundle_snapshot(GetBundleSnapshotRequest {
-                root_node_id: ROOT_NODE_ID.to_string(),
-                role: DEVELOPER_ROLE.to_string(),
-            })
-            .await?
-            .into_inner()
-            .snapshot
-            .expect("admin snapshot should exist");
-        assert_eq!(
-            bundle_snapshot.snapshot_id,
-            format!("snapshot:{ROOT_NODE_ID}:{DEVELOPER_ROLE}")
-        );
-        assert_eq!(
-            bundle_snapshot.ttl.as_ref().map(|ttl| ttl.seconds),
-            Some(900)
-        );
-        assert_eq!(
-            bundle_snapshot
-                .bundle
-                .as_ref()
-                .map(|bundle| bundle.root_node_id.as_str()),
-            Some(ROOT_NODE_ID)
-        );
-        let snapshot_bundle = bundle_snapshot
-            .bundle
-            .as_ref()
-            .expect("snapshot bundle should exist");
-        let snapshot_stats = snapshot_bundle
-            .stats
-            .as_ref()
-            .expect("snapshot stats should exist");
-        assert_eq!(snapshot_stats.nodes, EXPECTED_SELECTED_NODE_COUNT);
-        assert_eq!(
-            snapshot_stats.relationships,
-            EXPECTED_SELECTED_RELATIONSHIP_COUNT
-        );
-        assert_eq!(snapshot_stats.detailed_nodes, EXPECTED_DETAIL_COUNT as u32);
-
-        let admin_graph = admin_client
-            .get_graph_relationships(GetGraphRelationshipsRequest {
-                node_id: ROOT_NODE_ID.to_string(),
-                node_kind: ROOT_LABEL.to_string(),
-                depth: 3,
-                include_reverse_edges: false,
-            })
-            .await?
-            .into_inner();
-        assert_eq!(
-            admin_graph.root.as_ref().map(|node| node.node_id.as_str()),
-            Some(ROOT_NODE_ID)
-        );
-        assert!(
-            admin_graph
-                .neighbors
-                .iter()
-                .any(|node| node.node_id == TASK_ID)
-        );
-        assert_eq!(admin_graph.neighbors.len(), EXPECTED_NEIGHBOR_COUNT);
-        assert_eq!(admin_graph.relationships.len(), EXPECTED_RELATIONSHIP_COUNT);
-        assert!(admin_graph.relationships.iter().any(|edge| {
-            edge.source_node_id == DECISION_ID
-                && edge.target_node_id == TASK_ID
-                && edge.relationship_type == RELATION_IMPACTS
-        }));
-        assert!(admin_graph.relationships.iter().any(|edge| {
-            edge.source_node_id == POWER_TASK_ID
-                && edge.target_node_id == TASK_ID
-                && edge.relationship_type == RELATION_DEPENDS_ON
-        }));
-        assert!(admin_graph.relationships.iter().any(|edge| {
-            edge.source_node_id == JUMP_DECISION_ID
-                && edge.target_node_id == DECISION_ID
-                && edge.relationship_type == RELATION_DECISION_REQUIRES
-        }));
-
-        let diagnostics = admin_client
-            .get_rehydration_diagnostics(GetRehydrationDiagnosticsRequest {
-                root_node_id: ROOT_NODE_ID.to_string(),
-                roles: vec![DEVELOPER_ROLE.to_string(), "reviewer".to_string()],
-                phase: Phase::Build as i32,
-            })
-            .await?
-            .into_inner();
-        assert_eq!(diagnostics.diagnostics.len(), 2);
-        assert!(
-            diagnostics
-                .diagnostics
-                .iter()
-                .all(|item| item.selected_nodes == EXPECTED_SELECTED_NODE_COUNT
-                    && item.selected_relationships == EXPECTED_SELECTED_RELATIONSHIP_COUNT
-                    && item.detailed_nodes == EXPECTED_DETAIL_COUNT as u32
-                    && item.estimated_tokens > EXPECTED_SELECTED_NODE_COUNT * 10)
-        );
-        assert!(
-            diagnostics
-                .diagnostics
-                .iter()
-                .all(|item| item.notes.iter().any(|note| note.starts_with("phase=")))
-        );
-
-        let replay = admin_client
-            .replay_projection(ReplayProjectionRequest {
-                consumer_name: "context-projection".to_string(),
-                stream_name: "rehydration.graph.node.materialized".to_string(),
-                starting_after: String::new(),
-                max_events: 25,
-                replay_mode: ReplayMode::DryRun as i32,
-                requested_by: "kernel-e2e".to_string(),
-            })
-            .await?
-            .into_inner();
-        assert_eq!(replay.consumer_name, "context-projection");
-        assert_eq!(replay.accepted_events, 25);
-        assert_eq!(replay.replay_mode, ReplayMode::DryRun as i32);
 
         Ok::<(), Box<dyn Error + Send + Sync>>(())
     }

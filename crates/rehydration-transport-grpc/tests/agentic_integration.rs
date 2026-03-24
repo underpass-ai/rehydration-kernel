@@ -21,7 +21,7 @@ async fn basic_agent_uses_kernel_context_to_drive_runtime_actions() {
         .expect("agentic fixture should start");
     assert!(fixture.nats_url().starts_with("nats://"));
     let runtime = RecordingRuntime::default();
-    let mut agent = BasicContextAgent::new(fixture.query_client(), fixture.admin_client(), runtime);
+    let mut agent = BasicContextAgent::new(fixture.query_client(), runtime);
 
     let execution = agent
         .execute(AgentRequest::reference_defaults(
@@ -62,7 +62,7 @@ async fn basic_agent_uses_underpass_runtime_contract_with_kernel_context() {
     let runtime = UnderpassRuntimeClient::connect(runtime_server.base_url())
         .await
         .expect("runtime client should connect");
-    let mut agent = BasicContextAgent::new(fixture.query_client(), fixture.admin_client(), runtime);
+    let mut agent = BasicContextAgent::new(fixture.query_client(), runtime);
 
     let execution = agent
         .execute(AgentRequest::reference_defaults(

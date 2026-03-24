@@ -93,12 +93,27 @@ where
             .current_revision(case_id.as_str(), role.as_str())
             .await?;
 
-        // Validate preconditions
+        // Validate revision precondition
         let expected_revision = command.expected_revision.unwrap_or(current_revision);
         if expected_revision != current_revision {
             return Err(ApplicationError::Ports(
                 rehydration_domain::PortError::Conflict(format!(
                     "expected revision {expected_revision}, current is {current_revision}"
+                )),
+            ));
+        }
+
+        // Validate content hash precondition
+        if let Some(ref expected_hash) = command.expected_content_hash
+            && let Some(ref current_hash) = self
+                .event_store
+                .current_content_hash(case_id.as_str(), role.as_str())
+                .await?
+            && expected_hash != current_hash
+        {
+            return Err(ApplicationError::Ports(
+                rehydration_domain::PortError::Conflict(format!(
+                    "expected content hash '{expected_hash}', current is '{current_hash}'"
                 )),
             ));
         }
@@ -343,5 +358,64 @@ mod tests {
 
         assert_eq!(first.accepted_version.revision, 1);
         assert_eq!(second.accepted_version.revision, 2);
+    }
+
+    #[tokio::test]
+    async fn execute_rejects_wrong_content_hash_precondition() {
+        let store = event_store();
+        let uc = use_case(Arc::clone(&store));
+
+        // First command establishes a hash
+        let first = uc
+            .execute(UpdateContextCommand {
+                root_node_id: "node-1".to_string(),
+                role: "developer".to_string(),
+                work_item_id: "task-1".to_string(),
+                changes: vec![sample_change()],
+                expected_revision: None,
+                expected_content_hash: None,
+                idempotency_key: None,
+                requested_by: None,
+                persist_snapshot: false,
+            })
+            .await
+            .expect("first should succeed");
+
+        // Second command with wrong expected_content_hash must fail
+        let err = uc
+            .execute(UpdateContextCommand {
+                root_node_id: "node-1".to_string(),
+                role: "developer".to_string(),
+                work_item_id: "task-2".to_string(),
+                changes: vec![sample_change()],
+                expected_revision: Some(1),
+                expected_content_hash: Some("wrong-hash".to_string()),
+                idempotency_key: None,
+                requested_by: None,
+                persist_snapshot: false,
+            })
+            .await;
+
+        assert!(err.is_err());
+        let msg = err.expect_err("should fail").to_string();
+        assert!(msg.contains("expected content hash"));
+
+        // Same command with correct hash succeeds
+        let ok = uc
+            .execute(UpdateContextCommand {
+                root_node_id: "node-1".to_string(),
+                role: "developer".to_string(),
+                work_item_id: "task-2".to_string(),
+                changes: vec![sample_change()],
+                expected_revision: Some(1),
+                expected_content_hash: Some(first.accepted_version.content_hash.clone()),
+                idempotency_key: None,
+                requested_by: None,
+                persist_snapshot: false,
+            })
+            .await
+            .expect("correct hash should succeed");
+
+        assert_eq!(ok.accepted_version.revision, 2);
     }
 }

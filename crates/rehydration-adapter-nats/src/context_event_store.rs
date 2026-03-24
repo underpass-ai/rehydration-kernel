@@ -71,10 +71,13 @@ impl NatsContextEventStore {
 
         match stream.get_last_raw_message_by_subject(&subject).await {
             Ok(msg) => {
-                let payload = String::from_utf8_lossy(&msg.payload).to_string();
-                let (rev_str, hash) = payload.split_once(':').unwrap_or(("0", ""));
-                let revision = rev_str.parse::<u64>().unwrap_or(0);
-                Ok(Some((revision, hash.to_string())))
+                let event: ContextUpdatedEvent =
+                    serde_json::from_slice(&msg.payload).map_err(|error| {
+                        PortError::Unavailable(format!(
+                            "failed to deserialize context event: {error}"
+                        ))
+                    })?;
+                Ok(Some((event.revision, event.content_hash)))
             }
             Err(error) => {
                 if matches!(
@@ -109,7 +112,11 @@ impl ContextEventStore for NatsContextEventStore {
 
         let new_revision = current + 1;
         let subject = self.event_subject(&event.root_node_id, &event.role);
-        let payload = format!("{new_revision}:{}", event.content_hash);
+
+        // Persist the full event as JSON
+        let payload = serde_json::to_vec(&event).map_err(|error| {
+            PortError::Unavailable(format!("failed to serialize context event: {error}"))
+        })?;
 
         self.js
             .publish(subject, payload.into())
@@ -120,7 +127,13 @@ impl ContextEventStore for NatsContextEventStore {
 
         if let Some(ref idem_key) = event.idempotency_key {
             let idem_subject = self.idem_subject(idem_key);
-            let idem_payload = format!("{new_revision}:{}", event.content_hash);
+            let idem_outcome = IdempotentOutcome {
+                revision: new_revision,
+                content_hash: event.content_hash.clone(),
+            };
+            let idem_payload = serde_json::to_vec(&idem_outcome).map_err(|error| {
+                PortError::Unavailable(format!("failed to serialize idempotent outcome: {error}"))
+            })?;
             let _ = self
                 .js
                 .publish(idem_subject, idem_payload.into())
@@ -141,6 +154,17 @@ impl ContextEventStore for NatsContextEventStore {
         }
     }
 
+    async fn current_content_hash(
+        &self,
+        root_node_id: &str,
+        role: &str,
+    ) -> Result<Option<String>, PortError> {
+        match self.last_event_for(root_node_id, role).await? {
+            Some((_, hash)) if !hash.is_empty() => Ok(Some(hash)),
+            _ => Ok(None),
+        }
+    }
+
     async fn find_by_idempotency_key(
         &self,
         key: &str,
@@ -154,13 +178,13 @@ impl ContextEventStore for NatsContextEventStore {
 
         match stream.get_last_raw_message_by_subject(&subject).await {
             Ok(msg) => {
-                let payload = String::from_utf8_lossy(&msg.payload).to_string();
-                let (rev_str, hash) = payload.split_once(':').unwrap_or(("0", ""));
-                let revision = rev_str.parse::<u64>().unwrap_or(0);
-                Ok(Some(IdempotentOutcome {
-                    revision,
-                    content_hash: hash.to_string(),
-                }))
+                let outcome: IdempotentOutcome =
+                    serde_json::from_slice(&msg.payload).map_err(|error| {
+                        PortError::Unavailable(format!(
+                            "failed to deserialize idempotent outcome: {error}"
+                        ))
+                    })?;
+                Ok(Some(outcome))
             }
             Err(error) => {
                 if matches!(
