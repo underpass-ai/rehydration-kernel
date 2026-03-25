@@ -129,11 +129,12 @@ relation mixes). Each cell is `TaskOK + RestartOK + ReasonPreserved` out of 3.
 | Qwen3-8B (local 8B) | 4096 | 18/18 (100%) | 9/18 (50%) | 50pp |
 | Qwen3-8B (local 8B) | **512** | **15/18 (83%)** | 8/18 (44%) | 39pp |
 | Qwen3-8B + ResumeFocused | **512** | **16/18 (89%)** | 5/18 (28%) | 61pp |
+| Qwen3-8B + competing noise | 4096 | **18/18 (100%)** | 5/18 (28%) | **72pp** |
 
 **What this shows:**
 
 - Explanatory relationships consistently outperform structural-only across
-  all models and budgets. The gap ranges from 27pp to 61pp.
+  all models, budgets, and noise conditions. The gap ranges from 27pp to 72pp.
 - The 100% score from Qwen3-8B at full budget reflects extraction, not
   reasoning — rationale text is present verbatim and the model copies it.
 - `ResumeFocused` mode auto-activates under token pressure (< 30 tokens/node)
@@ -142,6 +143,10 @@ relation mixes). Each cell is `TaskOK + RestartOK + ReasonPreserved` out of 3.
   Under token pressure (512 tokens, 68-85% truncation), accuracy drops to 83%.
 - Structural-only accuracy degrades with model size (61% → 56% → 50%),
   suggesting weaker models benefit more from explanatory metadata.
+- With competing causal noise (distractors that mimic real domain nodes with
+  causal semantic classes), explanatory stays at 100% while structural drops
+  to 28%. The kernel's explanatory metadata is immune to plausible-looking
+  noise; without it, the model cannot distinguish real from competing paths.
 
 **What this does NOT show:**
 

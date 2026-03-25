@@ -406,6 +406,14 @@ quality: the kernel's mode-aware rendering selects which relationships
 survive truncation, and the causal spine is sufficient for task identification,
 restart-point selection, and rationale preservation.
 
+To stress-test robustness, we introduce \texttt{CompetingCausal} noise:
+distractor branches that use domain vocabulary, causal semantic classes, and
+plausible rationale mimicking real relationships. With competing noise,
+explanatory bundles maintain 100\% (18/18) while structural drops from 50\%
+to 28\% (5/18). The explanatory metadata is immune to plausible-looking
+noise because the model can anchor on specific rationale text; without it,
+competing causal distractors are indistinguishable from the real chain.
+
 \section{Discussion}
 
 The main implication of the current artifact is narrower and more useful than a

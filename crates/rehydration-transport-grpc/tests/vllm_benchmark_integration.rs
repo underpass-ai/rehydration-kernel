@@ -13,7 +13,7 @@ use rehydration_proto::v1beta1::{
     context_query_service_client::ContextQueryServiceClient,
 };
 use rehydration_testkit::{
-    Domain, EvaluationGroundTruth, GraphSeedConfig, LlmEvaluatorConfig, RelationMix,
+    Domain, EvaluationGroundTruth, GraphSeedConfig, LlmEvaluatorConfig, NoiseMode, RelationMix,
     evaluate_with_llm, generate_seed, seed_publisher::seed_to_projection_events,
 };
 use tokio::time::sleep;
@@ -70,6 +70,9 @@ impl Scale {
             Scale::Stress => GraphSeedConfig::stress(domain),
         };
         config.relation_mix = relation_mix;
+        if std::env::var("BENCHMARK_NOISE_MODE").as_deref() == Ok("competing") {
+            config.noise_mode = NoiseMode::CompetingCausal;
+        }
         config.id_prefix = format!(
             "{}-{}-{}",
             self.label(),

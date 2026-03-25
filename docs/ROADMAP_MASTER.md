@@ -150,7 +150,7 @@ Evolve from rehydration to operational memory:
 ### Level 2 — Strong paper
 - [ ] Closed-loop recovery with corrected outcome
 - ~~Three graph scales: micro, meso, stress~~ (done: dataset generator)
-- [ ] Noise controls (distractors, competing motivations)
+- [x] Noise controls: CompetingCausal mode — distractors with causal semantic classes and plausible rationale. Explanatory 100% unaffected, structural drops to 28%
 - ~~Two domains minimum~~ (done: Operations + SoftwareDebugging)
 - [ ] Pull and event-driven evaluation with same metrics
 - [ ] External baseline families
