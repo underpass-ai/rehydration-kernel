@@ -64,6 +64,7 @@ where
                     focus_node_id: None,
                     token_budget: (request.token_budget > 0).then_some(request.token_budget),
                     max_tier: map_proto_resolution_tier(request.max_tier),
+                    rehydration_mode: rehydration_domain::RehydrationMode::default(),
                 },
                 requested_scopes: request.requested_scopes,
             })
@@ -125,6 +126,7 @@ where
                     focus_node_id: None,
                     token_budget: (request.token_budget > 0).then_some(request.token_budget),
                     max_tier: None,
+                    rehydration_mode: rehydration_domain::RehydrationMode::default(),
                 },
             })
             .await

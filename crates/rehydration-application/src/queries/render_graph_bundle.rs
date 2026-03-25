@@ -1,11 +1,14 @@
 use std::collections::BTreeMap;
 
-use rehydration_domain::{RehydrationBundle, ResolutionTier, TierBudget, TokenEstimator};
+use rehydration_domain::{
+    RehydrationBundle, RehydrationMode, ResolutionTier, TierBudget, TokenEstimator,
+};
 
 use crate::queries::ContextRenderOptions;
 use crate::queries::bundle_section_renderer::ordered_sections;
 use crate::queries::bundle_truncator::{TruncationMetadata, limit_sections_by_token_budget};
 use crate::queries::cl100k_estimator::Cl100kEstimator;
+use crate::queries::mode_heuristic::resolve_mode;
 use crate::queries::tier_section_classifier::classify_into_tiers;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -31,6 +34,8 @@ pub struct RenderedContext {
     pub truncation: Option<TruncationMetadata>,
     /// Multi-resolution tiers (L0 Summary, L1 Causal Spine, L2 Evidence Pack).
     pub tiers: Vec<RenderedTier>,
+    /// The mode that was actually used for tiered rendering.
+    pub resolved_mode: RehydrationMode,
 }
 
 pub fn render_graph_bundle(bundle: &RehydrationBundle) -> RenderedContext {
@@ -81,10 +86,11 @@ pub fn render_graph_bundle_with_estimator(
         .collect();
 
     // ── Tiered rendering ────────────────────────────────────────────
-    let tiered_sections = classify_into_tiers(bundle, &detail_by_node_id, options);
+    let resolved_mode = resolve_mode(options.rehydration_mode, bundle, options.token_budget);
+    let tiered_sections = classify_into_tiers(bundle, &detail_by_node_id, options, resolved_mode);
     let tier_budget = options
         .token_budget
-        .map(TierBudget::from_total)
+        .map(|total| TierBudget::from_total_with_mode(total, resolved_mode))
         .unwrap_or_else(TierBudget::unlimited);
 
     let tiers = build_rendered_tiers(tiered_sections, &tier_budget, estimator);
@@ -95,6 +101,7 @@ pub fn render_graph_bundle_with_estimator(
         sections,
         truncation,
         tiers,
+        resolved_mode,
     }
 }
 

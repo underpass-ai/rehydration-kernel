@@ -8,6 +8,7 @@ pub mod get_context_path;
 pub mod get_node_detail;
 pub mod graph_relationships;
 pub mod graph_traversal_depth;
+pub(crate) mod mode_heuristic;
 pub mod node_centric_projection_reader;
 pub mod ordered_neighborhood;
 pub mod query_application_service;

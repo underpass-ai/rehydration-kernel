@@ -1,7 +1,7 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use rehydration_domain::{
-    BundleNodeDetail, RehydrationBundle, RelationSemanticClass, ResolutionTier,
+    BundleNodeDetail, RehydrationBundle, RehydrationMode, RelationSemanticClass, ResolutionTier,
 };
 
 use crate::queries::ContextRenderOptions;
@@ -16,10 +16,25 @@ pub(crate) struct TieredSection {
 
 /// Classify bundle contents into resolution tiers.
 ///
-/// - L0 Summary: compact 4-line summary (root title, status, blocker, next action)
-/// - L1 Causal Spine: root node, focus node, causal/motivational/evidential relations
-/// - L2 Evidence Pack: remaining neighbors, structural relations, all details
+/// Dispatches to mode-specific classification:
+/// - `ResumeFocused`: only causal spine in L1, no L2 at all
+/// - All other modes: default classification with L0/L1/L2
 pub(crate) fn classify_into_tiers(
+    bundle: &RehydrationBundle,
+    detail_by_node_id: &BTreeMap<&str, &BundleNodeDetail>,
+    options: &ContextRenderOptions,
+    resolved_mode: RehydrationMode,
+) -> Vec<TieredSection> {
+    match resolved_mode {
+        RehydrationMode::ResumeFocused => {
+            classify_resume_focused(bundle, detail_by_node_id, options)
+        }
+        _ => classify_default(bundle, detail_by_node_id, options),
+    }
+}
+
+/// Default classification: L0 summary, L1 causal spine, L2 evidence pack.
+fn classify_default(
     bundle: &RehydrationBundle,
     detail_by_node_id: &BTreeMap<&str, &BundleNodeDetail>,
     options: &ContextRenderOptions,
@@ -113,6 +128,89 @@ pub(crate) fn classify_into_tiers(
     sections
 }
 
+/// Resume-focused classification: only causal spine in L1, no L2.
+///
+/// Prunes all distractor/noise branches and structural-only relationships.
+/// Keeps only nodes that participate in explanatory relationships.
+fn classify_resume_focused(
+    bundle: &RehydrationBundle,
+    _detail_by_node_id: &BTreeMap<&str, &BundleNodeDetail>,
+    options: &ContextRenderOptions,
+) -> Vec<TieredSection> {
+    let max_tier = options.max_tier.unwrap_or(ResolutionTier::L2EvidencePack);
+    let mut sections = Vec::new();
+
+    // L0: compact summary (same as default)
+    sections.push(TieredSection {
+        tier: ResolutionTier::L0Summary,
+        content: render_l0_summary(bundle, options),
+    });
+
+    if max_tier < ResolutionTier::L1CausalSpine {
+        return sections;
+    }
+
+    // L1: ONLY the causal spine
+
+    // Root node
+    sections.push(TieredSection {
+        tier: ResolutionTier::L1CausalSpine,
+        content: render_node(bundle.root_node()),
+    });
+
+    // Focus node (if different from root)
+    let focus_node = options.focus_node_id.as_deref().and_then(|fid| {
+        if fid != bundle.root_node().node_id() {
+            bundle.neighbor_nodes().iter().find(|n| n.node_id() == fid)
+        } else {
+            None
+        }
+    });
+    if let Some(focus_node) = focus_node {
+        sections.push(TieredSection {
+            tier: ResolutionTier::L1CausalSpine,
+            content: render_node(focus_node),
+        });
+    }
+
+    // Collect causal-spine node IDs from explanatory relationships
+    let causal_node_ids: BTreeSet<&str> = bundle
+        .relationships()
+        .iter()
+        .filter(|r| is_explanatory(r.explanation().semantic_class()))
+        .flat_map(|r| [r.source_node_id(), r.target_node_id()])
+        .collect();
+
+    // Causal-spine neighbor nodes only (not distractors)
+    let focus_id = focus_node.map(|n| n.node_id());
+    for node in bundle.neighbor_nodes() {
+        if Some(node.node_id()) != focus_id && causal_node_ids.contains(node.node_id()) {
+            sections.push(TieredSection {
+                tier: ResolutionTier::L1CausalSpine,
+                content: render_node(node),
+            });
+        }
+    }
+
+    // ALL explanatory relationships (sorted by salience)
+    let mut relationships: Vec<_> = bundle.relationships().iter().collect();
+    relationships.sort_by_key(|r| r.explanation().semantic_class().salience_rank());
+
+    for rel in &relationships {
+        if is_explanatory(rel.explanation().semantic_class()) {
+            sections.push(TieredSection {
+                tier: ResolutionTier::L1CausalSpine,
+                content: render_relationship(rel),
+            });
+        }
+    }
+
+    // NO L2. Distractors, structural relationships, and details are dropped entirely.
+    // This trades completeness for causal chain preservation under token pressure.
+
+    sections
+}
+
 /// Compact L0 summary: objective, status, blocker, next action.
 fn render_l0_summary(bundle: &RehydrationBundle, options: &ContextRenderOptions) -> String {
     let root = bundle.root_node();
@@ -187,7 +285,8 @@ mod tests {
 
     use rehydration_domain::{
         BundleMetadata, BundleNode, BundleNodeDetail, BundleRelationship, CaseId,
-        RehydrationBundle, RelationExplanation, RelationSemanticClass, ResolutionTier, Role,
+        RehydrationBundle, RehydrationMode, RelationExplanation, RelationSemanticClass,
+        ResolutionTier, Role,
     };
 
     use crate::queries::ContextRenderOptions;
@@ -256,7 +355,12 @@ mod tests {
             .iter()
             .map(|d| (d.node_id(), d))
             .collect();
-        let sections = classify_into_tiers(&bundle, &detail_map, &ContextRenderOptions::default());
+        let sections = classify_into_tiers(
+            &bundle,
+            &detail_map,
+            &ContextRenderOptions::default(),
+            RehydrationMode::ReasonPreserving,
+        );
 
         assert_eq!(sections[0].tier, ResolutionTier::L0Summary);
         assert!(sections[0].content.contains("Objective:"));
@@ -271,7 +375,12 @@ mod tests {
             .iter()
             .map(|d| (d.node_id(), d))
             .collect();
-        let sections = classify_into_tiers(&bundle, &detail_map, &ContextRenderOptions::default());
+        let sections = classify_into_tiers(
+            &bundle,
+            &detail_map,
+            &ContextRenderOptions::default(),
+            RehydrationMode::ReasonPreserving,
+        );
 
         let l1_sections: Vec<_> = sections
             .iter()
@@ -293,7 +402,12 @@ mod tests {
             .iter()
             .map(|d| (d.node_id(), d))
             .collect();
-        let sections = classify_into_tiers(&bundle, &detail_map, &ContextRenderOptions::default());
+        let sections = classify_into_tiers(
+            &bundle,
+            &detail_map,
+            &ContextRenderOptions::default(),
+            RehydrationMode::ReasonPreserving,
+        );
 
         let l2_sections: Vec<_> = sections
             .iter()
@@ -314,7 +428,12 @@ mod tests {
             .iter()
             .map(|d| (d.node_id(), d))
             .collect();
-        let sections = classify_into_tiers(&bundle, &detail_map, &ContextRenderOptions::default());
+        let sections = classify_into_tiers(
+            &bundle,
+            &detail_map,
+            &ContextRenderOptions::default(),
+            RehydrationMode::ReasonPreserving,
+        );
 
         let l2_sections: Vec<_> = sections
             .iter()
@@ -338,6 +457,7 @@ mod tests {
                 max_tier: Some(ResolutionTier::L0Summary),
                 ..Default::default()
             },
+            RehydrationMode::ReasonPreserving,
         );
 
         assert_eq!(sections.len(), 1);
@@ -359,6 +479,7 @@ mod tests {
                 max_tier: Some(ResolutionTier::L1CausalSpine),
                 ..Default::default()
             },
+            RehydrationMode::ReasonPreserving,
         );
 
         assert!(
@@ -418,10 +539,167 @@ mod tests {
         .expect("valid");
 
         let detail_map = BTreeMap::new();
-        let sections = classify_into_tiers(&bundle, &detail_map, &ContextRenderOptions::default());
+        let sections = classify_into_tiers(
+            &bundle,
+            &detail_map,
+            &ContextRenderOptions::default(),
+            RehydrationMode::ReasonPreserving,
+        );
         let l0 = &sections[0].content;
 
         assert!(l0.contains("Blocker: waiting for approval"));
         assert!(l0.contains("Next: TRIGGERS"));
+    }
+
+    #[test]
+    fn resume_focused_excludes_distractor_nodes() {
+        let bundle = bundle_with_distractors();
+        let detail_map = BTreeMap::new();
+        let sections = classify_into_tiers(
+            &bundle,
+            &detail_map,
+            &ContextRenderOptions::default(),
+            RehydrationMode::ResumeFocused,
+        );
+
+        // No L2 sections at all
+        assert!(
+            sections
+                .iter()
+                .all(|s| s.tier != ResolutionTier::L2EvidencePack)
+        );
+        // No distractor content
+        let all_content: String = sections.iter().map(|s| s.content.as_str()).collect();
+        assert!(!all_content.contains("distractor"));
+    }
+
+    #[test]
+    fn resume_focused_keeps_causal_relationships() {
+        let bundle = bundle_with_distractors();
+        let detail_map = BTreeMap::new();
+        let sections = classify_into_tiers(
+            &bundle,
+            &detail_map,
+            &ContextRenderOptions::default(),
+            RehydrationMode::ResumeFocused,
+        );
+
+        let l1: Vec<_> = sections
+            .iter()
+            .filter(|s| s.tier == ResolutionTier::L1CausalSpine)
+            .collect();
+        assert!(l1.iter().any(|s| s.content.contains("[causal]")));
+        assert!(!l1.iter().any(|s| s.content.contains("[structural]")));
+    }
+
+    #[test]
+    fn resume_focused_includes_causal_spine_nodes() {
+        let bundle = bundle_with_distractors();
+        let detail_map = BTreeMap::new();
+        let sections = classify_into_tiers(
+            &bundle,
+            &detail_map,
+            &ContextRenderOptions::default(),
+            RehydrationMode::ResumeFocused,
+        );
+
+        let l1_content: String = sections
+            .iter()
+            .filter(|s| s.tier == ResolutionTier::L1CausalSpine)
+            .map(|s| s.content.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        // Causal chain node should be in L1
+        assert!(
+            l1_content.contains("Chain Node"),
+            "causal chain node should be in L1"
+        );
+        // Root should be in L1
+        assert!(l1_content.contains("Root"), "root should be in L1");
+    }
+
+    fn bundle_with_distractors() -> RehydrationBundle {
+        RehydrationBundle::new(
+            CaseId::new("root").expect("valid"),
+            Role::new("dev").expect("valid"),
+            BundleNode::new(
+                "root",
+                "incident",
+                "Root",
+                "Outage",
+                "ACTIVE",
+                vec![],
+                BTreeMap::new(),
+            ),
+            vec![
+                BundleNode::new(
+                    "chain-0",
+                    "decision",
+                    "Chain Node",
+                    "Recovery",
+                    "ACTIVE",
+                    vec![],
+                    BTreeMap::new(),
+                ),
+                BundleNode::new(
+                    "dist-0",
+                    "distractor",
+                    "distractor 0",
+                    "",
+                    "ACTIVE",
+                    vec![],
+                    BTreeMap::new(),
+                ),
+                BundleNode::new(
+                    "dist-1",
+                    "distractor",
+                    "distractor 1",
+                    "",
+                    "ACTIVE",
+                    vec![],
+                    BTreeMap::new(),
+                ),
+                BundleNode::new(
+                    "dist-2",
+                    "distractor",
+                    "distractor 2",
+                    "",
+                    "ACTIVE",
+                    vec![],
+                    BTreeMap::new(),
+                ),
+            ],
+            vec![
+                BundleRelationship::new(
+                    "root",
+                    "chain-0",
+                    "TRIGGERS",
+                    RelationExplanation::new(RelationSemanticClass::Causal)
+                        .with_rationale("failure triggered recovery"),
+                ),
+                BundleRelationship::new(
+                    "root",
+                    "dist-0",
+                    "CONTAINS",
+                    RelationExplanation::new(RelationSemanticClass::Structural),
+                ),
+                BundleRelationship::new(
+                    "root",
+                    "dist-1",
+                    "CONTAINS",
+                    RelationExplanation::new(RelationSemanticClass::Structural),
+                ),
+                BundleRelationship::new(
+                    "root",
+                    "dist-2",
+                    "CONTAINS",
+                    RelationExplanation::new(RelationSemanticClass::Structural),
+                ),
+            ],
+            vec![],
+            BundleMetadata::initial("0.1.0"),
+        )
+        .expect("valid")
     }
 }
