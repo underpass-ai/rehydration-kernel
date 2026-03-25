@@ -85,11 +85,17 @@ Single source of truth for kernel maturity, technical debt, and next steps.
 
 ## Pending — Product evolution (from OSS improvement planning)
 
-### Bundle multi-resolution (high priority, quick win)
-Tiered rendering to replace uniform flat sections:
-- **L0 Summary**: objective, status, blocker, next action
-- **L1 Causal spine**: root, focus, top causal/motivational/evidential relations, resume path
-- **L2 Evidence pack**: supporting details, errors, constraints, relevant data
+### Bundle multi-resolution (done — PR #63)
+Tiered rendering alongside flat sections:
+- **L0 Summary**: objective, status, blocker, next action (~100 tokens)
+- **L1 Causal spine**: root, focus, causal/motivational/evidential relations (~500 tokens)
+- **L2 Evidence pack**: structural relations, neighbors, details (remaining budget)
+- Proto: `ResolutionTier` enum, `RenderedTier` message, `max_tier` on `GetContextRequest`
+- Backward compatible: flat `content`/`sections` unchanged, `tiers` is additive
+- 25 new tests (7 domain + 7 classifier + 5 render + 1 unit e2e + 5 container e2e)
+- **Benchmark note**: tiers do not improve flat content scores — they are an output format
+  for granular consumption (L0-only status checks, L1-only diagnosis), not a content
+  selection improvement. The flat salience ordering already prioritizes the same content.
 
 ### RehydrationMode heuristic (medium priority)
 Deterministic mode selection based on query shape:
