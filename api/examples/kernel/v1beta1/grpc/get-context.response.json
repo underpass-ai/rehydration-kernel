@@ -17,6 +17,11 @@
           "properties": {
             "language": "rust",
             "service": "billing-api"
+          },
+          "provenance": {
+            "sourceKind": "SOURCE_KIND_PROJECTION",
+            "sourceAgent": "rehydration-kernel",
+            "observedAt": "2026-03-10T10:00:00Z"
           }
         },
         "neighborNodes": [

@@ -1,10 +1,11 @@
 use rehydration_application::{GraphNodeView, NodeDetailView};
 use rehydration_domain::{
-    BundleNode, BundleNodeDetail, BundleRelationship, RelationExplanation, RelationSemanticClass,
+    BundleNode, BundleNodeDetail, BundleRelationship, Provenance, RelationExplanation,
+    RelationSemanticClass, SourceKind,
 };
 use rehydration_proto::v1beta1::{
     BundleNodeDetail as ProtoBundleNodeDetail, GraphNode, GraphRelationship,
-    GraphRelationshipExplanation, GraphRelationshipSemanticClass,
+    GraphRelationshipExplanation, GraphRelationshipSemanticClass, Provenance as ProtoProvenance,
 };
 
 pub(crate) fn proto_graph_node_v1beta1(node: &GraphNodeView) -> GraphNode {
@@ -16,6 +17,7 @@ pub(crate) fn proto_graph_node_v1beta1(node: &GraphNodeView) -> GraphNode {
         status: node.status.clone(),
         labels: node.labels.clone(),
         properties: node.properties.clone().into_iter().collect(),
+        provenance: None, // GraphNodeView does not carry provenance yet
     }
 }
 
@@ -28,6 +30,25 @@ pub(crate) fn proto_bundle_node_v1beta1(node: &BundleNode) -> GraphNode {
         status: node.status().to_string(),
         labels: node.labels().to_vec(),
         properties: node.properties().clone().into_iter().collect(),
+        provenance: node.provenance().map(proto_provenance_v1beta1),
+    }
+}
+
+fn proto_provenance_v1beta1(p: &Provenance) -> ProtoProvenance {
+    ProtoProvenance {
+        source_kind: proto_source_kind(p.source_kind()) as i32,
+        source_agent: p.source_agent().unwrap_or_default().to_string(),
+        observed_at: p.observed_at().unwrap_or_default().to_string(),
+    }
+}
+
+fn proto_source_kind(kind: &SourceKind) -> rehydration_proto::v1beta1::SourceKind {
+    match kind {
+        SourceKind::Human => rehydration_proto::v1beta1::SourceKind::Human,
+        SourceKind::Agent => rehydration_proto::v1beta1::SourceKind::Agent,
+        SourceKind::Projection => rehydration_proto::v1beta1::SourceKind::Projection,
+        SourceKind::Derived => rehydration_proto::v1beta1::SourceKind::Derived,
+        SourceKind::Unknown => rehydration_proto::v1beta1::SourceKind::Unspecified,
     }
 }
 

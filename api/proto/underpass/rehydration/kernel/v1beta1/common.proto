@@ -161,6 +161,22 @@ message ProjectionStatus {
   repeated string warnings = 9;
 }
 
+// Classification of the system or actor that produced a fact.
+enum SourceKind {
+  SOURCE_KIND_UNSPECIFIED = 0;
+  SOURCE_KIND_HUMAN = 1;
+  SOURCE_KIND_AGENT = 2;
+  SOURCE_KIND_PROJECTION = 3;
+  SOURCE_KIND_DERIVED = 4;
+}
+
+// Provenance metadata: who produced this fact and when.
+message Provenance {
+  SourceKind source_kind = 1;
+  string source_agent = 2;   // e.g. "diagnostics-agent"
+  string observed_at = 3;    // ISO-8601
+}
+
 message GraphNode {
   string node_id = 1;
   string node_kind = 2;
@@ -169,6 +185,7 @@ message GraphNode {
   string status = 5;
   repeated string labels = 6;
   map<string, string> properties = 7;
+  Provenance provenance = 8;
 }
 
 message GraphRelationship {
