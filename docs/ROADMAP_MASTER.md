@@ -112,13 +112,15 @@ Observability (done):
 - [x] Proto: `RehydrationMode` enum, `rehydration_mode` on request, `resolved_mode` on response
 - [ ] Include resolved_mode in benchmark diagnostic output (next iteration)
 
-### Provenance and auditability (in progress)
-First slice done: `source_kind`, `source_agent`, `observed_at` on nodes.
+### Provenance and auditability (observability feature — done)
+End-to-end: `source_kind`, `source_agent`, `observed_at` on nodes.
 - [x] Domain: SourceKind enum + Provenance value object + BundleNode field
 - [x] Application: event ingestion maps provenance, renderer surfaces it
 - [x] Proto: SourceKind enum + Provenance message + GraphNode.provenance field
 - [x] Transport: bidirectional mapping domain ↔ proto
-- [ ] Neo4j persistence: persist/read provenance fields on ProjectionNode
+- [x] Neo4j persistence: persist/read provenance fields on ProjectionNode
+- [x] Differentiated provenance: human/agent/derived/projection by node role
+- [x] Benchmarked: does not improve LLM accuracy (observability, not inference)
 - [ ] Provenance on relationships (BundleRelationship + GraphRelationship)
 - [ ] `derived_from`, `effective_at`, `staleness` (computed)
 - [ ] `supports`, `contradicts` semantic classes

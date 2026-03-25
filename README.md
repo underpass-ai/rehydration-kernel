@@ -81,6 +81,7 @@ one use case per file.
 - **Helm chart** — production-ready with optional NATS/Valkey sidecars, TLS config, OTel endpoint
 - **cl100k_base** — BPE tokenization (tiktoken-rs) for accurate token budgets
 - **Salience ordering** — causal > motivational > evidential > constraint > procedural > structural
+- **Provenance** — `source_kind` (human/agent/projection/derived), `source_agent`, `observed_at` on nodes. Flows through event → Neo4j → render → proto for auditability. Does not improve LLM inference accuracy (benchmarked)
 
 ## Contracts
 
@@ -147,6 +148,17 @@ relation mixes). Each cell is `TaskOK + RestartOK + ReasonPreserved` out of 3.
   causal semantic classes), explanatory stays at 100% while structural drops
   to 28%. The kernel's explanatory metadata is immune to plausible-looking
   noise; without it, the model cannot distinguish real from competing paths.
+
+**Provenance is observability, not inference signal:**
+
+Provenance metadata (`source_kind`, `source_agent`, `observed_at`) is surfaced
+in rendered context for auditability — human operators and trust systems can
+verify where information came from. It does not improve LLM accuracy:
+explanatory stays at 18/18 with or without provenance, and the ~22% token
+overhead from provenance brackets actually degrades structural scores (9/18
+→ 5/18). Differentiated provenance (human/agent/derived/projection by node
+role) recovers marginally vs uniform provenance but does not reach the
+no-provenance baseline.
 
 **What this does NOT show:**
 

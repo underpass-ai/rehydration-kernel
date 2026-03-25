@@ -126,6 +126,15 @@ rendering pipeline annotates nodes with provenance brackets (e.g.,
 \texttt{[source:agent agent=diagnostics observed=2026-03-25T14:00Z]}) so
 that downstream consumers can assess source trust without additional queries.
 
+Provenance is an observability feature, not an inference signal.
+Benchmarking with differentiated provenance (human sources on root nodes,
+agent on decisions, projection on distractors) shows no improvement in
+LLM accuracy: explanatory bundles score 18/18 with or without provenance,
+and the \mbox{${\sim}22\%$} token overhead from provenance brackets
+slightly degrades structural scores. The value of provenance is in
+auditability for human operators and trust-assessment systems, not in
+downstream model performance.
+
 That split matches the domain boundary we want. The domain that knows why a
 task exists or why a decision was taken is not the kernel. The kernel is the
 infrastructure that keeps that explanation and provenance intact across
