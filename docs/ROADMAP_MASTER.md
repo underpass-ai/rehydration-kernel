@@ -81,7 +81,7 @@ Single source of truth for kernel maturity, technical debt, and next steps.
 - [x] Externalize evaluation prompts to YAML (`resources/llm_prompts.yaml`) — overridable via `LLM_PROMPTS_PATH`
 - [x] Multi-provider LLM support: OpenAI, OpenAI-new (GPT-5.x/o3/o4), Anthropic Claude
 - [x] Cross-validation: Claude Opus 4 as inference + GPT-5.4 as judge — explanatory 83% vs structural 56%, gap consistent
-- [ ] Local model benchmark: vLLM Qwen3-8B inference + Claude Opus 4 judge — measure if explanatory/structural gap widens with weaker models
+- [x] Local model benchmark: vLLM Qwen3-8B inference + Claude Opus 4 judge — explanatory 100% vs structural 50%, gap 50pp (widest)
 
 ## Pending — Product evolution (from OSS improvement planning)
 
