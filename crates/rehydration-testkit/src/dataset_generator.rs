@@ -22,6 +22,8 @@ pub struct GraphSeedConfig {
     pub domain: Domain,
     /// Prefix for all node IDs.
     pub id_prefix: String,
+    /// How realistic the noise branches are.
+    pub noise_mode: NoiseMode,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -32,6 +34,16 @@ pub enum RelationMix {
     Structural,
     /// Mix of explanatory and structural.
     Mixed,
+}
+
+/// Controls how realistic the noise branches are.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum NoiseMode {
+    /// Noise is clearly labeled as distractor with structural-only relations.
+    #[default]
+    Structural,
+    /// Noise uses causal semantic class with competing rationale — harder to filter.
+    CompetingCausal,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -100,6 +112,7 @@ impl GraphSeedConfig {
             relation_mix: RelationMix::Explanatory,
             domain,
             id_prefix: "micro".to_string(),
+            noise_mode: NoiseMode::default(),
         }
     }
 
@@ -111,6 +124,7 @@ impl GraphSeedConfig {
             relation_mix: RelationMix::Explanatory,
             domain,
             id_prefix: "meso".to_string(),
+            noise_mode: NoiseMode::default(),
         }
     }
 
@@ -122,6 +136,7 @@ impl GraphSeedConfig {
             relation_mix: RelationMix::Explanatory,
             domain,
             id_prefix: "stress".to_string(),
+            noise_mode: NoiseMode::default(),
         }
     }
 }
@@ -222,13 +237,38 @@ pub fn generate_seed(config: GraphSeedConfig) -> GeneratedSeed {
                 format!("{}:chain-{}", config.id_prefix, depth - 1)
             };
 
+            let (noise_semantic, noise_relation_type, noise_rationale, noise_motivation, noise_kind, noise_title, noise_summary) =
+                match config.noise_mode {
+                    NoiseMode::Structural => (
+                        RelationSemanticClass::Structural,
+                        "DISTRACTOR".to_string(),
+                        Some(format!("distractor branch {branch} at depth {depth}")),
+                        None,
+                        "distractor".to_string(),
+                        format!("noise {branch} at {depth}"),
+                        format!("distractor branch {branch} depth {depth}"),
+                    ),
+                    NoiseMode::CompetingCausal => {
+                        let kind_index = (depth + branch + 1) % vocab.chain_kinds.len();
+                        (
+                            vocab.chain_semantic_classes[kind_index % vocab.chain_semantic_classes.len()],
+                            vocab.chain_relation_types[kind_index % vocab.chain_relation_types.len()].to_string(),
+                            Some(format!("alternative {} path at depth {depth} (competing branch {branch})", vocab.chain_rationale)),
+                            Some(format!("this path was considered but is not the primary causal chain")),
+                            vocab.chain_kinds[kind_index].to_string(),
+                            format!("alternative {} {depth}-{branch}", vocab.chain_kinds[kind_index]),
+                            format!("competing {} branch {branch} at depth {depth}", vocab.chain_summary),
+                        )
+                    }
+                };
+
             relations.push(GeneratedRelation {
                 source_node_id: source_id,
                 target_node_id: noise_id.clone(),
-                relation_type: "DISTRACTOR".to_string(),
-                semantic_class: RelationSemanticClass::Structural,
-                rationale: Some(format!("distractor branch {branch} at depth {depth}")),
-                motivation: None,
+                relation_type: noise_relation_type,
+                semantic_class: noise_semantic,
+                rationale: noise_rationale,
+                motivation: noise_motivation,
                 method: None,
                 decision_id: None,
                 caused_by_node_id: None,
@@ -237,11 +277,11 @@ pub fn generate_seed(config: GraphSeedConfig) -> GeneratedSeed {
 
             nodes.push(GeneratedNode {
                 node_id: noise_id,
-                node_kind: "distractor".to_string(),
-                title: format!("noise {branch} at {depth}"),
-                summary: format!("distractor branch {branch} depth {depth}"),
+                node_kind: noise_kind,
+                title: noise_title,
+                summary: noise_summary,
                 detail: None,
-                labels: vec!["distractor".to_string()],
+                labels: vec!["noise".to_string()],
                 properties: BTreeMap::new(),
             });
         }
@@ -342,6 +382,7 @@ mod tests {
             relation_mix: RelationMix::Structural,
             domain: Domain::Operations,
             id_prefix: "test".to_string(),
+            noise_mode: NoiseMode::default(),
         });
 
         for rel in &seed.relations {
@@ -372,5 +413,82 @@ mod tests {
 
         assert_eq!(full.nodes_with_detail(), 4);
         assert_eq!(sparse.nodes_with_detail(), 0);
+    }
+
+    #[test]
+    fn competing_causal_noise_uses_domain_vocabulary() {
+        let seed = generate_seed(GraphSeedConfig {
+            noise_branches: 2,
+            noise_mode: NoiseMode::CompetingCausal,
+            ..GraphSeedConfig::meso(Domain::Operations)
+        });
+
+        let noise_relations: Vec<_> = seed
+            .relations
+            .iter()
+            .filter(|r| r.target_node_id.contains("noise"))
+            .collect();
+
+        // Noise should use causal/motivational/etc, not just Structural
+        assert!(
+            noise_relations
+                .iter()
+                .any(|r| r.semantic_class != RelationSemanticClass::Structural),
+            "competing causal noise should have non-structural semantic classes"
+        );
+
+        // Noise should have competing rationale
+        assert!(
+            noise_relations
+                .iter()
+                .any(|r| r.rationale.as_deref().unwrap_or("").contains("alternative")),
+            "competing causal noise should have alternative rationale"
+        );
+
+        // Noise should have motivation explaining it's not primary
+        assert!(
+            noise_relations
+                .iter()
+                .any(|r| r.motivation.is_some()),
+            "competing causal noise should have motivation"
+        );
+    }
+
+    #[test]
+    fn competing_causal_noise_nodes_use_domain_kinds() {
+        let seed = generate_seed(GraphSeedConfig {
+            noise_branches: 1,
+            noise_mode: NoiseMode::CompetingCausal,
+            ..GraphSeedConfig::micro(Domain::Operations)
+        });
+
+        let noise_nodes: Vec<_> = seed
+            .nodes
+            .iter()
+            .filter(|n| n.node_id.contains("noise"))
+            .collect();
+
+        // Noise nodes should NOT be labeled "distractor" — they mimic real domain nodes
+        for node in &noise_nodes {
+            assert_ne!(
+                node.node_kind, "distractor",
+                "competing causal noise should use domain node kinds, not 'distractor'"
+            );
+        }
+    }
+
+    #[test]
+    fn structural_noise_mode_is_backward_compatible() {
+        let default_seed = generate_seed(GraphSeedConfig::meso(Domain::Operations));
+        let explicit_seed = generate_seed(GraphSeedConfig {
+            noise_mode: NoiseMode::Structural,
+            ..GraphSeedConfig::meso(Domain::Operations)
+        });
+
+        assert_eq!(default_seed.total_nodes(), explicit_seed.total_nodes());
+        assert_eq!(
+            default_seed.total_relations(),
+            explicit_seed.total_relations()
+        );
     }
 }

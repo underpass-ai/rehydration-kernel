@@ -6,8 +6,8 @@ pub mod seed_publisher;
 
 pub use container_runtime::ensure_testcontainers_runtime;
 pub use dataset_generator::{
-    Domain, GeneratedNode, GeneratedRelation, GeneratedSeed, GraphSeedConfig, RelationMix,
-    generate_seed,
+    Domain, GeneratedNode, GeneratedRelation, GeneratedSeed, GraphSeedConfig, NoiseMode,
+    RelationMix, generate_seed,
 };
 pub use in_memory_stores::{
     InMemoryContextEventStore, InMemoryGraphNeighborhoodReader, InMemoryNodeDetailReader,
