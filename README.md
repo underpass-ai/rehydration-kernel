@@ -115,9 +115,23 @@ Frontier model evaluation with LLM-as-judge across 18 configurations
 
 **Explanatory: 17/18 (94%) vs Structural: 11/18 (61%)**
 
+Cross-validation (Claude Opus 4 inference + GPT-5.4 judge):
+
+| Config | Explanatory | Structural | Mixed |
+|--------|:-----------:|:----------:|:-----:|
+| micro-ops | 3/3 | 1/3 | 3/3 |
+| micro-debug | 2/3 | 2/3 | 2/3 |
+| meso-ops | 1/3 | 2/3 | 2/3 |
+| meso-debug | 3/3 | 2/3 | 2/3 |
+| stress-ops | 3/3 | 2/3 | 2/3 |
+| stress-debug | 3/3 | 1/3 | 2/3 |
+
+**Cross-val: Explanatory 15/18 (83%) vs Structural 10/18 (56%)**
+
 Each cell is `TaskOK + RestartOK + ReasonPreserved` out of 3.
-Structural variants score 2/3 because `ReasonPreserved` is always false —
-there is no rationale metadata in structural-only bundles to preserve.
+Structural variants lose `ReasonPreserved` because there is no rationale
+metadata in structural-only bundles to preserve. The explanatory > structural
+gap is consistent regardless of which model performs inference vs judging.
 
 Scales: micro (4 nodes), meso (21 nodes), stress (49 nodes).
 Domains: operations (incident response), software debugging (hypothesis/fix cycle).
