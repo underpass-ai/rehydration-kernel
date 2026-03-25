@@ -106,12 +106,11 @@ Auto-detection resolves mode based on token pressure (tokens-per-node < 30 → R
 - Benchmark evaluates tier L0+L1 content (hexagonal: consumer chooses interface)
 - 13 new tests (4 domain + 5 heuristic + 3 classifier + 1 budget)
 
-Pending observability for RehydrationMode:
-- [ ] Log resolved_mode in gRPC handler (tracing span field)
-- [ ] OTel metric: `rehydration_mode_selected` counter by mode
-- [ ] Include resolved_mode in benchmark diagnostic output
-- [ ] Proto: add `RehydrationMode` enum to common.proto and `rehydration_mode` field to `GetContextRequest`
-- [ ] Proto: add `resolved_mode` field to `RenderedContext` response
+Observability (done):
+- [x] Log resolved_mode in gRPC handler (tracing span field)
+- [x] OTel metric: `rehydration.mode.selected` counter by mode
+- [x] Proto: `RehydrationMode` enum, `rehydration_mode` on request, `resolved_mode` on response
+- [ ] Include resolved_mode in benchmark diagnostic output (next iteration)
 
 ### Provenance and auditability (medium priority)
 Metadata on nodes/relationships for trust and conflict detection:
