@@ -238,3 +238,75 @@ async fn meso_failure_diagnosis_retains_rehydration_signal_under_noise()
     emit_metric(&observation.metric)?;
     Ok(())
 }
+
+// ── Meso variants for UC2-UC4 ──────────────────────────────────────
+
+#[tokio::test]
+async fn meso_why_implementation_retains_rationale_under_noise()
+-> Result<(), Box<dyn Error + Send + Sync>> {
+    let observation = observe_why_task_was_implemented_that_way(
+        PaperUseCaseVariant::FULL_EXPLANATORY_WITH_DETAIL.with_graph_scale(GraphScale::Meso),
+    )
+    .await?;
+
+    assert_eq!(observation.rationale, DECISION_TO_TASK_RATIONALE);
+    assert_eq!(observation.motivation, DECISION_TO_TASK_MOTIVATION);
+    assert_eq!(observation.decision_id, DECISION_NODE_ID);
+    assert_eq!(observation.metric.graph_scale, "meso");
+    assert_eq!(observation.metric.explanation_roundtrip_fidelity, 1.0);
+    assert_eq!(observation.metric.causal_reconstruction_score, 1.0);
+    assert!(
+        observation
+            .rendered_content
+            .contains(DECISION_TO_TASK_RATIONALE)
+    );
+
+    emit_metric(&observation.metric)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn meso_interrupted_handoff_recovers_resume_under_noise()
+-> Result<(), Box<dyn Error + Send + Sync>> {
+    let observation = observe_interrupted_handoff_use_case(
+        PaperUseCaseVariant::FULL_EXPLANATORY_WITH_DETAIL.with_graph_scale(GraphScale::Meso),
+    )
+    .await?;
+
+    assert_eq!(
+        observation.continuation_node_id,
+        HANDOFF_TASK_STARTED_NODE_ID
+    );
+    assert_eq!(observation.blocker_rationale, HANDOFF_BLOCKER_RATIONALE);
+    assert_eq!(observation.metric.graph_scale, "meso");
+    assert_eq!(observation.metric.explanation_roundtrip_fidelity, 1.0);
+    assert_eq!(observation.metric.causal_reconstruction_score, 1.0);
+    assert_eq!(observation.metric.retry_success_hit, Some(true));
+    assert_eq!(observation.metric.retry_success_rate, Some(1.0));
+
+    emit_metric(&observation.metric)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn meso_constraint_preserves_reason_under_noise()
+-> Result<(), Box<dyn Error + Send + Sync>> {
+    let observation = observe_constraint_under_token_pressure_use_case(
+        PaperUseCaseVariant::FULL_EXPLANATORY_WITH_DETAIL.with_graph_scale(GraphScale::Meso),
+        DEFAULT_TOKEN_BUDGET,
+    )
+    .await?;
+
+    assert_eq!(observation.constraint_rationale, CONSTRAINT_RATIONALE);
+    assert_eq!(
+        observation.implementation_rationale,
+        CONSTRAINT_TASK_RATIONALE
+    );
+    assert_eq!(observation.metric.graph_scale, "meso");
+    assert_eq!(observation.metric.explanation_roundtrip_fidelity, 1.0);
+    assert_eq!(observation.metric.causal_reconstruction_score, 1.0);
+    assert!(observation.rendered_content.contains(CONSTRAINT_RATIONALE));
+
+    emit_metric(&observation.metric)?;
+    Ok(())
+}
