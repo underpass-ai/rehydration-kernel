@@ -28,6 +28,8 @@ message GetContextRequest {
   uint32 depth = 9;
   // Maximum resolution tier to include. UNSPECIFIED (0) = all tiers.
   ResolutionTier max_tier = 10;
+  // Rehydration mode. UNSPECIFIED (0) = Auto (kernel selects based on token pressure).
+  RehydrationMode rehydration_mode = 11;
 }
 
 message GetContextResponse {

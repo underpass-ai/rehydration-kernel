@@ -97,12 +97,20 @@ Tiered rendering alongside flat sections:
   for granular consumption (L0-only status checks, L1-only diagnosis), not a content
   selection improvement. The flat salience ordering already prioritizes the same content.
 
-### RehydrationMode heuristic (medium priority)
-Deterministic mode selection based on query shape:
-- `resume_focused`: optimize for restart point identification
-- `reason_preserving`: optimize for rationale and motivation preservation
-- `temporal_delta`: optimize for what changed since last rehydration
-- `global_summary`: optimize for broad context overview
+### RehydrationMode heuristic (done — PR #64)
+Auto-detection resolves mode based on token pressure (tokens-per-node < 30 → ResumeFocused):
+- **`resume_focused`**: prune distractors, causal spine only in L1, L2 dropped — fixes stress@512 from 0/3 to 3/3
+- **`reason_preserving`**: default, all tiers populated (unchanged behavior)
+- `temporal_delta`: placeholder, reserved
+- `global_summary`: placeholder, reserved
+- Benchmark evaluates tier L0+L1 content (hexagonal: consumer chooses interface)
+- 13 new tests (4 domain + 5 heuristic + 3 classifier + 1 budget)
+
+Observability (done):
+- [x] Log resolved_mode in gRPC handler (tracing span field)
+- [x] OTel metric: `rehydration.mode.selected` counter by mode
+- [x] Proto: `RehydrationMode` enum, `rehydration_mode` on request, `resolved_mode` on response
+- [ ] Include resolved_mode in benchmark diagnostic output (next iteration)
 
 ### Provenance and auditability (medium priority)
 Metadata on nodes/relationships for trust and conflict detection:

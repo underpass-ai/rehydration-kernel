@@ -27,6 +27,7 @@ async fn grpc_get_context_matches_v1beta1_golden_contract()
                 include_debug_sections: false,
                 depth: 0,
                 max_tier: 0,
+                rehydration_mode: 0,
             })
             .await?
             .into_inner();

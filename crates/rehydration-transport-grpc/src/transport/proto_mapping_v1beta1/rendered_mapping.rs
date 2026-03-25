@@ -1,5 +1,5 @@
 use rehydration_application::{GetContextResult, RenderedContext, RenderedTier};
-use rehydration_domain::ResolutionTier;
+use rehydration_domain::{RehydrationMode, ResolutionTier};
 use rehydration_proto::v1beta1::{
     BundleRenderFormat, BundleSection, RenderedContext as ProtoRenderedContext,
     RenderedTier as ProtoRenderedTier,
@@ -36,6 +36,25 @@ pub(crate) fn proto_rendered_context_v1beta1(
             .iter()
             .map(|tier| proto_rendered_tier_v1beta1(tier, scopes))
             .collect(),
+        resolved_mode: proto_rehydration_mode(rendered.resolved_mode) as i32,
+    }
+}
+
+fn proto_rehydration_mode(mode: RehydrationMode) -> rehydration_proto::v1beta1::RehydrationMode {
+    match mode {
+        RehydrationMode::Auto => rehydration_proto::v1beta1::RehydrationMode::Unspecified,
+        RehydrationMode::ResumeFocused => {
+            rehydration_proto::v1beta1::RehydrationMode::ResumeFocused
+        }
+        RehydrationMode::ReasonPreserving => {
+            rehydration_proto::v1beta1::RehydrationMode::ReasonPreserving
+        }
+        RehydrationMode::TemporalDelta => {
+            rehydration_proto::v1beta1::RehydrationMode::TemporalDelta
+        }
+        RehydrationMode::GlobalSummary => {
+            rehydration_proto::v1beta1::RehydrationMode::GlobalSummary
+        }
     }
 }
 

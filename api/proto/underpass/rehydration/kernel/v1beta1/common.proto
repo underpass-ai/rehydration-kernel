@@ -87,6 +87,16 @@ message RehydrationBundle {
   BundleVersion version = 4;
 }
 
+// Rehydration mode controlling how context is rendered under budget pressure.
+// UNSPECIFIED = Auto (kernel decides based on token pressure heuristic).
+enum RehydrationMode {
+  REHYDRATION_MODE_UNSPECIFIED = 0;
+  REHYDRATION_MODE_RESUME_FOCUSED = 1;
+  REHYDRATION_MODE_REASON_PRESERVING = 2;
+  REHYDRATION_MODE_TEMPORAL_DELTA = 3;  // Reserved, not yet implemented
+  REHYDRATION_MODE_GLOBAL_SUMMARY = 4;  // Reserved, not yet implemented
+}
+
 // Resolution tiers for multi-resolution bundle rendering.
 // L0 is a compact summary (~100 tokens). L1 is the causal spine (~500 tokens).
 // L2 fills remaining budget with evidence, details, and structural data.
@@ -115,6 +125,8 @@ message RenderedContext {
   // Multi-resolution tiers. Empty when max_tier is not supported
   // by the server version. Callers should fall back to flat content/sections.
   repeated RenderedTier tiers = 5;
+  // The mode actually used for tiered rendering. UNSPECIFIED when auto-detected.
+  RehydrationMode resolved_mode = 6;
 }
 
 message ScopeValidationResult {

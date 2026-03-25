@@ -47,11 +47,13 @@ where
     ) -> Result<Response<GetContextResponse>, Status> {
         let start = Instant::now();
         let request = request.into_inner();
+        let requested_mode = map_proto_rehydration_mode(request.rehydration_mode);
         tracing::debug!(
             root_node_id = %request.root_node_id,
             role = %request.role,
             depth = request.depth,
             token_budget = request.token_budget,
+            rehydration_mode = %requested_mode.as_str(),
             "handling get_context"
         );
         let result = self
@@ -64,6 +66,7 @@ where
                     focus_node_id: None,
                     token_budget: (request.token_budget > 0).then_some(request.token_budget),
                     max_tier: map_proto_resolution_tier(request.max_tier),
+                    rehydration_mode: requested_mode,
                 },
                 requested_scopes: request.requested_scopes,
             })
@@ -94,6 +97,15 @@ where
                 .build()
                 .add(1, attrs);
         }
+        let resolved_mode = result.rendered.resolved_mode;
+        meter.u64_counter("rehydration.mode.selected").build().add(
+            1,
+            &[
+                KeyValue::new("rpc", "GetContext"),
+                KeyValue::new("mode", resolved_mode.as_str().to_string()),
+            ],
+        );
+        tracing::debug!(resolved_mode = %resolved_mode.as_str(), "mode resolved");
 
         Ok(Response::new(GetContextResponse {
             bundle: Some(proto_bundle_from_single_role_v1beta1(&result.bundle)),
@@ -125,6 +137,7 @@ where
                     focus_node_id: None,
                     token_budget: (request.token_budget > 0).then_some(request.token_budget),
                     max_tier: None,
+                    rehydration_mode: rehydration_domain::RehydrationMode::default(),
                 },
             })
             .await
@@ -237,5 +250,24 @@ fn map_proto_resolution_tier(value: i32) -> Option<rehydration_domain::Resolutio
             Some(rehydration_domain::ResolutionTier::L2EvidencePack)
         }
         _ => None, // UNSPECIFIED or unknown → all tiers
+    }
+}
+
+/// Maps proto `RehydrationMode` enum to domain. UNSPECIFIED → Auto.
+fn map_proto_rehydration_mode(value: i32) -> rehydration_domain::RehydrationMode {
+    match rehydration_proto::v1beta1::RehydrationMode::try_from(value) {
+        Ok(rehydration_proto::v1beta1::RehydrationMode::ResumeFocused) => {
+            rehydration_domain::RehydrationMode::ResumeFocused
+        }
+        Ok(rehydration_proto::v1beta1::RehydrationMode::ReasonPreserving) => {
+            rehydration_domain::RehydrationMode::ReasonPreserving
+        }
+        Ok(rehydration_proto::v1beta1::RehydrationMode::TemporalDelta) => {
+            rehydration_domain::RehydrationMode::TemporalDelta
+        }
+        Ok(rehydration_proto::v1beta1::RehydrationMode::GlobalSummary) => {
+            rehydration_domain::RehydrationMode::GlobalSummary
+        }
+        _ => rehydration_domain::RehydrationMode::Auto,
     }
 }

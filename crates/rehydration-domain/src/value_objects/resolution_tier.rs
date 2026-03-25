@@ -1,4 +1,5 @@
 use crate::DomainError;
+use crate::value_objects::RehydrationMode;
 
 /// Resolution tier for multi-resolution bundle rendering.
 ///
@@ -75,6 +76,24 @@ impl TierBudget {
         }
     }
 
+    /// Resume-focused budget: L0 gets ceiling, L1 gets ALL remaining, L2 gets 0.
+    ///
+    /// This lets the causal spine use the full token budget minus the compact summary,
+    /// dropping all evidence/structural content to maximize causal chain preservation.
+    pub fn from_total_resume_focused(total: u32) -> Self {
+        let l0 = total.min(L0_CEILING);
+        let l1 = total.saturating_sub(l0);
+        Self { l0, l1, l2: 0 }
+    }
+
+    /// Distribute budget using mode-specific strategy.
+    pub fn from_total_with_mode(total: u32, mode: RehydrationMode) -> Self {
+        match mode {
+            super::RehydrationMode::ResumeFocused => Self::from_total_resume_focused(total),
+            _ => Self::from_total(total),
+        }
+    }
+
     pub fn total(&self) -> u32 {
         self.l0.saturating_add(self.l1).saturating_add(self.l2)
     }
@@ -141,5 +160,23 @@ mod tests {
         let b = TierBudget::unlimited();
         assert_eq!(b.l0, u32::MAX);
         assert!(b.total() > 0);
+    }
+
+    #[test]
+    fn budget_resume_focused_gives_all_to_l1() {
+        let b = TierBudget::from_total_resume_focused(512);
+        assert_eq!(b.l0, 100);
+        assert_eq!(b.l1, 412);
+        assert_eq!(b.l2, 0);
+        assert_eq!(b.total(), 512);
+    }
+
+    #[test]
+    fn budget_with_mode_dispatches_correctly() {
+        let resume = TierBudget::from_total_with_mode(4096, RehydrationMode::ResumeFocused);
+        assert_eq!(resume.l2, 0, "resume_focused should give nothing to L2");
+
+        let default = TierBudget::from_total_with_mode(4096, RehydrationMode::ReasonPreserving);
+        assert!(default.l2 > 0, "reason_preserving should have L2 budget");
     }
 }

@@ -408,6 +408,7 @@ async fn get_context(
             include_debug_sections: false,
             depth: 0,
             max_tier: 0,
+            rehydration_mode: 0,
         })
         .await
 }

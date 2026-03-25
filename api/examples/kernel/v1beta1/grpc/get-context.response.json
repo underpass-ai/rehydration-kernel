@@ -94,7 +94,8 @@
         ]
       }
     ],
-    "tiers": []
+    "tiers": [],
+    "resolvedMode": "REHYDRATION_MODE_UNSPECIFIED"
   },
   "scopeValidation": {
     "allowed": true,

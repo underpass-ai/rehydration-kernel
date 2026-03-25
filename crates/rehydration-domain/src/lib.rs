@@ -18,8 +18,8 @@ pub use repositories::{
     ProjectionWriter, SnapshotSaveOptions, SnapshotStore, TokenEstimator,
 };
 pub use value_objects::{BundleMetadata, CaseId, Role};
+pub use value_objects::{RehydrationMode, ResolutionTier, TierBudget};
 pub use value_objects::{RelationExplanation, RelationSemanticClass};
-pub use value_objects::{ResolutionTier, TierBudget};
 
 #[cfg(test)]
 mod tests {
