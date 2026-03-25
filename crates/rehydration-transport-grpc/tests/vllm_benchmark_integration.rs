@@ -172,6 +172,7 @@ async fn vllm_benchmark_across_scales_domains_and_variants()
                     render_format: BundleRenderFormat::Structured as i32,
                     include_debug_sections: false,
                     depth: config.chain_length as u32,
+                    max_tier: 0,
                 })
                 .await?
                 .into_inner();

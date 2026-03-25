@@ -14,8 +14,8 @@ use rehydration_domain::{
 };
 use rehydration_proto::v1beta1::{
     BundleRenderFormat, ContextChange, ContextChangeOperation, GetContextPathRequest,
-    GetContextRequest, GetNodeDetailRequest, Phase, UpdateContextRequest, ValidateScopeRequest,
-    context_command_service_server::ContextCommandService,
+    GetContextRequest, GetNodeDetailRequest, Phase, ResolutionTier, UpdateContextRequest,
+    ValidateScopeRequest, context_command_service_server::ContextCommandService,
     context_query_service_server::ContextQueryService,
 };
 use rehydration_testkit::InMemoryContextEventStore;
@@ -317,6 +317,7 @@ async fn query_service_returns_rendered_context() {
             render_format: BundleRenderFormat::Structured as i32,
             include_debug_sections: false,
             depth: 0,
+            max_tier: 0,
         }))
         .await
         .expect_err("empty graph should return NOT_FOUND");
@@ -347,6 +348,7 @@ async fn query_service_forwards_requested_depth_to_application() {
             render_format: BundleRenderFormat::Structured as i32,
             include_debug_sections: false,
             depth: 17,
+            max_tier: 0,
         }))
         .await;
 
@@ -393,6 +395,54 @@ async fn query_service_returns_context_path_bundle() {
             .contains("Target detail")
     );
     assert!(response.served_at.is_some());
+}
+
+#[tokio::test]
+async fn query_service_returns_multi_resolution_tiers_in_rendered_context() {
+    let application = Arc::new(QueryApplicationService::new(
+        Arc::new(SeededGraphNeighborhoodReader),
+        Arc::new(SeededNodeDetailReader),
+        Arc::new(NoopSnapshotStore),
+        "0.1.0",
+    ));
+    let service = QueryGrpcServiceV1Beta1::new(application);
+
+    let response = service
+        .get_context_path(Request::new(GetContextPathRequest {
+            root_node_id: "node-123".to_string(),
+            target_node_id: "node-789".to_string(),
+            role: "developer".to_string(),
+            token_budget: 4096,
+        }))
+        .await
+        .expect("should succeed")
+        .into_inner();
+
+    let rendered = response.rendered.expect("rendered should exist");
+
+    // Flat content still works (backward compat)
+    assert!(!rendered.content.is_empty());
+    assert!(rendered.token_count > 0);
+    assert!(!rendered.sections.is_empty());
+
+    // Tiers are populated
+    assert!(
+        !rendered.tiers.is_empty(),
+        "tiers should be populated in the gRPC response"
+    );
+
+    // L0 Summary is always first
+    let l0 = &rendered.tiers[0];
+    assert_eq!(l0.tier, ResolutionTier::L0Summary as i32);
+    assert!(l0.content.contains("Objective:"));
+    assert!(l0.token_count > 0);
+
+    // At least L0 + L1 present
+    assert!(
+        rendered.tiers.len() >= 2,
+        "should have at least L0 and L1, got {}",
+        rendered.tiers.len()
+    );
 }
 
 #[tokio::test]

@@ -87,11 +87,34 @@ message RehydrationBundle {
   BundleVersion version = 4;
 }
 
-message RenderedContext {
-  BundleRenderFormat format = 1;
+// Resolution tiers for multi-resolution bundle rendering.
+// L0 is a compact summary (~100 tokens). L1 is the causal spine (~500 tokens).
+// L2 fills remaining budget with evidence, details, and structural data.
+enum ResolutionTier {
+  RESOLUTION_TIER_UNSPECIFIED = 0;
+  RESOLUTION_TIER_L0_SUMMARY = 1;
+  RESOLUTION_TIER_L1_CAUSAL_SPINE = 2;
+  RESOLUTION_TIER_L2_EVIDENCE_PACK = 3;
+}
+
+// A single tier of the multi-resolution rendered context.
+message RenderedTier {
+  ResolutionTier tier = 1;
   string content = 2;
   uint32 token_count = 3;
   repeated BundleSection sections = 4;
+}
+
+message RenderedContext {
+  BundleRenderFormat format = 1;
+  // Flat concatenation of all tiers (backward compatible).
+  string content = 2;
+  uint32 token_count = 3;
+  // Flat sections ordered by salience (backward compatible).
+  repeated BundleSection sections = 4;
+  // Multi-resolution tiers. Empty when max_tier is not supported
+  // by the server version. Callers should fall back to flat content/sections.
+  repeated RenderedTier tiers = 5;
 }
 
 message ScopeValidationResult {

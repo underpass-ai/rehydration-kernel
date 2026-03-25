@@ -19,6 +19,7 @@ pub use repositories::{
 };
 pub use value_objects::{BundleMetadata, CaseId, Role};
 pub use value_objects::{RelationExplanation, RelationSemanticClass};
+pub use value_objects::{ResolutionTier, TierBudget};
 
 #[cfg(test)]
 mod tests {

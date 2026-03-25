@@ -111,7 +111,7 @@ pub(crate) fn render_node(node: &BundleNode) -> String {
     section
 }
 
-fn render_relationship(relationship: &BundleRelationship) -> String {
+pub(crate) fn render_relationship(relationship: &BundleRelationship) -> String {
     let mut section = format!(
         "Relationship {} --{}--> {}",
         relationship.source_node_id(),
@@ -151,7 +151,7 @@ fn render_relationship(relationship: &BundleRelationship) -> String {
     section
 }
 
-fn render_detail(
+pub(crate) fn render_detail(
     detail: &BundleNodeDetail,
     detail_by_node_id: &BTreeMap<&str, &BundleNodeDetail>,
 ) -> String {

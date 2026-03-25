@@ -11,5 +11,6 @@
   ],
   "renderFormat": "BUNDLE_RENDER_FORMAT_LLM_PROMPT",
   "includeDebugSections": false,
-  "depth": 10
+  "depth": 10,
+  "maxTier": "RESOLUTION_TIER_UNSPECIFIED"
 }

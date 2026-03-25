@@ -26,6 +26,7 @@ async fn grpc_get_context_matches_v1beta1_golden_contract()
                 render_format: BundleRenderFormat::Structured as i32,
                 include_debug_sections: false,
                 depth: 0,
+                max_tier: 0,
             })
             .await?
             .into_inner();

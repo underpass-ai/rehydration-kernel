@@ -63,6 +63,7 @@ where
                 render_options: ContextRenderOptions {
                     focus_node_id: None,
                     token_budget: (request.token_budget > 0).then_some(request.token_budget),
+                    max_tier: map_proto_resolution_tier(request.max_tier),
                 },
                 requested_scopes: request.requested_scopes,
             })
@@ -123,6 +124,7 @@ where
                 render_options: ContextRenderOptions {
                     focus_node_id: None,
                     token_budget: (request.token_budget > 0).then_some(request.token_budget),
+                    max_tier: None,
                 },
             })
             .await
@@ -219,5 +221,21 @@ where
         Ok(Response::new(ValidateScopeResponse {
             result: Some(proto_scope_validation_v1beta1(&result)),
         }))
+    }
+}
+
+/// Maps proto `ResolutionTier` enum to domain. Returns `None` for UNSPECIFIED (= all tiers).
+fn map_proto_resolution_tier(value: i32) -> Option<rehydration_domain::ResolutionTier> {
+    match rehydration_proto::v1beta1::ResolutionTier::try_from(value) {
+        Ok(rehydration_proto::v1beta1::ResolutionTier::L0Summary) => {
+            Some(rehydration_domain::ResolutionTier::L0Summary)
+        }
+        Ok(rehydration_proto::v1beta1::ResolutionTier::L1CausalSpine) => {
+            Some(rehydration_domain::ResolutionTier::L1CausalSpine)
+        }
+        Ok(rehydration_proto::v1beta1::ResolutionTier::L2EvidencePack) => {
+            Some(rehydration_domain::ResolutionTier::L2EvidencePack)
+        }
+        _ => None, // UNSPECIFIED or unknown → all tiers
     }
 }
