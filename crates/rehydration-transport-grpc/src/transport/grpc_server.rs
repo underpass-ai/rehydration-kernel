@@ -92,7 +92,8 @@ where
             render_format: BundleRenderFormat::Structured as i32,
             include_debug_sections: false,
             depth: DEFAULT_NATIVE_GRAPH_TRAVERSAL_DEPTH,
-            max_tier: 0, // UNSPECIFIED = all tiers
+            max_tier: 0,
+            rehydration_mode: 0,
         }
     }
 

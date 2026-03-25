@@ -67,6 +67,7 @@ where
                 include_debug_sections: request.include_debug_sections,
                 depth: 0,
                 max_tier: 0,
+                rehydration_mode: 0,
             })
             .await?
             .into_inner();
@@ -152,6 +153,7 @@ where
                 include_debug_sections: false,
                 depth: 1,
                 max_tier: 0,
+                rehydration_mode: 0,
             })
             .await?
             .into_inner();

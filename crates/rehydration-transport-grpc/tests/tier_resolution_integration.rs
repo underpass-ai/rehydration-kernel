@@ -11,7 +11,7 @@ use std::error::Error;
 
 use agentic_support::agentic_fixture::AgenticFixture;
 use agentic_support::explanatory_seed_data::{
-    DetailMode, ProjectionSeedVariant, ROOT_NODE_ID, FAILURE_FOCUS_NODE_ID,
+    DetailMode, FAILURE_FOCUS_NODE_ID, ProjectionSeedVariant, ROOT_NODE_ID,
     publish_flawed_task_projection_events_variant,
 };
 use rehydration_proto::v1beta1::{
@@ -22,8 +22,7 @@ use tonic::transport::Channel;
 
 const TOKEN_BUDGET: u32 = 4096;
 
-async fn start_explanatory_fixture(
-) -> Result<AgenticFixture, Box<dyn Error + Send + Sync>> {
+async fn start_explanatory_fixture() -> Result<AgenticFixture, Box<dyn Error + Send + Sync>> {
     let variant = ProjectionSeedVariant::FULL_EXPLANATORY_WITH_DETAIL;
     AgenticFixture::start_with_seed_and_readiness(
         ROOT_NODE_ID,
@@ -52,6 +51,7 @@ async fn get_context_with_max_tier(
             include_debug_sections: false,
             depth: 3,
             max_tier,
+            rehydration_mode: 0,
         })
         .await?
         .into_inner())
@@ -84,12 +84,22 @@ async fn tiers_are_populated_in_grpc_response_with_explanatory_data()
         .iter()
         .find(|t| t.tier == ResolutionTier::L0Summary as i32)
         .expect("L0 tier should exist");
-    assert!(l0.content.contains("Objective:"), "L0 should have Objective line");
+    assert!(
+        l0.content.contains("Objective:"),
+        "L0 should have Objective line"
+    );
     assert!(l0.content.contains("Status:"), "L0 should have Status line");
-    assert!(l0.content.contains("Blocker:"), "L0 should have Blocker line");
+    assert!(
+        l0.content.contains("Blocker:"),
+        "L0 should have Blocker line"
+    );
     assert!(l0.content.contains("Next:"), "L0 should have Next line");
     assert!(l0.token_count > 0);
-    assert!(l0.token_count <= 150, "L0 should fit in ~100 tokens, got {}", l0.token_count);
+    assert!(
+        l0.token_count <= 150,
+        "L0 should fit in ~100 tokens, got {}",
+        l0.token_count
+    );
 
     // L1 Causal Spine — should have causal relationships
     let l1 = rendered
@@ -97,9 +107,16 @@ async fn tiers_are_populated_in_grpc_response_with_explanatory_data()
         .iter()
         .find(|t| t.tier == ResolutionTier::L1CausalSpine as i32)
         .expect("L1 tier should exist");
-    assert!(l1.content.contains("[causal]") || l1.content.contains("[motivational]") || l1.content.contains("[evidential]"),
-        "L1 should contain explanatory relationships");
-    assert!(!l1.content.contains("Detail "), "L1 should not contain node details");
+    assert!(
+        l1.content.contains("[causal]")
+            || l1.content.contains("[motivational]")
+            || l1.content.contains("[evidential]"),
+        "L1 should contain explanatory relationships"
+    );
+    assert!(
+        !l1.content.contains("Detail "),
+        "L1 should not contain node details"
+    );
     assert!(l1.token_count > 0);
 
     fixture.shutdown().await?;
@@ -107,8 +124,8 @@ async fn tiers_are_populated_in_grpc_response_with_explanatory_data()
 }
 
 #[tokio::test]
-async fn l0_summary_is_self_contained_for_status_check()
--> Result<(), Box<dyn Error + Send + Sync>> {
+async fn l0_summary_is_self_contained_for_status_check() -> Result<(), Box<dyn Error + Send + Sync>>
+{
     let fixture = start_explanatory_fixture().await?;
     let mut client = fixture.query_client();
 
@@ -123,7 +140,12 @@ async fn l0_summary_is_self_contained_for_status_check()
 
     // L0 should have exactly 4 lines
     let lines: Vec<_> = l0.content.lines().collect();
-    assert_eq!(lines.len(), 4, "L0 should be 4 lines: Objective, Status, Blocker, Next. Got:\n{}", l0.content);
+    assert_eq!(
+        lines.len(),
+        4,
+        "L0 should be 4 lines: Objective, Status, Blocker, Next. Got:\n{}",
+        l0.content
+    );
     assert!(lines[0].starts_with("Objective:"));
     assert!(lines[1].starts_with("Status:"));
     assert!(lines[2].starts_with("Blocker:"));
@@ -149,7 +171,10 @@ async fn l1_causal_spine_contains_explanatory_but_not_structural()
         .expect("L1 should exist");
 
     // L1 should have the root node
-    assert!(l1.content.contains("Node "), "L1 should contain the root node render");
+    assert!(
+        l1.content.contains("Node "),
+        "L1 should contain the root node render"
+    );
 
     // L1 should have explanatory relationships but NOT structural
     let has_explanatory = l1.content.contains("[causal]")
@@ -159,7 +184,10 @@ async fn l1_causal_spine_contains_explanatory_but_not_structural()
     assert!(has_explanatory, "L1 should have explanatory relationships");
 
     let has_structural = l1.content.contains("[structural]");
-    assert!(!has_structural, "L1 should NOT have structural relationships");
+    assert!(
+        !has_structural,
+        "L1 should NOT have structural relationships"
+    );
 
     fixture.shutdown().await?;
     Ok(())
@@ -183,8 +211,8 @@ async fn l2_evidence_pack_contains_details_and_structural()
     // beyond what L1 covers, but if present it should have details
     if let Some(l2) = l2 {
         let has_detail = l2.content.contains("Detail ");
-        let has_structural = l2.content.contains("[structural]")
-            || l2.content.contains("[procedural]");
+        let has_structural =
+            l2.content.contains("[structural]") || l2.content.contains("[procedural]");
         assert!(
             has_detail || has_structural,
             "L2 should contain details or structural relationships"
@@ -196,8 +224,8 @@ async fn l2_evidence_pack_contains_details_and_structural()
 }
 
 #[tokio::test]
-async fn tier_token_counts_sum_approximately_to_total()
--> Result<(), Box<dyn Error + Send + Sync>> {
+async fn tier_token_counts_sum_approximately_to_total() -> Result<(), Box<dyn Error + Send + Sync>>
+{
     let fixture = start_explanatory_fixture().await?;
     let mut client = fixture.query_client();
 
@@ -209,10 +237,7 @@ async fn tier_token_counts_sum_approximately_to_total()
     // Tier total won't exactly match rendered.token_count because
     // flat content has separators between sections. But it should be
     // in the same ballpark.
-    assert!(
-        tier_total > 0,
-        "tier token total should be positive"
-    );
+    assert!(tier_total > 0, "tier token total should be positive");
     assert!(
         (tier_total as f64) < (rendered.token_count as f64 * 1.5),
         "tier total ({tier_total}) should not vastly exceed flat total ({})",

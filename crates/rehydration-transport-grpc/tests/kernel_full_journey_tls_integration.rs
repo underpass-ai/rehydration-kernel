@@ -47,6 +47,7 @@ async fn kernel_full_journey_supports_tls_across_query_and_command_surfaces()
                 include_debug_sections: true,
                 depth: 1,
                 max_tier: 0,
+                rehydration_mode: 0,
             })
             .await?
             .into_inner();
@@ -93,6 +94,7 @@ async fn kernel_full_journey_supports_tls_across_query_and_command_surfaces()
                 include_debug_sections: true,
                 depth: 3,
                 max_tier: 0,
+                rehydration_mode: 0,
             })
             .await?
             .into_inner();
@@ -240,6 +242,7 @@ async fn kernel_full_journey_supports_tls_across_query_and_command_surfaces()
                 include_debug_sections: true,
                 depth: 2,
                 max_tier: 0,
+                rehydration_mode: 0,
             })
             .await?
             .into_inner();

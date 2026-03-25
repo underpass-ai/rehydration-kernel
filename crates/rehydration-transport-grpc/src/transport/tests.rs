@@ -318,6 +318,7 @@ async fn query_service_returns_rendered_context() {
             include_debug_sections: false,
             depth: 0,
             max_tier: 0,
+            rehydration_mode: 0,
         }))
         .await
         .expect_err("empty graph should return NOT_FOUND");
@@ -349,6 +350,7 @@ async fn query_service_forwards_requested_depth_to_application() {
             include_debug_sections: false,
             depth: 17,
             max_tier: 0,
+            rehydration_mode: 0,
         }))
         .await;
 

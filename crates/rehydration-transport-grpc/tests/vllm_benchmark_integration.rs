@@ -200,6 +200,7 @@ async fn vllm_benchmark_across_scales_domains_and_variants()
                     include_debug_sections: false,
                     depth: config.chain_length as u32,
                     max_tier: 0,
+                    rehydration_mode: 0,
                 })
                 .await?
                 .into_inner();
@@ -293,8 +294,7 @@ async fn vllm_benchmark_across_scales_domains_and_variants()
                 // Falls back to flat content for backward compatibility.
                 let eval_content = tier_content_for_eval(&rendered);
 
-                match evaluate_with_llm(llm_cfg, &eval_content, &question, &ground_truth).await
-                {
+                match evaluate_with_llm(llm_cfg, &eval_content, &question, &ground_truth).await {
                     Ok(eval) => Some(eval),
                     Err(error) => {
                         eprintln!("LLM eval failed for {run_id}: {error}");
