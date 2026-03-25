@@ -2,8 +2,6 @@
 //!
 //! Bridges the dataset generator with the kernel's projection pipeline.
 
-use std::error::Error;
-
 use rehydration_application::{
     GraphNodeMaterializedData, GraphNodeMaterializedEvent, NodeDetailMaterializedData,
     NodeDetailMaterializedEvent, ProjectionEnvelope, RelatedNodeExplanationData,
@@ -15,11 +13,12 @@ use crate::dataset_generator::{GeneratedRelation, GeneratedSeed};
 /// Convert a generated seed into serialized NATS messages.
 ///
 /// Returns a list of (subject, payload) pairs ready for NATS publish.
+#[allow(clippy::type_complexity)]
 pub fn seed_to_projection_events(
     seed: &GeneratedSeed,
     subject_prefix: &str,
     run_id: &str,
-) -> Result<Vec<(String, Vec<u8>)>, Box<dyn Error + Send + Sync>> {
+) -> Result<Vec<(String, Vec<u8>)>, Box<dyn std::error::Error + Send + Sync>> {
     let mut messages = Vec::new();
 
     // Root node event with all relations from root
