@@ -9,7 +9,7 @@ use agentic_support::agentic_fixture::AgenticFixture;
 use agentic_support::paper_metrics::PaperUseCaseMetric;
 use agentic_support::paper_metrics::emit_metric;
 use rehydration_proto::v1beta1::{
-    BundleRenderFormat, GetContextRequest, Phase,
+    BundleRenderFormat, GetContextRequest, Phase, RenderedContext, ResolutionTier,
     context_query_service_client::ContextQueryServiceClient,
 };
 use rehydration_testkit::{
@@ -21,6 +21,33 @@ use tonic::transport::Channel;
 
 const SUBJECT_PREFIX: &str = "rehydration";
 const BENCHMARK_ROLE: &str = "evaluator";
+
+/// Extract the best available content for LLM evaluation.
+///
+/// Prefers tiered content (L0 + L1 concatenated) when available — this is the
+/// mode-aware path that prunes distractors under token pressure. Falls back to
+/// flat `rendered.content` when tiers are empty (backward compatibility).
+fn tier_content_for_eval(rendered: &RenderedContext) -> String {
+    if rendered.tiers.is_empty() {
+        return rendered.content.clone();
+    }
+
+    // Concatenate L0 + L1 content (skip L2 — evidence/structural)
+    let mut parts = Vec::new();
+    for tier in &rendered.tiers {
+        if tier.tier == ResolutionTier::L0Summary as i32
+            || tier.tier == ResolutionTier::L1CausalSpine as i32
+        {
+            parts.push(tier.content.as_str());
+        }
+    }
+
+    if parts.is_empty() {
+        rendered.content.clone()
+    } else {
+        parts.join("\n\n")
+    }
+}
 
 struct BenchmarkVariant {
     scale: Scale,
@@ -261,7 +288,12 @@ async fn vllm_benchmark_across_scales_domains_and_variants()
                     expected_reason: seed.relations.first().and_then(|r| r.rationale.clone()),
                     domain_context: Some(domain_name.to_string()),
                 };
-                match evaluate_with_llm(llm_cfg, &rendered.content, &question, &ground_truth).await
+                // Prefer tiered content (L0+L1) when available — this is the
+                // mode-aware rendering path that prunes distractors under pressure.
+                // Falls back to flat content for backward compatibility.
+                let eval_content = tier_content_for_eval(&rendered);
+
+                match evaluate_with_llm(llm_cfg, &eval_content, &question, &ground_truth).await
                 {
                     Ok(eval) => Some(eval),
                     Err(error) => {
