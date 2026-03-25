@@ -112,11 +112,16 @@ Observability (done):
 - [x] Proto: `RehydrationMode` enum, `rehydration_mode` on request, `resolved_mode` on response
 - [ ] Include resolved_mode in benchmark diagnostic output (next iteration)
 
-### Provenance and auditability (medium priority)
-Metadata on nodes/relationships for trust and conflict detection:
-- `source_kind`, `source_agent`, `derived_from`
-- `observed_at`, `effective_at`, `confidence`, `staleness`
-- `supports`, `contradicts`
+### Provenance and auditability (in progress)
+First slice done: `source_kind`, `source_agent`, `observed_at` on nodes.
+- [x] Domain: SourceKind enum + Provenance value object + BundleNode field
+- [x] Application: event ingestion maps provenance, renderer surfaces it
+- [x] Proto: SourceKind enum + Provenance message + GraphNode.provenance field
+- [x] Transport: bidirectional mapping domain ↔ proto
+- [ ] Neo4j persistence: persist/read provenance fields on ProjectionNode
+- [ ] Provenance on relationships (BundleRelationship + GraphRelationship)
+- [ ] `derived_from`, `effective_at`, `staleness` (computed)
+- [ ] `supports`, `contradicts` semantic classes
 
 ### Associative rehydration (low priority, high complexity)
 Move beyond root + fixed depth:
