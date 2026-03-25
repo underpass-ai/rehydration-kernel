@@ -23,7 +23,7 @@ pub use queries::{
     GraphNodeView, GraphRelationshipView, MAX_NATIVE_GRAPH_TRAVERSAL_DEPTH,
     MIN_NATIVE_GRAPH_TRAVERSAL_DEPTH, NodeCentricProjectionReader, NodeDetailView,
     QueryApplicationService, RehydrateSessionQuery, RehydrateSessionResult,
-    RehydrateSessionUseCase, RenderedContext, ScopeValidation, ValidateScopeQuery,
+    RehydrateSessionUseCase, RenderedContext, RenderedTier, ScopeValidation, ValidateScopeQuery,
     ValidateScopeUseCase, clamp_native_graph_traversal_depth, render_graph_bundle_with_options,
 };
 pub use rehydration_application::RehydrationApplication;

@@ -221,6 +221,7 @@ async fn wait_for_context_ready(
                 render_format: BundleRenderFormat::Structured as i32,
                 include_debug_sections: false,
                 depth: 0,
+                max_tier: 0,
             })
             .await
         {

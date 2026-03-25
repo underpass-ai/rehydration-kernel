@@ -407,6 +407,7 @@ async fn get_context(
             render_format: BundleRenderFormat::Structured as i32,
             include_debug_sections: false,
             depth: 0,
+            max_tier: 0,
         })
         .await
 }

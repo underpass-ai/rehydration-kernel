@@ -13,6 +13,7 @@ pub mod ordered_neighborhood;
 pub mod query_application_service;
 pub mod rehydrate_session;
 pub mod render_graph_bundle;
+pub(crate) mod tier_section_classifier;
 pub mod validate_scope;
 
 pub use bundle_assembler::BundleAssembler;
@@ -36,7 +37,8 @@ pub use rehydrate_session::{
     RehydrateSessionQuery, RehydrateSessionResult, RehydrateSessionUseCase,
 };
 pub use render_graph_bundle::{
-    RenderedContext, RenderedSection, render_graph_bundle, render_graph_bundle_with_options,
+    RenderedContext, RenderedSection, RenderedTier, render_graph_bundle,
+    render_graph_bundle_with_options,
 };
 pub use validate_scope::{
     ScopeValidation, ValidateScopeQuery, ValidateScopeUseCase, dedupe_scopes,

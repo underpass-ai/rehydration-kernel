@@ -1,16 +1,26 @@
 use std::collections::BTreeMap;
 
-use rehydration_domain::{RehydrationBundle, TokenEstimator};
+use rehydration_domain::{RehydrationBundle, ResolutionTier, TierBudget, TokenEstimator};
 
 use crate::queries::ContextRenderOptions;
 use crate::queries::bundle_section_renderer::ordered_sections;
 use crate::queries::bundle_truncator::{TruncationMetadata, limit_sections_by_token_budget};
 use crate::queries::cl100k_estimator::Cl100kEstimator;
+use crate::queries::tier_section_classifier::classify_into_tiers;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RenderedSection {
     pub content: String,
     pub token_count: u32,
+}
+
+/// A rendered tier with its sections and token count.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RenderedTier {
+    pub tier: ResolutionTier,
+    pub content: String,
+    pub token_count: u32,
+    pub sections: Vec<RenderedSection>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -19,6 +29,8 @@ pub struct RenderedContext {
     pub token_count: u32,
     pub sections: Vec<RenderedSection>,
     pub truncation: Option<TruncationMetadata>,
+    /// Multi-resolution tiers (L0 Summary, L1 Causal Spine, L2 Evidence Pack).
+    pub tiers: Vec<RenderedTier>,
 }
 
 pub fn render_graph_bundle(bundle: &RehydrationBundle) -> RenderedContext {
@@ -47,6 +59,7 @@ pub fn render_graph_bundle_with_estimator(
         .map(|detail| (detail.node_id(), detail))
         .collect::<BTreeMap<_, _>>();
 
+    // ── Flat rendering (backward compatible) ────────────────────────
     let all_sections = ordered_sections(bundle, &detail_by_node_id, options);
     let total_sections = all_sections.len() as u32;
 
@@ -67,12 +80,77 @@ pub fn render_graph_bundle_with_estimator(
         })
         .collect();
 
+    // ── Tiered rendering ────────────────────────────────────────────
+    let tiered_sections = classify_into_tiers(bundle, &detail_by_node_id, options);
+    let tier_budget = options
+        .token_budget
+        .map(TierBudget::from_total)
+        .unwrap_or_else(TierBudget::unlimited);
+
+    let tiers = build_rendered_tiers(tiered_sections, &tier_budget, estimator);
+
     RenderedContext {
         content,
         token_count,
         sections,
         truncation,
+        tiers,
     }
+}
+
+fn build_rendered_tiers(
+    tiered_sections: Vec<crate::queries::tier_section_classifier::TieredSection>,
+    budget: &TierBudget,
+    estimator: &dyn TokenEstimator,
+) -> Vec<RenderedTier> {
+    let mut tiers = Vec::new();
+
+    for &tier in ResolutionTier::all() {
+        let tier_budget = match tier {
+            ResolutionTier::L0Summary => budget.l0,
+            ResolutionTier::L1CausalSpine => budget.l1,
+            ResolutionTier::L2EvidencePack => budget.l2,
+        };
+
+        let mut tier_sections = Vec::new();
+        let mut tier_tokens = 0u32;
+
+        for ts in &tiered_sections {
+            if ts.tier != tier {
+                continue;
+            }
+            let section_tokens = estimator.estimate_tokens(&ts.content);
+            if tier_budget < u32::MAX
+                && !tier_sections.is_empty()
+                && tier_tokens + section_tokens > tier_budget
+            {
+                break;
+            }
+            tier_tokens += section_tokens;
+            tier_sections.push(RenderedSection {
+                content: ts.content.clone(),
+                token_count: section_tokens,
+            });
+        }
+
+        if !tier_sections.is_empty() {
+            let tier_content = tier_sections
+                .iter()
+                .map(|s| s.content.as_str())
+                .collect::<Vec<_>>()
+                .join("\n\n");
+            let actual_tokens = estimator.estimate_tokens(&tier_content);
+
+            tiers.push(RenderedTier {
+                tier,
+                content: tier_content,
+                token_count: actual_tokens,
+                sections: tier_sections,
+            });
+        }
+    }
+
+    tiers
 }
 
 #[cfg(test)]
@@ -81,8 +159,13 @@ mod tests {
 
     use rehydration_domain::{
         BundleMetadata, BundleNode, BundleNodeDetail, BundleRelationship, CaseId,
-        RehydrationBundle, RelationExplanation, RelationSemanticClass, Role,
+        RehydrationBundle, RelationExplanation, RelationSemanticClass, ResolutionTier, Role,
     };
+
+    /// Budget so tight it forces truncation on any multi-section bundle.
+    const TINY_BUDGET: u32 = 10;
+    /// Generous budget that fits the sample bundle without truncation.
+    const GENEROUS_BUDGET: u32 = 1000;
 
     use crate::queries::ContextRenderOptions;
 
@@ -145,6 +228,7 @@ mod tests {
             &ContextRenderOptions {
                 focus_node_id: Some("node-2".to_string()),
                 token_budget: None,
+                ..Default::default()
             },
         );
 
@@ -161,7 +245,8 @@ mod tests {
             &bundle,
             &ContextRenderOptions {
                 focus_node_id: Some("node-2".to_string()),
-                token_budget: Some(10),
+                token_budget: Some(TINY_BUDGET),
+                ..Default::default()
             },
         );
 
@@ -174,7 +259,7 @@ mod tests {
             .truncation
             .as_ref()
             .expect("should have truncation metadata");
-        assert_eq!(truncation.budget_requested, 10);
+        assert_eq!(truncation.budget_requested, TINY_BUDGET);
         assert!(truncation.sections_dropped > 0);
         assert_eq!(truncation.token_estimator, "cl100k_base");
     }
@@ -324,16 +409,17 @@ mod tests {
             &bundle,
             &ContextRenderOptions {
                 focus_node_id: None,
-                token_budget: Some(1000),
+                token_budget: Some(GENEROUS_BUDGET),
+                ..Default::default()
             },
         );
         let truncation = rendered
             .truncation
             .expect("budget should produce truncation");
-        assert_eq!(truncation.budget_requested, 1000);
+        assert_eq!(truncation.budget_requested, GENEROUS_BUDGET);
         assert_eq!(truncation.sections_dropped, 0);
         assert_eq!(truncation.token_estimator, "cl100k_base");
-        assert!(truncation.budget_used <= 1000);
+        assert!(truncation.budget_used <= GENEROUS_BUDGET);
     }
 
     #[test]
@@ -421,6 +507,99 @@ mod tests {
                     whitespace_count
                 );
             }
+        }
+    }
+
+    #[test]
+    fn render_produces_three_tiers() {
+        let bundle = sample_bundle();
+        let rendered = render_graph_bundle(&bundle);
+
+        assert!(
+            rendered.tiers.len() >= 2,
+            "should have at least L0 and L1 tiers, got {}",
+            rendered.tiers.len()
+        );
+        assert_eq!(rendered.tiers[0].tier, ResolutionTier::L0Summary);
+        assert!(rendered.tiers[0].content.contains("Objective:"));
+    }
+
+    #[test]
+    fn tiers_and_flat_content_are_both_populated() {
+        let bundle = sample_bundle();
+        let rendered = render_graph_bundle(&bundle);
+
+        assert!(!rendered.content.is_empty());
+        assert!(!rendered.tiers.is_empty());
+        assert!(rendered.token_count > 0);
+        for tier in &rendered.tiers {
+            assert!(tier.token_count > 0);
+            assert!(!tier.sections.is_empty());
+        }
+    }
+
+    #[test]
+    fn max_tier_l0_only_produces_single_tier() {
+        let bundle = sample_bundle();
+        let rendered = render_graph_bundle_with_options(
+            &bundle,
+            &ContextRenderOptions {
+                max_tier: Some(ResolutionTier::L0Summary),
+                ..Default::default()
+            },
+        );
+
+        let tier_types: Vec<_> = rendered.tiers.iter().map(|t| t.tier).collect();
+        assert_eq!(tier_types, vec![ResolutionTier::L0Summary]);
+    }
+
+    #[test]
+    fn max_tier_l1_excludes_evidence_pack() {
+        let bundle = sample_bundle();
+        let rendered = render_graph_bundle_with_options(
+            &bundle,
+            &ContextRenderOptions {
+                max_tier: Some(ResolutionTier::L1CausalSpine),
+                ..Default::default()
+            },
+        );
+
+        assert!(
+            rendered
+                .tiers
+                .iter()
+                .all(|t| t.tier != ResolutionTier::L2EvidencePack)
+        );
+        assert!(
+            rendered
+                .tiers
+                .iter()
+                .any(|t| t.tier == ResolutionTier::L1CausalSpine)
+        );
+    }
+
+    #[test]
+    fn tier_budget_constrains_l1_token_count() {
+        let bundle = sample_bundle();
+        let rendered = render_graph_bundle_with_options(
+            &bundle,
+            &ContextRenderOptions {
+                token_budget: Some(200),
+                ..Default::default()
+            },
+        );
+
+        // With budget=200, L0 gets ~100, L1 gets ~100 — L1 should be truncated
+        if let Some(l1) = rendered
+            .tiers
+            .iter()
+            .find(|t| t.tier == ResolutionTier::L1CausalSpine)
+        {
+            assert!(
+                l1.token_count <= 120,
+                "L1 should be constrained by tier budget, got {} tokens",
+                l1.token_count
+            );
         }
     }
 }

@@ -113,6 +113,7 @@ async fn grpc_server_supports_query_and_command_roundtrip() {
             render_format: BundleRenderFormat::Structured as i32,
             include_debug_sections: false,
             depth: 0,
+            max_tier: 0,
         })
         .await
         .expect_err("empty graph should return NOT_FOUND");

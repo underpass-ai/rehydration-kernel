@@ -66,6 +66,7 @@ where
                 render_format: request.render_format as i32,
                 include_debug_sections: request.include_debug_sections,
                 depth: 0,
+                max_tier: 0,
             })
             .await?
             .into_inner();
@@ -150,6 +151,7 @@ where
                 render_format: BundleRenderFormat::Structured as i32,
                 include_debug_sections: false,
                 depth: 1,
+                max_tier: 0,
             })
             .await?
             .into_inner();
