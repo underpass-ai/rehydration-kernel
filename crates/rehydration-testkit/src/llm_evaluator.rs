@@ -3,10 +3,33 @@
 //! Sends rehydrated rendered context to an LLM endpoint (OpenAI-compatible,
 //! OpenAI new-style, or Anthropic Claude) and evaluates the response against
 //! ground truth.
+//!
+//! Prompts are loaded from `resources/llm_prompts.yaml` (compiled in via
+//! `include_str!`) and can be overridden at runtime via `LLM_PROMPTS_PATH`.
 
 use std::error::Error;
+use std::sync::LazyLock;
 
 use serde::{Deserialize, Serialize};
+
+// ── Prompt config ────────────────────────────────────────────────────
+
+/// Prompt templates loaded from YAML.
+#[derive(Debug, Deserialize)]
+struct PromptConfig {
+    inference_prompt: String,
+    judge_prompt: String,
+    judge_max_tokens: u32,
+}
+
+static PROMPT_CONFIG: LazyLock<PromptConfig> = LazyLock::new(|| {
+    let yaml = match std::env::var("LLM_PROMPTS_PATH") {
+        Ok(path) => std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("failed to read prompts from {path}: {e}")),
+        Err(_) => include_str!("../resources/llm_prompts.yaml").to_string(),
+    };
+    serde_yaml::from_str(&yaml).expect("failed to parse llm_prompts.yaml")
+});
 
 /// Supported LLM API providers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -106,14 +129,19 @@ fn detect_provider(explicit: &str, model: &str) -> LlmProvider {
 }
 
 /// Ground truth for evaluating LLM responses.
+///
+/// Fields should contain **human-readable descriptions** (node kind, title,
+/// summary) rather than opaque IDs. The judge evaluates semantically.
 #[derive(Debug, Clone)]
 pub struct EvaluationGroundTruth {
-    /// The expected failure point or root cause node.
+    /// Description of the failure point (e.g. "incident — System incident requiring diagnosis").
     pub expected_failure_point: Option<String>,
-    /// The expected restart/rehydration node.
+    /// Description of the restart node (e.g. "decision node — the first recovery decision").
     pub expected_restart_node: Option<String>,
-    /// The expected dominant reason text (substring match).
+    /// The expected dominant reason or rationale.
     pub expected_reason: Option<String>,
+    /// Short domain label for context (e.g. "operations", "software debugging").
+    pub domain_context: Option<String>,
 }
 
 /// Result of an LLM evaluation.
@@ -179,8 +207,12 @@ async fn call_openai(
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
         "temperature": temperature,
-        "chat_template_kwargs": {"enable_thinking": false},
     });
+
+    // vLLM-specific: disable thinking mode for local models only.
+    if provider == LlmProvider::OpenAI {
+        body["chat_template_kwargs"] = serde_json::json!({"enable_thinking": false});
+    }
 
     // GPT-5.x / o3 / o4 require `max_completion_tokens` instead of `max_tokens`.
     match provider {
@@ -319,14 +351,10 @@ pub async fn evaluate_with_llm(
     question: &str,
     ground_truth: &EvaluationGroundTruth,
 ) -> Result<LlmEvaluationResult, Box<dyn Error + Send + Sync>> {
-    let prompt = format!(
-        "Given this rehydrated context from an operational graph:\n\n{rendered_context}\n\n\
-         Question: {question}\n\n\
-         Answer concisely in JSON with these fields:\n\
-         {{\"failure_point\": \"the node or event that caused the issue\",\n\
-         \"restart_node\": \"the node from which the system should restart\",\n\
-         \"reason\": \"the dominant reason or rationale\"}}"
-    );
+    let prompt = PROMPT_CONFIG
+        .inference_prompt
+        .replace("{rendered_context}", rendered_context)
+        .replace("{question}", question);
 
     let client = build_http_client(config)?;
 
@@ -397,19 +425,18 @@ async fn judge_response(
         .as_deref()
         .unwrap_or("not specified");
 
-    let judge_prompt = format!(
-        "You are an evaluation judge. Compare the LLM response against the ground truth.\n\n\
-         LLM Response:\n{llm_response}\n\n\
-         Ground Truth:\n\
-         - Expected failure point: {expected_failure}\n\
-         - Expected restart node: {expected_restart}\n\
-         - Expected reason/rationale: {expected_reason}\n\n\
-         Evaluate semantically (not exact string match). \
-         The response is correct if it identifies the same concept, \
-         even with different wording.\n\n\
-         Answer ONLY with JSON, no other text:\n\
-         {{\"task_correct\": true/false, \"restart_correct\": true/false, \"reason_preserved\": true/false}}"
-    );
+    let domain_ctx = ground_truth
+        .domain_context
+        .as_deref()
+        .unwrap_or("operational");
+
+    let judge_prompt = PROMPT_CONFIG
+        .judge_prompt
+        .replace("{domain_context}", domain_ctx)
+        .replace("{llm_response}", llm_response)
+        .replace("{expected_failure}", expected_failure)
+        .replace("{expected_restart}", expected_restart)
+        .replace("{expected_reason}", expected_reason);
 
     let judge_endpoint = config.judge_endpoint.as_deref().unwrap_or(&config.endpoint);
     let judge_model = config.judge_model.as_deref().unwrap_or(&config.model);
@@ -426,7 +453,7 @@ async fn judge_response(
         judge_provider,
         judge_api_key,
         &judge_prompt,
-        50,
+        PROMPT_CONFIG.judge_max_tokens,
         0.0,
     )
     .await?;

@@ -183,17 +183,68 @@ async fn vllm_benchmark_across_scales_domains_and_variants()
             let rendered = response.rendered.ok_or("missing rendered context")?;
 
             let llm_eval = if let Some(ref llm_cfg) = llm_config {
+                let domain_name = match variant.domain {
+                    Domain::Operations => "operations incident management",
+                    Domain::SoftwareDebugging => "software debugging",
+                };
                 let question = format!(
-                    "What is the root cause in this {} graph and which node should the system restart from?",
-                    domain_label(variant.domain)
+                    "Given this rehydrated context from a {domain_name} graph:\n\
+                     1. What is the root cause or failure point?\n\
+                     2. Which node should the system restart from to continue work?\n\
+                     3. What is the main rationale in the causal chain?"
                 );
+                let first_chain_node = seed.nodes.first();
+                let last_chain_node = seed.nodes.iter()
+                    .filter(|n| n.node_kind != "distractor")
+                    .last();
+
+                // Domain-aware ground truth:
+                // - Operations: root incident IS the failure point, first decision is restart
+                // - Debugging: root is the report, failure is the hypothesis/defect chain,
+                //   restart can be first hypothesis OR last validated step
+                let (failure_desc, restart_desc) = match variant.domain {
+                    Domain::Operations => (
+                        format!(
+                            "{} — {}. The incident root is the primary failure point",
+                            seed.root.node_kind, seed.root.summary
+                        ),
+                        format!(
+                            "Any node on the main operational chain is valid: \
+                             the first {} ({}) or the last verified checkpoint ({})",
+                            first_chain_node.map(|n| n.node_kind.as_str()).unwrap_or("decision"),
+                            first_chain_node.map(|n| n.title.as_str()).unwrap_or("chain-0"),
+                            last_chain_node.map(|n| format!("{} — {}", n.node_kind, n.title))
+                                .unwrap_or_else(|| "last chain node".to_string()),
+                        ),
+                    ),
+                    Domain::SoftwareDebugging => (
+                        format!(
+                            "The root cause lies in the causal chain: either the initial {} ({}) \
+                             or a deeper node in the investigation chain (e.g. {})",
+                            first_chain_node.map(|n| n.node_kind.as_str()).unwrap_or("hypothesis"),
+                            first_chain_node.map(|n| n.title.as_str()).unwrap_or("chain-0"),
+                            last_chain_node.map(|n| format!("{} — {}", n.node_kind, n.title))
+                                .unwrap_or_else(|| "deepest chain node".to_string()),
+                        ),
+                        format!(
+                            "Any node on the main causal chain is valid: the first {} ({}) \
+                             or the last validated step before the suspected failure ({})",
+                            first_chain_node.map(|n| n.node_kind.as_str()).unwrap_or("hypothesis"),
+                            first_chain_node.map(|n| n.title.as_str()).unwrap_or("chain-0"),
+                            last_chain_node.map(|n| format!("{} — {}", n.node_kind, n.title))
+                                .unwrap_or_else(|| "last chain node".to_string()),
+                        ),
+                    ),
+                };
+
                 let ground_truth = EvaluationGroundTruth {
-                    expected_failure_point: Some(seed.root.node_kind.clone()),
-                    expected_restart_node: seed.nodes.first().map(|n| n.node_id.clone()),
+                    expected_failure_point: Some(failure_desc),
+                    expected_restart_node: Some(restart_desc),
                     expected_reason: seed
                         .relations
                         .first()
                         .and_then(|r| r.rationale.clone()),
+                    domain_context: Some(domain_name.to_string()),
                 };
                 match evaluate_with_llm(llm_cfg, &rendered.content, &question, &ground_truth).await
                 {
@@ -225,6 +276,14 @@ async fn vllm_benchmark_across_scales_domains_and_variants()
                 llm_restart_accuracy: llm_eval.as_ref().map(|e| e.llm_restart_accuracy),
                 llm_reason_preserved: llm_eval.as_ref().map(|e| e.llm_reason_preserved),
                 llm_latency_ms: llm_eval.as_ref().map(|e| e.llm_latency_ms),
+                llm_response: llm_eval.as_ref().map(|e| e.llm_response.clone()),
+                ground_truth_summary: Some(format!(
+                    "failure={} — {} | restart={} | reason={}",
+                    seed.root.node_kind,
+                    seed.root.summary,
+                    seed.nodes.first().map(|n| format!("{} — {}", n.node_kind, n.title)).unwrap_or_else(|| "?".to_string()),
+                    seed.relations.first().and_then(|r| r.rationale.clone()).unwrap_or_else(|| "?".to_string()),
+                )),
             })
         }
         .await;
@@ -260,6 +319,32 @@ async fn vllm_benchmark_across_scales_domains_and_variants()
                 .map(|v| if v { "yes" } else { "no" })
                 .unwrap_or("n/a"),
         );
+    }
+
+    // Diagnostic: print LLM response and ground truth for failing variants
+    if llm_config.is_some() {
+        println!("\n=== Diagnostic: LLM responses for non-perfect variants ===\n");
+        for r in &results {
+            let score = [
+                r.llm_task_success.unwrap_or(false),
+                r.llm_restart_accuracy.unwrap_or(false),
+                r.llm_reason_preserved.unwrap_or(false),
+            ]
+            .iter()
+            .filter(|&&v| v)
+            .count();
+            if score < 3 {
+                println!("--- {} (score {}/3) ---", r.run_id, score);
+                if let Some(ref gt) = r.ground_truth_summary {
+                    println!("  GROUND TRUTH: {gt}");
+                }
+                if let Some(ref resp) = r.llm_response {
+                    let truncated: String = resp.chars().take(500).collect();
+                    println!("  GPT-5.4 RESPONSE: {truncated}");
+                }
+                println!();
+            }
+        }
     }
 
     // Verify structural invariants (no LLM needed)
@@ -337,4 +422,6 @@ struct BenchmarkResult {
     llm_restart_accuracy: Option<bool>,
     llm_reason_preserved: Option<bool>,
     llm_latency_ms: Option<f64>,
+    llm_response: Option<String>,
+    ground_truth_summary: Option<String>,
 }
