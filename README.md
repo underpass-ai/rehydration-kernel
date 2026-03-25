@@ -120,7 +120,7 @@ review-required unless they explicitly say otherwise.
 LLM-as-judge evaluation across 18 configurations (3 scales × 2 domains × 3
 relation mixes). Each cell is `TaskOK + RestartOK + ReasonPreserved` out of 3.
 
-### Key finding: explanatory context closes the model capability gap
+### What we measured
 
 | Model | Budget | Explanatory | Structural | Gap |
 |-------|:------:|:----------:|:----------:|:---:|
@@ -129,16 +129,25 @@ relation mixes). Each cell is `TaskOK + RestartOK + ReasonPreserved` out of 3.
 | Qwen3-8B (local 8B) | 4096 | 18/18 (100%) | 9/18 (50%) | 50pp |
 | Qwen3-8B (local 8B) | **512** | **15/18 (83%)** | 8/18 (44%) | 39pp |
 
-With generous budget (4096 tokens), Qwen3-8B achieves 100% on explanatory
-because the rationale text is present verbatim in the rendered context — the
-model extracts rather than reasons. Under token pressure (512 tokens, forcing
-68-85% truncation on meso/stress graphs), accuracy drops to 83% — still
-matching Claude Opus 4 at full budget.
+**What this shows:**
 
-The practical implication: **a local 8B model with the kernel's explanatory
-context under token pressure matches a frontier model at full budget.**
-Structural-only accuracy degrades consistently across all models (50-61%),
-confirming that the kernel's explanatory metadata is the dominant signal.
+- Explanatory relationships consistently outperform structural-only across
+  all models and budgets. The gap ranges from 27pp to 50pp.
+- The 100% score from Qwen3-8B at full budget reflects extraction, not
+  reasoning — rationale text is present verbatim and the model copies it.
+  Under token pressure (512 tokens, 68-85% truncation), accuracy drops to 83%.
+- Structural-only accuracy degrades with model size (61% → 56% → 50%),
+  suggesting weaker models benefit more from explanatory metadata.
+
+**What this does NOT show:**
+
+- These are synthetic graphs, not production workloads.
+- The evaluation uses a single judge model per run — results may vary with
+  different judges.
+- The benchmark measures context quality, not end-to-end agent task completion.
+- We do not claim this system outperforms GraphRAG, HippoRAG, or other
+  retrieval systems — the focus is on bounded, explanatory context for
+  agent continuity, not general-purpose QA.
 
 ### Full results by configuration
 
