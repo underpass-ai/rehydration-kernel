@@ -128,13 +128,17 @@ relation mixes). Each cell is `TaskOK + RestartOK + ReasonPreserved` out of 3.
 | Claude Opus 4 (frontier) | 4096 | 15/18 (83%) | 10/18 (56%) | 27pp |
 | Qwen3-8B (local 8B) | 4096 | 18/18 (100%) | 9/18 (50%) | 50pp |
 | Qwen3-8B (local 8B) | **512** | **15/18 (83%)** | 8/18 (44%) | 39pp |
+| Qwen3-8B + ResumeFocused | **512** | **16/18 (89%)** | 5/18 (28%) | 61pp |
 
 **What this shows:**
 
 - Explanatory relationships consistently outperform structural-only across
-  all models and budgets. The gap ranges from 27pp to 50pp.
+  all models and budgets. The gap ranges from 27pp to 61pp.
 - The 100% score from Qwen3-8B at full budget reflects extraction, not
   reasoning — rationale text is present verbatim and the model copies it.
+- `ResumeFocused` mode auto-activates under token pressure (< 30 tokens/node)
+  and prunes distractor branches, keeping only the causal spine. This fixed
+  `stress-ops-explanatory` from 0/3 to 3/3 at 512-token budget.
   Under token pressure (512 tokens, 68-85% truncation), accuracy drops to 83%.
 - Structural-only accuracy degrades with model size (61% → 56% → 50%),
   suggesting weaker models benefit more from explanatory metadata.
