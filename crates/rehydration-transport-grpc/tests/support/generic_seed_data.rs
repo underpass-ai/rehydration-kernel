@@ -126,6 +126,9 @@ fn root_node_event() -> GraphNodeMaterializedEvent {
                     },
                 },
             ],
+                    source_kind: None,
+                    source_agent: None,
+                    observed_at: None,
         },
     }
 }
@@ -142,6 +145,9 @@ fn focus_node_event() -> GraphNodeMaterializedEvent {
             labels: vec!["payments".to_string(), "resilience".to_string()],
             properties: BTreeMap::from([("owner".to_string(), "team-payments".to_string())]),
             related_nodes: Vec::new(),
+                    source_kind: None,
+                    source_agent: None,
+                    observed_at: None,
         },
     }
 }
@@ -158,6 +164,9 @@ fn dependency_node_event() -> GraphNodeMaterializedEvent {
             labels: vec!["library".to_string()],
             properties: BTreeMap::from([("version".to_string(), "3.4.1".to_string())]),
             related_nodes: Vec::new(),
+                    source_kind: None,
+                    source_agent: None,
+                    observed_at: None,
         },
     }
 }

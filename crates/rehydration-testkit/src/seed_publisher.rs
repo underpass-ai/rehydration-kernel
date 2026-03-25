@@ -50,9 +50,9 @@ pub fn seed_to_projection_events(
                 .iter()
                 .map(|r| relation_to_reference(r))
                 .collect(),
-            source_kind: None,
-            source_agent: None,
-            observed_at: None,
+            source_kind: provenance_source_kind(),
+            source_agent: provenance_source_agent(),
+            observed_at: provenance_observed_at(),
         },
     };
 
@@ -178,6 +178,31 @@ fn chrono_now() -> String {
         (now.as_secs() / 60) % 60,
         now.as_secs() % 60
     )
+}
+
+/// When `BENCHMARK_WITH_PROVENANCE=true`, seeds include provenance metadata.
+fn provenance_source_kind() -> Option<String> {
+    if std::env::var("BENCHMARK_WITH_PROVENANCE").as_deref() == Ok("true") {
+        Some("agent".to_string())
+    } else {
+        None
+    }
+}
+
+fn provenance_source_agent() -> Option<String> {
+    if std::env::var("BENCHMARK_WITH_PROVENANCE").as_deref() == Ok("true") {
+        Some("benchmark-seed-agent".to_string())
+    } else {
+        None
+    }
+}
+
+fn provenance_observed_at() -> Option<String> {
+    if std::env::var("BENCHMARK_WITH_PROVENANCE").as_deref() == Ok("true") {
+        Some(chrono_now())
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]

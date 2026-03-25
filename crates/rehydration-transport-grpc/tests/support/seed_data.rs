@@ -99,6 +99,7 @@ fn graph_mutations() -> Vec<ProjectionMutation> {
                 ("created_by".to_string(), ROOT_CREATED_BY.to_string()),
                 ("plan_id".to_string(), ROOT_PLAN_ID.to_string()),
             ]),
+            provenance: None,
         }),
         ProjectionMutation::UpsertNode(NodeProjection {
             node_id: DECISION_ID.to_string(),
@@ -121,6 +122,7 @@ fn graph_mutations() -> Vec<ProjectionMutation> {
                 ("role".to_string(), TASK_ROLE.to_string()),
                 ("priority".to_string(), TASK_PRIORITY.to_string()),
             ]),
+            provenance: None,
         }),
         ProjectionMutation::UpsertNodeRelation(NodeRelationProjection {
             source_node_id: ROOT_NODE_ID.to_string(),
