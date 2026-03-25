@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use neo4rs::Row;
+use rehydration_domain::{Provenance, SourceKind};
 use rehydration_ports::{NodeProjection, PortError};
 
 pub(crate) fn serialize_properties(
@@ -64,8 +65,25 @@ pub(crate) fn node_projection_from_row(
             &row_string(row, &format!("{prefix}properties_json"), entity)?,
             entity,
         )?,
-        provenance: None, // TODO: read from Neo4j when persisted
+        provenance: provenance_from_row(row, prefix),
     })
+}
+
+fn row_optional_string(row: &Row, key: &str) -> Option<String> {
+    row.get::<String>(key).ok().filter(|s| !s.trim().is_empty())
+}
+
+fn provenance_from_row(row: &Row, prefix: &str) -> Option<Provenance> {
+    let source_kind_str = row_optional_string(row, &format!("{prefix}source_kind"))?;
+    let source_kind = SourceKind::parse(&source_kind_str).ok()?;
+    let mut p = Provenance::new(source_kind);
+    if let Some(agent) = row_optional_string(row, &format!("{prefix}source_agent")) {
+        p = p.with_source_agent(agent);
+    }
+    if let Some(observed) = row_optional_string(row, &format!("{prefix}observed_at")) {
+        p = p.with_observed_at(observed);
+    }
+    Some(p)
 }
 
 #[cfg(test)]

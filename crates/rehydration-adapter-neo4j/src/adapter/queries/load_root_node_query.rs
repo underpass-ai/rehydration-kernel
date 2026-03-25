@@ -10,7 +10,10 @@ RETURN root.node_id AS node_id,
        coalesce(root.summary, '') AS summary,
        coalesce(root.status, '') AS status,
        coalesce(root.node_labels, []) AS node_labels,
-       coalesce(root.properties_json, '{}') AS properties_json
+       coalesce(root.properties_json, '{}') AS properties_json,
+       coalesce(root.source_kind, '') AS source_kind,
+       coalesce(root.source_agent, '') AS source_agent,
+       coalesce(root.observed_at, '') AS observed_at
 LIMIT 1
         ",
     )
