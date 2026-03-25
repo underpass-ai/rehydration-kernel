@@ -117,10 +117,19 @@ current implementation, representative explanation fields include
 between nodes. The kernel preserves it, stores it, rehydrates it, and renders
 it. The kernel does not infer it.
 
+In addition to relationship explanation, the model supports provenance
+metadata on nodes: \code{source_kind} (human, agent, projection, derived),
+\code{source_agent}, and \code{observed_at}. Provenance flows through the
+same path as explanation: emitted in projection events, persisted in Neo4j,
+rehydrated in bundles, and surfaced in rendered context. When present, the
+rendering pipeline annotates nodes with provenance brackets (e.g.,
+\texttt{[source:agent agent=diagnostics observed=2026-03-25T14:00Z]}) so
+that downstream consumers can assess source trust without additional queries.
+
 That split matches the domain boundary we want. The domain that knows why a
 task exists or why a decision was taken is not the kernel. The kernel is the
-infrastructure that keeps that explanation intact across projection, storage,
-query, and rendering boundaries.
+infrastructure that keeps that explanation and provenance intact across
+projection, storage, query, and rendering boundaries.
 
 \section{System Architecture}
 
