@@ -38,21 +38,24 @@ pub fn seed_to_projection_events(
             aggregate_type: "context-node".to_string(),
             schema_version: "v1beta1".to_string(),
         },
-        data: GraphNodeMaterializedData {
-            node_id: seed.root.node_id.clone(),
-            node_kind: seed.root.node_kind.clone(),
-            title: seed.root.title.clone(),
-            summary: seed.root.summary.clone(),
-            status: "ACTIVE".to_string(),
-            labels: seed.root.labels.clone(),
-            properties: seed.root.properties.clone(),
-            related_nodes: root_relations
-                .iter()
-                .map(|r| relation_to_reference(r))
-                .collect(),
-            source_kind: provenance_source_kind(),
-            source_agent: provenance_source_agent(),
-            observed_at: provenance_observed_at(),
+        data: {
+            let (sk, sa, oa) = provenance_for_node(&seed.root.node_kind, &seed.root.labels);
+            GraphNodeMaterializedData {
+                node_id: seed.root.node_id.clone(),
+                node_kind: seed.root.node_kind.clone(),
+                title: seed.root.title.clone(),
+                summary: seed.root.summary.clone(),
+                status: "ACTIVE".to_string(),
+                labels: seed.root.labels.clone(),
+                properties: seed.root.properties.clone(),
+                related_nodes: root_relations
+                    .iter()
+                    .map(|r| relation_to_reference(r))
+                    .collect(),
+                source_kind: sk,
+                source_agent: sa,
+                observed_at: oa,
+            }
         },
     };
 
@@ -101,21 +104,24 @@ pub fn seed_to_projection_events(
                 aggregate_type: "context-node".to_string(),
                 schema_version: "v1beta1".to_string(),
             },
-            data: GraphNodeMaterializedData {
-                node_id: node.node_id.clone(),
-                node_kind: node.node_kind.clone(),
-                title: node.title.clone(),
-                summary: node.summary.clone(),
-                status: "ACTIVE".to_string(),
-                labels: node.labels.clone(),
-                properties: node.properties.clone(),
-                related_nodes: node_relations
-                    .iter()
-                    .map(|r| relation_to_reference(r))
-                    .collect(),
-                source_kind: None,
-                source_agent: None,
-                observed_at: None,
+            data: {
+                let (sk, sa, oa) = provenance_for_node(&node.node_kind, &node.labels);
+                GraphNodeMaterializedData {
+                    node_id: node.node_id.clone(),
+                    node_kind: node.node_kind.clone(),
+                    title: node.title.clone(),
+                    summary: node.summary.clone(),
+                    status: "ACTIVE".to_string(),
+                    labels: node.labels.clone(),
+                    properties: node.properties.clone(),
+                    related_nodes: node_relations
+                        .iter()
+                        .map(|r| relation_to_reference(r))
+                        .collect(),
+                    source_kind: sk,
+                    source_agent: sa,
+                    observed_at: oa,
+                }
             },
         };
 
@@ -180,28 +186,63 @@ fn chrono_now() -> String {
     )
 }
 
-/// When `BENCHMARK_WITH_PROVENANCE=true`, seeds include provenance metadata.
-fn provenance_source_kind() -> Option<String> {
-    if std::env::var("BENCHMARK_WITH_PROVENANCE").as_deref() == Ok("true") {
-        Some("agent".to_string())
-    } else {
-        None
+/// Returns differentiated provenance based on node role.
+///
+/// When `BENCHMARK_WITH_PROVENANCE=true`:
+/// - Causal chain nodes: `source:agent`, recent timestamp, specialized agent
+/// - Distractor/noise nodes: `source:projection`, old timestamp, batch agent
+///
+/// This gives the LLM signal to distinguish trusted from low-trust sources.
+fn provenance_for_node(
+    node_kind: &str,
+    labels: &[String],
+) -> (Option<String>, Option<String>, Option<String>) {
+    if std::env::var("BENCHMARK_WITH_PROVENANCE").as_deref() != Ok("true") {
+        return (None, None, None);
     }
-}
 
-fn provenance_source_agent() -> Option<String> {
-    if std::env::var("BENCHMARK_WITH_PROVENANCE").as_deref() == Ok("true") {
-        Some("benchmark-seed-agent".to_string())
+    let is_noise = labels.iter().any(|l| l == "noise" || l == "distractor");
+    if is_noise {
+        // Distractors: old batch projection, low trust signal
+        (
+            Some("projection".to_string()),
+            Some("batch-ingest".to_string()),
+            Some("2026-03-20T02:00:00Z".to_string()),
+        )
     } else {
-        None
-    }
-}
-
-fn provenance_observed_at() -> Option<String> {
-    if std::env::var("BENCHMARK_WITH_PROVENANCE").as_deref() == Ok("true") {
-        Some(chrono_now())
-    } else {
-        None
+        // Causal chain: differentiate by node role
+        match node_kind {
+            // Root nodes (incident, bug_report) come from human operators
+            "incident" | "bug_report" => (
+                Some("human".to_string()),
+                Some("operator-oncall".to_string()),
+                Some(chrono_now()),
+            ),
+            // Decision/hypothesis nodes come from diagnostics agent
+            "decision" | "hypothesis" => (
+                Some("agent".to_string()),
+                Some("diagnostics-agent".to_string()),
+                Some(chrono_now()),
+            ),
+            // Execution nodes (task, fix, investigation) come from execution agent
+            "task" | "fix" | "investigation" => (
+                Some("agent".to_string()),
+                Some("execution-agent".to_string()),
+                Some(chrono_now()),
+            ),
+            // Verification nodes (artifact, evidence, test) are derived
+            "artifact" | "evidence" | "test" => (
+                Some("derived".to_string()),
+                Some("verification-pipeline".to_string()),
+                Some(chrono_now()),
+            ),
+            // Fallback
+            _ => (
+                Some("agent".to_string()),
+                Some("kernel-agent".to_string()),
+                Some(chrono_now()),
+            ),
+        }
     }
 }
 
