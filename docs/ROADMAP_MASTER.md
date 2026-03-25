@@ -80,8 +80,7 @@ Single source of truth for kernel maturity, technical debt, and next steps.
 - [x] Benchmark with frontier models for README: GPT-5.4 (OpenAI) inference + Claude Opus 4 (Anthropic) judge — 18 configs, explanatory 94% vs structural 61%
 - [x] Externalize evaluation prompts to YAML (`resources/llm_prompts.yaml`) — overridable via `LLM_PROMPTS_PATH`
 - [x] Multi-provider LLM support: OpenAI, OpenAI-new (GPT-5.x/o3/o4), Anthropic Claude
-- [ ] Larger judge model: use 2-3 GPUs with tensor-parallel for a stronger evaluator (e.g. Qwen3-30B or 70B)
-- [ ] Cross-validation: Claude Opus 4 as inference + GPT-5.4 as judge
+- [ ] Cross-validation: Claude Opus 4 as inference + GPT-5.4 as judge (next iteration)
 
 ## Pending — Product evolution (from OSS improvement planning)
 
