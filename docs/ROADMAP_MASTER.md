@@ -134,7 +134,7 @@ Evolve from rehydration to operational memory:
 
 - ~~Recalculate paper metrics with cl100k_base tokenizer~~ (done)
 - ~~Add latency capture to paper harness~~ (done)
-- [ ] Expand meso variants to UC2-UC4
+- [x] Expand meso variants to UC2-UC4
 - [ ] CI consistency check paper ↔ artifacts
 
 ## Pending — Research
