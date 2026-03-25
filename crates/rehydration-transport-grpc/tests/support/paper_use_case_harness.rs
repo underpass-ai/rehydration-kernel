@@ -1146,6 +1146,7 @@ pub(crate) async fn maybe_evaluate_with_llm(
         expected_failure_point: expected_failure_point.map(str::to_string),
         expected_restart_node: expected_restart_node.map(str::to_string),
         expected_reason: expected_reason.map(str::to_string),
+        domain_context: None,
     };
 
     match rehydration_testkit::evaluate_with_llm(&config, rendered_content, question, &ground_truth)

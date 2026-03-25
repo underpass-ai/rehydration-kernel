@@ -1,21 +1,58 @@
 //! LLM-in-the-loop evaluator for paper use cases.
 //!
-//! Sends rehydrated rendered context to an OpenAI-compatible endpoint
-//! (e.g. vLLM) and evaluates the response against ground truth.
+//! Sends rehydrated rendered context to an LLM endpoint (OpenAI-compatible,
+//! OpenAI new-style, or Anthropic Claude) and evaluates the response against
+//! ground truth.
+//!
+//! Prompts are loaded from `resources/llm_prompts.yaml` (compiled in via
+//! `include_str!`) and can be overridden at runtime via `LLM_PROMPTS_PATH`.
 
-use std::collections::HashMap;
 use std::error::Error;
+use std::sync::LazyLock;
 
 use serde::{Deserialize, Serialize};
+
+// ── Prompt config ────────────────────────────────────────────────────
+
+/// Prompt templates loaded from YAML.
+#[derive(Debug, Deserialize)]
+struct PromptConfig {
+    inference_prompt: String,
+    judge_prompt: String,
+    judge_max_tokens: u32,
+}
+
+static PROMPT_CONFIG: LazyLock<PromptConfig> = LazyLock::new(|| {
+    let yaml = match std::env::var("LLM_PROMPTS_PATH") {
+        Ok(path) => std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("failed to read prompts from {path}: {e}")),
+        Err(_) => include_str!("../resources/llm_prompts.yaml").to_string(),
+    };
+    serde_yaml::from_str(&yaml).expect("failed to parse llm_prompts.yaml")
+});
+
+/// Supported LLM API providers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LlmProvider {
+    /// OpenAI-compatible (vLLM, OpenAI GPT-4.1, etc.)
+    OpenAI,
+    /// OpenAI models that require max_completion_tokens (GPT-5.x, o3, o4)
+    OpenAINew,
+    /// Anthropic Claude API
+    Anthropic,
+}
 
 /// Configuration for the LLM evaluator.
 #[derive(Debug, Clone)]
 pub struct LlmEvaluatorConfig {
-    /// OpenAI-compatible chat completions endpoint.
-    /// e.g. `https://llm.underpassai.com/v1/chat/completions`
+    /// API endpoint.
     pub endpoint: String,
     /// Model name to use.
     pub model: String,
+    /// API provider.
+    pub provider: LlmProvider,
+    /// API key (for OpenAI/Anthropic).
+    pub api_key: Option<String>,
     /// Max tokens for the response.
     pub max_tokens: u32,
     /// Temperature (0.0 = deterministic).
@@ -30,14 +67,26 @@ pub struct LlmEvaluatorConfig {
     pub judge_endpoint: Option<String>,
     /// Separate model for the judge. Falls back to main model.
     pub judge_model: Option<String>,
+    /// Provider for the judge. Falls back to main provider.
+    pub judge_provider: Option<LlmProvider>,
+    /// API key for judge. Falls back to main api_key.
+    pub judge_api_key: Option<String>,
 }
 
 impl LlmEvaluatorConfig {
     pub fn from_env() -> Self {
+        let model = std::env::var("LLM_MODEL").unwrap_or_else(|_| "Qwen/Qwen3-8B".to_string());
+        let provider = detect_provider(&std::env::var("LLM_PROVIDER").unwrap_or_default(), &model);
+        let judge_model = std::env::var("LLM_JUDGE_MODEL").ok();
+        let judge_provider = judge_model
+            .as_deref()
+            .map(|m| detect_provider(&std::env::var("LLM_JUDGE_PROVIDER").unwrap_or_default(), m));
         Self {
             endpoint: std::env::var("LLM_ENDPOINT")
                 .unwrap_or_else(|_| "http://localhost:8000/v1/chat/completions".to_string()),
-            model: std::env::var("LLM_MODEL").unwrap_or_else(|_| "Qwen/Qwen3-8B".to_string()),
+            model,
+            provider,
+            api_key: std::env::var("LLM_API_KEY").ok(),
             max_tokens: std::env::var("LLM_MAX_TOKENS")
                 .ok()
                 .and_then(|v| v.parse().ok())
@@ -52,20 +101,47 @@ impl LlmEvaluatorConfig {
                 .map(|v| v == "true" || v == "1")
                 .unwrap_or(false),
             judge_endpoint: std::env::var("LLM_JUDGE_ENDPOINT").ok(),
-            judge_model: std::env::var("LLM_JUDGE_MODEL").ok(),
+            judge_model,
+            judge_provider,
+            judge_api_key: std::env::var("LLM_JUDGE_API_KEY").ok(),
+        }
+    }
+}
+
+fn detect_provider(explicit: &str, model: &str) -> LlmProvider {
+    match explicit {
+        "anthropic" => LlmProvider::Anthropic,
+        "openai_new" => LlmProvider::OpenAINew,
+        "openai" => LlmProvider::OpenAI,
+        _ => {
+            if model.starts_with("claude") {
+                LlmProvider::Anthropic
+            } else if model.starts_with("gpt-5")
+                || model.starts_with("o3")
+                || model.starts_with("o4")
+            {
+                LlmProvider::OpenAINew
+            } else {
+                LlmProvider::OpenAI
+            }
         }
     }
 }
 
 /// Ground truth for evaluating LLM responses.
+///
+/// Fields should contain **human-readable descriptions** (node kind, title,
+/// summary) rather than opaque IDs. The judge evaluates semantically.
 #[derive(Debug, Clone)]
 pub struct EvaluationGroundTruth {
-    /// The expected failure point or root cause node.
+    /// Description of the failure point (e.g. "incident — System incident requiring diagnosis").
     pub expected_failure_point: Option<String>,
-    /// The expected restart/rehydration node.
+    /// Description of the restart node (e.g. "decision node — the first recovery decision").
     pub expected_restart_node: Option<String>,
-    /// The expected dominant reason text (substring match).
+    /// The expected dominant reason or rationale.
     pub expected_reason: Option<String>,
+    /// Short domain label for context (e.g. "operations", "software debugging").
+    pub domain_context: Option<String>,
 }
 
 /// Result of an LLM evaluation.
@@ -80,43 +156,193 @@ pub struct LlmEvaluationResult {
     pub llm_completion_tokens: u32,
 }
 
-#[derive(Serialize)]
-struct ChatRequest {
-    model: String,
-    messages: Vec<ChatMessage>,
+/// Call an LLM endpoint and return `(content, prompt_tokens, completion_tokens)`.
+///
+/// Dispatches to the correct wire format based on [`LlmProvider`].
+#[allow(clippy::too_many_arguments)]
+pub async fn call_llm(
+    client: &reqwest::Client,
+    endpoint: &str,
+    model: &str,
+    provider: LlmProvider,
+    api_key: Option<&str>,
+    prompt: &str,
     max_tokens: u32,
     temperature: f64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    chat_template_kwargs: Option<HashMap<String, serde_json::Value>>,
+) -> Result<(String, u32, u32), Box<dyn Error + Send + Sync>> {
+    match provider {
+        LlmProvider::OpenAI | LlmProvider::OpenAINew => {
+            call_openai(
+                client,
+                endpoint,
+                model,
+                provider,
+                api_key,
+                prompt,
+                max_tokens,
+                temperature,
+            )
+            .await
+        }
+        LlmProvider::Anthropic => {
+            call_anthropic(client, endpoint, model, api_key, prompt, max_tokens).await
+        }
+    }
 }
 
-#[derive(Serialize)]
-struct ChatMessage {
-    role: String,
+// ── OpenAI / OpenAI-new wire format ─────────────────────────────────
+
+#[allow(clippy::too_many_arguments)]
+async fn call_openai(
+    client: &reqwest::Client,
+    endpoint: &str,
+    model: &str,
+    provider: LlmProvider,
+    api_key: Option<&str>,
+    prompt: &str,
+    max_tokens: u32,
+    temperature: f64,
+) -> Result<(String, u32, u32), Box<dyn Error + Send + Sync>> {
+    let mut body = serde_json::json!({
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": temperature,
+    });
+
+    // vLLM-specific: disable thinking mode for local models only.
+    if provider == LlmProvider::OpenAI {
+        body["chat_template_kwargs"] = serde_json::json!({"enable_thinking": false});
+    }
+
+    // GPT-5.x / o3 / o4 require `max_completion_tokens` instead of `max_tokens`.
+    match provider {
+        LlmProvider::OpenAINew => {
+            body["max_completion_tokens"] = serde_json::json!(max_tokens);
+        }
+        _ => {
+            body["max_tokens"] = serde_json::json!(max_tokens);
+        }
+    }
+
+    let mut req = client.post(endpoint).json(&body);
+    match provider {
+        LlmProvider::OpenAINew => {
+            // OpenAI-new always requires a bearer token.
+            if let Some(key) = api_key {
+                req = req.bearer_auth(key);
+            }
+        }
+        _ => {
+            if let Some(key) = api_key {
+                req = req.bearer_auth(key);
+            }
+        }
+    }
+
+    let response = req.send().await?;
+    let status = response.status();
+    if !status.is_success() {
+        let body_text = response.text().await.unwrap_or_default();
+        return Err(format!("LLM request failed with {status}: {body_text}").into());
+    }
+
+    let chat: OpenAiChatResponse = response.json().await?;
+    let content = chat
+        .choices
+        .first()
+        .map(|c| c.message.content.clone())
+        .unwrap_or_default();
+    let usage = chat.usage.unwrap_or(OpenAiUsage {
+        prompt_tokens: 0,
+        completion_tokens: 0,
+    });
+    Ok((content, usage.prompt_tokens, usage.completion_tokens))
+}
+
+#[derive(Deserialize)]
+struct OpenAiChatResponse {
+    choices: Vec<OpenAiChoice>,
+    usage: Option<OpenAiUsage>,
+}
+
+#[derive(Deserialize)]
+struct OpenAiChoice {
+    message: OpenAiMessage,
+}
+
+#[derive(Deserialize)]
+struct OpenAiMessage {
     content: String,
 }
 
 #[derive(Deserialize)]
-struct ChatResponse {
-    choices: Vec<ChatChoice>,
-    usage: Option<ChatUsage>,
-}
-
-#[derive(Deserialize)]
-struct ChatChoice {
-    message: ChatChoiceMessage,
-}
-
-#[derive(Deserialize)]
-struct ChatChoiceMessage {
-    content: String,
-}
-
-#[derive(Deserialize)]
-struct ChatUsage {
+struct OpenAiUsage {
     prompt_tokens: u32,
     completion_tokens: u32,
 }
+
+// ── Anthropic wire format ───────────────────────────────────────────
+
+async fn call_anthropic(
+    client: &reqwest::Client,
+    endpoint: &str,
+    model: &str,
+    api_key: Option<&str>,
+    prompt: &str,
+    max_tokens: u32,
+) -> Result<(String, u32, u32), Box<dyn Error + Send + Sync>> {
+    let body = serde_json::json!({
+        "model": model,
+        "max_tokens": max_tokens,
+        "messages": [{"role": "user", "content": prompt}],
+    });
+
+    let mut req = client
+        .post(endpoint)
+        .header("content-type", "application/json")
+        .header("anthropic-version", "2023-06-01")
+        .json(&body);
+
+    if let Some(key) = api_key {
+        req = req.header("x-api-key", key);
+    }
+
+    let response = req.send().await?;
+    let status = response.status();
+    if !status.is_success() {
+        let body_text = response.text().await.unwrap_or_default();
+        return Err(format!("LLM request failed with {status}: {body_text}").into());
+    }
+
+    let resp: AnthropicResponse = response.json().await?;
+    let content = resp
+        .content
+        .first()
+        .map(|b| b.text.clone())
+        .unwrap_or_default();
+    let prompt_tokens = resp.usage.input_tokens;
+    let completion_tokens = resp.usage.output_tokens;
+    Ok((content, prompt_tokens, completion_tokens))
+}
+
+#[derive(Deserialize)]
+struct AnthropicResponse {
+    content: Vec<AnthropicBlock>,
+    usage: AnthropicUsage,
+}
+
+#[derive(Deserialize)]
+struct AnthropicBlock {
+    text: String,
+}
+
+#[derive(Deserialize)]
+struct AnthropicUsage {
+    input_tokens: u32,
+    output_tokens: u32,
+}
+
+// ── evaluate_with_llm ───────────────────────────────────────────────
 
 /// Evaluate rendered context against ground truth using an LLM.
 pub async fn evaluate_with_llm(
@@ -125,54 +351,26 @@ pub async fn evaluate_with_llm(
     question: &str,
     ground_truth: &EvaluationGroundTruth,
 ) -> Result<LlmEvaluationResult, Box<dyn Error + Send + Sync>> {
-    let prompt = format!(
-        "Given this rehydrated context from an operational graph:\n\n{rendered_context}\n\n\
-         Question: {question}\n\n\
-         Answer concisely in JSON with these fields:\n\
-         {{\"failure_point\": \"the node or event that caused the issue\",\n\
-         \"restart_node\": \"the node from which the system should restart\",\n\
-         \"reason\": \"the dominant reason or rationale\"}}"
-    );
-
-    let mut disable_thinking = HashMap::new();
-    disable_thinking.insert(
-        "enable_thinking".to_string(),
-        serde_json::Value::Bool(false),
-    );
-
-    let request = ChatRequest {
-        model: config.model.clone(),
-        messages: vec![ChatMessage {
-            role: "user".to_string(),
-            content: prompt,
-        }],
-        max_tokens: config.max_tokens,
-        temperature: config.temperature,
-        chat_template_kwargs: Some(disable_thinking),
-    };
+    let prompt = PROMPT_CONFIG
+        .inference_prompt
+        .replace("{rendered_context}", rendered_context)
+        .replace("{question}", question);
 
     let client = build_http_client(config)?;
 
     let start = std::time::Instant::now();
-    let response = client.post(&config.endpoint).json(&request).send().await?;
+    let (content, prompt_tokens, completion_tokens) = call_llm(
+        &client,
+        &config.endpoint,
+        &config.model,
+        config.provider,
+        config.api_key.as_deref(),
+        &prompt,
+        config.max_tokens,
+        config.temperature,
+    )
+    .await?;
     let latency_ms = start.elapsed().as_secs_f64() * 1000.0;
-
-    let status = response.status();
-    if !status.is_success() {
-        let body = response.text().await.unwrap_or_default();
-        return Err(format!("LLM request failed with {status}: {body}").into());
-    }
-
-    let chat_response: ChatResponse = response.json().await?;
-    let content = chat_response
-        .choices
-        .first()
-        .map(|c| c.message.content.clone())
-        .unwrap_or_default();
-    let usage = chat_response.usage.unwrap_or(ChatUsage {
-        prompt_tokens: 0,
-        completion_tokens: 0,
-    });
 
     // LLM-as-judge: use separate judge endpoint if configured
     let judge_client = if config.judge_endpoint.is_some() {
@@ -194,10 +392,12 @@ pub async fn evaluate_with_llm(
         llm_restart_accuracy: judge_result.restart_correct,
         llm_reason_preserved: judge_result.reason_preserved,
         llm_latency_ms: latency_ms,
-        llm_prompt_tokens: usage.prompt_tokens,
-        llm_completion_tokens: usage.completion_tokens,
+        llm_prompt_tokens: prompt_tokens,
+        llm_completion_tokens: completion_tokens,
     })
 }
+
+// ── judge ───────────────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
 struct JudgeVerdict {
@@ -225,53 +425,40 @@ async fn judge_response(
         .as_deref()
         .unwrap_or("not specified");
 
-    let judge_prompt = format!(
-        "You are an evaluation judge. Compare the LLM response against the ground truth.\n\n\
-         LLM Response:\n{llm_response}\n\n\
-         Ground Truth:\n\
-         - Expected failure point: {expected_failure}\n\
-         - Expected restart node: {expected_restart}\n\
-         - Expected reason/rationale: {expected_reason}\n\n\
-         Evaluate semantically (not exact string match). \
-         The response is correct if it identifies the same concept, \
-         even with different wording.\n\n\
-         Answer ONLY with JSON, no other text:\n\
-         {{\"task_correct\": true/false, \"restart_correct\": true/false, \"reason_preserved\": true/false}}"
-    );
+    let domain_ctx = ground_truth
+        .domain_context
+        .as_deref()
+        .unwrap_or("operational");
 
-    let mut disable_thinking = HashMap::new();
-    disable_thinking.insert(
-        "enable_thinking".to_string(),
-        serde_json::Value::Bool(false),
-    );
+    let judge_prompt = PROMPT_CONFIG
+        .judge_prompt
+        .replace("{domain_context}", domain_ctx)
+        .replace("{llm_response}", llm_response)
+        .replace("{expected_failure}", expected_failure)
+        .replace("{expected_restart}", expected_restart)
+        .replace("{expected_reason}", expected_reason);
 
     let judge_endpoint = config.judge_endpoint.as_deref().unwrap_or(&config.endpoint);
     let judge_model = config.judge_model.as_deref().unwrap_or(&config.model);
+    let judge_provider = config.judge_provider.unwrap_or(config.provider);
+    let judge_api_key = config
+        .judge_api_key
+        .as_deref()
+        .or(config.api_key.as_deref());
 
-    let request = ChatRequest {
-        model: judge_model.to_string(),
-        messages: vec![ChatMessage {
-            role: "user".to_string(),
-            content: judge_prompt,
-        }],
-        max_tokens: 50,
-        temperature: 0.0,
-        chat_template_kwargs: Some(disable_thinking),
-    };
+    let (judge_content, _, _) = call_llm(
+        client,
+        judge_endpoint,
+        judge_model,
+        judge_provider,
+        judge_api_key,
+        &judge_prompt,
+        PROMPT_CONFIG.judge_max_tokens,
+        0.0,
+    )
+    .await?;
 
-    let response = client.post(judge_endpoint).json(&request).send().await?;
-    if !response.status().is_success() {
-        return Err("judge request failed".into());
-    }
-
-    let chat_response: ChatResponse = response.json().await?;
-    let judge_content = chat_response
-        .choices
-        .first()
-        .map(|c| c.message.content.clone())
-        .unwrap_or_default();
-
-    // Parse JSON from the judge response — handle potential markdown wrapping
+    // Parse JSON from the judge response -- handle potential markdown wrapping
     let json_str = judge_content
         .trim()
         .trim_start_matches("```json")
@@ -314,6 +501,13 @@ mod tests {
         assert!(config.endpoint.contains("chat/completions"));
         assert!(!config.model.is_empty());
         assert!(config.max_tokens > 0);
+        // Default provider for Qwen model is OpenAI-compatible
+        assert_eq!(config.provider, LlmProvider::OpenAI);
+        // No API key set by default
+        assert!(config.api_key.is_none());
+        // Judge fields fall back to None
+        assert!(config.judge_provider.is_none());
+        assert!(config.judge_api_key.is_none());
     }
 
     #[test]
