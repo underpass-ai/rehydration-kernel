@@ -50,6 +50,9 @@ pub fn seed_to_projection_events(
                 .iter()
                 .map(|r| relation_to_reference(r))
                 .collect(),
+            source_kind: None,
+            source_agent: None,
+            observed_at: None,
         },
     };
 
@@ -110,6 +113,9 @@ pub fn seed_to_projection_events(
                     .iter()
                     .map(|r| relation_to_reference(r))
                     .collect(),
+                source_kind: None,
+                source_agent: None,
+                observed_at: None,
             },
         };
 

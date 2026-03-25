@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
 
+use crate::value_objects::Provenance;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NodeProjection {
     pub node_id: String,
@@ -9,4 +11,5 @@ pub struct NodeProjection {
     pub status: String,
     pub labels: Vec<String>,
     pub properties: BTreeMap<String, String>,
+    pub provenance: Option<Provenance>,
 }

@@ -85,6 +85,7 @@ mod tests {
                 status: "ACTIVE".to_string(),
                 labels: vec!["projection".to_string()],
                 properties: BTreeMap::new(),
+                provenance: None,
             },
             neighbors: Vec::new(),
             relations: Vec::new(),
@@ -128,6 +129,7 @@ mod tests {
                     status: "ACTIVE".to_string(),
                     labels: vec!["work-item".to_string()],
                     properties: BTreeMap::new(),
+                    provenance: None,
                 }),
                 ProjectionMutation::UpsertNodeDetail(NodeDetailProjection {
                     node_id: "node-123".to_string(),

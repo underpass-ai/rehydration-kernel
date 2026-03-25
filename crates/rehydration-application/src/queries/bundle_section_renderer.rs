@@ -108,6 +108,19 @@ pub(crate) fn render_node(node: &BundleNode) -> String {
         section.push_str(": ");
         section.push_str(node.summary().trim());
     }
+    if let Some(provenance) = node.provenance() {
+        section.push_str(" [source:");
+        section.push_str(provenance.source_kind().as_str());
+        if let Some(agent) = provenance.source_agent() {
+            section.push_str(" agent=");
+            section.push_str(agent);
+        }
+        if let Some(observed) = provenance.observed_at() {
+            section.push_str(" observed=");
+            section.push_str(observed);
+        }
+        section.push(']');
+    }
     section
 }
 

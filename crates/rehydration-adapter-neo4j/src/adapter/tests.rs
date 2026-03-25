@@ -178,6 +178,7 @@ fn node_projection_properties_can_be_prepared_for_persistence() {
         status: "ACTIVE".to_string(),
         labels: vec!["projection".to_string()],
         properties: BTreeMap::from([("phase".to_string(), "build".to_string())]),
+        provenance: None,
     };
 
     let serialized =

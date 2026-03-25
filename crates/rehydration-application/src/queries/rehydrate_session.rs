@@ -213,6 +213,7 @@ mod tests {
                     status: "ACTIVE".to_string(),
                     labels: vec!["Story".to_string()],
                     properties: BTreeMap::new(),
+                    provenance: None,
                 },
                 neighbors: Vec::new(),
                 relations: Vec::new(),

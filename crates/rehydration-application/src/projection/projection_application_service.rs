@@ -35,6 +35,21 @@ where
     ) -> Result<Vec<ProjectionMutation>, PortError> {
         Ok(match event {
             ProjectionEvent::GraphNodeMaterialized(event) => {
+                let provenance = event
+                    .data
+                    .source_kind
+                    .as_deref()
+                    .and_then(|sk| rehydration_domain::SourceKind::parse(sk).ok())
+                    .map(|sk| {
+                        let mut p = rehydration_domain::Provenance::new(sk);
+                        if let Some(ref agent) = event.data.source_agent {
+                            p = p.with_source_agent(agent.clone());
+                        }
+                        if let Some(ref observed) = event.data.observed_at {
+                            p = p.with_observed_at(observed.clone());
+                        }
+                        p
+                    });
                 let mut mutations = vec![ProjectionMutation::UpsertNode(NodeProjection {
                     node_id: event.data.node_id.clone(),
                     node_kind: event.data.node_kind.clone(),
@@ -43,6 +58,7 @@ where
                     status: event.data.status.clone(),
                     labels: event.data.labels.clone(),
                     properties: event.data.properties.clone(),
+                    provenance,
                 })];
                 mutations.extend(
                     event

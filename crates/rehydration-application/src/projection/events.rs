@@ -68,6 +68,13 @@ pub struct GraphNodeMaterializedData {
     pub labels: Vec<String>,
     pub properties: BTreeMap<String, String>,
     pub related_nodes: Vec<RelatedNodeReference>,
+    /// Provenance: who produced this node and when.
+    #[serde(default)]
+    pub source_kind: Option<String>,
+    #[serde(default)]
+    pub source_agent: Option<String>,
+    #[serde(default)]
+    pub observed_at: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

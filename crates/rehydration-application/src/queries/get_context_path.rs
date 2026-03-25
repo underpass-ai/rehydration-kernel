@@ -377,6 +377,7 @@ mod tests {
             status: "ACTIVE".to_string(),
             labels: vec![node_kind.to_string()],
             properties: BTreeMap::new(),
+            provenance: None,
         }
     }
 

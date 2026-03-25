@@ -108,6 +108,7 @@ fn graph_mutations() -> Vec<ProjectionMutation> {
             status: DECISION_STATUS.to_string(),
             labels: vec![DECISION_LABEL.to_string()],
             properties: BTreeMap::new(),
+            provenance: None,
         }),
         ProjectionMutation::UpsertNode(NodeProjection {
             node_id: TASK_ID.to_string(),

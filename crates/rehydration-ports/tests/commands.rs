@@ -83,6 +83,7 @@ async fn projection_writer_delegates_through_arc() {
             status: "ACTIVE".to_string(),
             labels: vec!["projection".to_string()],
             properties: BTreeMap::new(),
+            provenance: None,
         })])
         .await
         .expect("write should succeed");

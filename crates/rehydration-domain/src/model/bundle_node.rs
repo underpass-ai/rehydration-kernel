@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use crate::NodeProjection;
+use crate::value_objects::Provenance;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BundleNode {
@@ -11,6 +12,7 @@ pub struct BundleNode {
     status: String,
     labels: Vec<String>,
     properties: BTreeMap<String, String>,
+    provenance: Option<Provenance>,
 }
 
 impl BundleNode {
@@ -31,7 +33,13 @@ impl BundleNode {
             status: status.into(),
             labels,
             properties,
+            provenance: None,
         }
+    }
+
+    pub fn with_provenance(mut self, provenance: Provenance) -> Self {
+        self.provenance = Some(provenance);
+        self
     }
 
     pub fn from_projection(node: &NodeProjection) -> Self {
@@ -43,6 +51,7 @@ impl BundleNode {
             status: node.status.clone(),
             labels: node.labels.clone(),
             properties: node.properties.clone(),
+            provenance: node.provenance.clone(),
         }
     }
 
@@ -72,5 +81,9 @@ impl BundleNode {
 
     pub fn properties(&self) -> &BTreeMap<String, String> {
         &self.properties
+    }
+
+    pub fn provenance(&self) -> Option<&Provenance> {
+        self.provenance.as_ref()
     }
 }

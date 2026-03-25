@@ -145,7 +145,7 @@ Evolve from rehydration to operational memory:
 - ~~detail_only baseline~~ (done)
 - ~~retry_success_rate~~ (done)
 - ~~Latency metrics in paper artifact~~ (done)
-- [ ] Expand meso to UC2-UC4
+- [x] Expand meso to UC2-UC4
 
 ### Level 2 — Strong paper
 - [ ] Closed-loop recovery with corrected outcome

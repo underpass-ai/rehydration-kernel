@@ -628,6 +628,9 @@ fn graph_node_event(node: NodeSeed, run_id: &str) -> GraphNodeMaterializedEvent 
                     },
                 })
                 .collect(),
+            source_kind: None,
+            source_agent: None,
+            observed_at: None,
         },
     }
 }

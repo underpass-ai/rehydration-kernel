@@ -64,6 +64,7 @@ pub(crate) fn node_projection_from_row(
             &row_string(row, &format!("{prefix}properties_json"), entity)?,
             entity,
         )?,
+        provenance: None, // TODO: read from Neo4j when persisted
     })
 }
 

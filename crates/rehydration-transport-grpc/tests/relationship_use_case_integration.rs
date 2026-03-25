@@ -289,8 +289,8 @@ async fn meso_interrupted_handoff_recovers_resume_under_noise()
 }
 
 #[tokio::test]
-async fn meso_constraint_preserves_reason_under_noise()
--> Result<(), Box<dyn Error + Send + Sync>> {
+async fn meso_constraint_preserves_reason_under_noise() -> Result<(), Box<dyn Error + Send + Sync>>
+{
     let observation = observe_constraint_under_token_pressure_use_case(
         PaperUseCaseVariant::FULL_EXPLANATORY_WITH_DETAIL.with_graph_scale(GraphScale::Meso),
         DEFAULT_TOKEN_BUDGET,

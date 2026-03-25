@@ -214,6 +214,7 @@ mod tests {
                     status: "ACTIVE".to_string(),
                     labels: vec!["ProjectionNode".to_string()],
                     properties: BTreeMap::new(),
+                    provenance: None,
                 },
                 neighbors: vec![NodeProjection {
                     node_id: "node-1".to_string(),
@@ -223,6 +224,7 @@ mod tests {
                     status: "ACTIVE".to_string(),
                     labels: vec!["ProjectionNode".to_string()],
                     properties: BTreeMap::new(),
+                    provenance: None,
                 }],
                 relations: vec![NodeRelationProjection {
                     source_node_id: "node-root".to_string(),
@@ -250,6 +252,7 @@ mod tests {
                             status: "ACTIVE".to_string(),
                             labels: vec!["ProjectionNode".to_string()],
                             properties: BTreeMap::new(),
+                            provenance: None,
                         },
                         neighbors: vec![
                             NodeProjection {
@@ -260,6 +263,7 @@ mod tests {
                                 status: "ACTIVE".to_string(),
                                 labels: vec!["ProjectionNode".to_string()],
                                 properties: BTreeMap::new(),
+                                provenance: None,
                             },
                             NodeProjection {
                                 node_id: "node-2".to_string(),
@@ -269,6 +273,7 @@ mod tests {
                                 status: "READY".to_string(),
                                 labels: vec!["ProjectionNode".to_string()],
                                 properties: BTreeMap::new(),
+                                provenance: None,
                             },
                         ],
                         relations: vec![

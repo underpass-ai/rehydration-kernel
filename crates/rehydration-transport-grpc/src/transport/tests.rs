@@ -125,6 +125,7 @@ impl GraphNeighborhoodReader for SeededGraphNeighborhoodReader {
                             properties: [("owner".to_string(), "ops".to_string())]
                                 .into_iter()
                                 .collect(),
+                            provenance: None,
                         },
                         NodeProjection {
                             node_id: "node-789".to_string(),
@@ -136,6 +137,7 @@ impl GraphNeighborhoodReader for SeededGraphNeighborhoodReader {
                             properties: [("owner".to_string(), "ops".to_string())]
                                 .into_iter()
                                 .collect(),
+                            provenance: None,
                         },
                     ],
                     relations: vec![
@@ -762,6 +764,7 @@ fn sample_node_neighborhood(node_id: &str, status: &str) -> NodeNeighborhood {
             properties: [("owner".to_string(), "ops".to_string())]
                 .into_iter()
                 .collect(),
+            provenance: None,
         },
         neighbors: Vec::new(),
         relations: Vec::new(),

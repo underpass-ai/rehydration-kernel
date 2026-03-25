@@ -321,6 +321,7 @@ mod tests {
                 status: status.to_string(),
                 labels: vec!["Task".to_string()],
                 properties: BTreeMap::from([("owner".to_string(), "ops".to_string())]),
+                provenance: None,
             },
             neighbors: Vec::new(),
             relations: Vec::new(),

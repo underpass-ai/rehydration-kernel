@@ -77,6 +77,7 @@ async fn load_neighborhood_respects_directed_depth() -> Result<(), Box<dyn Error
                     status: "OPEN".to_string(),
                     labels: vec!["risk".to_string()],
                     properties: BTreeMap::new(),
+                    provenance: None,
                 }),
                 ProjectionMutation::UpsertNodeRelation(NodeRelationProjection {
                     source_node_id: "node-root".to_string(),
@@ -283,6 +284,7 @@ async fn load_context_path_returns_shortest_path_and_target_subtree()
                     status: "ACTIVE".to_string(),
                     labels: vec!["mission".to_string()],
                     properties: BTreeMap::new(),
+                    provenance: None,
                 }),
                 ProjectionMutation::UpsertNode(NodeProjection {
                     node_id: "story-1".to_string(),
@@ -292,6 +294,7 @@ async fn load_context_path_returns_shortest_path_and_target_subtree()
                     status: "ACTIVE".to_string(),
                     labels: vec!["story".to_string()],
                     properties: BTreeMap::new(),
+                    provenance: None,
                 }),
                 ProjectionMutation::UpsertNode(NodeProjection {
                     node_id: "task-1".to_string(),
@@ -301,6 +304,7 @@ async fn load_context_path_returns_shortest_path_and_target_subtree()
                     status: "READY".to_string(),
                     labels: vec!["task".to_string()],
                     properties: BTreeMap::new(),
+                    provenance: None,
                 }),
                 ProjectionMutation::UpsertNode(NodeProjection {
                     node_id: "artifact-1".to_string(),
@@ -310,6 +314,7 @@ async fn load_context_path_returns_shortest_path_and_target_subtree()
                     status: "READY".to_string(),
                     labels: vec!["artifact".to_string()],
                     properties: BTreeMap::new(),
+                    provenance: None,
                 }),
                 ProjectionMutation::UpsertNode(NodeProjection {
                     node_id: "detour-1".to_string(),
@@ -319,6 +324,7 @@ async fn load_context_path_returns_shortest_path_and_target_subtree()
                     status: "ACTIVE".to_string(),
                     labels: vec!["story".to_string()],
                     properties: BTreeMap::new(),
+                    provenance: None,
                 }),
                 ProjectionMutation::UpsertNodeRelation(NodeRelationProjection {
                     source_node_id: "node-root".to_string(),

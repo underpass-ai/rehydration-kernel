@@ -237,30 +237,50 @@ pub fn generate_seed(config: GraphSeedConfig) -> GeneratedSeed {
                 format!("{}:chain-{}", config.id_prefix, depth - 1)
             };
 
-            let (noise_semantic, noise_relation_type, noise_rationale, noise_motivation, noise_kind, noise_title, noise_summary) =
-                match config.noise_mode {
-                    NoiseMode::Structural => (
-                        RelationSemanticClass::Structural,
-                        "DISTRACTOR".to_string(),
-                        Some(format!("distractor branch {branch} at depth {depth}")),
-                        None,
-                        "distractor".to_string(),
-                        format!("noise {branch} at {depth}"),
-                        format!("distractor branch {branch} depth {depth}"),
-                    ),
-                    NoiseMode::CompetingCausal => {
-                        let kind_index = (depth + branch + 1) % vocab.chain_kinds.len();
-                        (
-                            vocab.chain_semantic_classes[kind_index % vocab.chain_semantic_classes.len()],
-                            vocab.chain_relation_types[kind_index % vocab.chain_relation_types.len()].to_string(),
-                            Some(format!("alternative {} path at depth {depth} (competing branch {branch})", vocab.chain_rationale)),
-                            Some(format!("this path was considered but is not the primary causal chain")),
-                            vocab.chain_kinds[kind_index].to_string(),
-                            format!("alternative {} {depth}-{branch}", vocab.chain_kinds[kind_index]),
-                            format!("competing {} branch {branch} at depth {depth}", vocab.chain_summary),
-                        )
-                    }
-                };
+            let (
+                noise_semantic,
+                noise_relation_type,
+                noise_rationale,
+                noise_motivation,
+                noise_kind,
+                noise_title,
+                noise_summary,
+            ) = match config.noise_mode {
+                NoiseMode::Structural => (
+                    RelationSemanticClass::Structural,
+                    "DISTRACTOR".to_string(),
+                    Some(format!("distractor branch {branch} at depth {depth}")),
+                    None,
+                    "distractor".to_string(),
+                    format!("noise {branch} at {depth}"),
+                    format!("distractor branch {branch} depth {depth}"),
+                ),
+                NoiseMode::CompetingCausal => {
+                    let kind_index = (depth + branch + 1) % vocab.chain_kinds.len();
+                    (
+                        vocab.chain_semantic_classes
+                            [kind_index % vocab.chain_semantic_classes.len()],
+                        vocab.chain_relation_types[kind_index % vocab.chain_relation_types.len()]
+                            .to_string(),
+                        Some(format!(
+                            "alternative {} path at depth {depth} (competing branch {branch})",
+                            vocab.chain_rationale
+                        )),
+                        Some(format!(
+                            "this path was considered but is not the primary causal chain"
+                        )),
+                        vocab.chain_kinds[kind_index].to_string(),
+                        format!(
+                            "alternative {} {depth}-{branch}",
+                            vocab.chain_kinds[kind_index]
+                        ),
+                        format!(
+                            "competing {} branch {branch} at depth {depth}",
+                            vocab.chain_summary
+                        ),
+                    )
+                }
+            };
 
             relations.push(GeneratedRelation {
                 source_node_id: source_id,
@@ -439,17 +459,17 @@ mod tests {
 
         // Noise should have competing rationale
         assert!(
-            noise_relations
-                .iter()
-                .any(|r| r.rationale.as_deref().unwrap_or("").contains("alternative")),
+            noise_relations.iter().any(|r| r
+                .rationale
+                .as_deref()
+                .unwrap_or("")
+                .contains("alternative")),
             "competing causal noise should have alternative rationale"
         );
 
         // Noise should have motivation explaining it's not primary
         assert!(
-            noise_relations
-                .iter()
-                .any(|r| r.motivation.is_some()),
+            noise_relations.iter().any(|r| r.motivation.is_some()),
             "competing causal noise should have motivation"
         );
     }

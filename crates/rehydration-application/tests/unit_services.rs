@@ -35,6 +35,7 @@ async fn routing_projection_writer_sends_graph_and_detail_mutations_to_the_right
                 status: "ACTIVE".to_string(),
                 labels: vec!["Capability".to_string()],
                 properties: Default::default(),
+                provenance: None,
             }),
             ProjectionMutation::UpsertNodeDetail(NodeDetailProjection {
                 node_id: "node-123".to_string(),

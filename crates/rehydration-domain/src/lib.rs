@@ -17,7 +17,7 @@ pub use repositories::{
     IdempotentOutcome, NodeDetailReader, PortError, ProcessedEventStore, ProjectionCheckpointStore,
     ProjectionWriter, SnapshotSaveOptions, SnapshotStore, TokenEstimator,
 };
-pub use value_objects::{BundleMetadata, CaseId, Role};
+pub use value_objects::{BundleMetadata, CaseId, Provenance, Role, SourceKind};
 pub use value_objects::{RehydrationMode, ResolutionTier, TierBudget};
 pub use value_objects::{RelationExplanation, RelationSemanticClass};
 

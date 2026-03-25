@@ -175,6 +175,7 @@ mod tests {
                     status: "ACTIVE".to_string(),
                     labels: vec!["Story".to_string()],
                     properties: BTreeMap::new(),
+                    provenance: None,
                 },
                 neighbors: vec![NodeProjection {
                     node_id: "neighbor-1".to_string(),
@@ -184,6 +185,7 @@ mod tests {
                     status: "OPEN".to_string(),
                     labels: vec!["Task".to_string()],
                     properties: BTreeMap::new(),
+                    provenance: None,
                 }],
                 relations: vec![NodeRelationProjection {
                     source_node_id: root_node_id.to_string(),
@@ -271,6 +273,7 @@ mod tests {
                     status: "ACTIVE".to_string(),
                     labels: vec!["Story".to_string()],
                     properties: BTreeMap::new(),
+                    provenance: None,
                 },
                 neighbors: Vec::new(),
                 relations: Vec::new(),

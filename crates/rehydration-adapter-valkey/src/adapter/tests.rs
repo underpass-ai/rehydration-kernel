@@ -445,6 +445,7 @@ async fn detail_store_rejects_graph_mutations() {
                 status: "ACTIVE".to_string(),
                 labels: Vec::new(),
                 properties: std::collections::BTreeMap::new(),
+                provenance: None,
             },
         )])
         .await

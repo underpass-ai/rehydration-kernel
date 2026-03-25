@@ -97,6 +97,7 @@ mod tests {
             status: "ACTIVE".to_string(),
             labels: Vec::new(),
             properties: BTreeMap::new(),
+            provenance: None,
         }
     }
 

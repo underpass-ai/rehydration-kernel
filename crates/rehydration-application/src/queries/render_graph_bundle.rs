@@ -165,8 +165,9 @@ mod tests {
     use std::collections::BTreeMap;
 
     use rehydration_domain::{
-        BundleMetadata, BundleNode, BundleNodeDetail, BundleRelationship, CaseId,
+        BundleMetadata, BundleNode, BundleNodeDetail, BundleRelationship, CaseId, Provenance,
         RehydrationBundle, RelationExplanation, RelationSemanticClass, ResolutionTier, Role,
+        SourceKind,
     };
 
     /// Budget so tight it forces truncation on any multi-section bundle.
@@ -608,5 +609,76 @@ mod tests {
                 l1.token_count
             );
         }
+    }
+
+    #[test]
+    fn render_includes_provenance_when_present() {
+        let bundle = RehydrationBundle::new(
+            CaseId::new("case-1").expect("valid"),
+            Role::new("dev").expect("valid"),
+            BundleNode::new(
+                "case-1",
+                "incident",
+                "Root",
+                "Outage",
+                "ACTIVE",
+                vec![],
+                BTreeMap::new(),
+            )
+            .with_provenance(
+                Provenance::new(SourceKind::Agent)
+                    .with_source_agent("diagnostics-agent")
+                    .with_observed_at("2026-03-25T14:00:00Z"),
+            ),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            BundleMetadata::initial("0.1.0"),
+        )
+        .expect("valid");
+
+        let rendered = render_graph_bundle(&bundle);
+
+        assert!(
+            rendered.content.contains("[source:agent"),
+            "rendered should include provenance source kind"
+        );
+        assert!(
+            rendered.content.contains("agent=diagnostics-agent"),
+            "rendered should include source agent"
+        );
+        assert!(
+            rendered.content.contains("observed=2026-03-25T14:00:00Z"),
+            "rendered should include observed_at"
+        );
+    }
+
+    #[test]
+    fn render_omits_provenance_when_absent() {
+        let bundle = RehydrationBundle::new(
+            CaseId::new("case-1").expect("valid"),
+            Role::new("dev").expect("valid"),
+            BundleNode::new(
+                "case-1",
+                "incident",
+                "Root",
+                "Outage",
+                "ACTIVE",
+                vec![],
+                BTreeMap::new(),
+            ),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            BundleMetadata::initial("0.1.0"),
+        )
+        .expect("valid");
+
+        let rendered = render_graph_bundle(&bundle);
+
+        assert!(
+            !rendered.content.contains("[source:"),
+            "rendered should NOT include provenance bracket when absent"
+        );
     }
 }
