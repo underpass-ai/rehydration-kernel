@@ -80,10 +80,43 @@ Single source of truth for kernel maturity, technical debt, and next steps.
 - [ ] Larger judge model: use 2-3 GPUs with tensor-parallel for a stronger evaluator (e.g. Qwen3-30B or 70B)
 - [ ] Benchmark with frontier models for README: Claude Opus 4.6 (Anthropic API) + GPT-4.5 (OpenAI API) as inference and judge — API keys available
 
+## Pending — Product evolution (from OSS improvement planning)
+
+### Bundle multi-resolution (high priority, quick win)
+Tiered rendering to replace uniform flat sections:
+- **L0 Summary**: objective, status, blocker, next action
+- **L1 Causal spine**: root, focus, top causal/motivational/evidential relations, resume path
+- **L2 Evidence pack**: supporting details, errors, constraints, relevant data
+
+### RehydrationMode heuristic (medium priority)
+Deterministic mode selection based on query shape:
+- `resume_focused`: optimize for restart point identification
+- `reason_preserving`: optimize for rationale and motivation preservation
+- `temporal_delta`: optimize for what changed since last rehydration
+- `global_summary`: optimize for broad context overview
+
+### Provenance and auditability (medium priority)
+Metadata on nodes/relationships for trust and conflict detection:
+- `source_kind`, `source_agent`, `derived_from`
+- `observed_at`, `effective_at`, `confidence`, `staleness`
+- `supports`, `contradicts`
+
+### Associative rehydration (low priority, high complexity)
+Move beyond root + fixed depth:
+- Anchor selection, subgraph scoring, guided expansion
+- Heuristic PPR or salience-weighted traversal
+- Soft pruning and diversity control
+
+### Memory consolidation (future)
+Evolve from rehydration to operational memory:
+- Episodic / semantic / procedural layers
+- Promotion of stable patterns, archival of old episodes
+- Summary nodes, versioning, lineage
+
 ## Pending — Paper artifact
 
-- [ ] Recalculate paper metrics with cl100k_base tokenizer
-- [ ] Add latency capture to paper harness
+- ~~Recalculate paper metrics with cl100k_base tokenizer~~ (done)
+- ~~Add latency capture to paper harness~~ (done)
 - [ ] Expand meso variants to UC2-UC4
 - [ ] CI consistency check paper ↔ artifacts
 
@@ -94,18 +127,18 @@ Single source of truth for kernel maturity, technical debt, and next steps.
 - ~~Meso graph~~ (done for UC1)
 - ~~detail_only baseline~~ (done)
 - ~~retry_success_rate~~ (done)
-- [ ] Latency metrics in paper artifact
+- ~~Latency metrics in paper artifact~~ (done)
 - [ ] Expand meso to UC2-UC4
 
 ### Level 2 — Strong paper
 - [ ] Closed-loop recovery with corrected outcome
-- [ ] Three graph scales: micro, meso, stress
+- ~~Three graph scales: micro, meso, stress~~ (done: dataset generator)
 - [ ] Noise controls (distractors, competing motivations)
-- [ ] Two domains minimum
+- ~~Two domains minimum~~ (done: Operations + SoftwareDebugging)
 - [ ] Pull and event-driven evaluation with same metrics
 - [ ] External baseline families
-- [ ] vLLM in the loop tests
-- [ ] Dataset Generator
+- ~~vLLM in the loop tests~~ (done: 18-config benchmark with LLM-as-judge)
+- ~~Dataset Generator~~ (done: micro/meso/stress × 2 domains)
 
 ### Level 3 — SOTA push
 - [ ] Public benchmark
