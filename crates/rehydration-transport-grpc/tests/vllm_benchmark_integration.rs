@@ -176,10 +176,7 @@ async fn vllm_benchmark_across_scales_domains_and_variants()
             let query_latency_ms = query_start.elapsed().as_secs_f64() * 1000.0;
 
             let bundle = response.bundle.ok_or("missing bundle")?;
-            let role_bundle = bundle
-                .bundles
-                .first()
-                .ok_or("missing role bundle")?;
+            let role_bundle = bundle.bundles.first().ok_or("missing role bundle")?;
             let rendered = response.rendered.ok_or("missing rendered context")?;
 
             let llm_eval = if let Some(ref llm_cfg) = llm_config {
@@ -194,7 +191,9 @@ async fn vllm_benchmark_across_scales_domains_and_variants()
                      3. What is the main rationale in the causal chain?"
                 );
                 let first_chain_node = seed.nodes.first();
-                let last_chain_node = seed.nodes.iter()
+                let last_chain_node = seed
+                    .nodes
+                    .iter()
                     .filter(|n| n.node_kind != "distractor")
                     .last();
 
@@ -211,9 +210,14 @@ async fn vllm_benchmark_across_scales_domains_and_variants()
                         format!(
                             "Any node on the main operational chain is valid: \
                              the first {} ({}) or the last verified checkpoint ({})",
-                            first_chain_node.map(|n| n.node_kind.as_str()).unwrap_or("decision"),
-                            first_chain_node.map(|n| n.title.as_str()).unwrap_or("chain-0"),
-                            last_chain_node.map(|n| format!("{} — {}", n.node_kind, n.title))
+                            first_chain_node
+                                .map(|n| n.node_kind.as_str())
+                                .unwrap_or("decision"),
+                            first_chain_node
+                                .map(|n| n.title.as_str())
+                                .unwrap_or("chain-0"),
+                            last_chain_node
+                                .map(|n| format!("{} — {}", n.node_kind, n.title))
                                 .unwrap_or_else(|| "last chain node".to_string()),
                         ),
                     ),
@@ -221,17 +225,27 @@ async fn vllm_benchmark_across_scales_domains_and_variants()
                         format!(
                             "The root cause lies in the causal chain: either the initial {} ({}) \
                              or a deeper node in the investigation chain (e.g. {})",
-                            first_chain_node.map(|n| n.node_kind.as_str()).unwrap_or("hypothesis"),
-                            first_chain_node.map(|n| n.title.as_str()).unwrap_or("chain-0"),
-                            last_chain_node.map(|n| format!("{} — {}", n.node_kind, n.title))
+                            first_chain_node
+                                .map(|n| n.node_kind.as_str())
+                                .unwrap_or("hypothesis"),
+                            first_chain_node
+                                .map(|n| n.title.as_str())
+                                .unwrap_or("chain-0"),
+                            last_chain_node
+                                .map(|n| format!("{} — {}", n.node_kind, n.title))
                                 .unwrap_or_else(|| "deepest chain node".to_string()),
                         ),
                         format!(
                             "Any node on the main causal chain is valid: the first {} ({}) \
                              or the last validated step before the suspected failure ({})",
-                            first_chain_node.map(|n| n.node_kind.as_str()).unwrap_or("hypothesis"),
-                            first_chain_node.map(|n| n.title.as_str()).unwrap_or("chain-0"),
-                            last_chain_node.map(|n| format!("{} — {}", n.node_kind, n.title))
+                            first_chain_node
+                                .map(|n| n.node_kind.as_str())
+                                .unwrap_or("hypothesis"),
+                            first_chain_node
+                                .map(|n| n.title.as_str())
+                                .unwrap_or("chain-0"),
+                            last_chain_node
+                                .map(|n| format!("{} — {}", n.node_kind, n.title))
                                 .unwrap_or_else(|| "last chain node".to_string()),
                         ),
                     ),
@@ -240,10 +254,7 @@ async fn vllm_benchmark_across_scales_domains_and_variants()
                 let ground_truth = EvaluationGroundTruth {
                     expected_failure_point: Some(failure_desc),
                     expected_restart_node: Some(restart_desc),
-                    expected_reason: seed
-                        .relations
-                        .first()
-                        .and_then(|r| r.rationale.clone()),
+                    expected_reason: seed.relations.first().and_then(|r| r.rationale.clone()),
                     domain_context: Some(domain_name.to_string()),
                 };
                 match evaluate_with_llm(llm_cfg, &rendered.content, &question, &ground_truth).await
@@ -281,8 +292,14 @@ async fn vllm_benchmark_across_scales_domains_and_variants()
                     "failure={} — {} | restart={} | reason={}",
                     seed.root.node_kind,
                     seed.root.summary,
-                    seed.nodes.first().map(|n| format!("{} — {}", n.node_kind, n.title)).unwrap_or_else(|| "?".to_string()),
-                    seed.relations.first().and_then(|r| r.rationale.clone()).unwrap_or_else(|| "?".to_string()),
+                    seed.nodes
+                        .first()
+                        .map(|n| format!("{} — {}", n.node_kind, n.title))
+                        .unwrap_or_else(|| "?".to_string()),
+                    seed.relations
+                        .first()
+                        .and_then(|r| r.rationale.clone())
+                        .unwrap_or_else(|| "?".to_string()),
                 )),
             })
         }

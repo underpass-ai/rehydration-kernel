@@ -97,6 +97,35 @@ review-required unless they explicitly say otherwise.
 - `scripts/ci`: local quality and integration gates
 - `docs/migration`: closeout, handoff, and integration strategy docs
 
+## Benchmark
+
+Frontier model evaluation with LLM-as-judge across 18 configurations
+(3 scales × 2 domains × 3 relation mixes).
+
+**Inference**: GPT-5.4 (OpenAI) — **Judge**: Claude Opus 4 (Anthropic)
+
+| Config | Explanatory | Structural | Mixed |
+|--------|:-----------:|:----------:|:-----:|
+| micro-ops | 3/3 | 2/3 | 3/3 |
+| micro-debug | 3/3 | 2/3 | 3/3 |
+| meso-ops | 2/3 | 2/3 | 3/3 |
+| meso-debug | 3/3 | 2/3 | 3/3 |
+| stress-ops | 3/3 | 2/3 | 3/3 |
+| stress-debug | 3/3 | 1/3 | 3/3 |
+
+**Explanatory: 17/18 (94%) vs Structural: 11/18 (61%)**
+
+Each cell is `TaskOK + RestartOK + ReasonPreserved` out of 3.
+Structural variants score 2/3 because `ReasonPreserved` is always false —
+there is no rationale metadata in structural-only bundles to preserve.
+
+Scales: micro (4 nodes), meso (21 nodes), stress (49 nodes).
+Domains: operations (incident response), software debugging (hypothesis/fix cycle).
+
+Evaluation prompts are externalized to
+[`crates/rehydration-testkit/resources/llm_prompts.yaml`](./crates/rehydration-testkit/resources/llm_prompts.yaml)
+and can be overridden at runtime via `LLM_PROMPTS_PATH`.
+
 ## Paper Artifact
 
 The repository also contains an artifact-backed paper draft on explanatory
