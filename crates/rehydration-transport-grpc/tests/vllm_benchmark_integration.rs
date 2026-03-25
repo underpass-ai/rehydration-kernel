@@ -164,7 +164,10 @@ async fn vllm_benchmark_across_scales_domains_and_variants()
                     role: BENCHMARK_ROLE.to_string(),
                     phase: Phase::Build as i32,
                     work_item_id: target_node_id.clone(),
-                    token_budget: 4096,
+                    token_budget: std::env::var("BENCHMARK_TOKEN_BUDGET")
+                        .ok()
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(4096),
                     requested_scopes: vec![],
                     render_format: BundleRenderFormat::Structured as i32,
                     include_debug_sections: false,

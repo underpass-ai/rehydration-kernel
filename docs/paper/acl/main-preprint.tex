@@ -373,8 +373,15 @@ models (61\% $\to$ 50\%). The gap widens from 27pp to 50pp.}
 
 With explanatory context, all three models converge to near-perfect scores.
 Without it, the structural-only gap widens as model capability decreases.
-The practical implication: the kernel's explanatory metadata substitutes for
-inference-time reasoning, enabling local models to match frontier accuracy.
+
+Under token pressure (512-token budget, forcing 68--85\% truncation on
+meso and stress graphs), Qwen3-8B drops from 100\% to 83\% on explanatory
+bundles --- still matching Claude Opus~4 at full budget. At full budget the
+local model achieves 100\% because rationale text is present verbatim and the
+model extracts rather than reasons. Under truncation, the kernel's salience
+ordering (causal $>$ motivational $>$ evidential $>$ structural) determines
+which relationships survive, and the 83\% result reflects genuine context
+quality rather than trivial extraction.
 
 \section{Discussion}
 

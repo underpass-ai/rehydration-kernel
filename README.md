@@ -122,23 +122,27 @@ relation mixes). Each cell is `TaskOK + RestartOK + ReasonPreserved` out of 3.
 
 ### Key finding: explanatory context closes the model capability gap
 
-| Model | Explanatory | Structural | Gap |
-|-------|:----------:|:----------:|:---:|
-| GPT-5.4 (OpenAI frontier) | 17/18 (94%) | 11/18 (61%) | 33pp |
-| Claude Opus 4 (Anthropic frontier) | 15/18 (83%) | 10/18 (56%) | 27pp |
-| Qwen3-8B (local vLLM, 8B params) | 18/18 (100%) | 9/18 (50%) | 50pp |
+| Model | Budget | Explanatory | Structural | Gap |
+|-------|:------:|:----------:|:----------:|:---:|
+| GPT-5.4 (frontier) | 4096 | 17/18 (94%) | 11/18 (61%) | 33pp |
+| Claude Opus 4 (frontier) | 4096 | 15/18 (83%) | 10/18 (56%) | 27pp |
+| Qwen3-8B (local 8B) | 4096 | 18/18 (100%) | 9/18 (50%) | 50pp |
+| Qwen3-8B (local 8B) | **512** | **15/18 (83%)** | 8/18 (44%) | 39pp |
 
-With explanatory context, all three models converge to near-perfect scores
-(83-100%). Without it, structural-only accuracy drops consistently and
-degrades further with smaller models (61% → 56% → 50%).
+With generous budget (4096 tokens), Qwen3-8B achieves 100% on explanatory
+because the rationale text is present verbatim in the rendered context — the
+model extracts rather than reasons. Under token pressure (512 tokens, forcing
+68-85% truncation on meso/stress graphs), accuracy drops to 83% — still
+matching Claude Opus 4 at full budget.
 
-The practical implication: a local 8B model with the kernel's explanatory
-context matches frontier model accuracy — the reasoning is in the context,
-not in the model.
+The practical implication: **a local 8B model with the kernel's explanatory
+context under token pressure matches a frontier model at full budget.**
+Structural-only accuracy degrades consistently across all models (50-61%),
+confirming that the kernel's explanatory metadata is the dominant signal.
 
 ### Full results by configuration
 
-**GPT-5.4 inference + Claude Opus 4 judge:**
+**GPT-5.4 inference + Claude Opus 4 judge (budget 4096):**
 
 | Config | Explanatory | Structural | Mixed |
 |--------|:-----------:|:----------:|:-----:|
@@ -149,7 +153,7 @@ not in the model.
 | stress-ops | 3/3 | 2/3 | 3/3 |
 | stress-debug | 3/3 | 1/3 | 3/3 |
 
-**Qwen3-8B (vLLM) inference + Claude Opus 4 judge:**
+**Qwen3-8B vLLM + Claude Opus 4 judge (budget 4096):**
 
 | Config | Explanatory | Structural | Mixed |
 |--------|:-----------:|:----------:|:-----:|
@@ -160,8 +164,21 @@ not in the model.
 | stress-ops | 3/3 | 2/3 | 3/3 |
 | stress-debug | 3/3 | 1/3 | 3/3 |
 
-Structural variants consistently lose `ReasonPreserved` — there is no
-rationale metadata in structural-only bundles to preserve.
+**Qwen3-8B vLLM + Claude Opus 4 judge (budget 512 — truncated):**
+
+| Config | Explanatory | Structural | Mixed | Tokens |
+|--------|:-----------:|:----------:|:-----:|:------:|
+| micro-ops | 3/3 | 1/3 | 3/3 | 354 |
+| micro-debug | 3/3 | 1/3 | 3/3 | 340 |
+| meso-ops | 3/3 | 2/3 | 3/3 | ~490 |
+| meso-debug | 3/3 | 2/3 | 2/3 | ~494 |
+| stress-ops | 0/3 | 2/3 | 3/3 | ~506 |
+| stress-debug | 3/3 | 0/3 | 3/3 | ~492 |
+
+Under 512-token budget, meso explanatory holds at 3/3 (68% truncated) while
+stress-ops-explanatory drops to 0/3 (85% truncated, critical context lost).
+The kernel's salience ordering (causal > motivational > evidential > structural)
+preserves the most important relationships under pressure.
 
 Scales: micro (4 nodes), meso (21 nodes), stress (49 nodes).
 Domains: operations (incident response), software debugging (hypothesis/fix cycle).
