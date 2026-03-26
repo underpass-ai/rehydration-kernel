@@ -189,9 +189,9 @@ penalizes precise causal reasoning and rewards trivial root-matching. See
 - [x] `expected_restart_node`: causal predecessor from seed topology
 - [x] `expected_reason`: concatenate all chain rationales
 - [x] Re-run diagnostic — frontier models score >= small models (confirmed)
-- [ ] Strip markdown code fences (```` ```json ```` ) before parsing LLM responses
-- [ ] Strict/lenient judges must converge (currently 0% vs 100% on restart)
-- [ ] Re-run full 720-eval matrix with fixed ground truth
+- [x] Strip markdown code fences before parsing LLM responses (strip_markdown_fences in llm_evaluator)
+- [x] Strict/lenient judges converge (±1 on all metrics, validated 2026-03-26)
+- [x] Re-run full 720-eval matrix with fixed ground truth (2026-03-26: 720 evals, explanatory 62% Task vs structural 18%)
 
 ### Judge prompt redesign (from incident 2026-03-26)
 
