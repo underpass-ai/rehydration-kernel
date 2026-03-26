@@ -14,12 +14,20 @@
   "bundle_relationships": 3,
   "detailed_nodes": 1,
   "rendered_token_count": 203,
-  "query_latency_ms": 788.709798,
-  "total_latency_ms": 788.740569,
+  "query_latency_ms": 726.834734,
+  "total_latency_ms": 726.872014,
+  "graph_load_ms": 301.39078,
+  "detail_load_ms": 1.5827820000000001,
+  "bundle_assembly_ms": 0.023671,
+  "detail_batch_size": 3,
   "explanation_roundtrip_fidelity": 0.0,
   "detail_roundtrip_fidelity": 1.0,
   "causal_reconstruction_score": 0.14285714285714285,
   "rendered_contains_expected_rationale": false,
   "rendered_contains_expected_decision_reference": false,
-  "rendered_contains_expected_detail": true
+  "rendered_contains_expected_detail": true,
+  "llm_task_success": false,
+  "llm_restart_accuracy": true,
+  "llm_reason_preserved": false,
+  "llm_latency_ms": 7217.163845
 }

@@ -51,6 +51,17 @@ impl NodeDetailReader for EmptyNodeDetailReader {
     ) -> Result<Option<NodeDetailProjection>, PortError> {
         Ok(None)
     }
+
+    async fn load_node_details_batch(
+        &self,
+        node_ids: Vec<String>,
+    ) -> Result<Vec<Option<NodeDetailProjection>>, PortError> {
+        let mut results = Vec::with_capacity(node_ids.len());
+        for node_id in &node_ids {
+            results.push(self.load_node_detail(node_id).await?);
+        }
+        Ok(results)
+    }
 }
 
 struct NoopSnapshotStore;
@@ -393,6 +404,7 @@ async fn connect_tls_channel(
     }
 }
 
+#[allow(deprecated)] // proto fields phase, work_item_id, render_format, include_debug_sections
 async fn get_context(
     client: &mut ContextQueryServiceClient<Channel>,
 ) -> Result<tonic::Response<rehydration_proto::v1beta1::GetContextResponse>, tonic::Status> {

@@ -3,7 +3,7 @@ use rehydration_ports::{
 };
 
 use crate::adapter::endpoint::{DEFAULT_NODE_DETAIL_KEY_PREFIX, ValkeyEndpoint};
-use crate::adapter::io::{execute_get_command, execute_set_command};
+use crate::adapter::io::{execute_get_command, execute_mget_command, execute_set_command};
 use crate::adapter::node_detail_serialization::{deserialize_node_detail, serialize_node_detail};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ValkeyNodeDetailStore {
@@ -78,5 +78,23 @@ impl NodeDetailReader for ValkeyNodeDetailStore {
             Some(payload) => deserialize_node_detail(&payload),
             None => Ok(None),
         }
+    }
+
+    async fn load_node_details_batch(
+        &self,
+        node_ids: Vec<String>,
+    ) -> Result<Vec<Option<NodeDetailProjection>>, PortError> {
+        if node_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let keys: Vec<String> = node_ids.iter().map(|id| self.detail_key(id)).collect();
+        let payloads = execute_mget_command(&self.endpoint, &keys).await?;
+        payloads
+            .into_iter()
+            .map(|payload| match payload {
+                Some(p) => deserialize_node_detail(&p),
+                None => Ok(None),
+            })
+            .collect()
     }
 }

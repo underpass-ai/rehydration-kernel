@@ -27,7 +27,6 @@ Services:
 
 - `ContextQueryService`
 - `ContextCommandService`
-- `ContextAdminService`
 
 Primary identifiers and concepts:
 

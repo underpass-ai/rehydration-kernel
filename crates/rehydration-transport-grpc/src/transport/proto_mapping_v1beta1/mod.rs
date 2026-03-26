@@ -6,6 +6,7 @@ mod version_mapping;
 
 pub(crate) use bundle_mapping::{
     proto_bundle_from_single_role_v1beta1, proto_rehydrate_session_response_v1beta1,
+    proto_timing_breakdown_v1beta1,
 };
 pub(crate) use graph_mapping::{
     proto_bundle_node_detail_v1beta1, proto_bundle_node_v1beta1, proto_bundle_relationship_v1beta1,

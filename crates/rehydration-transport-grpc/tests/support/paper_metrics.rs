@@ -34,6 +34,14 @@ pub(crate) struct PaperUseCaseMetric {
     pub(crate) query_latency_ms: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) total_latency_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) graph_load_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) detail_load_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) bundle_assembly_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) detail_batch_size: Option<u32>,
     pub(crate) explanation_roundtrip_fidelity: f64,
     pub(crate) detail_roundtrip_fidelity: f64,
     pub(crate) causal_reconstruction_score: f64,
@@ -76,6 +84,8 @@ pub(crate) struct PaperUseCaseMetric {
     pub(crate) llm_reason_preserved: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) llm_latency_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) llm_judge_raw: Option<String>,
 }
 
 pub(crate) fn ratio(hits: usize, total: usize) -> f64 {

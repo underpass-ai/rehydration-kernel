@@ -84,6 +84,58 @@ where
     }
 }
 
+/// Read an MGET response: a RESP array of bulk strings.
+pub(crate) async fn read_bulk_string_array<R>(reader: &mut R) -> Result<Vec<Option<String>>, PortError>
+where
+    R: AsyncBufRead + AsyncRead + Unpin,
+{
+    let mut header = String::new();
+    reader.read_line(&mut header).await.map_err(|error| {
+        PortError::Unavailable(format!("failed to read valkey array header: {error}"))
+    })?;
+    let header = header.trim_end_matches("\r\n");
+    let (prefix, remainder) = header.split_at(1);
+
+    if prefix == "-" {
+        return Err(PortError::Unavailable(format!(
+            "valkey rejected read: {remainder}"
+        )));
+    }
+
+    if prefix != "*" {
+        return Err(PortError::Unavailable(format!(
+            "expected valkey array response, got prefix `{prefix}`"
+        )));
+    }
+
+    let count = remainder.parse::<isize>().map_err(|error| {
+        PortError::Unavailable(format!("invalid valkey array length: {error}"))
+    })?;
+
+    if count <= 0 {
+        return Ok(Vec::new());
+    }
+
+    let mut results = Vec::with_capacity(count as usize);
+    for _ in 0..count {
+        match read_response(reader).await? {
+            RespValue::BulkString(payload) => results.push(payload),
+            RespValue::Error(message) => {
+                return Err(PortError::Unavailable(format!(
+                    "valkey rejected read in array: {message}"
+                )));
+            }
+            other => {
+                return Err(PortError::Unavailable(format!(
+                    "unexpected element in valkey array: {other:?}"
+                )));
+            }
+        }
+    }
+
+    Ok(results)
+}
+
 pub(crate) fn map_valkey_response(response: RespValue) -> Result<(), PortError> {
     match response {
         RespValue::SimpleString(message) if message == "OK" => Ok(()),
@@ -101,7 +153,8 @@ mod tests {
     use tokio::io::BufReader;
 
     use super::{
-        RespValue, encode_command, encode_set_command, map_valkey_response, read_response,
+        RespValue, encode_command, encode_set_command, map_valkey_response, read_bulk_string_array,
+        read_response,
     };
     use rehydration_ports::PortError;
 
@@ -182,5 +235,56 @@ mod tests {
     async fn read_from_buffer(payload: &[u8]) -> Result<RespValue, PortError> {
         let mut reader = BufReader::new(payload);
         read_response(&mut reader).await
+    }
+
+    #[tokio::test]
+    async fn read_bulk_string_array_parses_mget_response() {
+        let raw = b"*3\r\n$5\r\nhello\r\n$-1\r\n$5\r\nworld\r\n";
+        let mut reader = BufReader::new(&raw[..]);
+        let result = read_bulk_string_array(&mut reader)
+            .await
+            .expect("mget response should parse");
+
+        assert_eq!(
+            result,
+            vec![
+                Some("hello".to_string()),
+                None,
+                Some("world".to_string()),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn read_bulk_string_array_handles_empty_array() {
+        let raw = b"*0\r\n";
+        let mut reader = BufReader::new(&raw[..]);
+        let result = read_bulk_string_array(&mut reader)
+            .await
+            .expect("empty array should parse");
+
+        assert!(result.is_empty());
+    }
+
+    #[tokio::test]
+    async fn read_bulk_string_array_handles_all_nil() {
+        let raw = b"*2\r\n$-1\r\n$-1\r\n";
+        let mut reader = BufReader::new(&raw[..]);
+        let result = read_bulk_string_array(&mut reader)
+            .await
+            .expect("all-nil array should parse");
+
+        assert_eq!(result, vec![None, None]);
+    }
+
+    #[tokio::test]
+    async fn read_bulk_string_array_rejects_error_response() {
+        let raw = b"-ERR no such key\r\n";
+        let mut reader = BufReader::new(&raw[..]);
+        let error = read_bulk_string_array(&mut reader)
+            .await
+            .expect_err("error response should fail");
+
+        assert!(error.to_string().contains("no such key"));
     }
 }

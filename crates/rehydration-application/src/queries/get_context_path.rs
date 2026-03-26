@@ -9,7 +9,8 @@ use crate::ApplicationError;
 pub use crate::queries::render_graph_bundle::RenderedContext;
 use crate::queries::{
     ContextRenderOptions, MAX_NATIVE_GRAPH_TRAVERSAL_DEPTH, NodeCentricProjectionReader,
-    QueryApplicationService, RehydrateSessionUseCase, render_graph_bundle_with_options,
+    QueryApplicationService, QueryTimingBreakdown, RehydrateSessionUseCase,
+    render_graph_bundle_with_options,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,6 +26,7 @@ pub struct GetContextPathResult {
     pub path_bundle: RehydrationBundle,
     pub rendered: RenderedContext,
     pub served_at: std::time::SystemTime,
+    pub timing: Option<QueryTimingBreakdown>,
 }
 
 #[derive(Debug)]
@@ -72,10 +74,10 @@ where
         let bundle_reader =
             NodeCentricProjectionReader::new(&self.graph_reader, &self.detail_reader);
 
-        let bundle = match if root_node_id == target_node_id {
-            None
+        let (bundle, timing) = match if root_node_id == target_node_id {
+            (None, None)
         } else {
-            bundle_reader
+            let (b, t) = bundle_reader
                 .load_context_path_bundle_with_depth(
                     &root_node_id,
                     &target_node_id,
@@ -83,18 +85,20 @@ where
                     self.generator_version,
                     MAX_NATIVE_GRAPH_TRAVERSAL_DEPTH,
                 )
-                .await?
+                .await?;
+            (b, Some(t))
         } {
-            Some(bundle) => bundle,
-            None => {
-                RehydrateSessionUseCase::new(
+            (Some(bundle), timing) => (bundle, timing),
+            (None, _) => {
+                let (bundle, timing) = RehydrateSessionUseCase::new(
                     &self.graph_reader,
                     &self.detail_reader,
                     &self.snapshot_store,
                     self.generator_version,
                 )
                 .execute(&target_node_id, role, false, SnapshotSaveOptions::default())
-                .await?
+                .await?;
+                (bundle, Some(timing))
             }
         };
 
@@ -104,6 +108,7 @@ where
             path_bundle: bundle,
             rendered,
             served_at: std::time::SystemTime::now(),
+            timing,
         })
     }
 }
@@ -261,6 +266,17 @@ mod tests {
                 content_hash: format!("hash-{node_id}"),
                 revision: 1,
             }))
+        }
+
+        async fn load_node_details_batch(
+            &self,
+            node_ids: Vec<String>,
+        ) -> Result<Vec<Option<NodeDetailProjection>>, PortError> {
+            let mut results = Vec::with_capacity(node_ids.len());
+            for node_id in &node_ids {
+                results.push(self.load_node_detail(node_id).await?);
+            }
+            Ok(results)
         }
     }
 

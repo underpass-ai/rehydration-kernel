@@ -14,7 +14,8 @@ use rehydration_ports::PortError;
 
 use crate::adapter::endpoint::ValkeyEndpoint;
 use crate::adapter::resp::{
-    RespValue, encode_command, encode_set_command, map_valkey_response, read_response,
+    RespValue, encode_command, encode_set_command, map_valkey_response, read_bulk_string_array,
+    read_response,
 };
 
 trait ValkeyIo: AsyncRead + AsyncWrite + Unpin + Send {}
@@ -67,6 +68,33 @@ pub(crate) async fn execute_get_command(
             "unexpected valkey response: {other:?}"
         ))),
     }
+}
+
+pub(crate) async fn execute_mget_command(
+    endpoint: &ValkeyEndpoint,
+    keys: &[String],
+) -> Result<Vec<Option<String>>, PortError> {
+    if keys.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut stream = connect_stream(endpoint).await?;
+
+    let mut args = Vec::with_capacity(keys.len() + 1);
+    args.push("MGET");
+    for key in keys {
+        args.push(key.as_str());
+    }
+    let frame = encode_command(&args);
+    stream.write_all(&frame).await.map_err(|error| {
+        PortError::Unavailable(format!("failed to write valkey mget command: {error}"))
+    })?;
+    stream.flush().await.map_err(|error| {
+        PortError::Unavailable(format!("failed to flush valkey mget command: {error}"))
+    })?;
+
+    let mut reader = BufReader::new(stream);
+    read_bulk_string_array(&mut reader).await
 }
 
 async fn connect_stream(endpoint: &ValkeyEndpoint) -> Result<BoxedValkeyIo, PortError> {

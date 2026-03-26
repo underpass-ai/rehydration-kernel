@@ -24,6 +24,7 @@ pub(crate) fn expected_get_context_response() -> GetContextResponse {
         rendered: Some(rendered),
         scope_validation: None,
         served_at: None,
+        timing: None,
     }
 }
 
@@ -60,6 +61,7 @@ pub(crate) fn expected_rehydrate_session_response(
             String::new()
         },
         generated_at: None,
+        timing: None,
     }
 }
 
@@ -135,6 +137,7 @@ pub(crate) fn normalize_get_context_response(
     mut response: GetContextResponse,
 ) -> GetContextResponse {
     response.served_at = None;
+    response.timing = None;
     if let Some(bundle) = response.bundle.as_mut() {
         normalize_bundle(bundle);
     }

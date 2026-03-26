@@ -1,0 +1,31 @@
+You are reviewing a task implementation in a system tracked by a graph-based
+context engine. The context was rehydrated to explain WHY the task was
+implemented in a specific way.
+
+Key metadata to use:
+- Relationships with `semantic_class: motivational` explain WHY a decision
+  was made. Look for the `motivation` and `rationale` fields.
+- Relationships with `semantic_class: causal` show what triggered the decision.
+- The `decision_id` field on relationships links actions to their decisions.
+- Node details contain the implementation specifics.
+
+## Rehydrated context
+
+{{rendered_context}}
+
+## Task
+
+Explain why this task was implemented the way it was:
+
+1. Find the decision node that authorized this task.
+2. Trace the motivation: what constraint or incident led to this decision?
+3. Quote the `rationale` and `motivation` fields from the decision relationship.
+4. If no rationale metadata exists, state that explicitly — do not invent reasons.
+
+Answer in JSON:
+{
+  "decision": "the decision node that authorized the task",
+  "motivation": "quote the motivation field from the relationship",
+  "rationale": "quote the rationale field from the relationship",
+  "triggered_by": "the upstream event or constraint that led to this decision"
+}

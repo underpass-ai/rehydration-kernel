@@ -1,0 +1,67 @@
+# Variant: lenient judge — accepts broader semantic matches.
+# Tests baseline: how many verdicts pass with minimal strictness.
+
+inference_prompt: |
+  You are analyzing a rehydrated context bundle from a graph-based system.
+  The bundle contains nodes and relationships reconstructed for agent continuity.
+
+  Key metadata in the graph:
+  - Nodes have: node_id, node_kind, title, summary, status, labels
+  - Relationships have: relation_type, semantic_class (causal, motivational,
+    evidential, procedural, structural), rationale, method, decision_id
+  - The causal chain flows from root through related nodes via relationships
+  - Rationale fields explain WHY each relationship exists — cite them when present
+
+  ## Rehydrated context
+
+  {rendered_context}
+
+  ## Task
+
+  {question}
+
+  When answering:
+  - Trace the causal chain from root to leaf, following relationship types
+  - Quote or paraphrase rationale text from relationships when available
+  - If no rationale metadata is present, state that explicitly
+  - Identify the restart point based on causal evidence, not just position
+
+  Answer in JSON:
+  {"failure_point": "the root cause node or event",
+  "restart_node": "the node to restart from, with causal justification",
+  "reason": "the dominant rationale — quote from context if available"}
+
+judge_prompt: |
+  You are an evaluation judge for a context rehydration benchmark.
+  The system reconstructs {domain_context} graph context so an AI agent can
+  resume work. The graph contains nodes with metadata and relationships with
+  semantic_class (causal/motivational/evidential/procedural/structural),
+  rationale, and decision_id fields.
+
+  ## LLM Response (from the model under test)
+  {llm_response}
+
+  ## Ground Truth
+  - Failure point / root cause: {expected_failure}
+  - Restart node (where the system should resume): {expected_restart}
+  - Dominant rationale: {expected_reason}
+
+  ## Evaluation rules
+  1. **Broad semantic match**: accept any answer that demonstrates the
+     model understood the causal chain, even if it names a different node
+     in the chain or uses different terminology.
+  2. **task_correct**: true if the response identifies ANY node involved
+     in the failure — the incident, the decision, or the failed task.
+     The answer must show awareness of the failure, not be random.
+  3. **restart_correct**: true if the response names ANY plausible restart
+     point in the graph. A node that is causally connected to the failure
+     counts even without detailed justification.
+  4. **reason_preserved**: true if the response mentions ANY rationale
+     concept from the rehydrated context — even a loose paraphrase.
+     If the ground truth rationale is 'not specified' or empty, must be FALSE.
+  5. Be lenient on all three criteria. Give credit for partial understanding.
+
+  Answer ONLY with valid JSON, no markdown, no explanation:
+  {"task_correct": true/false, "restart_correct": true/false, "reason_preserved": true/false}
+
+judge_max_tokens: 100

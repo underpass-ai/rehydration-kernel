@@ -19,12 +19,16 @@ service ContextQueryService {
 message GetContextRequest {
   string root_node_id = 1;
   string role = 2;
-  Phase phase = 3;
-  string work_item_id = 4;
+  // Deprecated: accepted but does not alter query behavior in v1beta1.
+  Phase phase = 3 [deprecated = true];
+  // Deprecated: accepted but does not alter query behavior in v1beta1.
+  string work_item_id = 4 [deprecated = true];
   uint32 token_budget = 5;
   repeated string requested_scopes = 6;
-  BundleRenderFormat render_format = 7;
-  bool include_debug_sections = 8;
+  // Deprecated: accepted but does not alter query behavior in v1beta1.
+  BundleRenderFormat render_format = 7 [deprecated = true];
+  // Deprecated: accepted but does not alter query behavior in v1beta1.
+  bool include_debug_sections = 8 [deprecated = true];
   uint32 depth = 9;
   // Maximum resolution tier to include. UNSPECIFIED (0) = all tiers.
   ResolutionTier max_tier = 10;
@@ -37,6 +41,7 @@ message GetContextResponse {
   RenderedContext rendered = 2;
   ScopeValidationResult scope_validation = 3;
   google.protobuf.Timestamp served_at = 4;
+  QueryTimingBreakdown timing = 5;
 }
 
 message GetContextPathRequest {
@@ -50,6 +55,7 @@ message GetContextPathResponse {
   RehydrationBundle path_bundle = 1;
   RenderedContext rendered = 2;
   google.protobuf.Timestamp served_at = 3;
+  QueryTimingBreakdown timing = 4;
 }
 
 message GetNodeDetailRequest {
@@ -64,8 +70,10 @@ message GetNodeDetailResponse {
 message RehydrateSessionRequest {
   string root_node_id = 1;
   repeated string roles = 2;
-  bool include_timeline = 3;
-  bool include_summaries = 4;
+  // Deprecated: reserved for future use, currently ignored.
+  bool include_timeline = 3 [deprecated = true];
+  // Deprecated: reserved for future use, currently ignored.
+  bool include_summaries = 4 [deprecated = true];
   uint32 timeline_window = 5;
   bool persist_snapshot = 6;
   google.protobuf.Duration snapshot_ttl = 7;
@@ -76,11 +84,30 @@ message RehydrateSessionResponse {
   bool snapshot_persisted = 2;
   string snapshot_id = 3;
   google.protobuf.Timestamp generated_at = 4;
+  // Timing breakdown for observability. Present when the kernel captures
+  // per-phase durations (e.g. multi-role shared-read path).
+  QueryTimingBreakdown timing = 5;
+}
+
+// Per-phase timing breakdown returned by RehydrateSession for observability.
+message QueryTimingBreakdown {
+  // Time spent loading graph neighborhood (seconds).
+  double graph_load_seconds = 1;
+  // Time spent batch-loading node details (seconds).
+  double detail_load_seconds = 2;
+  // Time spent assembling bundles for all roles (seconds).
+  double bundle_assembly_seconds = 3;
+  // Number of roles requested.
+  uint32 role_count = 4;
+  // Number of unique nodes in the batch detail load.
+  uint32 batch_size = 5;
 }
 
 message ValidateScopeRequest {
-  string role = 1;
-  Phase phase = 2;
+  // Deprecated: accepted but does not affect scope comparison in v1beta1.
+  string role = 1 [deprecated = true];
+  // Deprecated: accepted but does not affect scope comparison in v1beta1.
+  Phase phase = 2 [deprecated = true];
   repeated string required_scopes = 3;
   repeated string provided_scopes = 4;
 }

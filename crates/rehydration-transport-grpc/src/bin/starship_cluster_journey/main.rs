@@ -362,6 +362,7 @@ fn parse_nats_tls_mode(value: &str) -> Result<NatsTlsMode, Box<dyn Error + Send 
     }
 }
 
+#[allow(deprecated)] // proto fields phase, work_item_id, render_format, include_debug_sections
 async fn wait_for_context_ready(
     mut query_client: ContextQueryServiceClient<Channel>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
@@ -414,6 +415,7 @@ async fn wait_for_context_ready(
     }))
 }
 
+#[allow(deprecated)] // proto fields phase, work_item_id, render_format, include_debug_sections
 async fn verify(
     mut query_client: ContextQueryServiceClient<Channel>,
 ) -> Result<VerificationSummary, Box<dyn Error + Send + Sync>> {

@@ -81,6 +81,7 @@ where
         )
     }
 
+    #[allow(deprecated)] // proto fields phase, work_item_id, render_format, include_debug_sections
     pub fn bootstrap_request(&self) -> GetContextRequest {
         GetContextRequest {
             root_node_id: "bootstrap-node".to_string(),

@@ -64,6 +64,17 @@ impl NodeDetailReader for InMemoryNodeDetailReader {
     ) -> Result<Option<NodeDetailProjection>, PortError> {
         Ok(self.details.get(node_id).cloned())
     }
+
+    async fn load_node_details_batch(
+        &self,
+        node_ids: Vec<String>,
+    ) -> Result<Vec<Option<NodeDetailProjection>>, PortError> {
+        let mut results = Vec::with_capacity(node_ids.len());
+        for node_id in &node_ids {
+            results.push(self.load_node_detail(node_id).await?);
+        }
+        Ok(results)
+    }
 }
 
 #[derive(Debug, Default, Clone)]

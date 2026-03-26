@@ -1,8 +1,8 @@
-use rehydration_application::RehydrateSessionResult;
+use rehydration_application::{QueryTimingBreakdown, RehydrateSessionResult};
 use rehydration_domain::RehydrationBundle;
 use rehydration_proto::v1beta1::{
-    GraphRoleBundle, RehydrateSessionResponse, RehydrationBundle as ProtoRehydrationBundle,
-    RehydrationStats,
+    GraphRoleBundle, QueryTimingBreakdown as ProtoTimingBreakdown, RehydrateSessionResponse,
+    RehydrationBundle as ProtoRehydrationBundle, RehydrationStats,
 };
 
 use crate::transport::proto_mapping_v1beta1::{
@@ -28,6 +28,17 @@ pub(crate) fn proto_rehydrate_session_response_v1beta1(
         snapshot_persisted: result.snapshot_persisted,
         snapshot_id: result.snapshot_id.clone().unwrap_or_default(),
         generated_at: Some(timestamp_from(result.generated_at)),
+        timing: result.timing.as_ref().map(proto_timing_breakdown_v1beta1),
+    }
+}
+
+pub(crate) fn proto_timing_breakdown_v1beta1(timing: &QueryTimingBreakdown) -> ProtoTimingBreakdown {
+    ProtoTimingBreakdown {
+        graph_load_seconds: timing.graph_load.as_secs_f64(),
+        detail_load_seconds: timing.detail_load.as_secs_f64(),
+        bundle_assembly_seconds: timing.bundle_assembly.as_secs_f64(),
+        role_count: timing.role_count as u32,
+        batch_size: timing.batch_size as u32,
     }
 }
 

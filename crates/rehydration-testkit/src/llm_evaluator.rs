@@ -15,11 +15,22 @@ use serde::{Deserialize, Serialize};
 // ── Prompt config ────────────────────────────────────────────────────
 
 /// Prompt templates loaded from YAML.
-#[derive(Debug, Deserialize)]
-struct PromptConfig {
-    inference_prompt: String,
-    judge_prompt: String,
-    judge_max_tokens: u32,
+#[derive(Debug, Clone, Deserialize)]
+pub struct PromptConfig {
+    pub inference_prompt: String,
+    pub judge_prompt: String,
+    pub judge_max_tokens: u32,
+}
+
+impl PromptConfig {
+    /// Load from a YAML file path. Returns the compiled-in default if path is None.
+    pub fn load(path: Option<&str>) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let yaml = match path {
+            Some(p) => std::fs::read_to_string(p)?,
+            None => include_str!("../resources/llm_prompts.yaml").to_string(),
+        };
+        Ok(serde_yaml::from_str(&yaml)?)
+    }
 }
 
 static PROMPT_CONFIG: LazyLock<PromptConfig> = LazyLock::new(|| {
@@ -154,6 +165,9 @@ pub struct LlmEvaluationResult {
     pub llm_latency_ms: f64,
     pub llm_prompt_tokens: u32,
     pub llm_completion_tokens: u32,
+    /// Raw judge response for post-hoc analysis. `None` when judge call failed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub llm_judge_raw: Option<String>,
 }
 
 /// Call an LLM endpoint and return `(content, prompt_tokens, completion_tokens)`.
@@ -378,13 +392,21 @@ pub async fn evaluate_with_llm(
     } else {
         client
     };
-    let judge_result = judge_response(config, &judge_client, &content, ground_truth)
-        .await
-        .unwrap_or(JudgeVerdict {
-            task_correct: false,
-            restart_correct: false,
-            reason_preserved: false,
-        });
+    eprintln!("[LLM-EVAL] inference response: {}", content.replace('\n', " ").chars().take(500).collect::<String>());
+    let (judge_result, judge_raw) = match judge_response(config, &judge_client, &content, ground_truth).await {
+        Ok((verdict, raw)) => {
+            eprintln!("[LLM-EVAL] judge verdict: task={} restart={} reason={}", verdict.task_correct, verdict.restart_correct, verdict.reason_preserved);
+            (verdict, Some(raw))
+        }
+        Err(e) => {
+            eprintln!("[LLM-EVAL] judge FAILED: {e}");
+            (JudgeVerdict {
+                task_correct: false,
+                restart_correct: false,
+                reason_preserved: false,
+            }, None)
+        }
+    };
 
     Ok(LlmEvaluationResult {
         llm_response: content,
@@ -394,6 +416,66 @@ pub async fn evaluate_with_llm(
         llm_latency_ms: latency_ms,
         llm_prompt_tokens: prompt_tokens,
         llm_completion_tokens: completion_tokens,
+        llm_judge_raw: judge_raw,
+    })
+}
+
+/// Evaluate with explicit prompt config and LLM config — no global state.
+/// Use this to iterate model×prompt cells within a single process.
+pub async fn evaluate_with_config(
+    prompts: &PromptConfig,
+    config: &LlmEvaluatorConfig,
+    rendered_context: &str,
+    question: &str,
+    ground_truth: &EvaluationGroundTruth,
+) -> Result<LlmEvaluationResult, Box<dyn Error + Send + Sync>> {
+    let prompt = prompts
+        .inference_prompt
+        .replace("{rendered_context}", rendered_context)
+        .replace("{question}", question);
+
+    let client = build_http_client(config)?;
+
+    let start = std::time::Instant::now();
+    let (content, prompt_tokens, completion_tokens) = call_llm(
+        &client,
+        &config.endpoint,
+        &config.model,
+        config.provider,
+        config.api_key.as_deref(),
+        &prompt,
+        config.max_tokens,
+        config.temperature,
+    )
+    .await?;
+    let latency_ms = start.elapsed().as_secs_f64() * 1000.0;
+
+    let judge_client = if config.judge_endpoint.is_some() {
+        build_http_client(config)?
+    } else {
+        client
+    };
+    eprintln!("[LLM-EVAL] inference response: {}", content.replace('\n', " ").chars().take(500).collect::<String>());
+    let (judge_result, judge_raw) = match judge_response_with_prompts(prompts, config, &judge_client, &content, ground_truth).await {
+        Ok((verdict, raw)) => {
+            eprintln!("[LLM-EVAL] judge verdict: task={} restart={} reason={}", verdict.task_correct, verdict.restart_correct, verdict.reason_preserved);
+            (verdict, Some(raw))
+        }
+        Err(e) => {
+            eprintln!("[LLM-EVAL] judge FAILED: {e}");
+            (JudgeVerdict { task_correct: false, restart_correct: false, reason_preserved: false }, None)
+        }
+    };
+
+    Ok(LlmEvaluationResult {
+        llm_response: content,
+        llm_task_success: judge_result.task_correct,
+        llm_restart_accuracy: judge_result.restart_correct,
+        llm_reason_preserved: judge_result.reason_preserved,
+        llm_latency_ms: latency_ms,
+        llm_prompt_tokens: prompt_tokens,
+        llm_completion_tokens: completion_tokens,
+        llm_judge_raw: judge_raw,
     })
 }
 
@@ -411,7 +493,17 @@ async fn judge_response(
     client: &reqwest::Client,
     llm_response: &str,
     ground_truth: &EvaluationGroundTruth,
-) -> Result<JudgeVerdict, Box<dyn Error + Send + Sync>> {
+) -> Result<(JudgeVerdict, String), Box<dyn Error + Send + Sync>> {
+    judge_response_with_prompts(&PROMPT_CONFIG, config, client, llm_response, ground_truth).await
+}
+
+async fn judge_response_with_prompts(
+    prompts: &PromptConfig,
+    config: &LlmEvaluatorConfig,
+    client: &reqwest::Client,
+    llm_response: &str,
+    ground_truth: &EvaluationGroundTruth,
+) -> Result<(JudgeVerdict, String), Box<dyn Error + Send + Sync>> {
     let expected_failure = ground_truth
         .expected_failure_point
         .as_deref()
@@ -424,13 +516,12 @@ async fn judge_response(
         .expected_reason
         .as_deref()
         .unwrap_or("not specified");
-
     let domain_ctx = ground_truth
         .domain_context
         .as_deref()
         .unwrap_or("operational");
 
-    let judge_prompt = PROMPT_CONFIG
+    let judge_prompt = prompts
         .judge_prompt
         .replace("{domain_context}", domain_ctx)
         .replace("{llm_response}", llm_response)
@@ -453,7 +544,7 @@ async fn judge_response(
         judge_provider,
         judge_api_key,
         &judge_prompt,
-        PROMPT_CONFIG.judge_max_tokens,
+        prompts.judge_max_tokens,
         0.0,
     )
     .await?;
@@ -466,8 +557,9 @@ async fn judge_response(
         .trim_end_matches("```")
         .trim();
 
-    serde_json::from_str(json_str)
-        .map_err(|e| format!("failed to parse judge response '{judge_content}': {e}").into())
+    let verdict: JudgeVerdict = serde_json::from_str(json_str)
+        .map_err(|e| format!("failed to parse judge response '{judge_content}': {e}"))?;
+    Ok((verdict, judge_content))
 }
 
 fn build_http_client(
@@ -520,8 +612,10 @@ mod tests {
             llm_latency_ms: 123.4,
             llm_prompt_tokens: 50,
             llm_completion_tokens: 30,
+            llm_judge_raw: Some("{\"task_correct\":true}".to_string()),
         };
         let json = serde_json::to_string(&result).expect("should serialize");
         assert!(json.contains("llm_task_success"));
+        assert!(json.contains("llm_judge_raw"));
     }
 }

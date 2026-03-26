@@ -176,6 +176,17 @@ mod tests {
                 _ => None,
             })
         }
+
+        async fn load_node_details_batch(
+            &self,
+            node_ids: Vec<String>,
+        ) -> Result<Vec<Option<NodeDetailProjection>>, PortError> {
+            let mut results = Vec::with_capacity(node_ids.len());
+            for node_id in &node_ids {
+                results.push(self.load_node_detail(node_id).await?);
+            }
+            Ok(results)
+        }
     }
 
     struct RecordingGraphReader {
@@ -210,6 +221,17 @@ mod tests {
             _node_id: &str,
         ) -> Result<Option<NodeDetailProjection>, PortError> {
             Ok(None)
+        }
+
+        async fn load_node_details_batch(
+            &self,
+            node_ids: Vec<String>,
+        ) -> Result<Vec<Option<NodeDetailProjection>>, PortError> {
+            let mut results = Vec::with_capacity(node_ids.len());
+            for node_id in &node_ids {
+                results.push(self.load_node_detail(node_id).await?);
+            }
+            Ok(results)
         }
     }
 

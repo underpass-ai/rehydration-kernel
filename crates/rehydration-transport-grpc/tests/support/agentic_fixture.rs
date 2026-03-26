@@ -158,6 +158,38 @@ impl AgenticFixture {
         &self.nats_url
     }
 
+    /// Re-seed the graph without recreating containers. Clears Neo4j,
+    /// publishes new projection events, and waits for readiness.
+    pub(crate) async fn reseed<F, Fut>(
+        &self,
+        root_node_id: &str,
+        focus_node_id: &str,
+        seed_projection: F,
+    ) -> Result<(), Box<dyn Error + Send + Sync>>
+    where
+        F: FnOnce(Client) -> Fut,
+        Fut: Future<Output = Result<(), Box<dyn Error + Send + Sync>>>,
+    {
+        debug_log("reseed: clearing neo4j");
+        let neo4j_host = self._neo4j.get_host().await?;
+        let neo4j_port = self._neo4j.get_host_port_ipv4(NEO4J_INTERNAL_PORT).await?;
+        clear_neo4j(format!("neo4j://{neo4j_host}:{neo4j_port}")).await?;
+
+        let publisher = connect_with_retry(&self.nats_url).await?;
+        seed_projection(publisher).await?;
+        debug_log("reseed: events published");
+
+        wait_for_context_ready(
+            self.query_client.clone(),
+            root_node_id,
+            focus_node_id,
+            true,
+        )
+        .await?;
+        debug_log("reseed: context ready");
+        Ok(())
+    }
+
     pub(crate) async fn shutdown(self) -> Result<(), Box<dyn Error + Send + Sync>> {
         debug_log("shutting down agentic fixture");
         let projection_result = self.projection_runtime.shutdown().await;
@@ -168,6 +200,7 @@ impl AgenticFixture {
     }
 }
 
+#[allow(deprecated)]
 async fn wait_for_context_ready(
     mut query_client: ContextQueryServiceClient<Channel>,
     root_node_id: &str,

@@ -14,8 +14,12 @@
   "bundle_relationships": 3,
   "detailed_nodes": 0,
   "rendered_token_count": 255,
-  "query_latency_ms": 754.226582,
-  "total_latency_ms": 754.2615430000001,
+  "query_latency_ms": 633.949169,
+  "total_latency_ms": 633.9737090000001,
+  "graph_load_ms": 272.372483,
+  "detail_load_ms": 1.515702,
+  "bundle_assembly_ms": 0.032549999999999996,
+  "detail_batch_size": 3,
   "explanation_roundtrip_fidelity": 1.0,
   "detail_roundtrip_fidelity": 0.0,
   "causal_reconstruction_score": 0.8571428571428571,
@@ -25,5 +29,9 @@
   "rationale": "reserve power must be diverted before repair",
   "motivation": "stabilize the containment loop before engineers enter the manifold bay",
   "decision_id": "node:decision:reroute-reserve-power",
-  "caused_by_node_id": "node:incident:port-manifold-breach"
+  "caused_by_node_id": "node:incident:port-manifold-breach",
+  "llm_task_success": false,
+  "llm_restart_accuracy": true,
+  "llm_reason_preserved": false,
+  "llm_latency_ms": 3048.906965
 }

@@ -14,6 +14,7 @@ pub mod ordered_neighborhood;
 pub mod query_application_service;
 pub mod rehydrate_session;
 pub mod render_graph_bundle;
+pub mod timing_breakdown;
 pub(crate) mod tier_section_classifier;
 pub mod validate_scope;
 
@@ -41,6 +42,7 @@ pub use render_graph_bundle::{
     RenderedContext, RenderedSection, RenderedTier, render_graph_bundle,
     render_graph_bundle_with_options,
 };
+pub use timing_breakdown::QueryTimingBreakdown;
 pub use validate_scope::{
     ScopeValidation, ValidateScopeQuery, ValidateScopeUseCase, dedupe_scopes,
 };

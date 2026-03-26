@@ -6,11 +6,11 @@ Status of each RPC in the `v1beta1` contract surface.
 
 | RPC | Status | Notes |
 |-----|--------|-------|
-| `GetContext` | Production-ready | Proto fields `phase`, `work_item_id`, `render_format`, and `include_debug_sections` are accepted but do not alter query behavior in v1beta1. `scope_validation` is `None` (no authorization backend). |
+| `GetContext` | Production-ready | Proto fields `phase`, `work_item_id`, `render_format`, and `include_debug_sections` are deprecated and do not alter query behavior in v1beta1. `scope_validation` is `None` (no authorization backend). |
 | `GetContextPath` | Production-ready | Returns `NOT_FOUND` when neither the path nor the target node exist. |
 | `GetNodeDetail` | Production-ready | |
-| `RehydrateSession` | Production-ready | `include_timeline` and `include_summaries` are reserved for future use and currently ignored. `timeline_window` is echoed in the response but does not filter events. `snapshot_ttl` is required when `persist_snapshot` is true. |
-| `ValidateScope` | Production-ready | Standalone set comparison. Proto fields `role` and `phase` are accepted but do not affect the comparison — only `required_scopes` and `provided_scopes` are evaluated. |
+| `RehydrateSession` | Production-ready | `include_timeline` and `include_summaries` are deprecated (reserved for future use, currently ignored). `timeline_window` is echoed in the response but does not filter events. `snapshot_ttl` is required when `persist_snapshot` is true. |
+| `ValidateScope` | Production-ready | Standalone set comparison. Proto fields `role` and `phase` are deprecated and do not affect the comparison — only `required_scopes` and `provided_scopes` are evaluated. |
 
 ## ContextCommandService
 

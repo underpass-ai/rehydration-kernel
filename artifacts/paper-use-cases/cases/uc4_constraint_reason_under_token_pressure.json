@@ -14,8 +14,12 @@
   "bundle_relationships": 2,
   "detailed_nodes": 1,
   "rendered_token_count": 223,
-  "query_latency_ms": 743.230734,
-  "total_latency_ms": 743.2713650000001,
+  "query_latency_ms": 685.882866,
+  "total_latency_ms": 685.916026,
+  "graph_load_ms": 277.462144,
+  "detail_load_ms": 1.308947,
+  "bundle_assembly_ms": 0.024130000000000002,
+  "detail_batch_size": 3,
   "explanation_roundtrip_fidelity": 1.0,
   "detail_roundtrip_fidelity": 1.0,
   "causal_reconstruction_score": 1.0,
@@ -26,5 +30,9 @@
   "rationale": "radiation spikes make manual calibration inside the plasma bay unsafe",
   "motivation": "restore coolant flow without violating the exclusion constraint",
   "decision_id": "node:decision:remote-calibration-first",
-  "caused_by_node_id": "node:constraint:keep-crew-outside-plasma-bay"
+  "caused_by_node_id": "node:constraint:keep-crew-outside-plasma-bay",
+  "llm_task_success": false,
+  "llm_restart_accuracy": true,
+  "llm_reason_preserved": false,
+  "llm_latency_ms": 2868.850704
 }

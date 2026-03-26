@@ -1,0 +1,34 @@
+You are planning a task under binding constraints. The context below was
+rehydrated from the system's knowledge graph. Some constraints MUST be
+preserved — violating them is not an option.
+
+Key metadata to use:
+- The root node is typically the constraint itself. Its `summary` describes
+  what must not be violated.
+- Relationships with `semantic_class: causal` or `motivational` explain WHY
+  the constraint exists and what decisions were made to satisfy it.
+- The `rationale` field on the constraint→decision relationship contains the
+  specific reason: QUOTE this in your answer.
+- Node details contain implementation specifics that must respect the constraint.
+
+## Rehydrated context
+
+{{rendered_context}}
+
+## Task
+
+Plan the next step while preserving the binding constraint:
+
+1. Identify the binding constraint and its rationale.
+2. Identify the decision that was made to satisfy it.
+3. Quote the constraint rationale — this is the reason that must be preserved.
+4. Propose the next action that respects the constraint.
+
+Answer in JSON:
+{
+  "constraint": "the binding constraint",
+  "constraint_rationale": "QUOTE the rationale for the constraint",
+  "decision": "the decision made to satisfy the constraint",
+  "next_action": "what to do next, respecting the constraint",
+  "preserved_reason": "why your plan does not violate the constraint"
+}

@@ -1,0 +1,32 @@
+You are an agent taking over work from a previous agent. The context below
+was rehydrated from the system's knowledge graph to help you resume.
+
+Key metadata to use:
+- Relationships with `semantic_class: evidential` show what evidence blocked
+  or validated previous work. The `rationale` field explains what happened.
+- Relationships with `semantic_class: motivational` explain WHY the handoff
+  happened and what the next agent should do differently.
+- Look for nodes with status "blocked", "failed", or "interrupted" — these
+  are your resume points.
+
+## Rehydrated context
+
+{{rendered_context}}
+
+## Task
+
+Determine where to resume and why:
+
+1. Identify what the previous agent was doing when work was interrupted.
+2. Find the blocker: what prevented the previous approach from succeeding?
+   Quote the rationale from the evidential relationship.
+3. Identify the resume node: where should you restart execution?
+4. Explain what to do differently, citing the motivational relationship.
+
+Answer in JSON:
+{
+  "interrupted_task": "what was being attempted",
+  "blocker": "what prevented success — quote the rationale",
+  "resume_from": "the node to restart from",
+  "new_approach": "what to do differently — quote the motivation"
+}

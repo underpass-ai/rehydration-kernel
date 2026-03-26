@@ -87,6 +87,17 @@ impl NodeDetailReader for EmptyNodeDetailReader {
     ) -> Result<Option<NodeDetailProjection>, PortError> {
         Ok(None)
     }
+
+    async fn load_node_details_batch(
+        &self,
+        node_ids: Vec<String>,
+    ) -> Result<Vec<Option<NodeDetailProjection>>, PortError> {
+        let mut results = Vec::with_capacity(node_ids.len());
+        for node_id in &node_ids {
+            results.push(self.load_node_detail(node_id).await?);
+        }
+        Ok(results)
+    }
 }
 
 struct SeededGraphNeighborhoodReader;
@@ -206,6 +217,17 @@ impl NodeDetailReader for SeededNodeDetailReader {
             _ => None,
         })
     }
+
+    async fn load_node_details_batch(
+        &self,
+        node_ids: Vec<String>,
+    ) -> Result<Vec<Option<NodeDetailProjection>>, PortError> {
+        let mut results = Vec::with_capacity(node_ids.len());
+        for node_id in &node_ids {
+            results.push(self.load_node_detail(node_id).await?);
+        }
+        Ok(results)
+    }
 }
 
 struct NoopSnapshotStore;
@@ -299,6 +321,7 @@ async fn grpc_server_application_accessors_return_callable_services() {
 }
 
 #[tokio::test]
+#[allow(deprecated)] // proto fields phase, work_item_id, render_format, include_debug_sections
 async fn query_service_returns_rendered_context() {
     let application = Arc::new(QueryApplicationService::new(
         Arc::new(EmptyGraphNeighborhoodReader),
@@ -328,6 +351,7 @@ async fn query_service_returns_rendered_context() {
 }
 
 #[tokio::test]
+#[allow(deprecated)] // proto fields phase, work_item_id, render_format, include_debug_sections
 async fn query_service_forwards_requested_depth_to_application() {
     let depths = Arc::new(Mutex::new(Vec::new()));
     let application = Arc::new(QueryApplicationService::new(
@@ -524,6 +548,7 @@ async fn query_service_returns_not_found_for_missing_node_detail_target() {
 }
 
 #[tokio::test]
+#[allow(deprecated)] // proto fields role, phase on ValidateScopeRequest
 async fn query_service_validates_scope_diffs() {
     let application = Arc::new(QueryApplicationService::new(
         Arc::new(EmptyGraphNeighborhoodReader),
@@ -693,6 +718,7 @@ fn helper_mappers_cover_versions_errors_and_trim_logic() {
         snapshot_persisted: true,
         snapshot_id: Some("snapshot:node-123:developer".to_string()),
         generated_at: now,
+        timing: None,
     });
     assert_eq!(
         response

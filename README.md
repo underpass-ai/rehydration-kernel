@@ -2,6 +2,9 @@
 
 Node-centric context rehydration for agentic systems.
 
+**New here?** Start with the [Usage Guide](./docs/usage-guide.md) — 3 steps
+to give your AI agent graph-aware context with sequence diagrams and examples.
+
 ## What This Repo Is
 
 `rehydration-kernel` is a generic context engine built around four public
@@ -31,7 +34,7 @@ What is already in place:
 - contract CI with `buf breaking`, AsyncAPI checks, and boundary naming policy
 - container-backed integration tests
 - full kernel journey end-to-end coverage:
-  - projection -> query -> compatibility -> command -> admin
+  - projection -> query -> command
   - full TLS variant across gRPC, NATS, Valkey, and Neo4j in the test harness
 - agentic end-to-end proofs:
   - pull-driven runtime flow against a narrow runtime contract shape

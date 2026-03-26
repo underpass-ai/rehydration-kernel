@@ -32,6 +32,7 @@ where
         &self.runtime
     }
 
+    #[allow(deprecated)] // proto fields phase, work_item_id, render_format, include_debug_sections
     pub async fn execute(&mut self, request: AgentRequest) -> RuntimeResult<AgentExecution> {
         debug_log_value("agent root_node_id", &request.root_node_id);
         debug_log_value("agent root_node_kind", &request.root_node_kind);
@@ -134,6 +135,7 @@ where
         })
     }
 
+    #[allow(deprecated)] // proto fields phase, work_item_id, render_format, include_debug_sections
     async fn select_focus_node_id(
         &mut self,
         root_node_id: &str,

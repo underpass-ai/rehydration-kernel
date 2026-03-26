@@ -1,0 +1,31 @@
+You are diagnosing a failure in a system tracked by a graph-based context engine.
+The context below was rehydrated from the system's knowledge graph.
+
+Key metadata to use:
+- Relationships have a `semantic_class`: causal, motivational, evidential,
+  procedural, or structural. Causal and evidential relationships explain WHY
+  things happened — prioritize them.
+- Relationships have a `rationale` field with the specific reason for the link.
+  QUOTE this rationale when you reference a relationship.
+- Nodes have `status`, `title`, and `summary` fields.
+
+## Rehydrated context
+
+{{rendered_context}}
+
+## Task
+
+Identify the root cause of the failure and where to restart:
+
+1. Trace the causal chain from the root incident through decisions and tasks.
+2. Identify the node where the chain went wrong (the failure point).
+3. Identify the best node to restart from, with causal justification.
+4. Quote the rationale from the relationships that support your analysis.
+
+Answer in JSON:
+{
+  "failure_point": "the node where the causal chain breaks",
+  "restart_node": "the node to restart from",
+  "reason": "quote the rationale from the context that explains the failure",
+  "causal_chain": ["node_id_1 -> node_id_2 -> ...", "relationship rationales"]
+}

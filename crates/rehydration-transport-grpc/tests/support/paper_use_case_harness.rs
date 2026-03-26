@@ -209,8 +209,20 @@ pub(crate) async fn observe_failure_diagnosis_use_case(
         let rehydration_proto::v1beta1::GetContextPathResponse {
             path_bundle,
             rendered,
+            timing,
             ..
         } = path;
+        let (graph_load_ms, detail_load_ms, bundle_assembly_ms, detail_batch_size) =
+            if let Some(ref timing) = timing {
+                (
+                    Some(timing.graph_load_seconds * 1000.0),
+                    Some(timing.detail_load_seconds * 1000.0),
+                    Some(timing.bundle_assembly_seconds * 1000.0),
+                    Some(timing.batch_size),
+                )
+            } else {
+                (None, None, None, None)
+            };
 
         let bundle = expect_path_bundle(path_bundle)?;
         let role_bundle = first_role_bundle(&bundle)?;
@@ -362,9 +374,9 @@ pub(crate) async fn observe_failure_diagnosis_use_case(
         let llm_eval = maybe_evaluate_with_llm(
             &rendered.content,
             FAILURE_DIAGNOSIS_QUESTION,
-            Some(BAD_DECISION_NODE_ID),
-            Some(BAD_DECISION_NODE_ID),
-            Some("containment"),
+            Some("the decision to preserve comfort load, caused by the port manifold breach"),
+            Some("the decision to preserve comfort load — the point where the causal chain can be corrected"),
+            Some(RECOVERY_DECISION_RATIONALE),
         )
         .await;
 
@@ -387,6 +399,10 @@ pub(crate) async fn observe_failure_diagnosis_use_case(
                 rendered_token_count: rendered.token_count,
                 query_latency_ms: Some(query_latency_ms),
                 total_latency_ms: Some(total_latency_ms),
+                graph_load_ms,
+                detail_load_ms,
+                bundle_assembly_ms,
+                detail_batch_size,
                 explanation_roundtrip_fidelity,
                 detail_roundtrip_fidelity,
                 causal_reconstruction_score,
@@ -411,6 +427,7 @@ pub(crate) async fn observe_failure_diagnosis_use_case(
                 llm_restart_accuracy: llm_eval.as_ref().map(|e| e.llm_restart_accuracy),
                 llm_reason_preserved: llm_eval.as_ref().map(|e| e.llm_reason_preserved),
                 llm_latency_ms: llm_eval.as_ref().map(|e| e.llm_latency_ms),
+                llm_judge_raw: llm_eval.as_ref().and_then(|e| e.llm_judge_raw.clone()),
             },
             suspect_relationships,
             rehydration_node_id,
@@ -455,8 +472,20 @@ pub(crate) async fn observe_why_task_was_implemented_that_way(
         let rehydration_proto::v1beta1::GetContextPathResponse {
             path_bundle,
             rendered,
+            timing,
             ..
         } = path;
+        let (graph_load_ms, detail_load_ms, bundle_assembly_ms, detail_batch_size) =
+            if let Some(ref timing) = timing {
+                (
+                    Some(timing.graph_load_seconds * 1000.0),
+                    Some(timing.detail_load_seconds * 1000.0),
+                    Some(timing.bundle_assembly_seconds * 1000.0),
+                    Some(timing.batch_size),
+                )
+            } else {
+                (None, None, None, None)
+            };
 
         let bundle = expect_path_bundle(path_bundle)?;
         let role_bundle = first_role_bundle(&bundle)?;
@@ -514,7 +543,7 @@ pub(crate) async fn observe_why_task_was_implemented_that_way(
             WHY_IMPLEMENTED_QUESTION,
             None,
             None,
-            Some("rationale"),
+            Some(DECISION_TO_TASK_RATIONALE),
         )
         .await;
 
@@ -537,6 +566,10 @@ pub(crate) async fn observe_why_task_was_implemented_that_way(
                 rendered_token_count: rendered.token_count,
                 query_latency_ms: Some(query_latency_ms),
                 total_latency_ms: Some(total_latency_ms),
+                graph_load_ms,
+                detail_load_ms,
+                bundle_assembly_ms,
+                detail_batch_size,
                 explanation_roundtrip_fidelity,
                 detail_roundtrip_fidelity,
                 causal_reconstruction_score,
@@ -561,6 +594,7 @@ pub(crate) async fn observe_why_task_was_implemented_that_way(
                 llm_restart_accuracy: llm_eval.as_ref().map(|e| e.llm_restart_accuracy),
                 llm_reason_preserved: llm_eval.as_ref().map(|e| e.llm_reason_preserved),
                 llm_latency_ms: llm_eval.as_ref().map(|e| e.llm_latency_ms),
+                llm_judge_raw: llm_eval.as_ref().and_then(|e| e.llm_judge_raw.clone()),
             },
             rationale: explanation.rationale.clone(),
             motivation: explanation.motivation.clone(),
@@ -607,8 +641,20 @@ pub(crate) async fn observe_interrupted_handoff_use_case(
         let rehydration_proto::v1beta1::GetContextPathResponse {
             path_bundle,
             rendered,
+            timing,
             ..
         } = path;
+        let (graph_load_ms, detail_load_ms, bundle_assembly_ms, detail_batch_size) =
+            if let Some(ref timing) = timing {
+                (
+                    Some(timing.graph_load_seconds * 1000.0),
+                    Some(timing.detail_load_seconds * 1000.0),
+                    Some(timing.bundle_assembly_seconds * 1000.0),
+                    Some(timing.batch_size),
+                )
+            } else {
+                (None, None, None, None)
+            };
 
         let bundle = expect_path_bundle(path_bundle)?;
         let role_bundle = first_role_bundle(&bundle)?;
@@ -746,9 +792,9 @@ pub(crate) async fn observe_interrupted_handoff_use_case(
         let llm_eval = maybe_evaluate_with_llm(
             &rendered.content,
             HANDOFF_RESUME_QUESTION,
-            Some(HANDOFF_BLOCKER_NODE_ID),
-            Some(HANDOFF_BLOCKER_NODE_ID),
-            Some("blocked"),
+            Some("the manual override jam that blocked the remote isolation attempt"),
+            Some("the point where remote isolation was blocked — resume with manual override"),
+            Some(HANDOFF_BLOCKER_RATIONALE),
         )
         .await;
 
@@ -771,6 +817,10 @@ pub(crate) async fn observe_interrupted_handoff_use_case(
                 rendered_token_count: rendered.token_count,
                 query_latency_ms: Some(query_latency_ms),
                 total_latency_ms: Some(total_latency_ms),
+                graph_load_ms,
+                detail_load_ms,
+                bundle_assembly_ms,
+                detail_batch_size,
                 explanation_roundtrip_fidelity,
                 detail_roundtrip_fidelity,
                 causal_reconstruction_score,
@@ -795,6 +845,7 @@ pub(crate) async fn observe_interrupted_handoff_use_case(
                 llm_restart_accuracy: llm_eval.as_ref().map(|e| e.llm_restart_accuracy),
                 llm_reason_preserved: llm_eval.as_ref().map(|e| e.llm_reason_preserved),
                 llm_latency_ms: llm_eval.as_ref().map(|e| e.llm_latency_ms),
+                llm_judge_raw: llm_eval.as_ref().and_then(|e| e.llm_judge_raw.clone()),
             },
             continuation_node_id,
             blocker_rationale: blocker_explanation.rationale.clone(),
@@ -841,8 +892,20 @@ pub(crate) async fn observe_constraint_under_token_pressure_use_case(
         let rehydration_proto::v1beta1::GetContextPathResponse {
             path_bundle,
             rendered,
+            timing,
             ..
         } = path;
+        let (graph_load_ms, detail_load_ms, bundle_assembly_ms, detail_batch_size) =
+            if let Some(ref timing) = timing {
+                (
+                    Some(timing.graph_load_seconds * 1000.0),
+                    Some(timing.detail_load_seconds * 1000.0),
+                    Some(timing.bundle_assembly_seconds * 1000.0),
+                    Some(timing.batch_size),
+                )
+            } else {
+                (None, None, None, None)
+            };
 
         let bundle = expect_path_bundle(path_bundle)?;
         let role_bundle = first_role_bundle(&bundle)?;
@@ -933,6 +996,10 @@ pub(crate) async fn observe_constraint_under_token_pressure_use_case(
                 rendered_token_count: rendered.token_count,
                 query_latency_ms: Some(query_latency_ms),
                 total_latency_ms: Some(total_latency_ms),
+                graph_load_ms,
+                detail_load_ms,
+                bundle_assembly_ms,
+                detail_batch_size,
                 explanation_roundtrip_fidelity,
                 detail_roundtrip_fidelity,
                 causal_reconstruction_score,
@@ -957,6 +1024,7 @@ pub(crate) async fn observe_constraint_under_token_pressure_use_case(
                 llm_restart_accuracy: llm_eval.as_ref().map(|e| e.llm_restart_accuracy),
                 llm_reason_preserved: llm_eval.as_ref().map(|e| e.llm_reason_preserved),
                 llm_latency_ms: llm_eval.as_ref().map(|e| e.llm_latency_ms),
+                llm_judge_raw: llm_eval.as_ref().and_then(|e| e.llm_judge_raw.clone()),
             },
             constraint_rationale: constraint_explanation.rationale.clone(),
             implementation_rationale: implementation_explanation.rationale.clone(),

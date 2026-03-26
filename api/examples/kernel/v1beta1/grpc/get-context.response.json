@@ -121,5 +121,6 @@
       "phase PHASE_BUILD implies implementation focus"
     ]
   },
-  "servedAt": "2026-03-10T10:00:01Z"
+  "servedAt": "2026-03-10T10:00:01Z",
+  "timing": null
 }

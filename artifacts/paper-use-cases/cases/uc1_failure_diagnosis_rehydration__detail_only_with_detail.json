@@ -14,8 +14,12 @@
   "bundle_relationships": 3,
   "detailed_nodes": 1,
   "rendered_token_count": 245,
-  "query_latency_ms": 714.048138,
-  "total_latency_ms": 714.092008,
+  "query_latency_ms": 698.184995,
+  "total_latency_ms": 698.212545,
+  "graph_load_ms": 288.819831,
+  "detail_load_ms": 4.590476,
+  "bundle_assembly_ms": 0.03712,
+  "detail_batch_size": 4,
   "explanation_roundtrip_fidelity": 0.0,
   "detail_roundtrip_fidelity": 1.0,
   "causal_reconstruction_score": 0.42857142857142855,
@@ -26,5 +30,9 @@
   "retry_success_hit": false,
   "retry_success_rate": 0.0,
   "retry_target_node_id": "node:artifact:telemetry-capture",
-  "suspect_relationship_count": 0
+  "suspect_relationship_count": 0,
+  "llm_task_success": false,
+  "llm_restart_accuracy": true,
+  "llm_reason_preserved": false,
+  "llm_latency_ms": 8182.5408
 }

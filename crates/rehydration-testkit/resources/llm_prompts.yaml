@@ -57,25 +57,33 @@ judge_prompt: |
   - Dominant rationale: {expected_reason}
 
   ## Evaluation rules
-  1. **Semantic match**: judge by concept, not exact wording.
-     Node IDs like 'chain-0', 'chain-4' are synthetic — match by role/concept.
-  2. **task_correct**: true if the response identifies a failure point consistent
-     with the ground truth. Multiple valid answers may be listed — matching ANY
-     counts as correct.
+  1. **Semantic match**: judge by concept and causal role, not exact node IDs.
+     Node IDs are synthetic — match by role and position in the causal chain.
+     A response naming a causally upstream node (the triggering event instead
+     of the resulting decision) is a valid match if the response demonstrates
+     it traced the causal path between them.
+  2. **task_correct**: true if the response identifies a failure point that is
+     EITHER the ground truth OR a causally connected node in the same failure
+     chain (upstream trigger, downstream consequence, or the decision linking
+     them). The response must show it traced causality, not just named an
+     arbitrary node.
   3. **restart_correct**: true if the response identifies a plausible restart
      point AND provides a causal justification for WHY. Simply naming a node
      without causal reasoning is NOT sufficient.
   4. **reason_preserved**: true if the response preserves rationale that was
-     PRESENT in the rehydrated context. Apply strictly:
-     - If the ground truth rationale is a specific phrase, the response must
-       paraphrase or reference that concept — clearly derived from context,
-       not generic filler.
+     PRESENT in the rehydrated context. Sub-rules:
+     - A paraphrase that uses different words but captures the SAME SPECIFIC
+       concept from the context counts as preservation (e.g. "keeping comfort
+       systems online" paraphrasing "minimize disruption by keeping passenger
+       comfort systems online").
+     - Citing relationship rationale text, decision IDs, or semantic_class
+       metadata is strong evidence of preservation.
      - If the ground truth rationale is 'not specified', '?', or empty, then
        reason_preserved MUST be FALSE. The model cannot preserve what was not
        in the context. Plausible inference is not preservation.
-     - Citing relationship rationale text, decision IDs, or semantic_class
-       metadata is strong evidence of preservation.
-     - Stating only structural facts ('A connects to B') without WHY is not.
+     - Stating only structural facts ('A connects to B') without WHY is not
+       preservation. Generic summaries without context-specific concepts are
+       not preservation.
   5. Be lenient on IDs and wording. Be strict on preservation vs inference.
 
   Answer ONLY with valid JSON, no markdown, no explanation:

@@ -54,6 +54,41 @@ Single source of truth for kernel maturity, technical debt, and next steps.
 - [x] Update beta-status.md: document ignored proto fields, remove admin section
 - [x] 3 evidence tests: content_hash validation, causal-before-structural, cl100k_base per-section
 
+## Pending — Hardening (from external review 2026-03-25)
+
+### P0 — Documentation drift
+
+Active docs still reference `ContextAdminService` and admin path, removed in PR #57.
+
+- [x] `api/proto/README.md:10` — remove `ContextAdminService` from public surface list
+- [x] `README.md:34` — remove `admin` from `projection -> query -> compatibility -> command -> admin` journey
+- [x] `docs/migration/kernel-node-centric-integration-contract.md:30` — remove `ContextAdminService` from services list
+
+### P0/P1 — Query contract overexpression
+
+Proto fields accepted but ignored in runtime. Marked `[deprecated = true]` in proto.
+
+- [x] `GetContext`: `phase`, `work_item_id`, `render_format`, `include_debug_sections` — deprecated in proto
+- [x] `ValidateScope`: `role`, `phase` — deprecated in proto
+- [x] `RehydrateSession`: `include_timeline`, `include_summaries` — deprecated in proto
+
+Documented in `beta-status.md`. Fields remain in the wire format for backward compatibility but are explicitly deprecated.
+
+### P1 — Performance hotspots
+
+- [x] Batch `NodeDetailReader`: `load_node_details_batch()` port method + Valkey MGET adapter. Replaces N+1 sequential reads with a single multi-key fetch.
+- [x] Cache graph reads across roles in `RehydrateSession`: `load_bundles_for_roles()` loads graph + details once, builds per-role bundles from shared data.
+- [x] Performance observability: `QueryTimingBreakdown` (stdlib-only, no infra deps in application layer) captures graph_load / detail_load / bundle_assembly durations. Proto `QueryTimingBreakdown` message on `RehydrateSessionResponse`. OTel histograms: `rehydration.session.{graph_load,detail_load,bundle_assembly}.duration`, `role_count`, `batch_size`. Paper metrics extended with `graph_load_ms`, `detail_load_ms`, `bundle_assembly_ms`, `detail_batch_size`.
+
+### P2 — Planner enrichment
+
+`mode_heuristic.rs` uses a single signal (`tokens_per_node < 30`). Incorporate:
+
+- [ ] Endpoint type (GetContext vs RehydrateSession may warrant different mode defaults)
+- [ ] Focus/path presence (if focus node exists, ResumeFocused may be better even with budget room)
+- [ ] Causal density (high explanatory relation ratio → prefer ReasonPreserving)
+- [ ] Relation distribution (structural-heavy graphs may benefit from pruning even at generous budgets)
+
 ## Pending — Architecture (low priority, all test-only)
 
 | Task | File | Lines | Action |
@@ -143,6 +178,21 @@ Evolve from rehydration to operational memory:
 - ~~Add latency capture to paper harness~~ (done)
 - [x] Expand meso variants to UC2-UC4
 - [ ] CI consistency check paper ↔ artifacts
+
+### Judge prompt redesign (from incident 2026-03-26)
+
+Opus 4.6 as judge rejects 100% of verdicts that Opus 4 accepted at 94%.
+Root cause: prompt designed for flat bundles + Opus 4 calibration. See
+[`docs/incident-report-benchmark-2026-03-26.md`](./incident-report-benchmark-2026-03-26.md).
+
+- [ ] Judge prompt v2: causal-chain-aware `task_correct` (accept causal ancestors)
+- [ ] Judge prompt v2: paraphrase-gradient `reason_preserved` (context-derived vs generic)
+- [ ] Per-use-case judge prompt variants (failure diagnosis, handoff, constraint have different criteria)
+- [ ] Log raw inference + judge responses in evaluator (silent parse failures masked 0% scores)
+- [ ] Store `llm_response` in paper metrics for post-hoc analysis
+- [ ] Judge calibration pre-check: validate known-good/known-bad before full benchmark
+- [ ] Pin judge model version in paper methodology section (sensitivity finding)
+- [ ] Re-run full benchmark matrix after prompt v2 with Opus 4.6 judge
 
 ## Pending — Research
 

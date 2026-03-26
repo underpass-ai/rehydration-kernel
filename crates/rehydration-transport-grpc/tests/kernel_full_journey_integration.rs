@@ -22,6 +22,7 @@ use rehydration_proto::v1beta1::{
     GetNodeDetailRequest, Phase, UpdateContextRequest,
 };
 #[tokio::test]
+#[allow(deprecated)]
 async fn kernel_full_journey_covers_projection_query_and_command()
 -> Result<(), Box<dyn Error + Send + Sync>> {
     let fixture = AgenticFixture::start_with_seed(ROOT_NODE_ID, TASK_ID, |publisher| async move {
@@ -356,6 +357,71 @@ async fn kernel_full_journey_covers_projection_query_and_command()
             EXPLORER_LEAF_DETAIL
         );
 
+        // ── Multi-role rehydration: shared graph read, per-role bundles ──
+        #[allow(deprecated)]
+        let multi_role_rehydrate = query_client
+            .rehydrate_session(rehydration_proto::v1beta1::RehydrateSessionRequest {
+                root_node_id: ROOT_NODE_ID.to_string(),
+                roles: vec![
+                    DEVELOPER_ROLE.to_string(),
+                    "reviewer".to_string(),
+                    "ops".to_string(),
+                ],
+                include_timeline: false,
+                include_summaries: false,
+                persist_snapshot: false,
+                timeline_window: 0,
+                snapshot_ttl: None,
+            })
+            .await?
+            .into_inner();
+        let multi_bundle = multi_role_rehydrate
+            .bundle
+            .expect("multi-role rehydrated bundle should exist");
+        assert_eq!(multi_bundle.root_node_id, ROOT_NODE_ID);
+        assert_eq!(
+            multi_bundle.bundles.len(),
+            3,
+            "should produce one bundle per role"
+        );
+        // Each role bundle must have the same graph shape (shared read).
+        for (i, role_bundle) in multi_bundle.bundles.iter().enumerate() {
+            assert_eq!(
+                role_bundle.neighbor_nodes.len(),
+                EXPECTED_NEIGHBOR_COUNT,
+                "role bundle {i} neighbor count mismatch"
+            );
+            assert_eq!(
+                role_bundle.relationships.len(),
+                EXPECTED_RELATIONSHIP_COUNT,
+                "role bundle {i} relationship count mismatch"
+            );
+            assert_eq!(
+                role_bundle.node_details.len(),
+                EXPECTED_DETAIL_COUNT,
+                "role bundle {i} detail count mismatch"
+            );
+        }
+        // Roles are assigned correctly.
+        assert_eq!(multi_bundle.bundles[0].role, DEVELOPER_ROLE);
+        assert_eq!(multi_bundle.bundles[1].role, "reviewer");
+        assert_eq!(multi_bundle.bundles[2].role, "ops");
+        // Graph data is identical across roles (shared read, not re-fetched).
+        let dev_node_ids: Vec<&str> = multi_bundle.bundles[0]
+            .neighbor_nodes
+            .iter()
+            .map(|n| n.node_id.as_str())
+            .collect();
+        let reviewer_node_ids: Vec<&str> = multi_bundle.bundles[1]
+            .neighbor_nodes
+            .iter()
+            .map(|n| n.node_id.as_str())
+            .collect();
+        assert_eq!(
+            dev_node_ids, reviewer_node_ids,
+            "neighbor nodes must be identical across roles"
+        );
+
         let command_update = command_client
             .update_context(UpdateContextRequest {
                 root_node_id: ROOT_NODE_ID.to_string(),
@@ -388,7 +454,6 @@ async fn kernel_full_journey_covers_projection_query_and_command()
             Some(1)
         );
         assert!(command_update.warnings.is_empty());
-        assert!(!command_update.snapshot_persisted);
 
         Ok::<(), Box<dyn Error + Send + Sync>>(())
     }

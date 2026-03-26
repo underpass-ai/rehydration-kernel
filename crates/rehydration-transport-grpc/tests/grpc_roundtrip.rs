@@ -48,6 +48,17 @@ impl NodeDetailReader for EmptyNodeDetailReader {
     ) -> Result<Option<NodeDetailProjection>, PortError> {
         Ok(None)
     }
+
+    async fn load_node_details_batch(
+        &self,
+        node_ids: Vec<String>,
+    ) -> Result<Vec<Option<NodeDetailProjection>>, PortError> {
+        let mut results = Vec::with_capacity(node_ids.len());
+        for node_id in &node_ids {
+            results.push(self.load_node_detail(node_id).await?);
+        }
+        Ok(results)
+    }
 }
 
 struct NoopSnapshotStore;
@@ -63,6 +74,7 @@ impl SnapshotStore for NoopSnapshotStore {
 }
 
 #[tokio::test]
+#[allow(deprecated)] // proto fields phase, work_item_id, render_format, include_debug_sections
 async fn grpc_server_supports_query_and_command_roundtrip() {
     let listener = match TcpListener::bind("127.0.0.1:0").await {
         Ok(listener) => listener,

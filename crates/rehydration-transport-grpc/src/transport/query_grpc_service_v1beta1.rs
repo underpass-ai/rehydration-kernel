@@ -18,7 +18,7 @@ use crate::transport::proto_mapping_v1beta1::{
     proto_bundle_from_single_role_v1beta1, proto_graph_node_v1beta1,
     proto_node_detail_view_v1beta1, proto_rehydrate_session_response_v1beta1,
     proto_rendered_context_from_result_v1beta1, proto_rendered_context_v1beta1,
-    proto_scope_validation_v1beta1,
+    proto_scope_validation_v1beta1, proto_timing_breakdown_v1beta1,
 };
 use crate::transport::support::map_application_error;
 
@@ -107,11 +107,31 @@ where
         );
         tracing::debug!(resolved_mode = %resolved_mode.as_str(), "mode resolved");
 
+        if let Some(ref timing) = result.timing {
+            meter
+                .f64_histogram("rehydration.session.graph_load.duration")
+                .build()
+                .record(timing.graph_load.as_secs_f64(), attrs);
+            meter
+                .f64_histogram("rehydration.session.detail_load.duration")
+                .build()
+                .record(timing.detail_load.as_secs_f64(), attrs);
+            meter
+                .f64_histogram("rehydration.session.bundle_assembly.duration")
+                .build()
+                .record(timing.bundle_assembly.as_secs_f64(), attrs);
+            meter
+                .u64_histogram("rehydration.session.batch_size")
+                .build()
+                .record(timing.batch_size as u64, attrs);
+        }
+
         Ok(Response::new(GetContextResponse {
             bundle: Some(proto_bundle_from_single_role_v1beta1(&result.bundle)),
             rendered: Some(proto_rendered_context_from_result_v1beta1(&result)),
             scope_validation: None,
             served_at: Some(crate::transport::support::timestamp_from(result.served_at)),
+            timing: result.timing.as_ref().map(proto_timing_breakdown_v1beta1),
         }))
     }
 
@@ -120,6 +140,7 @@ where
         &self,
         request: Request<GetContextPathRequest>,
     ) -> Result<Response<GetContextPathResponse>, Status> {
+        let start = Instant::now();
         let request = request.into_inner();
         tracing::debug!(
             root_node_id = %request.root_node_id,
@@ -143,10 +164,37 @@ where
             .await
             .map_err(map_application_error)?;
 
+        let meter = opentelemetry::global::meter("rehydration-kernel");
+        let attrs = &[KeyValue::new("rpc", "GetContextPath")];
+        meter
+            .f64_histogram("rehydration.rpc.duration")
+            .build()
+            .record(start.elapsed().as_secs_f64(), attrs);
+
+        if let Some(ref timing) = result.timing {
+            meter
+                .f64_histogram("rehydration.session.graph_load.duration")
+                .build()
+                .record(timing.graph_load.as_secs_f64(), attrs);
+            meter
+                .f64_histogram("rehydration.session.detail_load.duration")
+                .build()
+                .record(timing.detail_load.as_secs_f64(), attrs);
+            meter
+                .f64_histogram("rehydration.session.bundle_assembly.duration")
+                .build()
+                .record(timing.bundle_assembly.as_secs_f64(), attrs);
+            meter
+                .u64_histogram("rehydration.session.batch_size")
+                .build()
+                .record(timing.batch_size as u64, attrs);
+        }
+
         Ok(Response::new(GetContextPathResponse {
             path_bundle: Some(proto_bundle_from_single_role_v1beta1(&result.path_bundle)),
             rendered: Some(proto_rendered_context_v1beta1(&result.rendered, &[])),
             served_at: Some(crate::transport::support::timestamp_from(result.served_at)),
+            timing: result.timing.as_ref().map(proto_timing_breakdown_v1beta1),
         }))
     }
 
@@ -214,6 +262,29 @@ where
             .f64_histogram("rehydration.rpc.duration")
             .build()
             .record(start.elapsed().as_secs_f64(), attrs);
+
+        if let Some(ref timing) = result.timing {
+            meter
+                .f64_histogram("rehydration.session.graph_load.duration")
+                .build()
+                .record(timing.graph_load.as_secs_f64(), attrs);
+            meter
+                .f64_histogram("rehydration.session.detail_load.duration")
+                .build()
+                .record(timing.detail_load.as_secs_f64(), attrs);
+            meter
+                .f64_histogram("rehydration.session.bundle_assembly.duration")
+                .build()
+                .record(timing.bundle_assembly.as_secs_f64(), attrs);
+            meter
+                .u64_histogram("rehydration.session.role_count")
+                .build()
+                .record(timing.role_count as u64, attrs);
+            meter
+                .u64_histogram("rehydration.session.batch_size")
+                .build()
+                .record(timing.batch_size as u64, attrs);
+        }
 
         Ok(Response::new(proto_rehydrate_session_response_v1beta1(
             &result,

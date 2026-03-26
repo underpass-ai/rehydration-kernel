@@ -6,7 +6,7 @@ use rehydration_domain::{
 use crate::ApplicationError;
 pub use crate::queries::render_graph_bundle::RenderedContext;
 use crate::queries::{
-    ContextRenderOptions, QueryApplicationService, RehydrateSessionUseCase,
+    ContextRenderOptions, QueryApplicationService, QueryTimingBreakdown, RehydrateSessionUseCase,
     clamp_native_graph_traversal_depth, render_graph_bundle_with_options,
 };
 
@@ -25,6 +25,7 @@ pub struct GetContextResult {
     pub rendered: RenderedContext,
     pub requested_scopes: Vec<String>,
     pub served_at: std::time::SystemTime,
+    pub timing: Option<QueryTimingBreakdown>,
 }
 
 #[derive(Debug)]
@@ -50,7 +51,7 @@ where
         requested_scopes: &[String],
         render_options: &ContextRenderOptions,
     ) -> Result<GetContextResult, ApplicationError> {
-        let bundle = self
+        let (bundle, timing) = self
             .rehydrate_session
             .execute_with_depth(
                 root_node_id,
@@ -67,6 +68,7 @@ where
             rendered,
             requested_scopes: requested_scopes.to_vec(),
             served_at: std::time::SystemTime::now(),
+            timing: Some(timing),
         })
     }
 }

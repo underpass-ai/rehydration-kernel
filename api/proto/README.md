@@ -7,7 +7,6 @@ Current public surface:
 
 - `ContextQueryService`
 - `ContextCommandService`
-- `ContextAdminService`
 
 Primary generic contract:
 

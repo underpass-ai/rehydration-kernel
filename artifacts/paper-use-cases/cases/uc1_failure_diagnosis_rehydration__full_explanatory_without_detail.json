@@ -14,8 +14,12 @@
   "bundle_relationships": 3,
   "detailed_nodes": 0,
   "rendered_token_count": 252,
-  "query_latency_ms": 701.783674,
-  "total_latency_ms": 1132.813557,
+  "query_latency_ms": 659.115496,
+  "total_latency_ms": 1071.1644709999998,
+  "graph_load_ms": 295.570473,
+  "detail_load_ms": 1.489281,
+  "bundle_assembly_ms": 0.030001,
+  "detail_batch_size": 4,
   "explanation_roundtrip_fidelity": 1.0,
   "detail_roundtrip_fidelity": 0.0,
   "causal_reconstruction_score": 0.8571428571428571,
@@ -43,5 +47,9 @@
       "target_node_id": "node:artifact:failed-telemetry",
       "relationship_type": "VERIFIED_BY"
     }
-  ]
+  ],
+  "llm_task_success": false,
+  "llm_restart_accuracy": true,
+  "llm_reason_preserved": false,
+  "llm_latency_ms": 8507.183061
 }

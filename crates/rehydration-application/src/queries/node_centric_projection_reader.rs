@@ -1,4 +1,5 @@
 use std::collections::BTreeSet;
+use std::time::Instant;
 
 use rehydration_domain::{
     BundleMetadata, BundleNode, BundleNodeDetail, BundleRelationship, CaseId,
@@ -6,6 +7,7 @@ use rehydration_domain::{
 };
 
 use crate::ApplicationError;
+use crate::queries::QueryTimingBreakdown;
 use crate::queries::ordered_neighborhood::ordered_neighborhood;
 use crate::queries::{DEFAULT_NATIVE_GRAPH_TRAVERSAL_DEPTH, clamp_native_graph_traversal_depth};
 
@@ -34,7 +36,7 @@ where
         root_node_id: &str,
         role: &str,
         generator_version: &str,
-    ) -> Result<Option<RehydrationBundle>, ApplicationError> {
+    ) -> Result<(Option<RehydrationBundle>, QueryTimingBreakdown), ApplicationError> {
         self.load_bundle_with_depth(
             root_node_id,
             role,
@@ -50,25 +52,91 @@ where
         role: &str,
         generator_version: &str,
         depth: u32,
-    ) -> Result<Option<RehydrationBundle>, ApplicationError> {
+    ) -> Result<(Option<RehydrationBundle>, QueryTimingBreakdown), ApplicationError> {
+        let graph_start = Instant::now();
         let Some(neighborhood) = self
             .graph_reader
             .load_neighborhood(root_node_id, clamp_native_graph_traversal_depth(depth))
             .await?
         else {
-            return Ok(None);
+            return Ok((None, QueryTimingBreakdown::not_found(graph_start.elapsed())));
         };
-
         let neighborhood = ordered_neighborhood(neighborhood);
-        let node_details = load_node_details(&self.detail_reader, &neighborhood).await?;
+        let graph_load = graph_start.elapsed();
 
-        Ok(Some(build_bundle(
+        let batch_size = 1 + neighborhood.neighbors.len();
+
+        let detail_start = Instant::now();
+        let node_details = load_node_details(&self.detail_reader, &neighborhood).await?;
+        let detail_load = detail_start.elapsed();
+
+        let assembly_start = Instant::now();
+        let bundle = build_bundle(
             root_node_id,
             role,
             generator_version,
             neighborhood,
             node_details,
-        )?))
+        )?;
+        let bundle_assembly = assembly_start.elapsed();
+
+        let timing = QueryTimingBreakdown {
+            graph_load,
+            detail_load,
+            bundle_assembly,
+            role_count: 1,
+            batch_size,
+        };
+
+        Ok((Some(bundle), timing))
+    }
+
+    pub async fn load_bundles_for_roles(
+        &self,
+        root_node_id: &str,
+        roles: &[String],
+        generator_version: &str,
+        depth: u32,
+    ) -> Result<(Option<Vec<RehydrationBundle>>, QueryTimingBreakdown), ApplicationError> {
+        let graph_start = Instant::now();
+        let Some(neighborhood) = self
+            .graph_reader
+            .load_neighborhood(root_node_id, clamp_native_graph_traversal_depth(depth))
+            .await?
+        else {
+            return Ok((None, QueryTimingBreakdown::not_found(graph_start.elapsed())));
+        };
+        let neighborhood = ordered_neighborhood(neighborhood);
+        let graph_load = graph_start.elapsed();
+
+        let batch_size = 1 + neighborhood.neighbors.len();
+
+        let detail_start = Instant::now();
+        let node_details = load_node_details(&self.detail_reader, &neighborhood).await?;
+        let detail_load = detail_start.elapsed();
+
+        let assembly_start = Instant::now();
+        let mut bundles = Vec::with_capacity(roles.len());
+        for role in roles {
+            bundles.push(build_bundle(
+                root_node_id,
+                role,
+                generator_version,
+                neighborhood.clone(),
+                node_details.clone(),
+            )?);
+        }
+        let bundle_assembly = assembly_start.elapsed();
+
+        let timing = QueryTimingBreakdown {
+            graph_load,
+            detail_load,
+            bundle_assembly,
+            role_count: roles.len(),
+            batch_size,
+        };
+
+        Ok((Some(bundles), timing))
     }
 
     pub async fn load_context_path_bundle_with_depth(
@@ -78,7 +146,8 @@ where
         role: &str,
         generator_version: &str,
         subtree_depth: u32,
-    ) -> Result<Option<RehydrationBundle>, ApplicationError> {
+    ) -> Result<(Option<RehydrationBundle>, QueryTimingBreakdown), ApplicationError> {
+        let graph_start = Instant::now();
         let Some(path_neighborhood) = self
             .graph_reader
             .load_context_path(
@@ -88,7 +157,7 @@ where
             )
             .await?
         else {
-            return Ok(None);
+            return Ok((None, QueryTimingBreakdown::not_found(graph_start.elapsed())));
         };
 
         let path_node_ids = path_neighborhood.path_node_ids.clone();
@@ -97,15 +166,33 @@ where
             neighbors: path_neighborhood.neighbors,
             relations: path_neighborhood.relations,
         });
-        let node_details = load_node_details_for_ids(&self.detail_reader, path_node_ids).await?;
+        let graph_load = graph_start.elapsed();
 
-        Ok(Some(build_bundle(
+        let batch_size = path_node_ids.len();
+
+        let detail_start = Instant::now();
+        let node_details = load_node_details_for_ids(&self.detail_reader, path_node_ids).await?;
+        let detail_load = detail_start.elapsed();
+
+        let assembly_start = Instant::now();
+        let bundle = build_bundle(
             root_node_id,
             role,
             generator_version,
             neighborhood,
             node_details,
-        )?))
+        )?;
+        let bundle_assembly = assembly_start.elapsed();
+
+        let timing = QueryTimingBreakdown {
+            graph_load,
+            detail_load,
+            bundle_assembly,
+            role_count: 1,
+            batch_size,
+        };
+
+        Ok((Some(bundle), timing))
     }
 }
 
@@ -138,20 +225,19 @@ where
     D: NodeDetailReader + Send + Sync,
     I: IntoIterator<Item = String>,
 {
-    let mut details = Vec::new();
     let mut seen = BTreeSet::new();
+    let unique_ids: Vec<String> = node_ids
+        .into_iter()
+        .filter(|id| seen.insert(id.clone()))
+        .collect();
 
-    for node_id in node_ids {
-        if !seen.insert(node_id.clone()) {
-            continue;
-        }
+    let batch_results = detail_reader.load_node_details_batch(unique_ids).await?;
 
-        if let Some(detail) = detail_reader.load_node_detail(&node_id).await? {
-            details.push(BundleNodeDetail::from_projection(&detail));
-        }
-    }
-
-    Ok(details)
+    Ok(batch_results
+        .into_iter()
+        .flatten()
+        .map(|detail| BundleNodeDetail::from_projection(&detail))
+        .collect())
 }
 
 fn build_bundle(
@@ -311,16 +397,27 @@ mod tests {
                 revision: 2,
             }))
         }
+
+        async fn load_node_details_batch(
+            &self,
+            node_ids: Vec<String>,
+        ) -> Result<Vec<Option<NodeDetailProjection>>, PortError> {
+            let mut results = Vec::with_capacity(node_ids.len());
+            for node_id in &node_ids {
+                results.push(self.load_node_detail(node_id).await?);
+            }
+            Ok(results)
+        }
     }
 
     #[tokio::test]
     async fn load_bundle_returns_graph_native_bundle() {
         let reader = NodeCentricProjectionReader::new(StubGraphReader, StubDetailReader);
-        let bundle = reader
+        let (bundle, _timing) = reader
             .load_bundle("node-root", "developer", "0.1.0")
             .await
-            .expect("bundle load should succeed")
-            .expect("bundle should exist");
+            .expect("bundle load should succeed");
+        let bundle = bundle.expect("bundle should exist");
 
         assert_eq!(bundle.root_node().node_id(), "node-root");
         assert_eq!(bundle.neighbor_nodes().len(), 1);
@@ -363,7 +460,7 @@ mod tests {
             StubDetailReader,
         );
 
-        let bundle = reader
+        let (bundle, _timing) = reader
             .load_bundle("node-root", "developer", "0.1.0")
             .await
             .expect("bundle load should succeed");
@@ -378,11 +475,11 @@ mod tests {
     #[tokio::test]
     async fn load_context_path_bundle_only_includes_details_for_path_nodes() {
         let reader = NodeCentricProjectionReader::new(StubGraphReader, StubDetailReader);
-        let bundle = reader
+        let (bundle, _timing) = reader
             .load_context_path_bundle_with_depth("node-root", "node-1", "developer", "0.1.0", 4)
             .await
-            .expect("path bundle load should succeed")
-            .expect("bundle should exist");
+            .expect("path bundle load should succeed");
+        let bundle = bundle.expect("bundle should exist");
 
         assert_eq!(bundle.root_node().node_id(), "node-root");
         assert_eq!(bundle.neighbor_nodes().len(), 2);
@@ -399,5 +496,174 @@ mod tests {
 
     fn structural_explanation() -> RelationExplanation {
         RelationExplanation::new(RelationSemanticClass::Structural)
+    }
+
+    #[tokio::test]
+    async fn load_bundles_for_roles_returns_none_when_node_missing() {
+        let reader = NodeCentricProjectionReader::new(
+            RecordingGraphReader {
+                depths: Arc::new(Mutex::new(Vec::new())),
+            },
+            StubDetailReader,
+        );
+
+        let (result, _timing) = reader
+            .load_bundles_for_roles("nonexistent", &["dev".to_string()], "0.1.0", 3)
+            .await
+            .expect("should not error");
+
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn load_bundles_for_roles_single_role_matches_load_bundle() {
+        let reader = NodeCentricProjectionReader::new(StubGraphReader, StubDetailReader);
+
+        let (single, _timing) = reader
+            .load_bundle("node-root", "developer", "0.1.0")
+            .await
+            .expect("single load should succeed");
+        let single = single.expect("bundle should exist");
+
+        let (multi, _timing) = reader
+            .load_bundles_for_roles(
+                "node-root",
+                &["developer".to_string()],
+                "0.1.0",
+                DEFAULT_NATIVE_GRAPH_TRAVERSAL_DEPTH,
+            )
+            .await
+            .expect("multi load should succeed");
+        let multi = multi.expect("bundles should exist");
+
+        assert_eq!(multi.len(), 1);
+        assert_eq!(multi[0].root_node().node_id(), single.root_node().node_id());
+        assert_eq!(
+            multi[0].neighbor_nodes().len(),
+            single.neighbor_nodes().len()
+        );
+        assert_eq!(
+            multi[0].relationships().len(),
+            single.relationships().len()
+        );
+        assert_eq!(multi[0].node_details().len(), single.node_details().len());
+    }
+
+    #[tokio::test]
+    async fn load_bundles_for_roles_produces_correct_count() {
+        let reader = NodeCentricProjectionReader::new(
+            StubGraphReader,
+            CountingDetailReader {
+                call_count: Arc::new(Mutex::new(0)),
+            },
+        );
+
+        let (bundles, _timing) = reader
+            .load_bundles_for_roles(
+                "node-root",
+                &[
+                    "dev".to_string(),
+                    "reviewer".to_string(),
+                    "ops".to_string(),
+                ],
+                "0.1.0",
+                DEFAULT_NATIVE_GRAPH_TRAVERSAL_DEPTH,
+            )
+            .await
+            .expect("should succeed");
+        let bundles = bundles.expect("bundles should exist");
+
+        assert_eq!(bundles.len(), 3);
+    }
+
+    struct CountingDetailReader {
+        call_count: Arc<Mutex<u32>>,
+    }
+
+    impl rehydration_domain::NodeDetailReader for CountingDetailReader {
+        async fn load_node_detail(
+            &self,
+            node_id: &str,
+        ) -> Result<Option<NodeDetailProjection>, PortError> {
+            Ok(Some(NodeDetailProjection {
+                node_id: node_id.to_string(),
+                detail: "detail".to_string(),
+                content_hash: "hash".to_string(),
+                revision: 1,
+            }))
+        }
+
+        async fn load_node_details_batch(
+            &self,
+            node_ids: Vec<String>,
+        ) -> Result<Vec<Option<NodeDetailProjection>>, PortError> {
+            *self.call_count.lock().await += 1;
+            let mut results = Vec::with_capacity(node_ids.len());
+            for node_id in &node_ids {
+                results.push(self.load_node_detail(node_id).await?);
+            }
+            Ok(results)
+        }
+    }
+
+    #[tokio::test]
+    async fn batch_detail_reader_called_once_for_multi_role() {
+        let call_count = Arc::new(Mutex::new(0u32));
+        let reader = NodeCentricProjectionReader::new(
+            StubGraphReader,
+            CountingDetailReader {
+                call_count: Arc::clone(&call_count),
+            },
+        );
+
+        let (bundles, timing) = reader
+            .load_bundles_for_roles(
+                "node-root",
+                &["dev".to_string(), "reviewer".to_string()],
+                "0.1.0",
+                DEFAULT_NATIVE_GRAPH_TRAVERSAL_DEPTH,
+            )
+            .await
+            .expect("should succeed");
+        let bundles = bundles.expect("bundles should exist");
+
+        assert_eq!(bundles.len(), 2);
+        // Batch is called once (shared load), not once per role.
+        assert_eq!(*call_count.lock().await, 1);
+        assert_eq!(timing.role_count, 2);
+        assert!(timing.batch_size > 0);
+    }
+
+    struct NoDetailReader;
+
+    impl rehydration_domain::NodeDetailReader for NoDetailReader {
+        async fn load_node_detail(
+            &self,
+            _node_id: &str,
+        ) -> Result<Option<NodeDetailProjection>, PortError> {
+            Ok(None)
+        }
+
+        async fn load_node_details_batch(
+            &self,
+            node_ids: Vec<String>,
+        ) -> Result<Vec<Option<NodeDetailProjection>>, PortError> {
+            Ok(vec![None; node_ids.len()])
+        }
+    }
+
+    #[tokio::test]
+    async fn load_bundle_with_no_details_returns_empty_details() {
+        let reader = NodeCentricProjectionReader::new(StubGraphReader, NoDetailReader);
+
+        let (bundle, _timing) = reader
+            .load_bundle("node-root", "developer", "0.1.0")
+            .await
+            .expect("should succeed");
+        let bundle = bundle.expect("bundle should exist");
+
+        assert_eq!(bundle.root_node().node_id(), "node-root");
+        assert_eq!(bundle.neighbor_nodes().len(), 1);
+        assert!(bundle.node_details().is_empty());
     }
 }

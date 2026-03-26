@@ -15,8 +15,8 @@ pub use in_memory_stores::{
     NoopSnapshotStore,
 };
 pub use llm_evaluator::{
-    EvaluationGroundTruth, LlmEvaluationResult, LlmEvaluatorConfig, LlmProvider, call_llm,
-    evaluate_with_llm,
+    EvaluationGroundTruth, LlmEvaluationResult, LlmEvaluatorConfig, LlmProvider, PromptConfig,
+    call_llm, evaluate_with_config, evaluate_with_llm,
 };
 
 #[cfg(test)]

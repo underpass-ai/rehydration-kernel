@@ -7,7 +7,7 @@ use rehydration_domain::{
 };
 
 use crate::ApplicationError;
-use crate::queries::{NodeCentricProjectionReader, QueryApplicationService};
+use crate::queries::{NodeCentricProjectionReader, QueryApplicationService, QueryTimingBreakdown};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RehydrateSessionQuery {
@@ -27,6 +27,7 @@ pub struct RehydrateSessionResult {
     pub snapshot_persisted: bool,
     pub snapshot_id: Option<String>,
     pub generated_at: SystemTime,
+    pub timing: Option<QueryTimingBreakdown>,
 }
 
 #[derive(Debug)]
@@ -63,7 +64,7 @@ where
         role: &str,
         persist_snapshot: bool,
         snapshot_options: SnapshotSaveOptions,
-    ) -> Result<RehydrationBundle, ApplicationError> {
+    ) -> Result<(RehydrationBundle, QueryTimingBreakdown), ApplicationError> {
         self.execute_with_depth(
             root_node_id,
             role,
@@ -81,15 +82,15 @@ where
         depth: u32,
         persist_snapshot: bool,
         snapshot_options: SnapshotSaveOptions,
-    ) -> Result<RehydrationBundle, ApplicationError> {
+    ) -> Result<(RehydrationBundle, QueryTimingBreakdown), ApplicationError> {
         let bundle_reader =
             NodeCentricProjectionReader::new(&self.graph_reader, &self.detail_reader);
-        let bundle = match bundle_reader
+        let (bundle, timing) = match bundle_reader
             .load_bundle_with_depth(root_node_id, role, self.generator_version, depth)
             .await?
         {
-            Some(bundle) => bundle,
-            None => {
+            (Some(bundle), timing) => (bundle, timing),
+            (None, _) => {
                 return Err(ApplicationError::NotFound(format!(
                     "node '{}' not found",
                     root_node_id
@@ -102,7 +103,7 @@ where
                 .save_bundle_with_options(&bundle, snapshot_options)
                 .await?;
         }
-        Ok(bundle)
+        Ok((bundle, timing))
     }
 }
 
@@ -122,26 +123,37 @@ where
             ));
         }
 
-        let use_case = RehydrateSessionUseCase::new(
-            Arc::clone(&self.graph_reader),
-            Arc::clone(&self.detail_reader),
-            Arc::clone(&self.snapshot_store),
-            self.generator_version,
+        let bundle_reader = NodeCentricProjectionReader::new(
+            self.graph_reader.as_ref(),
+            self.detail_reader.as_ref(),
         );
         let snapshot_options = SnapshotSaveOptions::new(Some(query.snapshot_ttl_seconds));
 
-        let mut bundles = Vec::with_capacity(query.roles.len());
-        for role in &query.roles {
-            bundles.push(
-                use_case
-                    .execute(
-                        &query.root_node_id,
-                        role,
-                        query.persist_snapshot,
-                        snapshot_options,
-                    )
-                    .await?,
-            );
+        let (bundles, timing) = bundle_reader
+            .load_bundles_for_roles(
+                &query.root_node_id,
+                &query.roles,
+                self.generator_version,
+                crate::queries::DEFAULT_NATIVE_GRAPH_TRAVERSAL_DEPTH,
+            )
+            .await?;
+
+        let bundles = match bundles {
+            Some(bundles) => bundles,
+            None => {
+                return Err(ApplicationError::NotFound(format!(
+                    "node '{}' not found",
+                    query.root_node_id
+                )));
+            }
+        };
+
+        if query.persist_snapshot {
+            for bundle in &bundles {
+                self.snapshot_store
+                    .save_bundle_with_options(bundle, snapshot_options)
+                    .await?;
+            }
         }
 
         let snapshot_id = if query.persist_snapshot {
@@ -162,11 +174,12 @@ where
             snapshot_persisted: query.persist_snapshot,
             snapshot_id,
             generated_at: SystemTime::now(),
+            timing: Some(timing),
         })
     }
 
     pub async fn warmup_bundle(&self) -> Result<RehydrationBundle, ApplicationError> {
-        RehydrateSessionUseCase::new(
+        let (bundle, _timing) = RehydrateSessionUseCase::new(
             Arc::clone(&self.graph_reader),
             Arc::clone(&self.detail_reader),
             Arc::clone(&self.snapshot_store),
@@ -178,7 +191,8 @@ where
             false,
             SnapshotSaveOptions::default(),
         )
-        .await
+        .await?;
+        Ok(bundle)
     }
 }
 
@@ -243,6 +257,17 @@ mod tests {
                 content_hash: "hash-1".to_string(),
                 revision: 2,
             }))
+        }
+
+        async fn load_node_details_batch(
+            &self,
+            node_ids: Vec<String>,
+        ) -> Result<Vec<Option<NodeDetailProjection>>, PortError> {
+            let mut results = Vec::with_capacity(node_ids.len());
+            for node_id in &node_ids {
+                results.push(self.load_node_detail(node_id).await?);
+            }
+            Ok(results)
         }
     }
 
@@ -333,6 +358,123 @@ mod tests {
         match result {
             Err(crate::ApplicationError::NotFound(_)) => {}
             other => panic!("expected NotFound, got: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn rehydrate_session_multi_role_returns_one_bundle_per_role() {
+        let service = QueryApplicationService::new(
+            Arc::new(SeededGraphReader),
+            Arc::new(SeededDetailReader),
+            Arc::new(RecordingSnapshotStore::default()),
+            "0.1.0",
+        );
+
+        let result = service
+            .rehydrate_session(RehydrateSessionQuery {
+                root_node_id: "story-123".to_string(),
+                roles: vec![
+                    "developer".to_string(),
+                    "reviewer".to_string(),
+                    "ops".to_string(),
+                ],
+                persist_snapshot: false,
+                timeline_window: 0,
+                snapshot_ttl_seconds: 0,
+            })
+            .await
+            .expect("multi-role rehydration should succeed");
+
+        assert_eq!(result.bundles.len(), 3);
+        assert_eq!(result.bundles[0].role().as_str(), "developer");
+        assert_eq!(result.bundles[1].role().as_str(), "reviewer");
+        assert_eq!(result.bundles[2].role().as_str(), "ops");
+        // All bundles share the same graph — root and details are identical.
+        for bundle in &result.bundles {
+            assert_eq!(bundle.root_node().node_id(), "story-123");
+            assert_eq!(bundle.node_details().len(), 1);
+        }
+    }
+
+    #[tokio::test]
+    async fn rehydrate_session_multi_role_not_found_returns_error_not_partial() {
+        let service = QueryApplicationService::new(
+            Arc::new(EmptyGraphReader),
+            Arc::new(SeededDetailReader),
+            Arc::new(RecordingSnapshotStore::default()),
+            "0.1.0",
+        );
+
+        let result = service
+            .rehydrate_session(RehydrateSessionQuery {
+                root_node_id: "nonexistent".to_string(),
+                roles: vec!["developer".to_string(), "reviewer".to_string()],
+                persist_snapshot: false,
+                timeline_window: 0,
+                snapshot_ttl_seconds: 0,
+            })
+            .await;
+
+        match result {
+            Err(crate::ApplicationError::NotFound(_)) => {}
+            other => panic!("expected NotFound for all roles, got: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn rehydrate_session_multi_role_persists_snapshot_per_bundle() {
+        let snapshot_store = Arc::new(RecordingSnapshotStore::default());
+        let service = QueryApplicationService::new(
+            Arc::new(SeededGraphReader),
+            Arc::new(SeededDetailReader),
+            Arc::clone(&snapshot_store),
+            "0.1.0",
+        );
+
+        let result = service
+            .rehydrate_session(RehydrateSessionQuery {
+                root_node_id: "story-123".to_string(),
+                roles: vec!["developer".to_string(), "reviewer".to_string()],
+                persist_snapshot: true,
+                timeline_window: 0,
+                snapshot_ttl_seconds: 900,
+            })
+            .await
+            .expect("multi-role rehydration should succeed");
+
+        assert!(result.snapshot_persisted);
+        assert_eq!(
+            result.snapshot_id,
+            Some("snapshot:story-123:developer,reviewer".to_string())
+        );
+        // One save per role bundle.
+        assert_eq!(snapshot_store.options.lock().await.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn rehydrate_session_empty_roles_returns_validation_error() {
+        let service = QueryApplicationService::new(
+            Arc::new(SeededGraphReader),
+            Arc::new(SeededDetailReader),
+            Arc::new(RecordingSnapshotStore::default()),
+            "0.1.0",
+        );
+
+        let result = service
+            .rehydrate_session(RehydrateSessionQuery {
+                root_node_id: "story-123".to_string(),
+                roles: vec![],
+                persist_snapshot: false,
+                timeline_window: 0,
+                snapshot_ttl_seconds: 0,
+            })
+            .await;
+
+        match result {
+            Err(crate::ApplicationError::Validation(msg)) => {
+                assert!(msg.contains("roles"), "error should mention roles: {msg}");
+            }
+            other => panic!("expected Validation error, got: {other:?}"),
         }
     }
 }
