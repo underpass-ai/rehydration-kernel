@@ -1,5 +1,6 @@
-# Variant: lenient judge — accepts broader semantic matches.
-# Tests baseline: how many verdicts pass with minimal strictness.
+# Variant: lenient judge — accepts partial understanding.
+# More lenient than default on reason_preserved (paraphrases accepted).
+# Should converge with strict on task_correct and restart_correct.
 
 inference_prompt: |
   You are analyzing a rehydrated context bundle from a graph-based system.
@@ -42,24 +43,24 @@ judge_prompt: |
   {llm_response}
 
   ## Ground Truth
-  - Failure point / root cause: {expected_failure}
-  - Restart node (where the system should resume): {expected_restart}
+  - Failure point: {expected_failure}
+  - Restart node: {expected_restart}
   - Dominant rationale: {expected_reason}
 
   ## Evaluation rules
-  1. **Broad semantic match**: accept any answer that demonstrates the
-     model understood the causal chain, even if it names a different node
-     in the chain or uses different terminology.
-  2. **task_correct**: true if the response identifies ANY node involved
-     in the failure — the incident, the decision, or the failed task.
-     The answer must show awareness of the failure, not be random.
-  3. **restart_correct**: true if the response names ANY plausible restart
-     point in the graph. A node that is causally connected to the failure
-     counts even without detailed justification.
-  4. **reason_preserved**: true if the response mentions ANY rationale
-     concept from the rehydrated context — even a loose paraphrase.
-     If the ground truth rationale is 'not specified' or empty, must be FALSE.
-  5. Be lenient on all three criteria. Give credit for partial understanding.
+  1. **Semantic match**: judge by concept and causal role, not exact node IDs.
+     Node IDs are synthetic. Match by role and position in the causal chain.
+  2. **task_correct**: true if the response identifies a failure point that is
+     on the causal chain described in the ground truth. The response must
+     demonstrate it traced causality — naming a node without context is not enough.
+  3. **restart_correct**: true if the response identifies a restart point on
+     the causal chain AND provides a causal justification for WHY. Simply
+     naming a node without reasoning is NOT sufficient.
+  4. **reason_preserved**: true if the response references rationale concepts
+     that were PRESENT in the rehydrated context. Loose paraphrases that
+     capture the same domain-specific idea count as preservation. If the
+     ground truth rationale is 'not specified' or empty, must be FALSE.
+  5. Be lenient on reason_preserved. Be fair on task_correct and restart_correct.
 
   Answer ONLY with valid JSON, no markdown, no explanation:
   {"task_correct": true/false, "restart_correct": true/false, "reason_preserved": true/false}

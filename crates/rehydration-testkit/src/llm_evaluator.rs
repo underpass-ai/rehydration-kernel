@@ -385,6 +385,7 @@ pub async fn evaluate_with_llm(
     )
     .await?;
     let latency_ms = start.elapsed().as_secs_f64() * 1000.0;
+    let content = strip_markdown_fences(&content);
 
     // LLM-as-judge: use separate judge endpoint if configured
     let judge_client = if config.judge_endpoint.is_some() {
@@ -449,6 +450,7 @@ pub async fn evaluate_with_config(
     )
     .await?;
     let latency_ms = start.elapsed().as_secs_f64() * 1000.0;
+    let content = strip_markdown_fences(&content);
 
     let judge_client = if config.judge_endpoint.is_some() {
         build_http_client(config)?
@@ -549,17 +551,37 @@ async fn judge_response_with_prompts(
     )
     .await?;
 
-    // Parse JSON from the judge response -- handle potential markdown wrapping
-    let json_str = judge_content
-        .trim()
-        .trim_start_matches("```json")
-        .trim_start_matches("```")
-        .trim_end_matches("```")
-        .trim();
+    let json_str = strip_markdown_fences(&judge_content);
 
-    let verdict: JudgeVerdict = serde_json::from_str(json_str)
+    let verdict: JudgeVerdict = serde_json::from_str(&json_str)
         .map_err(|e| format!("failed to parse judge response '{judge_content}': {e}"))?;
     Ok((verdict, judge_content))
+}
+
+/// Strips markdown code fences from LLM responses.
+///
+/// Many models (especially Claude) wrap JSON in ` ```json ... ``` `.
+/// This normalizes the response to plain text before parsing or passing
+/// to the judge.
+fn strip_markdown_fences(s: &str) -> String {
+    let trimmed = s.trim();
+    if trimmed.starts_with("```") {
+        let without_opening = if let Some(after_lang) = trimmed.strip_prefix("```json") {
+            after_lang
+        } else if let Some(after_lang) = trimmed.strip_prefix("```JSON") {
+            after_lang
+        } else if let Some(after_tick) = trimmed.strip_prefix("```") {
+            after_tick
+        } else {
+            trimmed
+        };
+        without_opening
+            .trim_end_matches("```")
+            .trim()
+            .to_string()
+    } else {
+        trimmed.to_string()
+    }
 }
 
 fn build_http_client(

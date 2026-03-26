@@ -185,12 +185,13 @@ Qwen3-8B scores 100% TaskOK while Opus 4.6 scores 58-97%. The ground truth
 penalizes precise causal reasoning and rewards trivial root-matching. See
 [`docs/incident-report-e2e-ground-truth-2026-03-26.md`](./incident-report-e2e-ground-truth-2026-03-26.md).
 
-- [ ] `expected_failure_point`: accept any node on the causal chain, not just root
-- [ ] `expected_restart_node`: use causal ancestor from seed topology, not vague "any node"
-- [ ] `expected_reason`: concatenate all chain rationales, not just first relation
+- [x] `expected_failure_point`: leaf node (deepest chain) — rewards L1 tracing over L0 surface
+- [x] `expected_restart_node`: causal predecessor from seed topology
+- [x] `expected_reason`: concatenate all chain rationales
+- [x] Re-run diagnostic — frontier models score >= small models (confirmed)
 - [ ] Strip markdown code fences (```` ```json ```` ) before parsing LLM responses
 - [ ] Strict/lenient judges must converge (currently 0% vs 100% on restart)
-- [ ] Re-run full matrix — frontier models should score >= small models
+- [ ] Re-run full 720-eval matrix with fixed ground truth
 
 ### Judge prompt redesign (from incident 2026-03-26)
 

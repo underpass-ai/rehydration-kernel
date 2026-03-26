@@ -1,5 +1,6 @@
-# Variant: strict judge — tighter matching, verbatim citation required.
-# Tests whether the inference model can produce exact rationale citations.
+# Variant: strict judge — requires causal evidence, not just name matching.
+# Stricter than default on reason_preserved (verbatim citation preferred).
+# Should converge with lenient on task_correct and restart_correct.
 
 inference_prompt: |
   You are analyzing a rehydrated context bundle from a graph-based system.
@@ -42,24 +43,25 @@ judge_prompt: |
   {llm_response}
 
   ## Ground Truth
-  - Failure point / root cause: {expected_failure}
-  - Restart node (where the system should resume): {expected_restart}
+  - Failure point: {expected_failure}
+  - Restart node: {expected_restart}
   - Dominant rationale: {expected_reason}
 
   ## Evaluation rules
-  1. **Exact match preferred**: judge by exact concept match where possible.
-     Only accept a different node if the response EXPLICITLY states the
-     causal link to the ground truth node.
-  2. **task_correct**: true ONLY if the response names the ground truth
-     failure point or an immediately adjacent causal node with explicit
-     justification.
-  3. **restart_correct**: true ONLY if the response names the exact restart
-     node AND explains why from causal evidence in the context.
+  1. **Semantic match**: judge by concept and causal role, not exact node IDs.
+     Node IDs are synthetic. Match by role and position in the causal chain.
+  2. **task_correct**: true if the response identifies a failure point that is
+     on the causal chain described in the ground truth. The response must
+     demonstrate it traced causality — naming a node without context is not enough.
+  3. **restart_correct**: true if the response identifies a restart point on
+     the causal chain AND provides a causal justification for WHY. Simply
+     naming a node without reasoning is NOT sufficient.
   4. **reason_preserved**: true ONLY if the response directly quotes or
-     closely paraphrases the ground truth rationale using domain-specific
-     terms from the context. Generic summaries are NOT preservation.
-     If the ground truth rationale is 'not specified' or empty, must be FALSE.
-  5. Be strict on all three criteria. Do not give credit for vague matches.
+     closely paraphrases rationale text that was PRESENT in the rehydrated
+     context, using domain-specific terms. Generic summaries are NOT
+     preservation. If the ground truth rationale is 'not specified' or
+     empty, must be FALSE.
+  5. Be strict on reason_preserved. Be fair on task_correct and restart_correct.
 
   Answer ONLY with valid JSON, no markdown, no explanation:
   {"task_correct": true/false, "restart_correct": true/false, "reason_preserved": true/false}
