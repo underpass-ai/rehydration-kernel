@@ -214,6 +214,12 @@ weaknesses. See [`docs/benchmark-2026-03-26-technical-review.md`](./benchmark-20
 **P2 — Restart sub-metrics** (restart is the weakest metric at 34%):
 - [ ] Fix F: replace binary `restart_correct` with: `restart_exact`, `restart_off_by_one`, `restart_on_competing_branch`, `restart_missing`, `restart_explained_correctly`. Enables targeted improvement of the weakest dimension.
 
+**P1 — Scientific methodology** (blocks paper submission):
+- [ ] Restructure report to follow A-J template from [`anexo-procedimiento-cientifico-analisis-datos.md`](./anexo-procedimiento-cientifico-analisis-datos.md): research question, hypothesis + H0, variables, experimental design, metrics, data quality, descriptive, uncertainty, threats to validity, interpretation, conclusion with limitations.
+- [ ] Document explicit H0 for each hypothesis (null: no difference between explanatory and structural)
+- [ ] Add limitations section: single-run, synthetic graphs, judge sensitivity, structural contamination
+- [ ] Separate observation / interpretation / conclusion in all report sections
+
 **Pending metrics** (need test code changes):
 - [ ] L0/L1/L2 tier token desglose (persist `tier_tokens` in result JSON)
 - [ ] Token efficiency vs raw document dump baseline
