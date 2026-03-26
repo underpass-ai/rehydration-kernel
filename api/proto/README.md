@@ -16,8 +16,8 @@ Primary generic contract:
 
 Reference:
 
-- [`docs/migration/kernel-node-centric-integration-contract.md`](/home/tirso/ai/developents/rehydration-kernel/docs/migration/kernel-node-centric-integration-contract.md)
-- [`api/examples/kernel/v1beta1/grpc`](/home/tirso/ai/developents/rehydration-kernel/api/examples/kernel/v1beta1/grpc)
+- [`docs/migration/kernel-node-centric-integration-contract.md`](docs/migration/kernel-node-centric-integration-contract.md)
+- [`api/examples/kernel/v1beta1/grpc`](api/examples/kernel/v1beta1/grpc)
 
 Validation entrypoints:
 

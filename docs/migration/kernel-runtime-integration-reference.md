@@ -1,5 +1,10 @@
 # Kernel Runtime Integration Reference
 
+> **Path update**: Support modules referenced below moved from
+> `crates/rehydration-transport-grpc/tests/support/` to
+> `crates/rehydration-tests-shared/src/runtime/`. See the
+> [benchmark docs](../benchmark-paper-use-cases.md) for current paths.
+
 Status: Active
 Scope: reference contract for external runtimes that consume the kernel
 

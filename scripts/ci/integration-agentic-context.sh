@@ -8,7 +8,7 @@ cd "${ROOT_DIR}"
 . "${ROOT_DIR}/scripts/ci/testcontainers-runtime.sh"
 
 cargo test \
-  -p rehydration-transport-grpc \
+  -p rehydration-tests-kernel \
   --features container-tests \
   --test agentic_integration \
   --locked \

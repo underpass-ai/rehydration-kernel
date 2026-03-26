@@ -266,9 +266,10 @@ pub fn generate_seed(config: GraphSeedConfig) -> GeneratedSeed {
                             "alternative {} path at depth {depth} (competing branch {branch})",
                             vocab.chain_rationale
                         )),
-                        Some(format!(
+                        Some(
                             "this path was considered but is not the primary causal chain"
-                        )),
+                                .to_string(),
+                        ),
                         vocab.chain_kinds[kind_index].to_string(),
                         format!(
                             "alternative {} {depth}-{branch}",

@@ -124,16 +124,16 @@ Relevant assets:
 
 - pull-driven agentic flow:
   - `scripts/ci/integration-agentic-context.sh`
-  - `crates/rehydration-transport-grpc/tests/agentic_integration.rs`
+  - `crates/rehydration-tests-kernel/tests/agentic_integration.rs`
 - event-driven agentic flow:
   - `scripts/ci/integration-agentic-event-context.sh`
-  - `crates/rehydration-transport-grpc/tests/agentic_event_integration.rs`
+  - `crates/rehydration-tests-kernel/tests/agentic_event_integration.rs`
 - minimal generic seed scenario:
-  - `crates/rehydration-transport-grpc/tests/support/generic_seed_data.rs`
+  - `crates/rehydration-tests-shared/src/seed/generic_data.rs`
 - explanatory relation seed scenarios:
-  - `crates/rehydration-transport-grpc/tests/support/explanatory_seed_data.rs`
+  - `crates/rehydration-tests-shared/src/seed/explanatory_data.rs`
 - zoomed bounded-context behavior:
-  - `crates/rehydration-transport-grpc/tests/kernel_full_journey_integration.rs`
+  - `crates/rehydration-tests-kernel/tests/kernel_full_journey_integration.rs`
 
 ## Evaluation Strategy
 

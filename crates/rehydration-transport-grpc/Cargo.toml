@@ -7,10 +7,6 @@ rust-version.workspace = true
 [lints]
 workspace = true
 
-[features]
-default = []
-container-tests = []
-
 [dependencies]
 async-nats = "0.39.0"
 rehydration-application.workspace = true
@@ -30,36 +26,5 @@ tokio-stream.workspace = true
 tokio-rustls = "0.26.4"
 
 [dev-dependencies]
-neo4rs.workspace = true
-rehydration-adapter-nats.workspace = true
-rehydration-adapter-neo4j.workspace = true
-rehydration-adapter-valkey.workspace = true
 rehydration-testkit.workspace = true
-serde_yaml.workspace = true
 tempfile = "3.26.0"
-testcontainers = "0.24.0"
-
-[[test]]
-name = "agentic_integration"
-path = "tests/agentic_integration.rs"
-required-features = ["container-tests"]
-
-[[test]]
-name = "agentic_event_integration"
-path = "tests/agentic_event_integration.rs"
-required-features = ["container-tests"]
-
-[[test]]
-name = "kernel_full_journey_tls_integration"
-path = "tests/kernel_full_journey_tls_integration.rs"
-required-features = ["container-tests"]
-
-[[test]]
-name = "kernel_golden_integration"
-path = "tests/kernel_golden_integration.rs"
-required-features = ["container-tests"]
-
-[[test]]
-name = "vllm_benchmark_integration"
-path = "tests/vllm_benchmark_integration.rs"
-required-features = ["container-tests"]

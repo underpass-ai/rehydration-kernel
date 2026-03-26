@@ -18,7 +18,7 @@ export REHYDRATION_PAPER_METRICS_DIR="${METRICS_DIR}"
 export REHYDRATION_PAPER_SUMMARY_PATH="${SUMMARY_PATH}"
 
 cargo test \
-  -p rehydration-transport-grpc \
+  -p rehydration-tests-paper \
   --features container-tests \
   --test relationship_use_case_integration \
   --locked \
@@ -27,7 +27,7 @@ cargo test \
   --test-threads=1
 
 cargo test \
-  -p rehydration-transport-grpc \
+  -p rehydration-tests-paper \
   --features container-tests \
   --test relationship_use_case_ablation_integration \
   --locked \

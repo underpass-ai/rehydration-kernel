@@ -1,10 +1,28 @@
-# Evaluation matrix: models × prompt variants.
+# Evaluation matrix: models x prompt variants.
 #
-# Each cell runs the 4-UC e2e test with the given model config and prompt file.
-# Use: bash scripts/ci/evaluate-prompt-variants.sh [path-to-this-file]
+# Single source of truth — all configuration lives here.
+# No env vars needed except the ones referenced by *_env fields below.
 #
-# API keys are read from environment: ANTHROPIC_KEY, OPENAI_KEY
-# vLLM certs: LLM_TLS_CERT_PATH, LLM_TLS_KEY_PATH (set before running)
+# Usage:
+#   cargo test -p rehydration-tests-paper --features container-tests \
+#     --test llm_judge_prompt_evaluation -- --nocapture --test-threads=1
+#
+# Or via orchestrator:
+#   bash scripts/ci/evaluate-prompt-variants.sh
+
+# API keys — read from these env vars at runtime.
+# Set them before running:
+#   export ANTHROPIC_KEY="$(cat /path/to/anthropic-key.txt)"
+#   export OPENAI_KEY="$(cat /path/to/openai-key.txt)"
+keys:
+  anthropic_env: ANTHROPIC_KEY
+  openai_env: OPENAI_KEY
+
+# TLS client certificates for mTLS endpoints (vLLM).
+# Paths on the local filesystem.
+tls:
+  cert: /tmp/vllm-client.crt
+  key: /tmp/vllm-client.key
 
 agents:
   qwen3-8b:
@@ -12,6 +30,7 @@ agents:
     model: Qwen/Qwen3-8B
     provider: openai
     tls: true
+    # Uses tls.cert and tls.key above
 
   gpt-5.4:
     endpoint: https://api.openai.com/v1/chat/completions
@@ -45,13 +64,11 @@ prompts:
   strict-judge: prompt-variants/strict-judge.yaml
   lenient-judge: prompt-variants/lenient-judge.yaml
 
-# Graph scales for context capture. Each scale produces different
-# rendered context sizes — larger graphs trigger truncation.
 scales:
-  micro: micro    # 4 nodes, ~200-500 tokens, no truncation
-  meso: meso      # 21 nodes, ~1500 tokens, moderate truncation at low budgets
-  stress: stress  # 49 nodes, ~4000 tokens, heavy truncation
+  micro: micro    # 4 nodes, ~200-500 tokens
+  meso: meso      # 21 nodes, ~1500 tokens
+  stress: stress  # 49 nodes, ~4000 tokens
 
 noise:
-  clean: none              # no distractors
-  competing: competing     # competing causal distractors
+  clean: none
+  competing: competing

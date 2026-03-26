@@ -135,8 +135,8 @@ Delivered:
 Primary files:
 
 - [`crates/rehydration-transport-grpc/src/starship_e2e.rs`](../crates/rehydration-transport-grpc/src/starship_e2e.rs)
-- [`crates/rehydration-transport-grpc/tests/kernel_full_journey_integration.rs`](../crates/rehydration-transport-grpc/tests/kernel_full_journey_integration.rs)
-- [`crates/rehydration-transport-grpc/tests/kernel_full_journey_tls_integration.rs`](../crates/rehydration-transport-grpc/tests/kernel_full_journey_tls_integration.rs)
+- [`crates/rehydration-tests-kernel/tests/kernel_full_journey_integration.rs`](../crates/rehydration-tests-kernel/tests/kernel_full_journey_integration.rs)
+- [`crates/rehydration-tests-kernel/tests/kernel_full_journey_tls_integration.rs`](../crates/rehydration-tests-kernel/tests/kernel_full_journey_tls_integration.rs)
 - [`crates/rehydration-transport-grpc/src/bin/starship_cluster_journey/main.rs`](../crates/rehydration-transport-grpc/src/bin/starship_cluster_journey/main.rs)
 - [`scripts/demo/run-starship-cluster-journey.sh`](../scripts/demo/run-starship-cluster-journey.sh)
 - [`scripts/demo/run-starship-demo-k8s-job.sh`](../scripts/demo/run-starship-demo-k8s-job.sh)
@@ -146,8 +146,8 @@ Primary files:
 Representative validation that closed this plan:
 
 - `cargo test -p rehydration-transport-grpc projection_messages_render_expected_starship_graph`
-- `cargo test -p rehydration-transport-grpc --features container-tests --test kernel_full_journey_integration --no-run`
-- `cargo test -p rehydration-transport-grpc --features container-tests --test kernel_full_journey_tls_integration --no-run`
+- `cargo test -p rehydration-tests-kernel --features container-tests --test kernel_full_journey_integration --no-run`
+- `cargo test -p rehydration-tests-kernel --features container-tests --test kernel_full_journey_tls_integration --no-run`
 - `bash scripts/demo/run-starship-cluster-journey.sh`
 - `bash scripts/demo/run-starship-demo-k8s-job.sh`
 - `IMAGE_TAG=<tag> bash scripts/ci/kubernetes-transport-smoke.sh grpc-mutual`

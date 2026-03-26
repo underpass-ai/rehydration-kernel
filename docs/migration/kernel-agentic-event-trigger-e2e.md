@@ -1,5 +1,10 @@
 # Kernel Agentic Event Trigger E2E
 
+> **Path update**: Test files referenced below moved from
+> `crates/rehydration-transport-grpc/tests/` to `crates/rehydration-tests-kernel/tests/`
+> and support modules to `crates/rehydration-tests-shared/src/`. See the
+> [benchmark docs](../benchmark-paper-use-cases.md) for current paths.
+
 Status: Active
 
 ## Goal

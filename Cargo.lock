@@ -2241,12 +2241,49 @@ dependencies = [
 ]
 
 [[package]]
-name = "rehydration-transport-grpc"
+name = "rehydration-tests-kernel"
+version = "0.1.0"
+dependencies = [
+ "async-nats",
+ "prost-types",
+ "rehydration-adapter-nats",
+ "rehydration-adapter-neo4j",
+ "rehydration-adapter-valkey",
+ "rehydration-application",
+ "rehydration-config",
+ "rehydration-domain",
+ "rehydration-proto",
+ "rehydration-testkit",
+ "rehydration-tests-shared",
+ "rehydration-transport-grpc",
+ "serde_json",
+ "testcontainers",
+ "tokio",
+ "tonic 0.12.3",
+]
+
+[[package]]
+name = "rehydration-tests-paper"
+version = "0.1.0"
+dependencies = [
+ "async-nats",
+ "rehydration-proto",
+ "rehydration-testkit",
+ "rehydration-tests-shared",
+ "rehydration-transport-grpc",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tokio",
+ "tonic 0.12.3",
+]
+
+[[package]]
+name = "rehydration-tests-shared"
 version = "0.1.0"
 dependencies = [
  "async-nats",
  "neo4rs",
- "opentelemetry",
  "prost-types",
  "rehydration-adapter-nats",
  "rehydration-adapter-neo4j",
@@ -2257,12 +2294,34 @@ dependencies = [
  "rehydration-ports",
  "rehydration-proto",
  "rehydration-testkit",
+ "rehydration-transport-grpc",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "testcontainers",
+ "tokio",
+ "tokio-rustls",
+ "tokio-stream",
+ "tonic 0.12.3",
+]
+
+[[package]]
+name = "rehydration-transport-grpc"
+version = "0.1.0"
+dependencies = [
+ "async-nats",
+ "opentelemetry",
+ "prost-types",
+ "rehydration-application",
+ "rehydration-config",
+ "rehydration-domain",
+ "rehydration-ports",
+ "rehydration-proto",
+ "rehydration-testkit",
  "reqwest",
  "serde",
  "serde_json",
- "serde_yaml",
  "tempfile",
- "testcontainers",
  "tokio",
  "tokio-rustls",
  "tokio-stream",

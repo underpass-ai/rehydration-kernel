@@ -19,7 +19,7 @@ export AGENTIC_DEBUG=1
   echo "[agentic-debug] started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
   cargo test \
-    -p rehydration-transport-grpc \
+    -p rehydration-tests-kernel \
     --features container-tests \
     --test agentic_integration \
     --locked \

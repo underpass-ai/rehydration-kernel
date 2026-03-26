@@ -179,6 +179,19 @@ Evolve from rehydration to operational memory:
 - [x] Expand meso variants to UC2-UC4
 - [ ] CI consistency check paper ↔ artifacts
 
+### P0 — Ground truth construction is wrong (incident 2026-03-26)
+
+Qwen3-8B scores 100% TaskOK while Opus 4.6 scores 58-97%. The ground truth
+penalizes precise causal reasoning and rewards trivial root-matching. See
+[`docs/incident-report-e2e-ground-truth-2026-03-26.md`](./incident-report-e2e-ground-truth-2026-03-26.md).
+
+- [ ] `expected_failure_point`: accept any node on the causal chain, not just root
+- [ ] `expected_restart_node`: use causal ancestor from seed topology, not vague "any node"
+- [ ] `expected_reason`: concatenate all chain rationales, not just first relation
+- [ ] Strip markdown code fences (```` ```json ```` ) before parsing LLM responses
+- [ ] Strict/lenient judges must converge (currently 0% vs 100% on restart)
+- [ ] Re-run full matrix — frontier models should score >= small models
+
 ### Judge prompt redesign (from incident 2026-03-26)
 
 Opus 4.6 as judge rejects 100% of verdicts that Opus 4 accepted at 94%.
@@ -188,8 +201,8 @@ Root cause: prompt designed for flat bundles + Opus 4 calibration. See
 - [ ] Judge prompt v2: causal-chain-aware `task_correct` (accept causal ancestors)
 - [ ] Judge prompt v2: paraphrase-gradient `reason_preserved` (context-derived vs generic)
 - [ ] Per-use-case judge prompt variants (failure diagnosis, handoff, constraint have different criteria)
-- [ ] Log raw inference + judge responses in evaluator (silent parse failures masked 0% scores)
-- [ ] Store `llm_response` in paper metrics for post-hoc analysis
+- [x] Log raw inference + judge responses in evaluator (done — `results/*.json` per eval)
+- [x] Store `llm_response` in paper metrics for post-hoc analysis (done — `agent_response` + `judge_raw`)
 - [ ] Judge calibration pre-check: validate known-good/known-bad before full benchmark
 - [ ] Pin judge model version in paper methodology section (sensitivity finding)
 - [ ] Re-run full benchmark matrix after prompt v2 with Opus 4.6 judge

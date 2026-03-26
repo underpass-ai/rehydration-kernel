@@ -13,7 +13,7 @@ use tokio::time::{sleep, timeout};
 
 mod support;
 
-use support::{NATS_INTERNAL_PORT, connect_with_retry, start_nats_container};
+use support::nats_container::{NATS_INTERNAL_PORT, connect_with_retry, start_nats_container};
 
 #[derive(Debug, Default, Clone)]
 struct RecordingProjectionHandler {

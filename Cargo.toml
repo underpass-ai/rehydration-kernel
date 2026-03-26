@@ -11,6 +11,9 @@ members = [
     "crates/rehydration-proto",
     "crates/rehydration-server",
     "crates/rehydration-testkit",
+    "crates/rehydration-tests-shared",
+    "crates/rehydration-tests-kernel",
+    "crates/rehydration-tests-paper",
     "crates/rehydration-transport-grpc",
 ]
 resolver = "3"
@@ -35,6 +38,7 @@ rehydration-observability = { path = "crates/rehydration-observability" }
 rehydration-ports = { path = "crates/rehydration-ports" }
 rehydration-proto = { path = "crates/rehydration-proto" }
 rehydration-testkit = { path = "crates/rehydration-testkit" }
+rehydration-tests-shared = { path = "crates/rehydration-tests-shared" }
 rehydration-transport-grpc = { path = "crates/rehydration-transport-grpc" }
 prost = "0.13.5"
 prost-types = "0.13.5"

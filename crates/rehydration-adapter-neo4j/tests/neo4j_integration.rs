@@ -50,6 +50,7 @@ async fn load_neighborhood_respects_directed_depth() -> Result<(), Box<dyn Error
                         ("created_by".to_string(), "planner".to_string()),
                         ("token_budget_hint".to_string(), "8192".to_string()),
                     ]),
+                    provenance: None,
                 }),
                 ProjectionMutation::UpsertNode(NodeProjection {
                     node_id: "decision-1".to_string(),
@@ -59,6 +60,7 @@ async fn load_neighborhood_respects_directed_depth() -> Result<(), Box<dyn Error
                     status: "ACCEPTED".to_string(),
                     labels: vec!["decision".to_string()],
                     properties: BTreeMap::from([("owner".to_string(), "architect".to_string())]),
+                    provenance: None,
                 }),
                 ProjectionMutation::UpsertNode(NodeProjection {
                     node_id: "task-1".to_string(),
@@ -68,6 +70,7 @@ async fn load_neighborhood_respects_directed_depth() -> Result<(), Box<dyn Error
                     status: "READY".to_string(),
                     labels: vec!["work-item".to_string()],
                     properties: BTreeMap::from([("priority".to_string(), "5".to_string())]),
+                    provenance: None,
                 }),
                 ProjectionMutation::UpsertNode(NodeProjection {
                     node_id: "blocker-1".to_string(),
@@ -194,6 +197,7 @@ async fn apply_mutations_persists_generic_nodes_and_relations()
                     status: "ACTIVE".to_string(),
                     labels: vec!["projection".to_string(), "foundation".to_string()],
                     properties: BTreeMap::from([("phase".to_string(), "build".to_string())]),
+                    provenance: None,
                 }),
                 ProjectionMutation::UpsertNodeRelation(NodeRelationProjection {
                     source_node_id: "node-123".to_string(),

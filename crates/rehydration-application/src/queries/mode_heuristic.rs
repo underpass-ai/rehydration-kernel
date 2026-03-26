@@ -63,9 +63,9 @@ mod tests {
         let neighbors: Vec<_> = (0..count.saturating_sub(1))
             .map(|i| {
                 BundleNode::new(
-                    &format!("n{i}"),
+                    format!("n{i}"),
                     "task",
-                    &format!("N{i}"),
+                    format!("N{i}"),
                     "",
                     "ACTIVE",
                     vec![],

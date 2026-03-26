@@ -16,4 +16,4 @@ legacy nouns and remains aligned with the descriptor tests in
 
 Reference event fixtures live under:
 
-- [`api/examples/kernel/v1beta1/async`](/home/tirso/ai/developents/rehydration-kernel/api/examples/kernel/v1beta1/async)
+- [`api/examples/kernel/v1beta1/async`](api/examples/kernel/v1beta1/async)

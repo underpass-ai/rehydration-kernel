@@ -47,17 +47,17 @@ The default values file is:
 
 - [`charts/rehydration-kernel/values.underpass-runtime.yaml`](../../charts/rehydration-kernel/values.underpass-runtime.yaml)
 
-That keeps the deploy path aligned with the sibling runtime environment and now
-includes the controller-managed gRPC ingress host currently reserved for the
-kernel. The kernel chart assumes Neo4j, Valkey, and NATS are required runtime
-dependencies; there are no transport disable flags in the deployment contract.
+The chart deploys all infrastructure self-contained within the target namespace:
+Neo4j, Valkey, and NATS are managed as subchart resources (`neo4j.enabled`,
+`valkey.enabled`, `nats.enabled`). Connection URIs are auto-generated from the
+release name. There are no cross-namespace dependencies.
 
 The secure follow-up profile is:
 
 - [`charts/rehydration-kernel/values.underpass-runtime.secure.example.yaml`](../../charts/rehydration-kernel/values.underpass-runtime.secure.example.yaml)
 
-That file captures the intended sibling-runtime target once the shared Neo4j
-deployment exposes TLS and the kernel namespace has the matching CA secret.
+That file captures the intended target once TLS is enabled across all
+connections.
 
 ## Local Equivalent
 
@@ -276,9 +276,8 @@ The Neo4j adapter supports secure schemes such as:
 The chart now supports first-class mounting of a custom Neo4j CA for inline
 `connections.graphUri` values.
 
-The shared cluster still serves Neo4j over plaintext `neo4j://` today, so the
-default sibling-runtime values stay on the plaintext URI. The staged secure
-target lives in
+The self-contained Neo4j serves over plaintext `neo4j://` by default. The
+staged secure target lives in
 [`charts/rehydration-kernel/values.underpass-runtime.secure.example.yaml`](../../charts/rehydration-kernel/values.underpass-runtime.secure.example.yaml)
 and switches the graph connection to `neo4j+s://...` plus `neo4jTls.*`.
 

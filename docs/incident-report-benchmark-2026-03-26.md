@@ -188,6 +188,10 @@ sensitivity analysis, not treated as a failure of the rehydration kernel.
 
 ### Finding 4: Case files written to wrong directory (relative path + cargo test cwd)
 
+> **Note**: This finding references `crates/rehydration-transport-grpc/tests/`
+> paths that existed at the time of the incident. Tests have since been moved
+> to `crates/rehydration-tests-paper/` and `crates/rehydration-tests-kernel/`.
+
 **Observed**: Tests pass (13/13 ok), judge verdicts logged (`task=true`),
 but no case files in the expected `PAPER_OUTPUT_DIR/cases/`. Files found in
 `crates/rehydration-transport-grpc/artifacts/...` instead.

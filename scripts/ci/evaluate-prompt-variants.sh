@@ -28,7 +28,7 @@ cd "${ROOT_DIR}"
 
 # Pre-compile once
 cargo test \
-  -p rehydration-transport-grpc \
+  -p rehydration-tests-paper \
   --features container-tests \
   --test llm_judge_prompt_evaluation \
   --no-run 2>&1 | tail -1
@@ -107,7 +107,7 @@ for i, cell in enumerate(cells, 1):
 
     result = subprocess.run(
         ['cargo', 'test',
-         '-p', 'rehydration-transport-grpc',
+         '-p', 'rehydration-tests-paper',
          '--features', 'container-tests',
          '--test', 'llm_judge_prompt_evaluation',
          '--', '--nocapture', '--test-threads=1'],

@@ -50,7 +50,7 @@ Generic outbound subjects:
 
 These subjects are documented in:
 
-- [`api/asyncapi/context-projection.v1beta1.yaml`](/home/tirso/ai/developents/rehydration-kernel/api/asyncapi/context-projection.v1beta1.yaml)
+- [`api/asyncapi/context-projection.v1beta1.yaml`](api/asyncapi/context-projection.v1beta1.yaml)
 
 ## What External Consumers May Rely On
 
@@ -119,10 +119,10 @@ Non-breaking examples:
 
 This contract is backed by:
 
-- proto definitions under [`api/proto/underpass/rehydration/kernel/v1beta1`](/home/tirso/ai/developents/rehydration-kernel/api/proto/underpass/rehydration/kernel/v1beta1)
-- async definitions under [`api/asyncapi/context-projection.v1beta1.yaml`](/home/tirso/ai/developents/rehydration-kernel/api/asyncapi/context-projection.v1beta1.yaml)
-- reference fixtures under [`api/examples/kernel/v1beta1`](/home/tirso/ai/developents/rehydration-kernel/api/examples/kernel/v1beta1)
-- descriptor and contract tests in [`crates/rehydration-proto/src/kernel_v1beta1_contract_tests.rs`](/home/tirso/ai/developents/rehydration-kernel/crates/rehydration-proto/src/kernel_v1beta1_contract_tests.rs), [`crates/rehydration-proto/src/reference_fixture_contract_tests.rs`](/home/tirso/ai/developents/rehydration-kernel/crates/rehydration-proto/src/reference_fixture_contract_tests.rs), and [`crates/rehydration-proto/src/asyncapi_contract_tests.rs`](/home/tirso/ai/developents/rehydration-kernel/crates/rehydration-proto/src/asyncapi_contract_tests.rs)
+- proto definitions under [`api/proto/underpass/rehydration/kernel/v1beta1`](api/proto/underpass/rehydration/kernel/v1beta1)
+- async definitions under [`api/asyncapi/context-projection.v1beta1.yaml`](api/asyncapi/context-projection.v1beta1.yaml)
+- reference fixtures under [`api/examples/kernel/v1beta1`](api/examples/kernel/v1beta1)
+- descriptor and contract tests in [`crates/rehydration-proto/src/kernel_v1beta1_contract_tests.rs`](crates/rehydration-proto/src/kernel_v1beta1_contract_tests.rs), [`crates/rehydration-proto/src/reference_fixture_contract_tests.rs`](crates/rehydration-proto/src/reference_fixture_contract_tests.rs), and [`crates/rehydration-proto/src/asyncapi_contract_tests.rs`](crates/rehydration-proto/src/asyncapi_contract_tests.rs)
 
 ## Exit Condition
 
