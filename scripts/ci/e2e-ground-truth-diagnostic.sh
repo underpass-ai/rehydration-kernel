@@ -31,9 +31,9 @@ echo "  6 variants × 4 pairs = 24 evals (~5 min)"
 echo "══════════════════════════════════════════════════════════════"
 echo
 
-export FILTER_SCALES="micro"
-export FILTER_NOISE="clean"
-export FILTER_PROMPTS="default"
+export FILTER_SCALES="${FILTER_SCALES:-micro}"
+export FILTER_NOISE="${FILTER_NOISE:-clean}"
+export FILTER_PROMPTS="${FILTER_PROMPTS:-default}"
 
 cargo test -p rehydration-tests-paper --features container-tests \
   --test llm_judge_prompt_evaluation -- --nocapture --test-threads=1

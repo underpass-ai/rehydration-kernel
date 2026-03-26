@@ -219,6 +219,7 @@ Root cause: prompt designed for flat bundles + Opus 4 calibration. See
 - [x] Expand meso to UC2-UC4
 
 ### Level 2 — Strong paper
+- [ ] Token efficiency baseline: measure rehydrated graph context tokens vs raw document dump for the same information. Proves the graph compresses context while preserving causal signal.
 - [ ] Closed-loop recovery with corrected outcome
 - ~~Three graph scales: micro, meso, stress~~ (done: dataset generator)
 - [x] Noise controls: CompetingCausal mode — distractors with causal semantic classes and plausible rationale. Explanatory 100% unaffected, structural drops to 28%
