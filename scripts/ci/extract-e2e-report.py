@@ -73,6 +73,15 @@ def avg_latency(results):
     return f"{sum(latencies) / len(latencies):.0f}ms"
 
 
+def fig_ref(run_dir, filename, caption=""):
+    """Return markdown image reference if figure exists, else empty string."""
+    fig_path = run_dir / "figures" / filename
+    if fig_path.exists():
+        alt = caption or filename.replace(".png", "").replace("_", " ")
+        return f"\n![{alt}](figures/{filename})\n"
+    return ""
+
+
 def generate_report(run_dir, results):
     md = []
     md.append(f"# E2E Evaluation Matrix Report")
@@ -80,6 +89,7 @@ def generate_report(run_dir, results):
     md.append(f"**Run**: `{run_dir.name}`")
     md.append(f"**Date**: {run_dir.name[:10]}")
     md.append(f"**Total evaluations**: {len(results)}")
+    md.append(fig_ref(run_dir, "00_hypothesis_summary.png", "Hypothesis Validation Summary"))
     md.append(f"")
 
     # ── Overview ──
@@ -162,6 +172,7 @@ def generate_report(run_dir, results):
 
     # ── By Prompt (aggregated) ──
     md.append("## By Prompt Variant")
+    md.append(fig_ref(run_dir, "05_prompt_comparison.png", "Prompt Variant Effectiveness"))
     md.append("")
     md.append("| Prompt | Task | Restart | Reason | Evals |")
     md.append("|--------|------|---------|--------|-------|")
@@ -181,6 +192,7 @@ def generate_report(run_dir, results):
 
     # ── By Relation Mix (THE key signal) ──
     md.append("## By Relation Mix (key signal)")
+    md.append(fig_ref(run_dir, "01_relation_mix_bars.png", "Rehydration Quality by Relation Type"))
     md.append("")
     md.append("| Mix | Task | Restart | Reason | Evals |")
     md.append("|-----|------|---------|--------|-------|")
@@ -204,6 +216,7 @@ def generate_report(run_dir, results):
 
     # ── By Scale ──
     md.append("## By Scale")
+    md.append(fig_ref(run_dir, "04_scale_effect.png", "Scale Effect"))
     md.append("")
     md.append("| Scale | Task | Restart | Reason | Evals |")
     md.append("|-------|------|---------|--------|-------|")
@@ -247,6 +260,7 @@ def generate_report(run_dir, results):
 
     # ── By Noise Mode ──
     md.append("## By Noise Mode")
+    md.append(fig_ref(run_dir, "07_noise_impact.png", "Noise Impact"))
     md.append("")
     md.append("| Noise | Task | Restart | Reason | Evals |")
     md.append("|-------|------|---------|--------|-------|")
@@ -267,6 +281,7 @@ def generate_report(run_dir, results):
 
     # ── Cross: Agent x Mix (most important table) ──
     md.append("## Agent x Relation Mix (Task)")
+    md.append(fig_ref(run_dir, "02_agent_x_mix_task.png", "Task Identification by Agent and Relation Type"))
     md.append("")
     md.append("| Agent | Explanatory | Structural | Mixed |")
     md.append("|-------|-------------|------------|-------|")
@@ -284,6 +299,7 @@ def generate_report(run_dir, results):
 
     # ── Cross: Agent x Mix (Reason) ──
     md.append("## Agent x Relation Mix (Reason)")
+    md.append(fig_ref(run_dir, "03_agent_x_mix_reason.png", "Rationale Preservation by Agent and Relation Type"))
     md.append("")
     md.append("| Agent | Explanatory | Structural | Mixed |")
     md.append("|-------|-------------|------------|-------|")
@@ -301,6 +317,7 @@ def generate_report(run_dir, results):
 
     # ── Cross: Scale x Mix (Task) ──
     md.append("## Scale x Relation Mix (Task)")
+    md.append(fig_ref(run_dir, "04_scale_effect.png", "Scale Effect on Task Identification"))
     md.append("")
     md.append("| Scale | Explanatory | Structural | Mixed |")
     md.append("|-------|-------------|------------|-------|")
@@ -320,6 +337,7 @@ def generate_report(run_dir, results):
 
     # ── Prompt convergence: strict vs lenient ──
     md.append("## Prompt Convergence: Strict vs Lenient")
+    md.append(fig_ref(run_dir, "09_convergence_heatmap.png", "Convergence Heatmap"))
     md.append("")
     md.append("| Agent→Judge | Metric | Strict | Lenient | Default | Delta S-L |")
     md.append("|-------------|--------|--------|---------|---------|-----------|")
@@ -342,6 +360,7 @@ def generate_report(run_dir, results):
 
     # ── Latency by agent ──
     md.append("## Latency by Agent")
+    md.append(fig_ref(run_dir, "08_latency_boxplot.png", "Latency Distribution"))
     md.append("")
     md.append("| Agent | Avg Latency | Min | Max | P50 |")
     md.append("|-------|-------------|-----|-----|-----|")
@@ -392,6 +411,8 @@ def generate_report(run_dir, results):
 
     # ── Statistical summary per dimension ──
     md.append("## Statistical Summary")
+    md.append(fig_ref(run_dir, "10_judge_strictness.png", "Judge Strictness"))
+    md.append(fig_ref(run_dir, "15_inter_rater_agreement.png", "Inter-Rater Agreement"))
     md.append("")
     md.append("Success rates with 95% confidence intervals (Wilson score).")
     md.append("")
@@ -486,6 +507,14 @@ def generate_report(run_dir, results):
                 pass
             f.write(f'{i},"{agent}","{judge}","{r["prompt"]}","{r["variant"]}","{v["scale"]}","{v["domain"]}","{v["mix"]}","{v["noise"]}",{t},{re},{p},{lat},"{fp}","{rn}"\n')
 
+    md.append("## Kernel Metrics")
+    md.append(fig_ref(run_dir, "11_kernel_token_efficiency.png", "Kernel Token Efficiency"))
+    md.append(fig_ref(run_dir, "12_kernel_causal_signal.png", "Causal Signal in Rendered Context"))
+    md.append(fig_ref(run_dir, "14_causal_depth_reached.png", "Causal Depth Reached by Agent"))
+    md.append(fig_ref(run_dir, "16_chain_depth_vs_task.png", "Chain Depth vs Task Success"))
+    md.append(fig_ref(run_dir, "13_response_parsing.png", "Response Parsing Reliability"))
+    md.append(fig_ref(run_dir, "06_judge_bias.png", "Judge Bias"))
+    md.append("")
     md.append(f"## Data Export")
     md.append(f"")
     md.append(f"CSV with all 720 evaluations: `results.csv`")
