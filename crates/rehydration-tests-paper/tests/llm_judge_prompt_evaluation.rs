@@ -515,23 +515,79 @@ async fn judge_prompt_evaluation_across_all_use_cases()
                 let eval_content = tier_content_for_eval(&rendered);
                 let tokens = rendered.token_count;
 
-                let first_chain = seed.nodes.first();
-                let last_chain = seed.nodes.iter().filter(|n| n.node_kind != "distractor").next_back();
+                // Build ground truth that rewards multi-layer graph reasoning.
+                //
+                // The graph has layers:
+                //   L0 (summary): root node kind + summary — surface info
+                //   L1 (causal spine): chain-0 → chain-1 → ... → chain-N with rationales
+                //   L2 (evidence): details, structural relations
+                //
+                // The chain is: root → chain-0 → chain-1 → ... → chain-N
+                //
+                // Ground truth rewards DEPTH of reasoning:
+                //   - Failure point = leaf node (deepest chain node). A model that
+                //     says "root" only read L0. A model that says "chain-N" traced L1.
+                //   - Restart node = predecessor of the leaf. Shows the model
+                //     understood the causal direction.
+                //   - Reason = ALL chain rationales. Shows the model read L1 metadata,
+                //     not just structural connections.
+                let chain_nodes: Vec<&rehydration_testkit::GeneratedNode> = seed
+                    .nodes
+                    .iter()
+                    .filter(|n| !n.node_id.contains("noise") && !n.node_id.contains("distractor"))
+                    .collect();
 
                 let question = format!(
                     "Given this rehydrated context from a {domain_name} graph:\n\
-                     1. What is the root cause or failure point?\n\
-                     2. Which node should the system restart from to continue work?\n\
-                     3. What is the main rationale in the causal chain?"
+                     1. What is the deepest failure point in the causal chain?\n\
+                     2. Which node should the system restart from to recover?\n\
+                     3. What rationale connects the nodes in the causal chain?"
                 );
 
-                let failure_desc = format!("{} \u{2014} {}", seed.root.node_kind, seed.root.summary);
-                let restart_desc = format!(
-                    "Any node on the main chain: {} or {}",
-                    first_chain.map(|n| n.title.as_str()).unwrap_or("first"),
-                    last_chain.map(|n| n.title.as_str()).unwrap_or("last"),
-                );
-                let reason = seed.relations.first().and_then(|r| r.rationale.clone());
+                // Failure point: the leaf of the causal chain — proves L1 tracing.
+                // The judge prompt already accepts causally connected nodes (line 62-64
+                // of llm_prompts.yaml), so intermediate nodes are also valid.
+                let failure_desc = if let Some(leaf) = chain_nodes.last() {
+                    format!(
+                        "{} ({}) \u{2014} {}. Causal chain: {} \u{2192} {}",
+                        leaf.title,
+                        leaf.node_id,
+                        leaf.summary,
+                        seed.root.title,
+                        chain_nodes.iter().map(|n| n.title.as_str()).collect::<Vec<_>>().join(" \u{2192} ")
+                    )
+                } else {
+                    format!("{} \u{2014} {} (single node, no chain)", seed.root.node_kind, seed.root.summary)
+                };
+
+                // Restart node: predecessor of the leaf — proves causal direction.
+                let restart_desc = if chain_nodes.len() >= 2 {
+                    let predecessor = &chain_nodes[chain_nodes.len() - 2];
+                    format!(
+                        "{} ({}) \u{2014} causal predecessor of the failure leaf",
+                        predecessor.title, predecessor.node_id
+                    )
+                } else if let Some(first) = chain_nodes.first() {
+                    format!(
+                        "{} ({}) \u{2014} first node after root",
+                        first.title, first.node_id
+                    )
+                } else {
+                    format!("{} (root, only node)", seed.root.node_kind)
+                };
+
+                // Reason: ALL chain rationales — proves L1 metadata was read.
+                let chain_rationales: Vec<String> = seed
+                    .relations
+                    .iter()
+                    .filter(|r| !r.source_node_id.contains("noise"))
+                    .filter_map(|r| r.rationale.clone())
+                    .collect();
+                let reason = if chain_rationales.is_empty() {
+                    None
+                } else {
+                    Some(chain_rationales.join("; "))
+                };
 
                 run.log(&format!("[CAPTURE] {variant_id}: {tokens} tokens, reason={}", reason.as_deref().unwrap_or("none")));
 
