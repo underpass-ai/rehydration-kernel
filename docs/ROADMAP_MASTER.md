@@ -193,6 +193,34 @@ penalizes precise causal reasoning and rewards trivial root-matching. See
 - [x] Strict/lenient judges converge (±1 on all metrics, validated 2026-03-26)
 - [x] Re-run full 720-eval matrix with fixed ground truth (2026-03-26: 720 evals, explanatory 62% Task vs structural 18%)
 
+### Benchmark methodology redesign (from external review 2026-03-27)
+
+External technical review of the 2026-03-26 benchmark identified 5 methodological
+weaknesses. See [`docs/benchmark-2026-03-26-technical-review.md`](./benchmark-2026-03-26-technical-review.md).
+
+**P0 — Structural contamination** (blocks paper claims):
+- [ ] Fix A: structural variants must have ZERO rationale in ALL branches (main, noise, competing). Change `dataset_generator.rs`: when `relation_mix == Structural`, noise/distractor branches must not emit `rationale`, `method`, or `decision_id`. Currently structural+competing jumps from reason=0.8% to reason=64.2% due to distractor rationale leaking.
+- [ ] Fix B: split `reason` metric into `reason_correct_main_path` and `reason_plausible_but_wrong`. Requires new judge verdict fields. The current binary makes it impossible to distinguish correct preservation from distractor leakage.
+
+**P1 — Replication** (blocks statistical claims):
+- [ ] Fix C: add `seeds_per_cell` to evaluation-matrix.yaml (default: 3). Loop the capture phase with different seeds per variant. 720 x 3 = 2160 evals per run. Enables within-condition variance estimation and robust confidence intervals.
+
+**P1 — Model matrix balance** (blocks model comparison claims):
+- [ ] Fix D: equilibrate the model matrix. Options: (a) hold judge fixed, compare agents; (b) hold agent fixed, compare judges; (c) fully crossed with pair analysis. Current: qwen 360 rows, others 180. No self-judge.
+
+**P2 — Noise taxonomy** (improves diagnostic power):
+- [ ] Fix E: replace binary `clean`/`competing` with granular noise modes: `clean`, `irrelevant-structural-noise`, `plausible-distractor-reason`, `conflicting-main-path-reason`, `competing-restart-point`. Current `competing` unexpectedly improves reason (59%→77%) because it adds plausible rationale the judge accepts.
+
+**P2 — Restart sub-metrics** (restart is the weakest metric at 34%):
+- [ ] Fix F: replace binary `restart_correct` with: `restart_exact`, `restart_off_by_one`, `restart_on_competing_branch`, `restart_missing`, `restart_explained_correctly`. Enables targeted improvement of the weakest dimension.
+
+**Pending metrics** (need test code changes):
+- [ ] L0/L1/L2 tier token desglose (persist `tier_tokens` in result JSON)
+- [ ] Token efficiency vs raw document dump baseline
+- [ ] Detail presence impact (run with/without node details)
+- [ ] Truncation impact at multiple token budgets (512, 1024, 2048, 4096)
+- [ ] Time-to-first-token from API response headers
+
 ### Judge prompt redesign (from incident 2026-03-26)
 
 Opus 4.6 as judge rejects 100% of verdicts that Opus 4 accepted at 94%.
@@ -206,7 +234,7 @@ Root cause: prompt designed for flat bundles + Opus 4 calibration. See
 - [x] Store `llm_response` in paper metrics for post-hoc analysis (done — `agent_response` + `judge_raw`)
 - [ ] Judge calibration pre-check: validate known-good/known-bad before full benchmark
 - [ ] Pin judge model version in paper methodology section (sensitivity finding)
-- [ ] Re-run full benchmark matrix after prompt v2 with Opus 4.6 judge
+- [ ] Re-run full benchmark matrix after methodology fixes
 
 ## Pending — Research
 
