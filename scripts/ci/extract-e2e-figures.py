@@ -713,6 +713,199 @@ def fig_hypothesis_summary(results, captures, fig_dir):
     plt.close(fig)
 
 
+def fig_response_parsing(results, fig_dir):
+    """How many LLM responses are valid JSON? Measures model reliability."""
+    by_agent = defaultdict(lambda: {"valid": 0, "invalid": 0})
+    for r in results:
+        agent, _ = parse_model(r["model"])
+        try:
+            resp = r.get("agent_response", "").strip()
+            json.loads(resp)
+            by_agent[agent]["valid"] += 1
+        except Exception:
+            by_agent[agent]["invalid"] += 1
+
+    agents = sorted(by_agent.keys())
+    fig, ax = plt.subplots(figsize=(7, 4))
+    x = np.arange(len(agents))
+    valid = [by_agent[a]["valid"] for a in agents]
+    invalid = [by_agent[a]["invalid"] for a in agents]
+
+    ax.bar(x, valid, 0.6, label="Valid JSON", color="#2ecc71", alpha=0.85)
+    ax.bar(x, invalid, 0.6, bottom=valid, label="Parse error", color="#e74c3c", alpha=0.85)
+
+    ax.set_ylabel("Response Count")
+    ax.set_title("Response Format Reliability by Agent")
+    ax.set_xticks(x)
+    ax.set_xticklabels(agents)
+    ax.legend()
+
+    for i, (v, inv) in enumerate(zip(valid, invalid)):
+        total = v + inv
+        pct = 100 * v / total if total > 0 else 0
+        ax.text(i, total + 2, f"{pct:.0f}%", ha="center", fontsize=10)
+
+    fig.tight_layout()
+    fig.savefig(fig_dir / "13_response_parsing.png")
+    plt.close(fig)
+
+
+def fig_causal_depth_reached(results, fig_dir):
+    """How deep into the causal chain does each model trace?
+
+    Parses failure_point and restart_node from responses to find the
+    deepest chain-N referenced. Higher = model traced further.
+    """
+    import re
+    by_agent = defaultdict(list)
+
+    for r in results:
+        agent, _ = parse_model(r["model"])
+        v = parse_variant(r["variant"])
+        if v["mix"] == "structural":
+            continue  # no chain metadata, skip
+
+        max_depth = -1
+        try:
+            resp = json.loads(r.get("agent_response", "").strip())
+            for field in ["failure_point", "restart_node", "reason"]:
+                val = resp.get(field, "")
+                matches = re.findall(r"chain-(\d+)", val)
+                for m in matches:
+                    max_depth = max(max_depth, int(m))
+        except Exception:
+            pass
+
+        by_agent[agent].append(max_depth)
+
+    agents = sorted(by_agent.keys())
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+
+    # Left: distribution of max depth reached
+    ax = axes[0]
+    for agent in agents:
+        depths = [d for d in by_agent[agent] if d >= 0]
+        if not depths:
+            continue
+        bins = range(-1, max(depths) + 2)
+        ax.hist(depths, bins=bins, alpha=0.5, label=agent,
+                color=COLORS.get(agent, "#999"), edgecolor="white")
+
+    ax.set_xlabel("Deepest chain-N referenced")
+    ax.set_ylabel("Count")
+    ax.set_title("Causal Chain Depth Reached by Agent")
+    ax.legend()
+
+    # Right: avg depth by agent
+    ax2 = axes[1]
+    x = np.arange(len(agents))
+    avg_depths = []
+    for agent in agents:
+        depths = [d for d in by_agent[agent] if d >= 0]
+        avg_depths.append(np.mean(depths) if depths else 0)
+
+    bars = ax2.bar(x, avg_depths, 0.6,
+                   color=[COLORS.get(a, "#999") for a in agents], alpha=0.85)
+    ax2.set_ylabel("Average Deepest chain-N")
+    ax2.set_title("Average Causal Depth by Agent")
+    ax2.set_xticks(x)
+    ax2.set_xticklabels(agents)
+
+    for bar, val in zip(bars, avg_depths):
+        ax2.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.05,
+                 f"{val:.1f}", ha="center", fontsize=10)
+
+    fig.tight_layout()
+    fig.savefig(fig_dir / "14_causal_depth_reached.png")
+    plt.close(fig)
+
+
+def fig_inter_rater_agreement(results, fig_dir):
+    """Compare verdicts from different judges on the SAME agent response.
+
+    For each agent+prompt+variant, we have two judgments (from two judges).
+    Agreement = both judges give the same verdict.
+    """
+    # Group by (agent, prompt, variant) to find pairs judged by different judges
+    by_key = defaultdict(dict)
+    for r in results:
+        agent, judge = parse_model(r["model"])
+        key = (agent, r["prompt"], r["variant"])
+        by_key[key][judge] = r
+
+    metrics = ["task", "restart", "reason"]
+    agreement = {m: {"agree": 0, "disagree": 0} for m in metrics}
+
+    for key, judges in by_key.items():
+        if len(judges) < 2:
+            continue
+        judge_list = list(judges.values())
+        r1, r2 = judge_list[0], judge_list[1]
+        for m in metrics:
+            if r1.get(m) == r2.get(m):
+                agreement[m]["agree"] += 1
+            else:
+                agreement[m]["disagree"] += 1
+
+    fig, ax = plt.subplots(figsize=(7, 4))
+    x = np.arange(len(metrics))
+    agree = [agreement[m]["agree"] for m in metrics]
+    disagree = [agreement[m]["disagree"] for m in metrics]
+
+    ax.bar(x, agree, 0.6, label="Judges agree", color="#2ecc71", alpha=0.85)
+    ax.bar(x, disagree, 0.6, bottom=agree, label="Judges disagree", color="#e74c3c", alpha=0.85)
+
+    ax.set_ylabel("Evaluation Pairs")
+    ax.set_title("Inter-Rater Agreement: Opus 4.6 vs GPT-5.4 as Judge")
+    ax.set_xticks(x)
+    ax.set_xticklabels(["Task", "Restart", "Reason"])
+    ax.legend()
+
+    for i, (a, d) in enumerate(zip(agree, disagree)):
+        total = a + d
+        pct = 100 * a / total if total > 0 else 0
+        ax.text(i, total + 2, f"{pct:.0f}%", ha="center", fontsize=10)
+
+    fig.tight_layout()
+    fig.savefig(fig_dir / "15_inter_rater_agreement.png")
+    plt.close(fig)
+
+
+def fig_chain_depth_vs_task(results, fig_dir):
+    """Does chain length (scale) affect task success?
+
+    Micro=3 chain, meso=5, stress=8. Longer chains = harder to trace?
+    """
+    scale_depth = {"micro": 3, "meso": 5, "stress": 8}
+    mixes = ["explanatory", "mixed"]  # structural has no chain signal
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+
+    for mix in mixes:
+        depths = []
+        rates = []
+        for scale, depth in scale_depth.items():
+            cell = [r for r in results
+                    if parse_variant(r["variant"])["scale"] == scale
+                    and parse_variant(r["variant"])["mix"] == mix]
+            if cell:
+                depths.append(depth)
+                rates.append(rate(cell, "task") * 100)
+        ax.plot(depths, rates, marker="o", linewidth=2, markersize=8,
+                label=mix.capitalize(), color=COLORS.get(mix, "#999"))
+
+    ax.set_xlabel("Causal Chain Length (nodes)")
+    ax.set_ylabel("Task Success Rate (%)")
+    ax.set_title("Chain Depth vs Task Success\n(Does deeper = harder?)")
+    ax.set_xticks(list(scale_depth.values()))
+    ax.set_xticklabels([f"{v} ({k})" for k, v in scale_depth.items()])
+    ax.set_ylim(0, 105)
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(fig_dir / "16_chain_depth_vs_task.png")
+    plt.close(fig)
+
+
 def main():
     if len(sys.argv) > 1:
         run_dir = Path(sys.argv[1])
@@ -771,8 +964,28 @@ def main():
     else:
         print("  (skipped kernel figures — no [CAPTURE] data in test.log)", file=sys.stderr)
 
+    fig_response_parsing(results, fig_dir)
+    print("  13_response_parsing.png", file=sys.stderr)
+
+    fig_causal_depth_reached(results, fig_dir)
+    print("  14_causal_depth_reached.png", file=sys.stderr)
+
+    fig_inter_rater_agreement(results, fig_dir)
+    print("  15_inter_rater_agreement.png", file=sys.stderr)
+
+    fig_chain_depth_vs_task(results, fig_dir)
+    print("  16_chain_depth_vs_task.png", file=sys.stderr)
+
     n_figs = len(list(fig_dir.glob("*.png")))
     print(f"\n{n_figs} figures written to: {fig_dir}", file=sys.stderr)
+
+    # Note pending metrics that need test changes
+    print("\nPending (need test changes for future runs):", file=sys.stderr)
+    print("  - L0/L1/L2 token desglose (persist tier_tokens in result JSON)", file=sys.stderr)
+    print("  - Token efficiency vs raw dump (new baseline generation)", file=sys.stderr)
+    print("  - Detail presence impact (run with/without details)", file=sys.stderr)
+    print("  - Truncation impact (run at multiple budgets)", file=sys.stderr)
+    print("  - Time-to-first-token (requires API response headers)", file=sys.stderr)
 
 
 if __name__ == "__main__":
