@@ -209,7 +209,7 @@ weaknesses. See [`docs/benchmark-2026-03-26-technical-review.md`](./benchmark-20
 - [x] Fix D: equilibrate the model matrix. Added sonnet-4.6 as third judge (3 agents × 3 judges - 3 self = 6 combos). Report now includes controlled comparison tables: "Agent comparison (fixed judge)" and "Judge comparison (fixed agent)" for balanced claims.
 
 **P2 — Noise taxonomy** (improves diagnostic power):
-- [ ] Fix E: replace binary `clean`/`competing` with granular noise modes: `clean`, `irrelevant-structural-noise`, `plausible-distractor-reason`, `conflicting-main-path-reason`, `competing-restart-point`. Current `competing` unexpectedly improves reason (59%→77%) because it adds plausible rationale the judge accepts.
+- [x] Fix E: replace binary `clean`/`competing` with granular noise taxonomy: `Structural` (baseline), `CompetingCausal` (plausible alt rationale), `ConflictingMainPath` (contradicts chain), `CompetingRestartPoint` (alt recovery node). Distributed across mixes to keep eval count flat (36 variants). Validated: restart noise drops restart accuracy to 0% while preserving reason_correct — targeted diagnostic power.
 
 **P2 — Restart sub-metrics** (restart is the weakest metric at 34%):
 - [ ] Fix F: replace binary `restart_correct` with: `restart_exact`, `restart_off_by_one`, `restart_on_competing_branch`, `restart_missing`, `restart_explained_correctly`. Enables targeted improvement of the weakest dimension.

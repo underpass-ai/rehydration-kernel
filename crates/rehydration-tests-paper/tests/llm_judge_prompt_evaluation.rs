@@ -445,7 +445,18 @@ async fn judge_prompt_evaluation_across_all_use_cases()
     ];
     let domains = [("ops", Domain::Operations), ("debug", Domain::SoftwareDebugging)];
     let mixes = [("explanatory", RelationMix::Explanatory), ("structural", RelationMix::Structural), ("mixed", RelationMix::Mixed)];
-    let noises = [("clean", NoiseMode::Structural), ("competing", NoiseMode::CompetingCausal)];
+    // Noise modes are distributed across mixes rather than fully crossed,
+    // keeping the total variant count constant at 36 (same as the original
+    // binary clean/competing). Each mix gets 2 noise modes:
+    //   explanatory → clean + competing (rationale preservation under noise)
+    //   structural  → clean + conflicting (resistance to contradictions)
+    //   mixed       → clean + restart (restart accuracy under pressure)
+    // This ensures every noise mode is tested while the eval budget stays flat.
+    let noise_for_mix: &[(&str, &[(&str, NoiseMode)])] = &[
+        ("explanatory", &[("clean", NoiseMode::Structural), ("competing", NoiseMode::CompetingCausal)]),
+        ("structural", &[("clean", NoiseMode::Structural), ("conflicting", NoiseMode::ConflictingMainPath)]),
+        ("mixed", &[("clean", NoiseMode::Structural), ("restart", NoiseMode::CompetingRestartPoint)]),
+    ];
 
     let mut captured: Vec<CapturedVariant> = Vec::new();
     let mut fixture: Option<TestFixture> = None;
@@ -456,7 +467,11 @@ async fn judge_prompt_evaluation_across_all_use_cases()
         }
         for &(domain_name, domain) in &domains {
             for &(mix_name, mix) in &mixes {
-                for &(noise_name, noise_mode) in &noises {
+                let noises = noise_for_mix.iter()
+                    .find(|(m, _)| *m == mix_name)
+                    .map(|(_, n)| *n)
+                    .unwrap_or(&[("clean", NoiseMode::Structural)]);
+                for &(noise_name, noise_mode) in noises {
                     if !filter_noise.is_empty() && !filter_noise.contains(&noise_name.to_string()) {
                         continue;
                     }

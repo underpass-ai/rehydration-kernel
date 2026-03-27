@@ -267,20 +267,55 @@ def generate_report(run_dir, results):
     md.append("## By Noise Mode")
     md.append(fig_ref(run_dir, "07_noise_impact.png", "Noise Impact"))
     md.append("")
-    md.append("| Noise | Task | Restart | Reason | Evals |")
-    md.append("|-------|------|---------|--------|-------|")
+    md.append("| Noise | Task | Restart | Reason Correct | Reason Distractor | Evals |")
+    md.append("|-------|------|---------|----------------|-------------------|-------|")
 
     by_noise = defaultdict(list)
     for r in results:
         v = parse_variant(r["variant"])
         by_noise[v["noise"]].append(r)
 
-    for noise, cell in sorted(by_noise.items()):
+    for noise in ["clean", "competing", "conflicting", "restart"]:
+        cell = by_noise.get(noise, [])
+        if not cell:
+            continue
         n = len(cell)
         t = sum(1 for r in cell if r.get("task") is True)
         re = sum(1 for r in cell if r.get("restart") is True)
-        p = sum(1 for r in cell if r.get("reason") is True)
-        md.append(f"| {noise} | {ratio(t, n)} | {ratio(re, n)} | {ratio(p, n)} | {n} |")
+        rc = sum(1 for r in cell if r.get("reason_correct") is True)
+        rd = sum(1 for r in cell if r.get("reason_distractor") is True)
+        md.append(f"| **{noise}** | {ratio(t, n)} | {ratio(re, n)} | {ratio(rc, n)} | {ratio(rd, n)} | {n} |")
+
+    # Any noise modes not in the predefined list
+    for noise, cell in sorted(by_noise.items()):
+        if noise in ("clean", "competing", "conflicting", "restart"):
+            continue
+        n = len(cell)
+        t = sum(1 for r in cell if r.get("task") is True)
+        re = sum(1 for r in cell if r.get("restart") is True)
+        rc = sum(1 for r in cell if r.get("reason_correct") is True)
+        rd = sum(1 for r in cell if r.get("reason_distractor") is True)
+        md.append(f"| {noise} | {ratio(t, n)} | {ratio(re, n)} | {ratio(rc, n)} | {ratio(rd, n)} | {n} |")
+
+    md.append("")
+
+    # ── Cross: Noise x Mix ──
+    md.append("## Noise x Relation Mix (Task)")
+    md.append("")
+    md.append("| Noise | Explanatory | Structural | Mixed |")
+    md.append("|-------|-------------|------------|-------|")
+
+    for noise in ["clean", "competing", "conflicting", "restart"]:
+        cell = by_noise.get(noise, [])
+        if not cell:
+            continue
+        row = [noise]
+        for mix in ["explanatory", "structural", "mixed"]:
+            mix_cell = [r for r in cell if parse_variant(r["variant"])["mix"] == mix]
+            n = len(mix_cell)
+            t = sum(1 for r in mix_cell if r.get("task") is True)
+            row.append(ratio(t, n))
+        md.append(f"| {' | '.join(row)} |")
 
     md.append("")
 

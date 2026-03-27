@@ -76,5 +76,7 @@ scales:
   stress: stress  # 49 nodes, ~4000 tokens
 
 noise:
-  clean: none
-  competing: competing
+  clean: structural              # baseline: irrelevant structural nodes
+  competing: competing-causal    # plausible alternative rationale
+  conflicting: conflicting-path  # contradicts main chain reasoning
+  restart: competing-restart     # alternative recovery point

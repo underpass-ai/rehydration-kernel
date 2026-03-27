@@ -37,13 +37,24 @@ pub enum RelationMix {
 }
 
 /// Controls how realistic the noise branches are.
+///
+/// Each mode isolates a different confusion vector so the benchmark can
+/// diagnose which types of noise actually degrade LLM performance.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum NoiseMode {
-    /// Noise is clearly labeled as distractor with structural-only relations.
+    /// Clearly labeled structural distractors — no rationale, no causal signal.
+    /// Baseline: does irrelevant information dilute the context?
     #[default]
     Structural,
     /// Noise uses causal semantic class with competing rationale — harder to filter.
+    /// Tests: does the agent pick up plausible-but-wrong reasoning?
     CompetingCausal,
+    /// Noise has plausible rationale that contradicts the main chain.
+    /// Tests: can the agent resist conflicting causal explanations?
+    ConflictingMainPath,
+    /// Noise offers an alternative restart point with causal justification.
+    /// Tests: does the agent choose the wrong recovery node?
+    CompetingRestartPoint,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -277,6 +288,53 @@ pub fn generate_seed(config: GraphSeedConfig) -> GeneratedSeed {
                         ),
                         format!(
                             "competing {} branch {branch} at depth {depth}",
+                            vocab.chain_summary
+                        ),
+                    )
+                }
+                NoiseMode::ConflictingMainPath => {
+                    let kind_index = (depth + branch + 1) % vocab.chain_kinds.len();
+                    (
+                        RelationSemanticClass::Causal,
+                        vocab.chain_relation_types[kind_index % vocab.chain_relation_types.len()]
+                            .to_string(),
+                        Some(format!(
+                            "no {} was needed at depth {depth} — system was stable, intervention unnecessary (contradicts main chain)",
+                            vocab.chain_rationale
+                        )),
+                        Some(format!(
+                            "analysis shows the {} at depth {depth} was a false alarm",
+                            vocab.chain_summary
+                        )),
+                        vocab.chain_kinds[kind_index].to_string(),
+                        format!(
+                            "conflicting {} {depth}-{branch}",
+                            vocab.chain_kinds[kind_index]
+                        ),
+                        format!(
+                            "contradicting {} branch {branch} at depth {depth}",
+                            vocab.chain_summary
+                        ),
+                    )
+                }
+                NoiseMode::CompetingRestartPoint => {
+                    let kind_index = (depth + branch + 1) % vocab.chain_kinds.len();
+                    (
+                        RelationSemanticClass::Motivational,
+                        "RECOVERY_CANDIDATE".to_string(),
+                        Some(format!(
+                            "restart from this node at depth {depth} — this is a plausible recovery point with {} justification",
+                            vocab.chain_rationale
+                        )),
+                        Some(format!(
+                            "branch {branch} offers an alternative restart at depth {depth} with partial resolution"
+                        )),
+                        vocab.chain_kinds[kind_index].to_string(),
+                        format!(
+                            "recovery candidate {depth}-{branch}",
+                            ),
+                        format!(
+                            "alternative restart {} branch {branch} at depth {depth}",
                             vocab.chain_summary
                         ),
                     )
@@ -556,6 +614,78 @@ mod tests {
                 "competing causal noise should use domain node kinds, not 'distractor'"
             );
         }
+    }
+
+    #[test]
+    fn conflicting_main_path_noise_contradicts_chain() {
+        let seed = generate_seed(GraphSeedConfig {
+            noise_branches: 2,
+            noise_mode: NoiseMode::ConflictingMainPath,
+            ..GraphSeedConfig::meso(Domain::Operations)
+        });
+
+        let noise_relations: Vec<_> = seed
+            .relations
+            .iter()
+            .filter(|r| r.target_node_id.contains("noise"))
+            .collect();
+
+        assert!(
+            noise_relations
+                .iter()
+                .any(|r| r.semantic_class == RelationSemanticClass::Causal),
+            "conflicting noise should use Causal semantic class"
+        );
+        assert!(
+            noise_relations.iter().any(|r| r
+                .rationale
+                .as_deref()
+                .unwrap_or("")
+                .contains("contradicts main chain")),
+            "conflicting noise should have contradicting rationale"
+        );
+        assert!(
+            noise_relations.iter().any(|r| r
+                .motivation
+                .as_deref()
+                .unwrap_or("")
+                .contains("false alarm")),
+            "conflicting noise should explain it contradicts"
+        );
+    }
+
+    #[test]
+    fn competing_restart_point_offers_recovery_candidate() {
+        let seed = generate_seed(GraphSeedConfig {
+            noise_branches: 2,
+            noise_mode: NoiseMode::CompetingRestartPoint,
+            ..GraphSeedConfig::meso(Domain::Operations)
+        });
+
+        let noise_relations: Vec<_> = seed
+            .relations
+            .iter()
+            .filter(|r| r.target_node_id.contains("noise"))
+            .collect();
+
+        assert!(
+            noise_relations
+                .iter()
+                .any(|r| r.semantic_class == RelationSemanticClass::Motivational),
+            "competing restart noise should use Motivational semantic class"
+        );
+        assert!(
+            noise_relations.iter().any(|r| r
+                .rationale
+                .as_deref()
+                .unwrap_or("")
+                .contains("restart from this node")),
+            "competing restart noise should suggest restart"
+        );
+        assert!(
+            noise_relations.iter().any(|r| r.relation_type == "RECOVERY_CANDIDATE"),
+            "competing restart noise should use RECOVERY_CANDIDATE relation type"
+        );
     }
 
     #[test]

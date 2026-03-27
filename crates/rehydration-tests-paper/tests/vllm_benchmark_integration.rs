@@ -66,8 +66,11 @@ impl Scale {
             Scale::Stress => GraphSeedConfig::stress(domain),
         };
         config.relation_mix = relation_mix;
-        if std::env::var("BENCHMARK_NOISE_MODE").as_deref() == Ok("competing") {
-            config.noise_mode = NoiseMode::CompetingCausal;
+        match std::env::var("BENCHMARK_NOISE_MODE").as_deref() {
+            Ok("competing") => config.noise_mode = NoiseMode::CompetingCausal,
+            Ok("conflicting") => config.noise_mode = NoiseMode::ConflictingMainPath,
+            Ok("restart") => config.noise_mode = NoiseMode::CompetingRestartPoint,
+            _ => {}
         }
         config.id_prefix = format!(
             "{}-{}-{}",
