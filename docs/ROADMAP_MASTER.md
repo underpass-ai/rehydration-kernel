@@ -222,7 +222,7 @@ weaknesses. See [`docs/benchmark-2026-03-26-technical-review.md`](./benchmark-20
 
 **Pending metrics** (need test code changes):
 - [ ] L0/L1/L2 tier token desglose (persist `tier_tokens` in result JSON)
-- [ ] Token efficiency vs raw document dump baseline
+- [x] Token efficiency vs raw document dump baseline
 - [ ] Detail presence impact (run with/without node details)
 - [ ] Truncation impact at multiple token budgets (512, 1024, 2048, 4096)
 - [ ] Time-to-first-token from API response headers
@@ -253,7 +253,7 @@ Root cause: prompt designed for flat bundles + Opus 4 calibration. See
 - [x] Expand meso to UC2-UC4
 
 ### Level 2 — Strong paper
-- [ ] Token efficiency baseline: measure rehydrated graph context tokens vs raw document dump for the same information. Proves the graph compresses context while preserving causal signal.
+- [x] Token efficiency baseline: BundleQualityMetrics in kernel render pipeline — raw_equivalent_tokens, compression_ratio, causal_density, noise_ratio, detail_coverage. Proto + OTel + E2E report. Kernel-native, not benchmark-computed.
 - [ ] vLLM reasoning model: replace Qwen3-8B with a reasoning-capable model (e.g. Qwen3-8B with thinking enabled, or DeepSeek-R1-Distill) to evaluate whether chain-of-thought improves causal tracing over the rehydrated graph.
 - [ ] Closed-loop recovery with corrected outcome
 - ~~Three graph scales: micro, meso, stress~~ (done: dataset generator)
