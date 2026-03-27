@@ -45,7 +45,8 @@ judge_prompt: |
   ## Ground Truth
   - Failure point / root cause: {expected_failure}
   - Restart node (where the system should resume): {expected_restart}
-  - Dominant rationale: {expected_reason}
+  - Dominant rationale (main causal chain): {expected_reason}
+  - Distractor rationale (from noise/competing branches): {distractor_rationale}
 
   ## Evaluation rules
   1. **Semantic match**: judge by concept and causal role, not exact node IDs.
@@ -61,22 +62,21 @@ judge_prompt: |
   3. **restart_correct**: true if the response identifies a plausible restart
      point AND provides a causal justification for WHY. Simply naming a node
      without causal reasoning is NOT sufficient.
-  4. **reason_preserved**: true if the response preserves rationale that was
-     PRESENT in the rehydrated context. Sub-rules:
-     - A paraphrase that uses different words but captures the SAME SPECIFIC
-       concept from the context counts as preservation (e.g. "keeping comfort
-       systems online" paraphrasing "minimize disruption by keeping passenger
-       comfort systems online").
+  4. **reason_correct_main_path**: true if the response preserves rationale
+     from the MAIN causal chain. Sub-rules:
+     - A paraphrase that captures the SAME SPECIFIC concept counts.
      - Citing relationship rationale text, decision IDs, or semantic_class
-       metadata is strong evidence of preservation.
+       metadata from the main chain is strong evidence.
      - If the ground truth rationale is 'not specified', '?', or empty, then
-       reason_preserved MUST be FALSE.
+       reason_correct_main_path MUST be FALSE.
      - Stating only structural facts ('A connects to B') without WHY is not
-       preservation. Generic summaries without context-specific concepts are
-       not preservation.
-  5. Be lenient on IDs and wording. Be strict on preservation vs inference.
+       preservation. Generic summaries are not preservation.
+  5. **reason_plausible_but_wrong**: true if the response cites rationale
+     matching DISTRACTOR rationale rather than the main chain. If distractor
+     rationale is 'none', must be FALSE.
+  6. Be lenient on IDs and wording. Be strict on preservation vs inference.
 
   Answer ONLY with valid JSON, no markdown, no explanation:
-  {"task_correct": true/false, "restart_correct": true/false, "reason_preserved": true/false}
+  {"task_correct": true/false, "restart_correct": true/false, "reason_correct_main_path": true/false, "reason_plausible_but_wrong": true/false}
 
-judge_max_tokens: 100
+judge_max_tokens: 150

@@ -290,10 +290,17 @@ async fn vllm_benchmark_across_scales_domains_and_variants()
                     ),
                 };
 
+                let distractor_rationales: Vec<String> = seed
+                    .relations
+                    .iter()
+                    .filter(|r| r.target_node_id.contains("noise"))
+                    .filter_map(|r| r.rationale.clone())
+                    .collect();
                 let ground_truth = EvaluationGroundTruth {
                     expected_failure_point: Some(failure_desc),
                     expected_restart_node: Some(restart_desc),
                     expected_reason: seed.relations.first().and_then(|r| r.rationale.clone()),
+                    distractor_rationale: if distractor_rationales.is_empty() { None } else { Some(distractor_rationales.join("; ")) },
                     domain_context: Some(domain_name.to_string()),
                 };
                 // Prefer tiered content (L0+L1) when available — this is the
@@ -329,6 +336,8 @@ async fn vllm_benchmark_across_scales_domains_and_variants()
                 llm_task_success: llm_eval.as_ref().map(|e| e.llm_task_success),
                 llm_restart_accuracy: llm_eval.as_ref().map(|e| e.llm_restart_accuracy),
                 llm_reason_preserved: llm_eval.as_ref().map(|e| e.llm_reason_preserved),
+                llm_reason_correct: llm_eval.as_ref().map(|e| e.llm_reason_correct),
+                llm_reason_distractor: llm_eval.as_ref().map(|e| e.llm_reason_distractor),
                 llm_latency_ms: llm_eval.as_ref().map(|e| e.llm_latency_ms),
                 llm_response: llm_eval.as_ref().map(|e| e.llm_response.clone()),
                 ground_truth_summary: Some(format!(
@@ -375,7 +384,7 @@ async fn vllm_benchmark_across_scales_domains_and_variants()
             r.llm_restart_accuracy
                 .map(|v| if v { "yes" } else { "no" })
                 .unwrap_or("n/a"),
-            r.llm_reason_preserved
+            r.llm_reason_correct
                 .map(|v| if v { "yes" } else { "no" })
                 .unwrap_or("n/a"),
         );
@@ -388,7 +397,7 @@ async fn vllm_benchmark_across_scales_domains_and_variants()
             let score = [
                 r.llm_task_success.unwrap_or(false),
                 r.llm_restart_accuracy.unwrap_or(false),
-                r.llm_reason_preserved.unwrap_or(false),
+                r.llm_reason_correct.unwrap_or(false),
             ]
             .iter()
             .filter(|&&v| v)
@@ -482,6 +491,8 @@ struct BenchmarkResult {
     llm_task_success: Option<bool>,
     llm_restart_accuracy: Option<bool>,
     llm_reason_preserved: Option<bool>,
+    llm_reason_correct: Option<bool>,
+    llm_reason_distractor: Option<bool>,
     llm_latency_ms: Option<f64>,
     llm_response: Option<String>,
     ground_truth_summary: Option<String>,

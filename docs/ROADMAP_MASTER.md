@@ -199,8 +199,8 @@ External technical review of the 2026-03-26 benchmark identified 5 methodologica
 weaknesses. See [`docs/benchmark-2026-03-26-technical-review.md`](./benchmark-2026-03-26-technical-review.md).
 
 **P0 — Structural contamination** (blocks paper claims):
-- [ ] Fix A: structural variants must have ZERO rationale in ALL branches (main, noise, competing). Change `dataset_generator.rs`: when `relation_mix == Structural`, noise/distractor branches must not emit `rationale`, `method`, or `decision_id`. Currently structural+competing jumps from reason=0.8% to reason=64.2% due to distractor rationale leaking.
-- [ ] Fix B: split `reason` metric into `reason_correct_main_path` and `reason_plausible_but_wrong`. Requires new judge verdict fields. The current binary makes it impossible to distinguish correct preservation from distractor leakage.
+- [x] Fix A: structural variants must have ZERO rationale in ALL branches (main, noise, competing). Change `dataset_generator.rs`: when `relation_mix == Structural`, noise/distractor branches must not emit `rationale`, `method`, or `decision_id`. Currently structural+competing jumps from reason=0.8% to reason=64.2% due to distractor rationale leaking.
+- [x] Fix B: split `reason` metric into `reason_correct_main_path` and `reason_plausible_but_wrong`. Requires new judge verdict fields. The current binary makes it impossible to distinguish correct preservation from distractor leakage.
 
 **P1 — Replication** (blocks statistical claims):
 - [ ] Fix C: add `seeds_per_cell` to evaluation-matrix.yaml (default: 3). Loop the capture phase with different seeds per variant. 720 x 3 = 2160 evals per run. Enables within-condition variance estimation and robust confidence intervals.

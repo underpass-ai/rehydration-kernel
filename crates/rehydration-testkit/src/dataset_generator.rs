@@ -249,7 +249,7 @@ pub fn generate_seed(config: GraphSeedConfig) -> GeneratedSeed {
                 NoiseMode::Structural => (
                     RelationSemanticClass::Structural,
                     "DISTRACTOR".to_string(),
-                    Some(format!("distractor branch {branch} at depth {depth}")),
+                    None,
                     None,
                     "distractor".to_string(),
                     format!("noise {branch} at {depth}"),
@@ -282,6 +282,17 @@ pub fn generate_seed(config: GraphSeedConfig) -> GeneratedSeed {
                     )
                 }
             };
+
+            // When the variant is Structural, ALL branches must be free of
+            // causal metadata — rationale, motivation, method, decision_id.
+            // Without this override, CompetingCausal noise leaks rationale
+            // into Structural variants, contaminating the benchmark signal.
+            let (noise_rationale, noise_motivation) =
+                if config.relation_mix == RelationMix::Structural {
+                    (None, None)
+                } else {
+                    (noise_rationale, noise_motivation)
+                };
 
             relations.push(GeneratedRelation {
                 source_node_id: source_id,
@@ -409,6 +420,55 @@ mod tests {
         for rel in &seed.relations {
             assert_eq!(rel.semantic_class, RelationSemanticClass::Structural);
             assert!(rel.rationale.is_none());
+        }
+    }
+
+    #[test]
+    fn structural_mix_with_noise_has_no_rationale() {
+        // Structural noise branches must have zero rationale.
+        let seed = generate_seed(GraphSeedConfig {
+            chain_length: 3,
+            noise_branches: 2,
+            detail_density: 0.0,
+            relation_mix: RelationMix::Structural,
+            domain: Domain::Operations,
+            id_prefix: "test".to_string(),
+            noise_mode: NoiseMode::Structural,
+        });
+
+        for rel in &seed.relations {
+            assert!(
+                rel.rationale.is_none(),
+                "structural variant must have no rationale, but {:?} has {:?}",
+                rel.target_node_id, rel.rationale
+            );
+        }
+    }
+
+    #[test]
+    fn structural_mix_with_competing_noise_has_no_rationale() {
+        // CompetingCausal noise must also be suppressed when relation_mix is Structural.
+        let seed = generate_seed(GraphSeedConfig {
+            chain_length: 3,
+            noise_branches: 2,
+            detail_density: 0.0,
+            relation_mix: RelationMix::Structural,
+            domain: Domain::Operations,
+            id_prefix: "test".to_string(),
+            noise_mode: NoiseMode::CompetingCausal,
+        });
+
+        for rel in &seed.relations {
+            assert!(
+                rel.rationale.is_none(),
+                "structural+competing variant must have no rationale, but {:?} has {:?}",
+                rel.target_node_id, rel.rationale
+            );
+            assert!(
+                rel.motivation.is_none(),
+                "structural+competing variant must have no motivation, but {:?} has {:?}",
+                rel.target_node_id, rel.motivation
+            );
         }
     }
 

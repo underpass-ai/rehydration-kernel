@@ -54,7 +54,8 @@ judge_prompt: |
   ## Ground Truth
   - Failure point / root cause: {expected_failure}
   - Restart node (where the system should resume): {expected_restart}
-  - Dominant rationale: {expected_reason}
+  - Dominant rationale (main causal chain): {expected_reason}
+  - Distractor rationale (from noise/competing branches): {distractor_rationale}
 
   ## Evaluation rules
   1. **Semantic match**: judge by concept, not exact wording.
@@ -65,21 +66,23 @@ judge_prompt: |
   3. **restart_correct**: true if the response identifies a plausible restart
      point AND provides a causal justification for WHY. Simply naming a node
      without causal reasoning is NOT sufficient.
-  4. **reason_preserved**: true if the response preserves rationale that was
-     PRESENT in the rehydrated context. Apply strictly:
+  4. **reason_correct_main_path**: true if the response preserves rationale
+     from the MAIN causal chain. Apply strictly:
      - If the ground truth rationale is a specific phrase, the response must
        paraphrase or reference that concept — clearly derived from context,
        not generic filler.
      - If the ground truth rationale is 'not specified', '?', or empty, then
-       reason_preserved MUST be FALSE. The model cannot preserve what was not
-       in the context. Plausible inference is not preservation.
+       reason_correct_main_path MUST be FALSE.
      - Citing relationship rationale text, decision IDs, or semantic_class
        metadata is strong evidence of preservation.
      - Stating only structural facts ('A connects to B') without WHY is not.
-  5. Be lenient on IDs and wording. Be strict on preservation vs inference.
+  5. **reason_plausible_but_wrong**: true if the response cites rationale that
+     matches the DISTRACTOR rationale rather than the main chain. If distractor
+     rationale is 'none', must be FALSE.
+  6. Be lenient on IDs and wording. Be strict on preservation vs inference.
 
   Answer ONLY with valid JSON, no markdown, no explanation:
-  {"task_correct": true/false, "restart_correct": true/false, "reason_preserved": true/false}
+  {"task_correct": true/false, "restart_correct": true/false, "reason_correct_main_path": true/false, "reason_plausible_but_wrong": true/false}
 
 # Max tokens for judge response
-judge_max_tokens: 100
+judge_max_tokens: 150

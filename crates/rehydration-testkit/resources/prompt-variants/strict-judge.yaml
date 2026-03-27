@@ -45,7 +45,8 @@ judge_prompt: |
   ## Ground Truth
   - Failure point: {expected_failure}
   - Restart node: {expected_restart}
-  - Dominant rationale: {expected_reason}
+  - Dominant rationale (main causal chain): {expected_reason}
+  - Distractor rationale (from noise/competing branches): {distractor_rationale}
 
   ## Evaluation rules
   1. **Semantic match**: judge by concept and causal role, not exact node IDs.
@@ -56,14 +57,16 @@ judge_prompt: |
   3. **restart_correct**: true if the response identifies a restart point on
      the causal chain AND provides a causal justification for WHY. Simply
      naming a node without reasoning is NOT sufficient.
-  4. **reason_preserved**: true ONLY if the response directly quotes or
-     closely paraphrases rationale text that was PRESENT in the rehydrated
-     context, using domain-specific terms. Generic summaries are NOT
-     preservation. If the ground truth rationale is 'not specified' or
-     empty, must be FALSE.
-  5. Be strict on reason_preserved. Be fair on task_correct and restart_correct.
+  4. **reason_correct_main_path**: true ONLY if the response directly quotes or
+     closely paraphrases rationale text from the MAIN causal chain, using
+     domain-specific terms. Generic summaries are NOT preservation. If the
+     ground truth rationale is 'not specified' or empty, must be FALSE.
+  5. **reason_plausible_but_wrong**: true if the response cites rationale that
+     matches DISTRACTOR rationale rather than (or in addition to) the main
+     chain. If distractor rationale is 'none', must be FALSE.
+  6. Be strict on reason_correct_main_path. Be fair on task_correct and restart_correct.
 
   Answer ONLY with valid JSON, no markdown, no explanation:
-  {"task_correct": true/false, "restart_correct": true/false, "reason_preserved": true/false}
+  {"task_correct": true/false, "restart_correct": true/false, "reason_correct_main_path": true/false, "reason_plausible_but_wrong": true/false}
 
-judge_max_tokens: 100
+judge_max_tokens: 150

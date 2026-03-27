@@ -99,6 +99,8 @@ def generate_report(run_dir, results):
     task_err = sum(1 for r in results if r.get("task") is None)
     restart_ok = sum(1 for r in results if r.get("restart") is True)
     reason_ok = sum(1 for r in results if r.get("reason") is True)
+    reason_correct_ok = sum(1 for r in results if r.get("reason_correct") is True)
+    reason_distractor_ok = sum(1 for r in results if r.get("reason_distractor") is True)
 
     md.append("## Overview")
     md.append("")
@@ -106,7 +108,9 @@ def generate_report(run_dir, results):
     md.append("|--------|----|------|-----|------|")
     md.append(f"| Task | {task_ok} | {task_fail} | {task_err} | {ratio(task_ok, total)} |")
     md.append(f"| Restart | {restart_ok} | {total - restart_ok - task_err} | {task_err} | {ratio(restart_ok, total)} |")
-    md.append(f"| Reason | {reason_ok} | {total - reason_ok - task_err} | {task_err} | {ratio(reason_ok, total)} |")
+    md.append(f"| Reason (compat) | {reason_ok} | {total - reason_ok - task_err} | {task_err} | {ratio(reason_ok, total)} |")
+    md.append(f"| Reason Correct | {reason_correct_ok} | {total - reason_correct_ok - task_err} | {task_err} | {ratio(reason_correct_ok, total)} |")
+    md.append(f"| Reason Distractor | {reason_distractor_ok} | | | {ratio(reason_distractor_ok, total)} |")
     md.append("")
 
     # ── By Agent x Judge x Prompt ──
@@ -194,8 +198,8 @@ def generate_report(run_dir, results):
     md.append("## By Relation Mix (key signal)")
     md.append(fig_ref(run_dir, "01_relation_mix_bars.png", "Rehydration Quality by Relation Type"))
     md.append("")
-    md.append("| Mix | Task | Restart | Reason | Evals |")
-    md.append("|-----|------|---------|--------|-------|")
+    md.append("| Mix | Task | Restart | Reason Correct | Reason Distractor | Evals |")
+    md.append("|-----|------|---------|----------------|-------------------|-------|")
 
     by_mix = defaultdict(list)
     for r in results:
@@ -209,8 +213,9 @@ def generate_report(run_dir, results):
         n = len(cell)
         t = sum(1 for r in cell if r.get("task") is True)
         re = sum(1 for r in cell if r.get("restart") is True)
-        p = sum(1 for r in cell if r.get("reason") is True)
-        md.append(f"| **{mix}** | **{ratio(t, n)}** | **{ratio(re, n)}** | **{ratio(p, n)}** | {n} |")
+        rc = sum(1 for r in cell if r.get("reason_correct") is True)
+        rd = sum(1 for r in cell if r.get("reason_distractor") is True)
+        md.append(f"| **{mix}** | **{ratio(t, n)}** | **{ratio(re, n)}** | **{ratio(rc, n)}** | **{ratio(rd, n)}** | {n} |")
 
     md.append("")
 
@@ -297,8 +302,8 @@ def generate_report(run_dir, results):
 
     md.append("")
 
-    # ── Cross: Agent x Mix (Reason) ──
-    md.append("## Agent x Relation Mix (Reason)")
+    # ── Cross: Agent x Mix (Reason Correct) ──
+    md.append("## Agent x Relation Mix (Reason Correct)")
     md.append(fig_ref(run_dir, "03_agent_x_mix_reason.png", "Rationale Preservation by Agent and Relation Type"))
     md.append("")
     md.append("| Agent | Explanatory | Structural | Mixed |")
@@ -309,8 +314,25 @@ def generate_report(run_dir, results):
         for mix in ["explanatory", "structural", "mixed"]:
             cell = [r for r in by_agent[agent] if parse_variant(r["variant"])["mix"] == mix]
             n = len(cell)
-            p = sum(1 for r in cell if r.get("reason") is True)
+            p = sum(1 for r in cell if r.get("reason_correct") is True)
             row.append(ratio(p, n))
+        md.append(f"| {' | '.join(row)} |")
+
+    md.append("")
+
+    # ── Cross: Agent x Mix (Reason Distractor) ──
+    md.append("## Agent x Relation Mix (Reason Distractor)")
+    md.append("")
+    md.append("| Agent | Explanatory | Structural | Mixed |")
+    md.append("|-------|-------------|------------|-------|")
+
+    for agent in sorted(by_agent.keys()):
+        row = [agent]
+        for mix in ["explanatory", "structural", "mixed"]:
+            cell = [r for r in by_agent[agent] if parse_variant(r["variant"])["mix"] == mix]
+            n = len(cell)
+            d = sum(1 for r in cell if r.get("reason_distractor") is True)
+            row.append(ratio(d, n))
         md.append(f"| {' | '.join(row)} |")
 
     md.append("")
@@ -443,16 +465,28 @@ def generate_report(run_dir, results):
         md.append(f"| {mix} | {n} | {rate:.1%} | [{lo:.1%}, {hi:.1%}] |")
     md.append("")
 
-    md.append("### Reason Preservation Rate by Relation Mix")
+    md.append("### Reason Correct (Main Path) Rate by Relation Mix")
     md.append("")
     md.append("| Mix | N | Rate | 95% CI |")
     md.append("|-----|---|------|--------|")
     for mix in ["explanatory", "structural", "mixed"]:
         cell = by_mix.get(mix, [])
         n = len(cell)
-        ok = sum(1 for r in cell if r.get("reason") is True)
+        ok = sum(1 for r in cell if r.get("reason_correct") is True)
         rate, lo, hi = wilson_ci(ok, n)
-        md.append(f"| {mix} | {rate:.1%} | {n} | [{lo:.1%}, {hi:.1%}] |")
+        md.append(f"| {mix} | {n} | {rate:.1%} | [{lo:.1%}, {hi:.1%}] |")
+    md.append("")
+
+    md.append("### Reason Distractor Leakage Rate by Relation Mix")
+    md.append("")
+    md.append("| Mix | N | Rate | 95% CI |")
+    md.append("|-----|---|------|--------|")
+    for mix in ["explanatory", "structural", "mixed"]:
+        cell = by_mix.get(mix, [])
+        n = len(cell)
+        ok = sum(1 for r in cell if r.get("reason_distractor") is True)
+        rate, lo, hi = wilson_ci(ok, n)
+        md.append(f"| {mix} | {n} | {rate:.1%} | [{lo:.1%}, {hi:.1%}] |")
     md.append("")
 
     md.append("### Task Success Rate by Agent")
@@ -489,13 +523,15 @@ def generate_report(run_dir, results):
     # ── Export CSV ──
     csv_path = run_dir / "results.csv"
     with open(csv_path, "w") as f:
-        f.write("eval_num,agent,judge,prompt,variant,scale,domain,mix,noise,task,restart,reason,latency_ms,failure_point,restart_node\n")
+        f.write("eval_num,agent,judge,prompt,variant,scale,domain,mix,noise,task,restart,reason,reason_correct,reason_distractor,latency_ms,failure_point,restart_node\n")
         for i, r in enumerate(results, 1):
             agent, judge = parse_model(r["model"])
             v = parse_variant(r["variant"])
             t = "true" if r.get("task") else ("false" if r.get("task") is False else "null")
             re = "true" if r.get("restart") else ("false" if r.get("restart") is False else "null")
             p = "true" if r.get("reason") else ("false" if r.get("reason") is False else "null")
+            rc = "true" if r.get("reason_correct") else ("false" if r.get("reason_correct") is False else "null")
+            rd = "true" if r.get("reason_distractor") else ("false" if r.get("reason_distractor") is False else "null")
             lat = f"{r.get('latency_ms', 0):.1f}"
             fp = ""
             rn = ""
@@ -505,7 +541,7 @@ def generate_report(run_dir, results):
                 rn = parsed.get("restart_node", "").replace('"', '""')
             except Exception:
                 pass
-            f.write(f'{i},"{agent}","{judge}","{r["prompt"]}","{r["variant"]}","{v["scale"]}","{v["domain"]}","{v["mix"]}","{v["noise"]}",{t},{re},{p},{lat},"{fp}","{rn}"\n')
+            f.write(f'{i},"{agent}","{judge}","{r["prompt"]}","{r["variant"]}","{v["scale"]}","{v["domain"]}","{v["mix"]}","{v["noise"]}",{t},{re},{p},{rc},{rd},{lat},"{fp}","{rn}"\n')
 
     md.append("## Kernel Metrics")
     md.append(fig_ref(run_dir, "11_kernel_token_efficiency.png", "Kernel Token Efficiency"))
@@ -523,8 +559,8 @@ def generate_report(run_dir, results):
     # ── Every evaluation line-by-line ──
     md.append("## All Evaluations (line by line)")
     md.append("")
-    md.append("| # | Agent | Judge | Prompt | Variant | Task | Restart | Reason | Latency | Failure Point | Restart Node |")
-    md.append("|---|-------|-------|--------|---------|------|---------|--------|---------|---------------|--------------|")
+    md.append("| # | Agent | Judge | Prompt | Variant | Task | Restart | Reason | Rc | Rd | Latency | Failure Point | Restart Node |")
+    md.append("|---|-------|-------|--------|---------|------|---------|--------|----|----|---------|---------------|--------------|")
 
     for i, r in enumerate(results, 1):
         agent, judge = parse_model(r["model"])
@@ -545,7 +581,9 @@ def generate_report(run_dir, results):
             fp = "(parse error)"
             rn = "(parse error)"
 
-        md.append(f"| {i} | {agent} | {judge} | {r['prompt']} | {r['variant']} | {t} | {re} | {p} | {lat} | {fp} | {rn} |")
+        rc = "OK" if r.get("reason_correct") else ("FAIL" if r.get("reason_correct") is False else "-")
+        rd = "LEAK" if r.get("reason_distractor") else ("-" if r.get("reason_distractor") is False else "-")
+        md.append(f"| {i} | {agent} | {judge} | {r['prompt']} | {r['variant']} | {t} | {re} | {p} | {rc} | {rd} | {lat} | {fp} | {rn} |")
 
     md.append("")
     md.append(f"---\n\nGenerated from `{run_dir.name}` by `scripts/ci/extract-e2e-report.py`")

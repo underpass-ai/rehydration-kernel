@@ -149,8 +149,11 @@ pub struct EvaluationGroundTruth {
     pub expected_failure_point: Option<String>,
     /// Description of the restart node (e.g. "decision node — the first recovery decision").
     pub expected_restart_node: Option<String>,
-    /// The expected dominant reason or rationale.
+    /// The expected dominant reason or rationale (from the main causal chain).
     pub expected_reason: Option<String>,
+    /// Distractor rationale from noise/competing branches. Used by the judge
+    /// to detect when the agent cites plausible-but-wrong reasoning.
+    pub distractor_rationale: Option<String>,
     /// Short domain label for context (e.g. "operations", "software debugging").
     pub domain_context: Option<String>,
 }
@@ -161,7 +164,12 @@ pub struct LlmEvaluationResult {
     pub llm_response: String,
     pub llm_task_success: bool,
     pub llm_restart_accuracy: bool,
+    /// Backward-compatible aggregate: true when `reason_correct_main_path` is true.
     pub llm_reason_preserved: bool,
+    /// Agent cited rationale from the main causal chain (ground truth path).
+    pub llm_reason_correct: bool,
+    /// Agent cited rationale from a distractor/noise branch.
+    pub llm_reason_distractor: bool,
     pub llm_latency_ms: f64,
     pub llm_prompt_tokens: u32,
     pub llm_completion_tokens: u32,
@@ -370,6 +378,8 @@ pub async fn evaluate_with_llm(
         .replace("{rendered_context}", rendered_context)
         .replace("{question}", question);
 
+    eprintln!("[LLM-EVAL] inference question: {}", question.replace('\n', " ").chars().take(200).collect::<String>());
+
     let client = build_http_client(config)?;
 
     let start = std::time::Instant::now();
@@ -396,7 +406,7 @@ pub async fn evaluate_with_llm(
     eprintln!("[LLM-EVAL] inference response: {}", content.replace('\n', " ").chars().take(500).collect::<String>());
     let (judge_result, judge_raw) = match judge_response(config, &judge_client, &content, ground_truth).await {
         Ok((verdict, raw)) => {
-            eprintln!("[LLM-EVAL] judge verdict: task={} restart={} reason={}", verdict.task_correct, verdict.restart_correct, verdict.reason_preserved);
+            eprintln!("[LLM-EVAL] judge verdict: task={} restart={} reason_correct={} reason_distractor={}", verdict.task_correct, verdict.restart_correct, verdict.reason_correct_main_path, verdict.reason_plausible_but_wrong);
             (verdict, Some(raw))
         }
         Err(e) => {
@@ -404,7 +414,8 @@ pub async fn evaluate_with_llm(
             (JudgeVerdict {
                 task_correct: false,
                 restart_correct: false,
-                reason_preserved: false,
+                reason_correct_main_path: false,
+                reason_plausible_but_wrong: false,
             }, None)
         }
     };
@@ -413,7 +424,9 @@ pub async fn evaluate_with_llm(
         llm_response: content,
         llm_task_success: judge_result.task_correct,
         llm_restart_accuracy: judge_result.restart_correct,
-        llm_reason_preserved: judge_result.reason_preserved,
+        llm_reason_preserved: judge_result.reason_correct_main_path,
+        llm_reason_correct: judge_result.reason_correct_main_path,
+        llm_reason_distractor: judge_result.reason_plausible_but_wrong,
         llm_latency_ms: latency_ms,
         llm_prompt_tokens: prompt_tokens,
         llm_completion_tokens: completion_tokens,
@@ -434,6 +447,8 @@ pub async fn evaluate_with_config(
         .inference_prompt
         .replace("{rendered_context}", rendered_context)
         .replace("{question}", question);
+
+    eprintln!("[LLM-EVAL] inference question: {}", question.replace('\n', " ").chars().take(200).collect::<String>());
 
     let client = build_http_client(config)?;
 
@@ -460,12 +475,12 @@ pub async fn evaluate_with_config(
     eprintln!("[LLM-EVAL] inference response: {}", content.replace('\n', " ").chars().take(500).collect::<String>());
     let (judge_result, judge_raw) = match judge_response_with_prompts(prompts, config, &judge_client, &content, ground_truth).await {
         Ok((verdict, raw)) => {
-            eprintln!("[LLM-EVAL] judge verdict: task={} restart={} reason={}", verdict.task_correct, verdict.restart_correct, verdict.reason_preserved);
+            eprintln!("[LLM-EVAL] judge verdict: task={} restart={} reason_correct={} reason_distractor={}", verdict.task_correct, verdict.restart_correct, verdict.reason_correct_main_path, verdict.reason_plausible_but_wrong);
             (verdict, Some(raw))
         }
         Err(e) => {
             eprintln!("[LLM-EVAL] judge FAILED: {e}");
-            (JudgeVerdict { task_correct: false, restart_correct: false, reason_preserved: false }, None)
+            (JudgeVerdict { task_correct: false, restart_correct: false, reason_correct_main_path: false, reason_plausible_but_wrong: false }, None)
         }
     };
 
@@ -473,7 +488,9 @@ pub async fn evaluate_with_config(
         llm_response: content,
         llm_task_success: judge_result.task_correct,
         llm_restart_accuracy: judge_result.restart_correct,
-        llm_reason_preserved: judge_result.reason_preserved,
+        llm_reason_preserved: judge_result.reason_correct_main_path,
+        llm_reason_correct: judge_result.reason_correct_main_path,
+        llm_reason_distractor: judge_result.reason_plausible_but_wrong,
         llm_latency_ms: latency_ms,
         llm_prompt_tokens: prompt_tokens,
         llm_completion_tokens: completion_tokens,
@@ -487,7 +504,9 @@ pub async fn evaluate_with_config(
 struct JudgeVerdict {
     task_correct: bool,
     restart_correct: bool,
-    reason_preserved: bool,
+    reason_correct_main_path: bool,
+    #[serde(default)]
+    reason_plausible_but_wrong: bool,
 }
 
 async fn judge_response(
@@ -523,13 +542,19 @@ async fn judge_response_with_prompts(
         .as_deref()
         .unwrap_or("operational");
 
+    let distractor = ground_truth
+        .distractor_rationale
+        .as_deref()
+        .unwrap_or("none");
+
     let judge_prompt = prompts
         .judge_prompt
         .replace("{domain_context}", domain_ctx)
         .replace("{llm_response}", llm_response)
         .replace("{expected_failure}", expected_failure)
         .replace("{expected_restart}", expected_restart)
-        .replace("{expected_reason}", expected_reason);
+        .replace("{expected_reason}", expected_reason)
+        .replace("{distractor_rationale}", distractor);
 
     let judge_endpoint = config.judge_endpoint.as_deref().unwrap_or(&config.endpoint);
     let judge_model = config.judge_model.as_deref().unwrap_or(&config.model);
@@ -538,6 +563,8 @@ async fn judge_response_with_prompts(
         .judge_api_key
         .as_deref()
         .or(config.api_key.as_deref());
+
+    eprintln!("[LLM-EVAL] judge prompt ground truth: failure={} restart={} reason={} distractor={}", expected_failure.chars().take(80).collect::<String>(), expected_restart.chars().take(80).collect::<String>(), expected_reason.chars().take(80).collect::<String>(), distractor.chars().take(80).collect::<String>());
 
     let (judge_content, _, _) = call_llm(
         client,
@@ -631,6 +658,8 @@ mod tests {
             llm_task_success: true,
             llm_restart_accuracy: true,
             llm_reason_preserved: false,
+            llm_reason_correct: false,
+            llm_reason_distractor: false,
             llm_latency_ms: 123.4,
             llm_prompt_tokens: 50,
             llm_completion_tokens: 30,
@@ -639,5 +668,7 @@ mod tests {
         let json = serde_json::to_string(&result).expect("should serialize");
         assert!(json.contains("llm_task_success"));
         assert!(json.contains("llm_judge_raw"));
+        assert!(json.contains("llm_reason_correct"));
+        assert!(json.contains("llm_reason_distractor"));
     }
 }

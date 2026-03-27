@@ -162,6 +162,8 @@ struct EvalResult {
     task: Option<bool>,
     restart: Option<bool>,
     reason: Option<bool>,
+    reason_correct: Option<bool>,
+    reason_distractor: Option<bool>,
     latency_ms: f64,
     agent_response: String,
     judge_raw: Option<String>,
@@ -198,6 +200,9 @@ fn precheck(resources: &str) -> PrecheckResult {
     let mut warnings = Vec::new();
     let mut errors = Vec::new();
 
+    let filter_models = env_filter("FILTER_MODELS");
+    let filter_judges = env_filter("FILTER_JUDGES");
+
     // 1. Matrix YAML
     let matrix_path = format!("{resources}/evaluation-matrix.yaml");
     match std::fs::read_to_string(&matrix_path) {
@@ -226,6 +231,10 @@ fn precheck(resources: &str) -> PrecheckResult {
                     ok.push(format!("{} agents configured", agents.len()));
                     for (key, cfg) in agents {
                         let name = key.as_str().unwrap_or("?");
+                        if !filter_models.is_empty() && !filter_models.contains(&name.to_string()) {
+                            ok.push(format!("agent '{name}': skipped (filtered)"));
+                            continue;
+                        }
                         if cfg["endpoint"].as_str().unwrap_or("").is_empty() {
                             errors.push(format!("agent '{name}': missing endpoint"));
                         }
@@ -294,6 +303,10 @@ fn precheck(resources: &str) -> PrecheckResult {
                     ok.push(format!("{} judges configured", judges.len()));
                     for (key, cfg) in judges {
                         let name = key.as_str().unwrap_or("?");
+                        if !filter_judges.is_empty() && !filter_judges.contains(&name.to_string()) {
+                            ok.push(format!("judge '{name}': skipped (filtered)"));
+                            continue;
+                        }
                         if cfg["endpoint"].as_str().unwrap_or("").is_empty() {
                             errors.push(format!("judge '{name}': missing endpoint"));
                         }
@@ -589,7 +602,20 @@ async fn judge_prompt_evaluation_across_all_use_cases()
                     Some(chain_rationales.join("; "))
                 };
 
-                run.log(&format!("[CAPTURE] {variant_id}: {tokens} tokens, reason={}", reason.as_deref().unwrap_or("none")));
+                // Distractor rationale from noise/competing branches.
+                let distractor_rationales: Vec<String> = seed
+                    .relations
+                    .iter()
+                    .filter(|r| r.source_node_id.contains("noise") || r.target_node_id.contains("noise"))
+                    .filter_map(|r| r.rationale.clone())
+                    .collect();
+                let distractor = if distractor_rationales.is_empty() {
+                    None
+                } else {
+                    Some(distractor_rationales.join("; "))
+                };
+
+                run.log(&format!("[CAPTURE] {variant_id}: {tokens} tokens, reason={}, distractor={}", reason.as_deref().unwrap_or("none"), distractor.as_deref().unwrap_or("none")));
 
                 captured.push(CapturedVariant {
                     run_id: variant_id,
@@ -600,6 +626,7 @@ async fn judge_prompt_evaluation_across_all_use_cases()
                         expected_failure_point: Some(failure_desc),
                         expected_restart_node: Some(restart_desc),
                         expected_reason: reason,
+                        distractor_rationale: distractor,
                         domain_context: Some(domain_name.to_string()),
                     },
                 });
@@ -660,9 +687,10 @@ async fn judge_prompt_evaluation_across_all_use_cases()
                         Ok(e) => {
                             let t = if e.llm_task_success { "OK" } else { "FAIL" };
                             let r = if e.llm_restart_accuracy { "OK" } else { "FAIL" };
-                            let p = if e.llm_reason_preserved { "OK" } else { "FAIL" };
+                            let rc = if e.llm_reason_correct { "OK" } else { "FAIL" };
+                            let rd = if e.llm_reason_distractor { "LEAK" } else { "clean" };
                             let resp_short: String = e.llm_response.replace('\n', " ").chars().take(120).collect();
-                            run.log(&format!("  [{cell_id}/{prompt_name}] {}: T={t} R={r} P={p}  agent=\"{resp_short}...\"  judge={}",
+                            run.log(&format!("  [{cell_id}/{prompt_name}] {}: T={t} R={r} Rc={rc} Rd={rd}  agent=\"{resp_short}...\"  judge={}",
                                 ctx.run_id, e.llm_judge_raw.as_deref().unwrap_or("?")));
                             EvalResult {
                                 model: cell_id,
@@ -671,6 +699,8 @@ async fn judge_prompt_evaluation_across_all_use_cases()
                                 task: Some(e.llm_task_success),
                                 restart: Some(e.llm_restart_accuracy),
                                 reason: Some(e.llm_reason_preserved),
+                                reason_correct: Some(e.llm_reason_correct),
+                                reason_distractor: Some(e.llm_reason_distractor),
                                 latency_ms: e.llm_latency_ms,
                                 agent_response: e.llm_response,
                                 judge_raw: e.llm_judge_raw,
@@ -683,6 +713,7 @@ async fn judge_prompt_evaluation_across_all_use_cases()
                                 prompt: prompt_name.to_string(),
                                 variant: ctx.run_id.clone(),
                                 task: None, restart: None, reason: None,
+                                reason_correct: None, reason_distractor: None,
                                 latency_ms: 0.0,
                                 agent_response: String::new(),
                                 judge_raw: None,
