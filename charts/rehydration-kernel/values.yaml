@@ -78,6 +78,8 @@ neo4jTls:
   mountPath: /var/run/rehydration-kernel/neo4j-tls
   keys:
     ca: ""
+    cert: ""
+    key: ""
 
 observability:
   logFormat: json

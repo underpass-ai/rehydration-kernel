@@ -238,11 +238,15 @@ Helm chart deploys Grafana with `GF_AUTH_ANONYMOUS_ENABLED=true` and
 - [x] Add `grafana.anonymousAccess` toggle in values.yaml (default: false)
 - [ ] Document production Grafana configuration in operations guide
 
-### N/A — Neo4j client mTLS
+### P2 — Neo4j client mTLS
 
-Neo4j does not support mTLS. The adapter correctly uses CA trust for server
-verification (`with_client_certificate(ca_path)` — a server CA, not a client cert).
-This is the maximum transport security available for Neo4j connections.
+Neo4j supports mTLS since v5.19+ (client certificate as 2FA). The `neo4rs`
+driver's `with_client_certificate()` can load client certs. Currently our
+adapter only passes a CA path for server verification.
+
+- [ ] Add `neo4jTls.keys.cert` and `neo4jTls.keys.key` to Helm values
+- [ ] Pass client cert+key to `ConfigBuilder` in Neo4j adapter
+- [ ] Test with mTLS-enabled Neo4j container
 
 ### P2 — Vestigial `admin_bind` config field
 

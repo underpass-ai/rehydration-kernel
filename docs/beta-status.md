@@ -15,7 +15,7 @@ The kernel targets a stable `v1` contract once these conditions are met:
 | Full benchmark matrix validated (3 agents x 3 judges x 4 noise) | Planned — see [ROADMAP_MASTER.md](research/ROADMAP_MASTER.md) |
 | Async contract: `context.bundle.generated` actually emitted by runtime | Not started — contract-only today |
 | OTLP mTLS to OTel Collector | In progress — plaintext today |
-| ~~Neo4j client mTLS~~ | N/A — Neo4j does not support mTLS. CA trust is the maximum |
+| Neo4j client mTLS (2FA since Neo4j 5.19+) | Not started — adapter only passes CA today |
 | Grafana: disable anonymous admin access by default | Not started — development default is anonymous=Admin |
 | Event store atomic CAS for optimistic concurrency | Not started — check-then-act today |
 | Breaking change window communicated to consumers | Not started |

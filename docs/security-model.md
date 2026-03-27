@@ -41,8 +41,8 @@ graph LR
   in the connection URI.
 - **Authentication**: URI-embedded credentials. Must be provided via
   Kubernetes secrets in production.
-- **Client mTLS**: Not available. Neo4j does not support mTLS.
-  CA trust for server verification is the maximum transport security.
+- **Client mTLS**: Neo4j supports mTLS since v5.19+ (client cert as 2FA).
+  Currently the adapter only passes a CA path. Client cert+key support is planned.
 - **Authorization**: Single Neo4j connection identity per kernel instance.
 
 ### Boundary 3: Kernel → Valkey
