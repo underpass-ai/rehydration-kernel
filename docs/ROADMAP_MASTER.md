@@ -206,7 +206,7 @@ weaknesses. See [`docs/benchmark-2026-03-26-technical-review.md`](./benchmark-20
 - [ ] Fix C: add `seeds_per_cell` to evaluation-matrix.yaml (default: 3). Loop the capture phase with different seeds per variant. 720 x 3 = 2160 evals per run. Enables within-condition variance estimation and robust confidence intervals.
 
 **P1 — Model matrix balance** (blocks model comparison claims):
-- [ ] Fix D: equilibrate the model matrix. Options: (a) hold judge fixed, compare agents; (b) hold agent fixed, compare judges; (c) fully crossed with pair analysis. Current: qwen 360 rows, others 180. No self-judge.
+- [x] Fix D: equilibrate the model matrix. Added sonnet-4.6 as third judge (3 agents × 3 judges - 3 self = 6 combos). Report now includes controlled comparison tables: "Agent comparison (fixed judge)" and "Judge comparison (fixed agent)" for balanced claims.
 
 **P2 — Noise taxonomy** (improves diagnostic power):
 - [ ] Fix E: replace binary `clean`/`competing` with granular noise modes: `clean`, `irrelevant-structural-noise`, `plausible-distractor-reason`, `conflicting-main-path-reason`, `competing-restart-point`. Current `competing` unexpectedly improves reason (59%→77%) because it adds plausible rationale the judge accepts.

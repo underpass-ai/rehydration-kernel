@@ -337,6 +337,59 @@ def generate_report(run_dir, results):
 
     md.append("")
 
+    # ── Controlled comparison: Agent (fixed judge) ──
+    md.append("## Controlled: Agent Comparison (fixed judge)")
+    md.append("")
+    md.append("Each table holds the judge constant, enabling fair agent comparison.")
+    md.append("Evals per cell are equal when judge is fixed.")
+    md.append("")
+
+    for judge in sorted(by_judge.keys()):
+        judge_results = [r for r in results if parse_model(r["model"])[1] == judge]
+        if not judge_results:
+            continue
+        agents_in_judge = sorted(set(parse_model(r["model"])[0] for r in judge_results))
+        md.append(f"### Judge = {judge}")
+        md.append("")
+        md.append("| Agent | Evals | Task | Restart | Reason Correct | Reason Distractor |")
+        md.append("|-------|-------|------|---------|----------------|-------------------|")
+        for agent in agents_in_judge:
+            cell = [r for r in judge_results if parse_model(r["model"])[0] == agent]
+            n = len(cell)
+            t = sum(1 for r in cell if r.get("task") is True)
+            re = sum(1 for r in cell if r.get("restart") is True)
+            rc = sum(1 for r in cell if r.get("reason_correct") is True)
+            rd = sum(1 for r in cell if r.get("reason_distractor") is True)
+            md.append(f"| {agent} | {n} | {ratio(t, n)} | {ratio(re, n)} | {ratio(rc, n)} | {ratio(rd, n)} |")
+        md.append("")
+
+    # ── Controlled comparison: Judge (fixed agent) ──
+    md.append("## Controlled: Judge Comparison (fixed agent)")
+    md.append("")
+    md.append("Each table holds the agent constant, enabling fair judge comparison.")
+    md.append("")
+
+    for agent in sorted(by_agent.keys()):
+        agent_results = [r for r in results if parse_model(r["model"])[0] == agent]
+        if not agent_results:
+            continue
+        judges_in_agent = sorted(set(parse_model(r["model"])[1] for r in agent_results))
+        if len(judges_in_agent) < 2:
+            continue
+        md.append(f"### Agent = {agent}")
+        md.append("")
+        md.append("| Judge | Evals | Task | Restart | Reason Correct | Reason Distractor |")
+        md.append("|-------|-------|------|---------|----------------|-------------------|")
+        for judge in judges_in_agent:
+            cell = [r for r in agent_results if parse_model(r["model"])[1] == judge]
+            n = len(cell)
+            t = sum(1 for r in cell if r.get("task") is True)
+            re = sum(1 for r in cell if r.get("restart") is True)
+            rc = sum(1 for r in cell if r.get("reason_correct") is True)
+            rd = sum(1 for r in cell if r.get("reason_distractor") is True)
+            md.append(f"| {judge} | {n} | {ratio(t, n)} | {ratio(re, n)} | {ratio(rc, n)} | {ratio(rd, n)} |")
+        md.append("")
+
     # ── Cross: Scale x Mix (Task) ──
     md.append("## Scale x Relation Mix (Task)")
     md.append(fig_ref(run_dir, "04_scale_effect.png", "Scale Effect on Task Identification"))
