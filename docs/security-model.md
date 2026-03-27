@@ -88,7 +88,7 @@ graph LR
 | Neo4j | `neo4jTls.enabled`, `neo4jTls.existingSecret` | TLS with CA trust |
 | Valkey | `valkeyTls.enabled`, `valkeyTls.existingSecret` | TLS, mTLS with client cert |
 | NATS | `natsTls.mode`, `natsTls.existingSecret` | TLS, mTLS, tls_first |
-| OTel Collector | — | **Plaintext only** (mTLS in progress) |
+| OTel Collector | `otelCollector.tls.enabled`, `otelCollector.tls.existingSecret` | Plaintext or mTLS (receiver + Loki exporter). Kernel OTLP client TLS pending Rust code change |
 
 ## Recommendations for Production
 

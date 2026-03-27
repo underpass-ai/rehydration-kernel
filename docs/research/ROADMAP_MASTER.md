@@ -224,9 +224,10 @@ to every `GetContext` response.
 Kernel → OTel Collector is plaintext gRPC (`with_tonic()` without TLS config).
 Production deployments must co-locate or network-isolate the collector.
 
-- [ ] Add TLS config to OTLP exporter in `init_otel_tracer()` and `init_otel_metrics()`
-- [ ] Helm values: `observability.otlpTls.enabled`, `otlpTls.existingSecret`
-- [ ] Auto-wire TLS when `otelCollector.enabled=true` and certs are provided
+- [ ] Add TLS config to OTLP exporter in `init_otel_tracer()` and `init_otel_metrics()` (Rust code change)
+- [x] Helm values: `otelCollector.tls.enabled`, `otelCollector.tls.existingSecret` with cert/key/ca
+- [x] OTel Collector receiver: mTLS with client_ca_file when tls.enabled
+- [x] OTel Collector → Loki exporter: mTLS with cert+key+ca, HTTPS endpoint
 
 ### P1 — Grafana anonymous admin
 

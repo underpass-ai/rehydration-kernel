@@ -46,12 +46,22 @@ spec:
           volumeMounts:
             - name: config
               mountPath: /etc/otel
+            {{- if and .Values.otelCollector.tls.enabled .Values.otelCollector.tls.existingSecret }}
+            - name: otel-tls
+              mountPath: {{ .Values.otelCollector.tls.mountPath }}
+              readOnly: true
+            {{- end }}
           resources:
             {{- toYaml .Values.otelCollector.resources | nindent 12 }}
       volumes:
         - name: config
           configMap:
             name: {{ include "rehydration-kernel.fullname" . }}-otel-config
+        {{- if and .Values.otelCollector.tls.enabled .Values.otelCollector.tls.existingSecret }}
+        - name: otel-tls
+          secret:
+            secretName: {{ .Values.otelCollector.tls.existingSecret }}
+        {{- end }}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -66,6 +76,12 @@ data:
         protocols:
           grpc:
             endpoint: 0.0.0.0:4317
+            {{- if .Values.otelCollector.tls.enabled }}
+            tls:
+              cert_file: {{ .Values.otelCollector.tls.mountPath }}/{{ .Values.otelCollector.tls.keys.cert }}
+              key_file: {{ .Values.otelCollector.tls.mountPath }}/{{ .Values.otelCollector.tls.keys.key }}
+              client_ca_file: {{ .Values.otelCollector.tls.mountPath }}/{{ .Values.otelCollector.tls.keys.ca }}
+            {{- end }}
     processors:
       batch:
         timeout: 5s
@@ -75,7 +91,15 @@ data:
         namespace: rehydration
       {{- if .Values.loki.enabled }}
       loki:
+        {{- if .Values.otelCollector.tls.enabled }}
+        endpoint: https://{{ include "rehydration-kernel.fullname" . }}-loki:3100/loki/api/v1/push
+        tls:
+          cert_file: {{ .Values.otelCollector.tls.mountPath }}/{{ .Values.otelCollector.tls.keys.cert }}
+          key_file: {{ .Values.otelCollector.tls.mountPath }}/{{ .Values.otelCollector.tls.keys.key }}
+          ca_file: {{ .Values.otelCollector.tls.mountPath }}/{{ .Values.otelCollector.tls.keys.ca }}
+        {{- else }}
         endpoint: http://{{ include "rehydration-kernel.fullname" . }}-loki:3100/loki/api/v1/push
+        {{- end }}
       {{- end }}
     service:
       pipelines:

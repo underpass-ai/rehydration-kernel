@@ -158,6 +158,14 @@ otelCollector:
   image:
     repository: docker.io/otel/opentelemetry-collector-contrib
     tag: "0.127.0"
+  tls:
+    enabled: false
+    existingSecret: ""
+    mountPath: /var/run/rehydration-kernel/otel-tls
+    keys:
+      ca: ca.crt
+      cert: tls.crt
+      key: tls.key
   resources:
     requests:
       cpu: 100m
