@@ -227,6 +227,14 @@ weaknesses. See [`docs/benchmark-2026-03-26-technical-review.md`](./benchmark-20
 - [ ] Truncation impact at multiple token budgets (512, 1024, 2048, 4096)
 - [ ] Time-to-first-token from API response headers
 
+**P0 — BundleQualityMetrics bugs** (from audit 2026-03-27, blocks metric trust):
+- [ ] Fix raw dump parity: kernel `compute_quality_metrics()` missing `caused_by_node_id` field that testkit `raw_dump.rs` includes → `raw_equivalent_tokens` underestimated
+- [ ] Fix detail formatting: kernel uses `"Detail: {}.\n"` (newline), testkit uses `" Detail: {}."` (inline) → token count mismatch
+- [ ] Fix semantic class format: kernel uses `.as_str()` ("causal"), testkit uses `{:?}` ("Causal") → token count divergence
+- [ ] Add unit tests for all 5 quality metrics in `render_graph_bundle.rs` (zero coverage today)
+- [ ] Handle `quality = None` in E2E test explicitly instead of `unwrap_or_default()` zeros
+- [ ] Emit quality OTel metrics in `get_context_path()` and `rehydrate_session()`, not just `get_context()`
+
 ### Judge prompt redesign (from incident 2026-03-26)
 
 Opus 4.6 as judge rejects 100% of verdicts that Opus 4 accepted at 94%.
