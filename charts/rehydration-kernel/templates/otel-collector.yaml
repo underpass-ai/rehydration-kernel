@@ -1,0 +1,92 @@
+{{- if .Values.otelCollector.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "rehydration-kernel.fullname" . }}-otel-collector
+  labels:
+    {{- include "rehydration-kernel.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: {{ include "rehydration-kernel.fullname" . }}-otel-collector
+  ports:
+    - port: 4317
+      targetPort: 4317
+      protocol: TCP
+      name: otlp-grpc
+    - port: 9090
+      targetPort: 9090
+      protocol: TCP
+      name: prometheus
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "rehydration-kernel.fullname" . }}-otel-collector
+  labels:
+    {{- include "rehydration-kernel.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "rehydration-kernel.fullname" . }}-otel-collector
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "rehydration-kernel.fullname" . }}-otel-collector
+    spec:
+      containers:
+        - name: otel-collector
+          image: "{{ .Values.otelCollector.image.repository }}:{{ .Values.otelCollector.image.tag }}"
+          args:
+            - "--config=/etc/otel/config.yaml"
+          ports:
+            - containerPort: 4317
+            - containerPort: 9090
+          volumeMounts:
+            - name: config
+              mountPath: /etc/otel
+          resources:
+            {{- toYaml .Values.otelCollector.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "rehydration-kernel.fullname" . }}-otel-config
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "rehydration-kernel.fullname" . }}-otel-config
+  labels:
+    {{- include "rehydration-kernel.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+    processors:
+      batch:
+        timeout: 5s
+    exporters:
+      prometheus:
+        endpoint: 0.0.0.0:9090
+        namespace: rehydration
+      {{- if .Values.loki.enabled }}
+      loki:
+        endpoint: http://{{ include "rehydration-kernel.fullname" . }}-loki:3100/loki/api/v1/push
+      {{- end }}
+    service:
+      pipelines:
+        metrics:
+          receivers: [otlp]
+          processors: [batch]
+          exporters: [prometheus]
+        {{- if .Values.loki.enabled }}
+        logs:
+          receivers: [otlp]
+          processors: [batch]
+          exporters: [loki]
+        {{- end }}
+{{- end }}

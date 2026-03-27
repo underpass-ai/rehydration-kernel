@@ -121,15 +121,16 @@ bash scripts/ci/kubernetes-transport-smoke.sh all
 
 General:
 
-- `NAMESPACE`
-- `RELEASE_PREFIX`
-- `VALUES_FILE`
+- `NAMESPACE` (default: `underpass-runtime`)
+- `RELEASE_PREFIX` (default: `rehydration-kernel-smoke`)
+- `VALUES_FILE` (default: `charts/rehydration-kernel/values.underpass-runtime.yaml`)
 - `IMAGE_TAG`
 - `IMAGE_DIGEST`
-- `HELM_TIMEOUT`
-- `GRPC_PORT`
-- `PROBE_IMAGE`
-- `CLEANUP_RELEASE`
+- `HELM_TIMEOUT` (default: `10m`)
+- `GRPC_PORT` (default: `50054`)
+- `PROBE_IMAGE` (default: `docker.io/fullstorydev/grpcurl:v1.9.3`)
+- `IMAGE_PULL_SECRET` — optional; added to `imagePullSecrets` in the Helm override
+- `CLEANUP_RELEASE` (default: `false`) — uninstall Helm release after smoke
 
 Inbound gRPC:
 

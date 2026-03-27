@@ -1,55 +1,61 @@
 # Container Image
 
-## Purpose
-
-Document the standalone kernel image published to GitHub Container Registry.
-
 ## Image
 
-Registry:
-
-- `ghcr.io/underpass-ai/rehydration-kernel`
+Registry: `ghcr.io/underpass-ai/rehydration-kernel`
 
 Published tags:
 
-- `latest` on the default branch
+- `latest` — default branch
 - `main`
 - `sha-<short-commit>`
-- git tag names such as `v0.1.0` when published from a version tag
+- `v*` — version tags (e.g. `v0.1.0`)
 
-## What The Image Contains
+## Contents
 
-The image packages the standalone kernel server binary from
-`rehydration-server`.
+The image packages two binaries:
 
-It is a kernel-owned artifact and is separate from runtime or product images
-owned by sibling repos.
+| Binary | Path | Purpose |
+|:-------|:-----|:--------|
+| `rehydration-server` | `/usr/local/bin/rehydration-server` | Kernel server (entrypoint) |
+| `runtime-reference-client` | `/usr/local/bin/runtime-reference-client` | Reference agentic context client |
 
-## Default Ports
+Base: `debian:bookworm-slim` with `ca-certificates` and `tini` (PID 1).
+Runs as non-root user `rehydration` (uid created at build time).
+
+## Port
 
 - gRPC: `50054`
 
-## Default Runtime Configuration In The Container
+## Environment Variables
 
-Between image environment variables and server-side config defaults, the
-container starts with:
+### Defaults baked into the image (Dockerfile ENV)
 
-- `REHYDRATION_SERVICE_NAME=rehydration-kernel`
-- `REHYDRATION_GRPC_BIND=0.0.0.0:50054`
-- `REHYDRATION_ADMIN_BIND=0.0.0.0:8080`
-- `REHYDRATION_GRAPH_URI=neo4j://neo4j:7687`
-- `REHYDRATION_DETAIL_URI=redis://valkey:6379`
-- `REHYDRATION_SNAPSHOT_URI=redis://valkey:6379`
-- `REHYDRATION_RUNTIME_STATE_URI=redis://valkey:6379`
-- `REHYDRATION_EVENTS_PREFIX=rehydration`
-- `NATS_URL=nats://nats:4222`
+These have defaults in the image. Override via `-e` or Helm values:
 
-The kernel image assumes its required infrastructure is present. The projection
-runtime is always active and persists deduplication markers and checkpoints in
-Valkey under dedicated prefixes.
+| Variable | Default | Description |
+|:---------|:--------|:------------|
+| `REHYDRATION_SERVICE_NAME` | `rehydration-kernel` | Service name in logs and OTel |
+| `REHYDRATION_GRPC_BIND` | `0.0.0.0:50054` | gRPC listen address |
+| `REHYDRATION_GRAPH_URI` | `neo4j://neo4j:7687` | Neo4j connection URI |
+| `REHYDRATION_DETAIL_URI` | `redis://valkey:6379` | Valkey for node detail |
+| `REHYDRATION_SNAPSHOT_URI` | `redis://valkey:6379` | Valkey for snapshots |
+| `REHYDRATION_RUNTIME_STATE_URI` | `redis://valkey:6379` | Valkey for projection state |
+| `REHYDRATION_EVENTS_PREFIX` | `rehydration` | NATS subject prefix |
+| `NATS_URL` | `nats://nats:4222` | NATS JetStream connection |
 
-The admin bind setting is carried in config for forward compatibility, but the
-standalone image currently exposes only the gRPC port.
+### Runtime-only (no default in image)
+
+These are read by the server at startup but have no `ENV` in the Dockerfile:
+
+| Variable | Default (code) | Description |
+|:---------|:---------------|:------------|
+| `REHYDRATION_LOG_FORMAT` | `compact` | `json` (for Loki), `pretty`, `compact` |
+| `REHYDRATION_GRPC_TLS_MODE` | `disabled` | `disabled`, `server`, `mutual` |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | — | OTLP gRPC endpoint (enables trace + metric export) |
+| `OTEL_SERVICE_NAME` | — | Override service name in OTel metadata |
+| `RUST_LOG` | `info` | Log level filter |
+| `REHYDRATION_EVENT_STORE_BACKEND` | `valkey` | `valkey` or `nats` |
 
 ## Quick Pull
 
@@ -58,8 +64,6 @@ docker pull ghcr.io/underpass-ai/rehydration-kernel:latest
 ```
 
 ## Quick Run
-
-Example with externally reachable Neo4j and Valkey:
 
 ```bash
 docker run --rm \
@@ -78,60 +82,31 @@ docker run --rm \
 bash scripts/ci/container-image.sh
 ```
 
-The script uses `docker` when available and falls back to `podman`. Override
-with `CONTAINER_RUNTIME=docker` or `CONTAINER_RUNTIME=podman` to force a
-specific runtime.
+Override runtime: `CONTAINER_RUNTIME=docker` or `CONTAINER_RUNTIME=podman`.
 
 ## Publishing
 
-Publication is handled by:
+Handled by [publish-distribution.yml](../../.github/workflows/publish-distribution.yml).
 
-- [publish-distribution.yml](../../.github/workflows/publish-distribution.yml)
-
-It publishes on:
-
+Triggers:
 - push to `main`
 - push of tags matching `v*`
 - manual workflow dispatch
 
-When the repository cannot push to GHCR with `GITHUB_TOKEN`, set these repo
-secrets so the workflow can authenticate with an explicit package writer:
-
+When `GITHUB_TOKEN` cannot push to GHCR, set repo secrets:
 - `GHCR_USERNAME`
 - `GHCR_TOKEN`
 
 ## Helm Chart
 
-The kernel also ships a standalone Helm chart:
+The kernel ships a Helm chart at [`charts/rehydration-kernel`](../../charts/rehydration-kernel).
+OCI target: `oci://ghcr.io/underpass-ai/charts/rehydration-kernel`.
 
-- source: [`charts/rehydration-kernel`](../../charts/rehydration-kernel)
-- OCI target: `oci://ghcr.io/underpass-ai/charts/rehydration-kernel`
+For Helm deployment, values, TLS, and observability stack configuration,
+see [kubernetes-deploy.md](kubernetes-deploy.md).
 
-Security posture of the chart:
-
-- it does not default to `latest`
-- it expects `secrets.existingSecret` for backend URIs in non-development installs
-- it always expects NATS connectivity for the projection runtime
-- it expects a Valkey-backed `runtimeStateUri` for projection deduplication and checkpoints
-- inline `connections.*` are reserved for development-only overrides such as
-  [`values.dev.yaml`](../../charts/rehydration-kernel/values.dev.yaml)
-
-Current chart boundary:
-
-- inbound gRPC TLS and mTLS are first-class
-- outbound NATS TLS and outbound Valkey TLS are first-class
-- optional Kubernetes Ingress rendering is first-class for controller-managed
-  gRPC exposure
-- Neo4j secure schemes plus custom CA mounts are first-class for inline
-  `graphUri` values
-- Neo4j client identity is not yet a first-class chart feature
-
-Local validation:
+Local chart validation:
 
 ```bash
 bash scripts/ci/helm-lint.sh
 ```
-
-Manual deployment via GitHub Actions is documented in:
-
-- [kubernetes-deploy.md](./kubernetes-deploy.md)

@@ -59,7 +59,6 @@ Current app config:
 It now exposes:
 
 - `grpc_bind`
-- `admin_bind`
 - backend URIs
 
 It now includes:

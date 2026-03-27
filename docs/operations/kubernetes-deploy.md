@@ -308,6 +308,42 @@ Current boundary:
   contents
 - Neo4j client identity is still outside the current chart surface
 
+## Observability Stack
+
+The chart includes optional Loki, Grafana, and OTel Collector subcharts:
+
+```yaml
+loki:
+  enabled: true
+
+grafana:
+  enabled: true
+  adminPassword: admin  # change in production
+
+otelCollector:
+  enabled: true
+```
+
+When `otelCollector.enabled=true`, the kernel deployment automatically sets
+`OTEL_EXPORTER_OTLP_ENDPOINT` to the in-chart collector. No manual wiring needed.
+
+The OTel Collector exports:
+- **Metrics** → Prometheus endpoint (always active when collector is enabled)
+- **Logs** → Loki push API (only when `loki.enabled=true` — if Loki is disabled,
+  the collector's logs pipeline is not configured)
+
+Grafana auto-provisions datasources:
+- **Loki** — structured log queries via LogQL (requires `loki.enabled=true`)
+- **Prometheus** — OTel metrics via PromQL (requires `otelCollector.enabled=true`)
+
+Access Grafana:
+```bash
+kubectl port-forward svc/<release>-grafana 3000:3000 -n <namespace>
+```
+
+See [observability.md](../observability.md) for metric definitions, LogQL/PromQL examples,
+and architecture details.
+
 ## Notes
 
 - `dry_run=true` uses `helm --dry-run=server`

@@ -87,7 +87,6 @@ async fn grpc_server_supports_query_and_command_roundtrip() {
     let config = AppConfig {
         service_name: "rehydration-kernel".to_string(),
         grpc_bind: addr.to_string(),
-        admin_bind: "127.0.0.1:8080".to_string(),
         grpc_tls: GrpcTlsConfig::disabled(),
         graph_uri: "neo4j://localhost:7687".to_string(),
         detail_uri: "redis://localhost:6379".to_string(),

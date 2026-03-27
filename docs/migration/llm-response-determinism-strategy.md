@@ -1,5 +1,7 @@
 # LLM Response Determinism Strategy
 
+> **Status: PLANNED** — not yet implemented
+
 Status: `planned`
 
 ## Goal

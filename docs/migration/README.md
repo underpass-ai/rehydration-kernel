@@ -7,9 +7,10 @@
 
 Migration plans, parity reports, and shadow-mode notes will live here.
 
+Legacy compatibility documents archived in [docs/archived/](../archived/).
+
 Primary roadmap:
 
-- `context-service-rust-roadmap.md`
 - `kernel-repo-closeout.md`
 - `swe-ai-fleet-node-centric-integration-strategy.md`
 - `swe-ai-fleet-shadow-mode-spec.md`
@@ -37,6 +38,4 @@ Phase 0 status:
   and reduce CI runtime before the next major growth phase
 - next milestone outside the kernel: implement the `swe-ai-fleet` adapter using the node-centric integration strategy and checklist
 
-Historical internal substrate plan:
-
-- `context-service-node-centric-implementation-plan.md`
+Historical internal substrate plans archived in [docs/archived/](../archived/).

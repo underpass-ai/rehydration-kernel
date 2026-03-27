@@ -56,13 +56,14 @@ spec:
               value: {{ printf "%s/%s" .Values.tls.mountPath .Values.tls.keys.clientCa | quote }}
             {{- end }}
             {{- end }}
-            - name: REHYDRATION_ADMIN_BIND
-              value: {{ .Values.config.adminBind | quote }}
             - name: REHYDRATION_EVENTS_PREFIX
               value: {{ .Values.config.eventsPrefix | quote }}
             - name: REHYDRATION_LOG_FORMAT
               value: {{ .Values.observability.logFormat | quote }}
-            {{- if ne (default "" .Values.observability.otlpEndpoint) "" }}
+            {{- if .Values.otelCollector.enabled }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://{{ include "rehydration-kernel.fullname" . }}-otel-collector:4317"
+            {{- else if ne (default "" .Values.observability.otlpEndpoint) "" }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.observability.otlpEndpoint | quote }}
             {{- end }}

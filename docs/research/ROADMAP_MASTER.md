@@ -105,6 +105,130 @@ Documented in `beta-status.md`. Fields remain in the wire format for backward co
 | `observability/src/metrics.rs` | 49% | Noop meter unit test | Export only with real OTLP collector |
 | `adapter-nats/context_event_store.rs` | 0% (unit) | 3 container tests | I/O boundary, requires JetStream |
 
+## Done — Documentation 2.0 (audit 2026-03-27)
+
+- [x] Archive 8 legacy compatibility docs to `docs/archived/`
+- [x] Move 13 research/paper/incident docs to `docs/research/`
+- [x] Remove starship_cluster_journey binary, scripts, demo docs
+- [x] Remove vestigial `admin_bind` from config, Dockerfile, Helm, all call sites
+- [x] Create `docs/testing.md` — unified test guide (270 unit, 9 integration, 4 benchmark)
+- [x] Create `docs/observability.md` — quality metrics, OTel, Loki, per-RPC metric matrix
+- [x] Rewrite `docs/usage-guide.md` — correct AsyncAPI event format, Operations domain examples, all RPCs
+- [x] Rewrite `docs/operations/container-image.md` — separate image ENV vs runtime ENV, document both binaries, remove Helm duplication
+- [x] Update `docs/beta-status.md` — async contract, path to v1, quality metrics, proto field matrix
+- [x] Update `docs/security-model.md` — OTLP plaintext gap, Grafana anonymous admin, Neo4j no client mTLS, idempotency clarification
+- [x] Update `README.md` — semantic relationships, multi-resolution tiers, security table, mermaid diagrams
+- [x] Rename `docs/README.md` → `docs/index.md`
+- [x] Remove `config.adminBind` from Helm values.yaml
+- [x] Document OTel Collector → Loki dependency in kubernetes-deploy.md
+
+## Pending — Technical debt (from audit 2026-03-27)
+
+### P2 — Restructure docs/research/ index
+
+Current README.md is a flat list. Needs proper classification of what is
+active vs completed vs historical, and honest status per document.
+
+- [ ] Classify each doc: active, completed, historical
+- [ ] Add status and last-verified date per entry
+- [ ] Remove or archive docs that are no longer relevant
+
+### P2 — Write missing ADRs (1-6)
+
+Six architecture decisions were made in PRs but never recorded as ADRs.
+See [`docs/adr/README.md`](../adr/README.md) for the list and source PRs.
+
+- [ ] ADR-001: Command/query separation + AsyncAPI (PR #1)
+- [ ] ADR-002: Node-centric projection model (PR #4-#6)
+- [ ] ADR-003: Compatibility bridge and removal (PR #8-#12, #52)
+- [ ] ADR-004: Full TLS/mTLS on all boundaries (PR #32-#36)
+- [ ] ADR-005: v1alpha1 removal — clean v1beta1 cut (PR #52, #57)
+- [ ] ADR-006: Multi-resolution tiers + RehydrationMode (PR #63, #64)
+
+### P1 — Testkit raw dump must use domain VO
+
+`render_raw_dump()` in `raw_dump.rs` duplicates the raw text logic from
+`BundleQualityMetrics::compute()` in the domain layer. Both were manually
+aligned (bugs 1-3), but they can drift silently. `compression_ratio`
+depends on both producing identical output.
+
+- [ ] Convert `GeneratedSeed` → `RehydrationBundle` in testkit (seed already has all fields)
+- [ ] Use `BundleQualityMetrics::compute(bundle, 0, estimator).raw_equivalent_tokens()` for raw token count
+- [ ] Delete `render_raw_dump()` — single source of truth in domain
+- [ ] Verify raw dump token counts match before/after
+
+### P1 — Quality metrics in RehydrateSession
+
+`RehydrateSession` returns raw `Vec<RehydrationBundle>` without `RenderedContext`.
+Quality metrics (`compression_ratio`, `causal_density`, etc.) are only emitted
+by `GetContext` and `GetContextPath`. This means multi-role session consumers
+get zero observability on render quality.
+
+Fix requires rendering per-role bundles at the session level — architecture change:
+
+- [ ] Add `RenderedContext` per role to `RehydrateSessionResult` (or a summary aggregate)
+- [ ] Call `BundleQualityMetrics::compute()` for each role bundle
+- [ ] Emit quality metrics via observer with `rpc=RehydrateSession`
+- [ ] Proto: add `rendered` field to `GraphRoleBundle` or top-level `RehydrateSessionResponse`
+- [ ] Update beta-status.md when done (currently listed as limitation)
+
+### P1 — OTel metric parity across RPCs
+
+`GetContext` emits 8 inline metrics (rpc.duration, bundle.nodes, bundle.relationships,
+rendered.tokens, truncation.total, mode.selected + timing). `GetContextPath` only
+emits rpc.duration + quality + timing. `RehydrateSession` only emits rpc.duration + timing.
+
+- [ ] `GetContextPath`: add bundle.nodes, bundle.relationships, rendered.tokens, truncation.total, mode.selected
+- [ ] `RehydrateSession`: add bundle metrics per role (blocked by P1 quality metrics above)
+- [ ] Wire `rehydration.bundle.details` — defined in KernelMetrics but never recorded
+- [ ] Wire `rehydration.projection.lag` — defined in KernelMetrics but never recorded by projection runtime
+
+### P2 — Async quality observer fan-out
+
+`CompositeQualityObserver` calls all adapters synchronously in the gRPC handler
+hot path. If an adapter blocks (network I/O, slow Loki push), it adds latency
+to every `GetContext` response.
+
+- [ ] Evaluate `tokio::spawn` for observer calls (fire-and-forget)
+- [ ] Or buffer in-memory and flush on a background interval
+- [ ] Measure overhead: current sync fan-out vs async with tracing + OTel noop meter
+
+## Pending — Security hardening (from audit 2026-03-27)
+
+### P1 — OTLP mTLS
+
+Kernel → OTel Collector is plaintext gRPC (`with_tonic()` without TLS config).
+Production deployments must co-locate or network-isolate the collector.
+
+- [ ] Add TLS config to OTLP exporter in `init_otel_tracer()` and `init_otel_metrics()`
+- [ ] Helm values: `observability.otlpTls.enabled`, `otlpTls.existingSecret`
+- [ ] Auto-wire TLS when `otelCollector.enabled=true` and certs are provided
+
+### P1 — Grafana anonymous admin
+
+Helm chart deploys Grafana with `GF_AUTH_ANONYMOUS_ENABLED=true` and
+`GF_AUTH_ANONYMOUS_ORG_ROLE=Admin`. Acceptable for development, not for production.
+
+- [ ] Change Helm default to `GF_AUTH_ANONYMOUS_ENABLED=false`
+- [ ] Add `grafana.auth.anonymous` toggle in values.yaml (default: false)
+- [ ] Document production Grafana configuration in operations guide
+
+### P2 — Neo4j client mTLS
+
+Adapter validates server certificate against CA (`with_client_certificate(ca_path)`)
+but does not present a client certificate. Server TLS only, no mutual authentication.
+
+- [ ] Add client cert + key support to `Neo4jProjectionReader` connection config
+- [ ] Helm values: `neo4jTls.clientCert`, `neo4jTls.clientKey`
+- [ ] Test with mTLS-enabled Neo4j container
+
+### P2 — Vestigial `admin_bind` config field
+
+Removed in this session. Verify no downstream consumers depend on `REHYDRATION_ADMIN_BIND`.
+
+- [x] Remove `admin_bind` from `AppConfig` struct and all call sites
+- [x] Remove `REHYDRATION_ADMIN_BIND` from Dockerfile, Helm deployment, docs
+
 ## Pending — Testing
 
 - [ ] End-to-end mTLS integration test: gRPC mutual TLS with container-backed Neo4j, Valkey, and NATS — all TLS-encrypted
@@ -183,7 +307,7 @@ Evolve from rehydration to operational memory:
 
 Qwen3-8B scores 100% TaskOK while Opus 4.6 scores 58-97%. The ground truth
 penalizes precise causal reasoning and rewards trivial root-matching. See
-[`docs/incident-report-e2e-ground-truth-2026-03-26.md`](./incident-report-e2e-ground-truth-2026-03-26.md).
+[`docs/incident-report-e2e-ground-truth-2026-03-26.md`](incidents/incident-report-e2e-ground-truth-2026-03-26.md).
 
 - [x] `expected_failure_point`: leaf node (deepest chain) — rewards L1 tracing over L0 surface
 - [x] `expected_restart_node`: causal predecessor from seed topology
@@ -196,7 +320,7 @@ penalizes precise causal reasoning and rewards trivial root-matching. See
 ### Benchmark methodology redesign (from external review 2026-03-27)
 
 External technical review of the 2026-03-26 benchmark identified 5 methodological
-weaknesses. See [`docs/benchmark-2026-03-26-technical-review.md`](./benchmark-2026-03-26-technical-review.md).
+weaknesses. See [`docs/benchmark-2026-03-26-technical-review.md`](incidents/benchmark-2026-03-26-technical-review.md).
 
 **P0 — Structural contamination** (blocks paper claims):
 - [x] Fix A: structural variants must have ZERO rationale in ALL branches (main, noise, competing). Change `dataset_generator.rs`: when `relation_mix == Structural`, noise/distractor branches must not emit `rationale`, `method`, or `decision_id`. Currently structural+competing jumps from reason=0.8% to reason=64.2% due to distractor rationale leaking.
@@ -239,7 +363,7 @@ weaknesses. See [`docs/benchmark-2026-03-26-technical-review.md`](./benchmark-20
 
 Opus 4.6 as judge rejects 100% of verdicts that Opus 4 accepted at 94%.
 Root cause: prompt designed for flat bundles + Opus 4 calibration. See
-[`docs/incident-report-benchmark-2026-03-26.md`](./incident-report-benchmark-2026-03-26.md).
+[`docs/incident-report-benchmark-2026-03-26.md`](incidents/incident-report-benchmark-2026-03-26.md).
 
 - [ ] Judge prompt v2: causal-chain-aware `task_correct` (accept causal ancestors)
 - [ ] Judge prompt v2: paraphrase-gradient `reason_preserved` (context-derived vs generic)

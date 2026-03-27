@@ -26,3 +26,13 @@ nats:
 
 valkey:
   enabled: true
+
+loki:
+  enabled: true
+
+grafana:
+  enabled: true
+
+otelCollector:
+  enabled: true
+

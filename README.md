@@ -7,13 +7,42 @@ to give your AI agent graph-aware context with sequence diagrams and examples.
 
 ## What This Repo Is
 
-`rehydration-kernel` is a generic context engine built around four public
-concepts:
+`rehydration-kernel` is a generic context engine that turns knowledge graphs
+into LLM-ready text. It is built around four concepts:
 
-- root node
-- neighbor nodes
-- relationships
-- extended node detail
+- **Nodes** — entities in the graph (incidents, decisions, tasks, artifacts). Each
+  carries kind, status, summary, and optional provenance (who said it, when)
+- **Relationships** — the core signal. Each edge carries a **semantic class**
+  (causal, motivational, evidential, constraint, procedural, structural) plus
+  **rationale** (why it exists), **method** (how), **decision_id**, **caused_by_node_id**,
+  and **sequence** (step order). This explanatory metadata is what lets the LLM
+  reason about *why things happened*, not just *what is connected to what*
+- **Extended node detail** — rich per-node content (logs, configs, error traces)
+  persisted in Valkey, loaded in batch (MGET). Separated from the graph to keep
+  Neo4j lean and detail updates fast without graph writes
+- **Salience ordering** — relationships are ranked by explanatory weight
+  (causal > motivational > evidential > constraint > procedural > structural).
+  Under token pressure, the kernel preserves causal chains and drops structural noise
+
+**What the kernel is NOT:**
+
+- Not an LLM — it does not generate text, only structures and renders context
+- Not a RAG system — it does not do similarity search; it traverses a typed graph
+- Not a vector database — relationships have semantic classes and rationale, not embeddings
+- Not tied to any model — works with GPT, Claude, Llama, Qwen, or any LLM
+
+```mermaid
+graph LR
+    A[Agent / LLM app] -- gRPC --> K[Rehydration Kernel]
+    K -. rendered context .-> A
+
+    K --> N4[(Neo4j)]
+    K --> VK[(Valkey)]
+    K --> NT[(NATS)]
+
+    K -. metrics .-> G[Grafana]
+    K -. logs .-> G
+```
 
 The kernel does not own product-specific nouns. Integrating products are
 expected to map their own domain language to this graph model at the edge.
@@ -22,356 +51,168 @@ Neo4j, Valkey, and NATS are required runtime components, not optional features.
 
 ## Current Status
 
-This repo is functionally complete for the kernel-owned migration scope.
-Known limitations on reserved query fields are documented in
+v1beta1 — production-ready RPCs, known limitations documented in
 [`docs/beta-status.md`](./docs/beta-status.md).
 
-What is already in place:
+What is in place:
 
-- graph-native domain and application layers
-- split Neo4j, Valkey, NATS, and gRPC adapters
-- frozen node-centric gRPC and async contracts
-- contract CI with `buf breaking`, AsyncAPI checks, and boundary naming policy
-- container-backed integration tests
-- full kernel journey end-to-end coverage:
-  - projection -> query -> command
-  - full TLS variant across gRPC, NATS, Valkey, and Neo4j in the test harness
-- agentic end-to-end proofs:
-  - pull-driven runtime flow against a narrow runtime contract shape
-  - event-driven runtime trigger flow
-- cluster-verifiable starship journey demo for a production-like graph case
-- runtime integration reference docs and runnable client example
+- Hexagonal domain/application/adapter/transport layers
+- gRPC + async (NATS) contracts with CI protection (`buf breaking`, AsyncAPI checks)
+- TLS/mTLS on all infrastructure boundaries (except OTLP — in progress)
+- 270 unit tests + 9 container-backed integration tests + 4 LLM benchmarks
+- Multi-resolution rendering (L0/L1/L2) with auto mode selection
+- Quality metrics with OTel + Loki observability
+- Helm chart with optional infrastructure sidecars
 
-What is intentionally out of scope for this repo:
+What is out of scope:
 
-- `swe-ai-fleet` legacy noun modeling
-- `planning.*` or `orchestration.*` consumers
-- product-side shadow mode implementation
-- rollout and rollback logic
-
-## Architecture
-
-```
-┌──────────────────────────────────────────────────────────────────┐
-│                        gRPC (mTLS)                               │
-│  GetContext · GetContextPath · RehydrateSession · UpdateContext   │
-└────────────────────────────┬─────────────────────────────────────┘
-                             │
-┌────────────────────────────▼─────────────────────────────────────┐
-│                    Application Layer                              │
-│  Query: rehydrate → render → truncate (cl100k_base, salience)    │
-│  Command: validate → append event (optimistic concurrency)       │
-└──────┬──────────────┬──────────────┬──────────────┬──────────────┘
-       │              │              │              │
-┌──────▼──────┐ ┌─────▼─────┐ ┌─────▼─────┐ ┌─────▼──────┐
-│   Neo4j     │ │  Valkey   │ │   NATS    │ │   OTLP     │
-│  (graph)    │ │ (snapshot │ │ (events + │ │  (traces + │
-│             │ │  + detail)│ │  commands)│ │   metrics) │
-└─────────────┘ └───────────┘ └───────────┘ └────────────┘
-       all connections mTLS · Helm-managed · sidecar-capable
-```
-
-Non-negotiable rules: DDD first, hexagonal boundaries, one concept per file,
-one use case per file.
-
-**Infrastructure stack:**
-
-- **Neo4j** — graph state: nodes, relationships, traversal
-- **Valkey** — snapshots, node detail, event store (RESP protocol)
-- **NATS JetStream** — projection events, command event store (optimistic concurrency)
-- **gRPC + mTLS** — all external and internal boundaries TLS-encrypted
-- **OpenTelemetry** — traces and metrics via OTLP (7 instruments)
-- **Helm chart** — production-ready with optional NATS/Valkey sidecars, TLS config, OTel endpoint
-- **cl100k_base** — BPE tokenization (tiktoken-rs) for accurate token budgets
-- **Salience ordering** — causal > motivational > evidential > constraint > procedural > structural
-- **Provenance** — `source_kind` (human/agent/projection/derived), `source_agent`, `observed_at` on nodes. Flows through event → Neo4j → render → proto for auditability. Does not improve LLM inference accuracy (benchmarked)
-
-## Contracts
-
-Primary public artifacts:
-
-- gRPC proto:
-  - [`api/proto/underpass/rehydration/kernel/v1beta1`](./api/proto/underpass/rehydration/kernel/v1beta1)
-- async contract:
-  - [`api/asyncapi/context-projection.v1beta1.yaml`](./api/asyncapi/context-projection.v1beta1.yaml)
-- contract examples:
-  - [`api/examples/README.md`](./api/examples/README.md)
-- runtime integration reference:
-  - [`docs/migration/kernel-runtime-integration-reference.md`](./docs/migration/kernel-runtime-integration-reference.md)
-
-Historical migration and handoff docs live under [`docs/migration`](./docs/migration).
-Many of them are historical after the `v1beta1` cut and compatibility removal.
-Use the active integration references first, and treat older migration notes as
-review-required unless they explicitly say otherwise.
-
-## Repo Layout
-
-- `api/proto`: gRPC contracts
-- `api/asyncapi`: async contracts
-- `api/examples`: canonical request, response, and event fixtures
-- `crates/rehydration-domain`: domain model and invariants
-- `crates/rehydration-ports`: application-facing ports
-- `crates/rehydration-application`: use cases and orchestration
-- `crates/rehydration-adapter-*`: infrastructure adapters
-- `crates/rehydration-transport-*`: transport boundaries
-- `crates/rehydration-server`: composition root
-- `crates/rehydration-testkit`: testing helpers
-- `scripts/ci`: local quality and integration gates
-- `docs/migration`: closeout, handoff, and integration strategy docs
-
-## Benchmark
-
-LLM-as-judge evaluation across 18 configurations (3 scales × 2 domains × 3
-relation mixes). Each cell is `TaskOK + RestartOK + ReasonPreserved` out of 3.
-
-### What we measured
-
-| Model | Budget | Explanatory | Structural | Gap |
-|-------|:------:|:----------:|:----------:|:---:|
-| GPT-5.4 (frontier) | 4096 | 17/18 (94%) | 11/18 (61%) | 33pp |
-| Claude Opus 4 (frontier) | 4096 | 15/18 (83%) | 10/18 (56%) | 27pp |
-| Qwen3-8B (local 8B) | 4096 | 18/18 (100%) | 9/18 (50%) | 50pp |
-| Qwen3-8B (local 8B) | **512** | **15/18 (83%)** | 8/18 (44%) | 39pp |
-| Qwen3-8B + ResumeFocused | **512** | **16/18 (89%)** | 5/18 (28%) | 61pp |
-| Qwen3-8B + competing noise | 4096 | **18/18 (100%)** | 5/18 (28%) | **72pp** |
-
-**What this shows:**
-
-- Explanatory relationships consistently outperform structural-only across
-  all models, budgets, and noise conditions. The gap ranges from 27pp to 72pp.
-- The 100% score from Qwen3-8B at full budget reflects extraction, not
-  reasoning — rationale text is present verbatim and the model copies it.
-- `ResumeFocused` mode auto-activates under token pressure (< 30 tokens/node)
-  and prunes distractor branches, keeping only the causal spine. This fixed
-  `stress-ops-explanatory` from 0/3 to 3/3 at 512-token budget.
-  Under token pressure (512 tokens, 68-85% truncation), accuracy drops to 83%.
-- Structural-only accuracy degrades with model size (61% → 56% → 50%),
-  suggesting weaker models benefit more from explanatory metadata.
-- With competing causal noise (distractors that mimic real domain nodes with
-  causal semantic classes), explanatory stays at 100% while structural drops
-  to 28%. The kernel's explanatory metadata is immune to plausible-looking
-  noise; without it, the model cannot distinguish real from competing paths.
-
-**Provenance is observability, not inference signal:**
-
-Provenance metadata (`source_kind`, `source_agent`, `observed_at`) is surfaced
-in rendered context for auditability — human operators and trust systems can
-verify where information came from. It does not improve LLM accuracy:
-explanatory stays at 18/18 with or without provenance, and the ~22% token
-overhead from provenance brackets actually degrades structural scores (9/18
-→ 5/18). Differentiated provenance (human/agent/derived/projection by node
-role) recovers marginally vs uniform provenance but does not reach the
-no-provenance baseline.
-
-**What this does NOT show:**
-
-- These are synthetic graphs, not production workloads.
-- The evaluation uses a single judge model per run — results may vary with
-  different judges.
-- The benchmark measures context quality, not end-to-end agent task completion.
-- We do not claim this system outperforms GraphRAG, HippoRAG, or other
-  retrieval systems — the focus is on bounded, explanatory context for
-  agent continuity, not general-purpose QA.
-
-### Full results by configuration
-
-**GPT-5.4 inference + Claude Opus 4 judge (budget 4096):**
-
-| Config | Explanatory | Structural | Mixed |
-|--------|:-----------:|:----------:|:-----:|
-| micro-ops | 3/3 | 2/3 | 3/3 |
-| micro-debug | 3/3 | 2/3 | 3/3 |
-| meso-ops | 2/3 | 2/3 | 3/3 |
-| meso-debug | 3/3 | 2/3 | 3/3 |
-| stress-ops | 3/3 | 2/3 | 3/3 |
-| stress-debug | 3/3 | 1/3 | 3/3 |
-
-**Qwen3-8B vLLM + Claude Opus 4 judge (budget 4096):**
-
-| Config | Explanatory | Structural | Mixed |
-|--------|:-----------:|:----------:|:-----:|
-| micro-ops | 3/3 | 2/3 | 3/3 |
-| micro-debug | 3/3 | 0/3 | 3/3 |
-| meso-ops | 3/3 | 2/3 | 3/3 |
-| meso-debug | 3/3 | 2/3 | 3/3 |
-| stress-ops | 3/3 | 2/3 | 3/3 |
-| stress-debug | 3/3 | 1/3 | 3/3 |
-
-**Qwen3-8B vLLM + Claude Opus 4 judge (budget 512 — truncated):**
-
-| Config | Explanatory | Structural | Mixed | Tokens |
-|--------|:-----------:|:----------:|:-----:|:------:|
-| micro-ops | 3/3 | 1/3 | 3/3 | 354 |
-| micro-debug | 3/3 | 1/3 | 3/3 | 340 |
-| meso-ops | 3/3 | 2/3 | 3/3 | ~490 |
-| meso-debug | 3/3 | 2/3 | 2/3 | ~494 |
-| stress-ops | 0/3 | 2/3 | 3/3 | ~506 |
-| stress-debug | 3/3 | 0/3 | 3/3 | ~492 |
-
-Under 512-token budget, meso explanatory holds at 3/3 (68% truncated) while
-stress-ops-explanatory drops to 0/3 (85% truncated, critical context lost).
-The kernel's salience ordering (causal > motivational > evidential > structural)
-preserves the most important relationships under pressure.
-
-Scales: micro (4 nodes), meso (21 nodes), stress (49 nodes).
-Domains: operations (incident response), software debugging (hypothesis/fix cycle).
-
-Evaluation prompts are externalized to
-[`crates/rehydration-testkit/resources/llm_prompts.yaml`](./crates/rehydration-testkit/resources/llm_prompts.yaml)
-and can be overridden at runtime via `LLM_PROMPTS_PATH`.
-
-## Paper Artifact
-
-The repository also contains an artifact-backed paper draft on explanatory
-graph context rehydration for agentic systems.
-
-Current paper materials:
-
-- submission draft:
-  [`docs/PAPER_SUBMISSION_DRAFT.md`](./docs/PAPER_SUBMISSION_DRAFT.md)
-- ACL package index:
-  [`docs/paper/README.md`](./docs/paper/README.md)
-- ACL LaTeX sources:
-  [`docs/paper/acl/`](./docs/paper/acl/) (build locally with `pdflatex`)
-- paper-use-case artifact summary:
-  [`artifacts/paper-use-cases/summary.json`](./artifacts/paper-use-cases/summary.json)
-- paper-use-case rendered report:
-  [`artifacts/paper-use-cases/results.md`](./artifacts/paper-use-cases/results.md)
-
-The current manuscript evaluates four use cases:
-
-- failure diagnosis with rehydration-point recovery
-- why a task was implemented in a particular way
-- interrupted handoff with resumable execution
-- constraint-preserving retrieval under token pressure
+- Product-specific domain nouns (the kernel is generic)
+- Product-side integration adapters, shadow mode, or rollout logic
+- Authorization backend (scope validation is set-comparison only)
 
 ## Quickstart
 
-Toolchain:
-
-- Rust `1.90.0`, pinned in [`rust-toolchain.toml`](./rust-toolchain.toml)
-
-Core checks:
-
 ```bash
-cargo fmt --all
-cargo check --workspace
-cargo test --workspace
+# Toolchain: Rust 1.90.0 (pinned in rust-toolchain.toml)
+cargo test --workspace               # 270 unit tests, no infra needed
+bash scripts/ci/quality-gate.sh      # format + clippy + contract + tests
 ```
-
-Repository gate:
-
-```bash
-bash scripts/ci/quality-gate.sh
-```
-
-Focused contract gate:
-
-```bash
-bash scripts/ci/contract-gate.sh
-```
-
-Container-backed integration targets:
-
-```bash
-bash scripts/ci/integration-valkey.sh
-bash scripts/ci/integration-neo4j.sh
-bash scripts/ci/integration-agentic-context.sh
-bash scripts/ci/integration-agentic-event-context.sh
-bash scripts/ci/integration-kernel-full-journey.sh
-bash scripts/ci/integration-kernel-full-journey-tls.sh
-```
-
-For deployed kernels, the generic projection runtime persists its own state in
-Valkey through `REHYDRATION_RUNTIME_STATE_URI`.
-
-Container image build check:
-
-```bash
-bash scripts/ci/container-image.sh
-```
-
-The script uses `docker` when available and falls back to `podman`. Override
-with `CONTAINER_RUNTIME=docker` or `CONTAINER_RUNTIME=podman` if you need to
-force one runtime.
-
-Helm chart lint:
-
-```bash
-bash scripts/ci/helm-lint.sh
-```
-
-## Public Readiness Notes
-
-If you are integrating another product with this kernel, start here:
-
-- [`docs/migration/kernel-node-centric-integration-contract.md`](./docs/migration/kernel-node-centric-integration-contract.md)
-- [`docs/migration/kernel-runtime-integration-reference.md`](./docs/migration/kernel-runtime-integration-reference.md)
-- [`docs/migration/kernel-repo-closeout.md`](./docs/migration/kernel-repo-closeout.md)
-
-If you are integrating `swe-ai-fleet`, the handoff docs are:
-
-- [`docs/migration/swe-ai-fleet-node-centric-integration-strategy.md`](./docs/migration/swe-ai-fleet-node-centric-integration-strategy.md)
-- [`docs/migration/swe-ai-fleet-shadow-mode-spec.md`](./docs/migration/swe-ai-fleet-shadow-mode-spec.md)
-- [`docs/migration/swe-ai-fleet-integration-checklist.md`](./docs/migration/swe-ai-fleet-integration-checklist.md)
-
-## Runtime And Deployment Ecosystem
-
-This repo owns the kernel code, contracts, and integration proofs.
-
-Operational packaging may live in sibling repos that consume the kernel. In the
-current ecosystem that includes a sibling runtime capable of:
-
-- publishing container artifacts to GitHub Container Registry
-- running under Docker Compose
-- running on Kubernetes through Helm
-
-That deployment packaging is intentionally kept outside the kernel repo when it
-belongs to the runtime or product layer rather than to the kernel itself.
-
-See:
-
-- [`docs/operations/README.md`](./docs/operations/README.md)
-- [`docs/operations/deployment-boundary.md`](./docs/operations/deployment-boundary.md)
-- [`docs/operations/container-image.md`](./docs/operations/container-image.md)
-
-## Standalone Container Image
-
-The kernel now owns a standalone OCI image intended for external download and
-evaluation.
-
-Public location:
-
-- `ghcr.io/underpass-ai/rehydration-kernel`
-
-Typical pull:
 
 ```bash
 docker pull ghcr.io/underpass-ai/rehydration-kernel:latest
 ```
 
-See [`docs/operations/container-image.md`](./docs/operations/container-image.md)
-for environment variables, tags, and usage.
+Full guides: [usage](./docs/usage-guide.md) | [testing](./docs/testing.md) |
+[container image](./docs/operations/container-image.md) |
+[Helm deploy](./docs/operations/kubernetes-deploy.md)
 
-Helm chart:
+## Architecture
 
-- source chart: [`charts/rehydration-kernel`](./charts/rehydration-kernel)
-- OCI location: `oci://ghcr.io/underpass-ai/charts/rehydration-kernel`
+```mermaid
+graph LR
+    subgraph Transport
+        G[gRPC mTLS<br/>GetContext · GetContextPath<br/>RehydrateSession · UpdateContext]
+    end
 
-The default chart values are intentionally secure:
+    subgraph Application
+        A[rehydrate → render → truncate<br/>validate → append event]
+    end
 
-- no implicit `latest` image tag
-- no inline backend URIs by default
-- production-style installs should use `image.digest` or a pinned tag plus `secrets.existingSecret`
-- optional `ingress.enabled` can expose the gRPC service through a controller-managed ingress
-- optional `neo4jTls.*` can mount a custom Neo4j CA for secure `graphUri` values
+    subgraph Adapters
+        N4[(Neo4j)]
+        VK[(Valkey)]
+        NT[(NATS)]
+        OT[(OTLP)]
+    end
 
-The sibling-runtime deployment profiles are:
+    G --> A --> N4 & VK & NT & OT
+```
 
-- [`charts/rehydration-kernel/values.underpass-runtime.yaml`](./charts/rehydration-kernel/values.underpass-runtime.yaml) for the current cluster wiring, including the NGINX gRPC ingress host `rehydration-kernel.underpassai.com`
-- [`charts/rehydration-kernel/values.underpass-runtime.secure.example.yaml`](./charts/rehydration-kernel/values.underpass-runtime.secure.example.yaml) for the staged Neo4j TLS target once the shared graph service publishes a CA-backed TLS endpoint
+> All connections TLS. gRPC and Valkey support mTLS. OTLP is plaintext (mTLS in progress).
 
-For local evaluation only, use [`values.dev.yaml`](./charts/rehydration-kernel/values.dev.yaml).
+Non-negotiable rules: DDD first, hexagonal boundaries, one concept per file,
+one use case per file.
+
+**Infrastructure:**
+
+- **Neo4j** — graph state (nodes, relationships, traversal)
+- **Valkey** — node detail, snapshots, event store (RESP protocol, batch MGET)
+- **NATS JetStream** — projection events, command event store (optimistic concurrency)
+- **gRPC + TLS/mTLS** — supports plaintext, server TLS, mutual TLS (default: plaintext)
+- **cl100k_base** — BPE tokenization (tiktoken-rs) for accurate token budgets
+- **OpenTelemetry + Loki** — 16 active instruments (+ 2 defined, not yet recorded) + structured JSON logs. See [observability](./docs/observability.md)
+- **Helm chart** — optional Neo4j/NATS/Valkey/Loki/Grafana/OTel Collector sidecars
+
+## Multi-Resolution Rendering
+
+Every render produces three tiers simultaneously. Consumers pick the level
+they need — no separate API calls, no re-rendering.
+
+```
+  L0 Summary          ~100 tokens    objective, status, blocker, next action
+  L1 Causal Spine     ~500 tokens    root → focus → causal/motivational/evidential chain
+  L2 Evidence Pack    remaining      structural relations, neighbors, extended details
+```
+
+| Use case | Tier | Why |
+|:---------|:----:|:----|
+| Status check / quick triage | L0 | Fits in a system prompt alongside other tools |
+| Failure diagnosis / handoff resume | L0 + L1 | Causal chain is the dominant signal |
+| Deep analysis / full audit | L0 + L1 + L2 | Everything the graph knows, salience-ordered |
+
+**RehydrationMode** auto-selects strategy based on token pressure:
+
+- **ReasonPreserving** (default) — all tiers populated, full signal
+- **ResumeFocused** — auto-activates when budget < 30 tokens/node; prunes distractor branches, keeps only the causal spine. Fixed `stress@512` from 0/3 to 3/3
+
+Control via `max_tier` on the request or let the kernel decide with `rehydration_mode = AUTO`.
+
+## Security
+
+All infrastructure boundaries support TLS. The gRPC transport supports mTLS.
+
+| Boundary | Transport | Authentication |
+|:---------|:----------|:---------------|
+| Callers → Kernel | gRPC with server TLS or **mTLS** | Client certificate validation against trusted CA |
+| Kernel → Neo4j | `bolt+s://` / `neo4j+s://` with CA pinning | URI-embedded credentials via K8s secrets |
+| Kernel → Valkey | `rediss://` with **mTLS** | Client certificate + key from secrets |
+| Kernel → NATS | TLS with CA pinning, `tls_first` | Client certificate or NATS credentials |
+| Kernel → OTel Collector | **Plaintext** gRPC (mTLS in progress) | None — co-locate or network-isolate |
+
+Commands are protected by **idempotency key outcome recording** and **optimistic concurrency**
+(revision + content hash). Credentials are never inlined — always mounted from
+Kubernetes secrets.
+
+Full threat model and Helm TLS configuration: [security-model.md](./docs/security-model.md)
+
+## Contracts
+
+- [gRPC proto](./api/proto/underpass/rehydration/kernel/v1beta1) |
+  [AsyncAPI](./api/asyncapi/context-projection.v1beta1.yaml) |
+  [examples](./api/examples/README.md)
+- [Integration contract](./docs/migration/kernel-node-centric-integration-contract.md) — what consumers can depend on
+- [Beta status](./docs/beta-status.md) — maturity, limitations, path to v1
+
+## Repo Layout
+
+```
+api/proto/          gRPC contracts (v1beta1)
+api/asyncapi/       async contracts (NATS JetStream)
+api/examples/       request, response, and event fixtures
+crates/
+  rehydration-domain/       domain model, value objects, invariants
+  rehydration-application/  use cases, rendering pipeline
+  rehydration-adapter-*/    Neo4j, Valkey, NATS adapters
+  rehydration-transport-*/  gRPC server, proto mapping
+  rehydration-observability/ OTel + Loki quality observers
+  rehydration-server/       composition root
+  rehydration-testkit/      dataset generator, evaluation harness
+  rehydration-tests-*/      integration + benchmark tests
+charts/             Helm chart (kernel + optional sidecars)
+docs/               guides, operations, security, observability, testing
+scripts/ci/         quality gates, integration runners, coverage
+```
+
+## Benchmark (preliminary)
+
+LLM-as-judge evaluation with GPT-5.4, Claude Opus 4, and Qwen3-8B.
+Explanatory relationships consistently outperform structural-only (27-72pp gap):
+
+| Model | Budget | Explanatory | Structural | Gap |
+|:------|:------:|:-----------:|:----------:|:---:|
+| GPT-5.4 (frontier) | 4096 | 17/18 (94%) | 11/18 (61%) | 33pp |
+| Qwen3-8B (local 8B) | 4096 | 18/18 (100%) | 9/18 (50%) | 50pp |
+| Qwen3-8B + ResumeFocused | **512** | **16/18 (89%)** | 5/18 (28%) | 61pp |
+| Qwen3-8B + competing noise | 4096 | **18/18 (100%)** | 5/18 (28%) | **72pp** |
+
+> Preliminary — single seed, single judge. Full matrix planned.
+> Synthetic graphs, not production workloads.
+> Full results and methodology: [docs/research/](./docs/research/)
+
+## Research
+
+The repository includes a paper draft on explanatory graph context
+rehydration: [docs/research/](./docs/research/)
 
 ## License
 

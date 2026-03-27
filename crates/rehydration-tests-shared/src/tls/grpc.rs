@@ -37,7 +37,6 @@ impl RunningTlsGrpcServer {
             AppConfig {
                 service_name: "rehydration-kernel".to_string(),
                 grpc_bind: addr.to_string(),
-                admin_bind: "127.0.0.1:0".to_string(),
                 grpc_tls,
                 graph_uri: "neo4j://localhost:7687".to_string(),
                 detail_uri: "rediss://localhost:6379".to_string(),

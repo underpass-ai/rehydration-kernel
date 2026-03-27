@@ -7,7 +7,6 @@ use crate::GrpcTlsConfig;
 pub struct AppConfig {
     pub service_name: String,
     pub grpc_bind: String,
-    pub admin_bind: String,
     pub grpc_tls: GrpcTlsConfig,
     pub graph_uri: String,
     pub detail_uri: String,
@@ -35,7 +34,6 @@ impl AppConfig {
                 "rehydration-kernel",
             ),
             grpc_bind: lookup_or_default(&lookup, "REHYDRATION_GRPC_BIND", "0.0.0.0:50054"),
-            admin_bind: lookup_or_default(&lookup, "REHYDRATION_ADMIN_BIND", "0.0.0.0:8080"),
             grpc_tls: GrpcTlsConfig::from_lookup(&lookup)?,
             graph_uri: lookup_or_default(
                 &lookup,
@@ -82,7 +80,6 @@ mod tests {
 
         assert_eq!(config.service_name, "rehydration-kernel");
         assert_eq!(config.grpc_bind, "0.0.0.0:50054");
-        assert_eq!(config.admin_bind, "0.0.0.0:8080");
         assert_eq!(config.grpc_tls, GrpcTlsConfig::disabled());
         assert_eq!(config.graph_uri, "neo4j://localhost:7687");
         assert_eq!(config.detail_uri, "redis://localhost:6379");

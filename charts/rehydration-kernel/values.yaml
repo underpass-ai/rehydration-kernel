@@ -87,7 +87,6 @@ observability:
 config:
   serviceName: rehydration-kernel
   grpcBind: 0.0.0.0:50054
-  adminBind: 0.0.0.0:8080
   eventsPrefix: rehydration
 
 connections:
@@ -117,6 +116,53 @@ tolerations: []
 affinity: {}
 
 extraEnv: []
+
+# Optional Loki log aggregation managed by this chart.
+loki:
+  enabled: false
+  image:
+    repository: docker.io/grafana/loki
+    tag: "3.4.2"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# Optional Grafana dashboard managed by this chart.
+# Auto-provisions Loki and Prometheus (OTel) datasources when enabled.
+# WARNING: Default deploys with anonymous admin access for development convenience.
+# For production: set adminPassword and disable anonymous access in extraEnv.
+grafana:
+  enabled: false
+  adminPassword: admin
+  image:
+    repository: docker.io/grafana/grafana
+    tag: "11.6.0"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# Optional OpenTelemetry Collector managed by this chart.
+# Receives OTLP from the kernel and exports metrics as Prometheus.
+otelCollector:
+  enabled: false
+  image:
+    repository: docker.io/otel/opentelemetry-collector-contrib
+    tag: "0.127.0"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
 
 # Optional graph database managed by this chart. When enabled together with
 # development.allowInlineConnections=true, the kernel can omit connections.graphUri

@@ -248,7 +248,6 @@ fn describe_mentions_bind_address() {
     let config = rehydration_config::AppConfig {
         service_name: "rehydration-kernel".to_string(),
         grpc_bind: "127.0.0.1:50054".to_string(),
-        admin_bind: "127.0.0.1:8080".to_string(),
         grpc_tls: rehydration_config::GrpcTlsConfig::disabled(),
         graph_uri: "neo4j://localhost:7687".to_string(),
         detail_uri: "redis://localhost:6379".to_string(),
@@ -275,7 +274,6 @@ async fn grpc_server_application_accessors_return_callable_services() {
     let config = rehydration_config::AppConfig {
         service_name: "rehydration-kernel".to_string(),
         grpc_bind: "127.0.0.1:50054".to_string(),
-        admin_bind: "127.0.0.1:8080".to_string(),
         grpc_tls: rehydration_config::GrpcTlsConfig::disabled(),
         graph_uri: "neo4j://localhost:7687".to_string(),
         detail_uri: "redis://localhost:6379".to_string(),

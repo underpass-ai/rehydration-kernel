@@ -2,23 +2,21 @@
 
 ## Transport Security Posture
 
-The kernel is **full TLS with mutual TLS (mTLS)** across all boundaries.
-Every network hop supports TLS, and the gRPC transport supports mutual
-certificate authentication.
+Every infrastructure boundary supports TLS. The gRPC transport supports
+mutual TLS (mTLS). The OTLP export to the OTel Collector is **plaintext** today.
 
+```mermaid
+graph LR
+    C[Callers] -- gRPC + mTLS --> K[rehydration-kernel]
+    K -- TLS --> N4[(Neo4j)]
+    K -- TLS + mTLS --> VK[(Valkey)]
+    K -- TLS --> NT[(NATS)]
+    K -. OTLP plaintext .-> OT[OTel Collector]
 ```
-┌─────────────────────────────────┐
-│  External callers (agents,      │
-│  runtimes, operators)           │
-│  ↕ gRPC + mTLS                 │
-├─────────────────────────────────┤
-│  rehydration-kernel             │
-│  ↕ TLS to all backends         │
-├─────────────────────────────────┤
-│  Neo4j    Valkey    NATS        │
-│  (TLS)   (TLS+mTLS) (TLS)     │
-└─────────────────────────────────┘
-```
+
+> **Gap**: Kernel → OTel Collector connection does not support TLS.
+> The OTLP gRPC exporter uses `with_tonic()` without TLS configuration.
+> mTLS support is in progress. Until then, co-locate the collector or network-isolate.
 
 ## Trust Boundaries
 
@@ -43,6 +41,8 @@ certificate authentication.
   in the connection URI.
 - **Authentication**: URI-embedded credentials. Must be provided via
   Kubernetes secrets in production.
+- **Client mTLS**: Not supported. The adapter validates the server's
+  certificate against the CA but does not present a client certificate.
 - **Authorization**: Single Neo4j connection identity per kernel instance.
 
 ### Boundary 3: Kernel → Valkey
@@ -73,10 +73,12 @@ certificate authentication.
 | Man-in-the-middle on NATS | TLS with CA pinning | **Implemented** |
 | Unauthorized context reads | mTLS restricts callers; no fine-grained RBAC | Partial |
 | Unauthorized context writes | mTLS + optimistic concurrency | Partial |
-| Replay attacks on commands | Idempotency key deduplication | **Implemented** |
+| Replay attacks on commands | Idempotency key outcome recording (returns same result for retries; application layer checks before processing) | **Implemented** |
 | Credential exposure in config | Kubernetes secrets, not inline URIs | **Documented** |
 | Data exfiltration from backends | TLS transport, network isolation | **Available** |
-| Admin plane abuse | mTLS restricts callers; no separate admin auth | Partial |
+| Man-in-the-middle on OTLP | None — plaintext gRPC | **In progress** — mTLS support planned |
+| Grafana anonymous access | Helm default: anonymous=true, role=Admin | **Development only** — disable in production |
+
 
 ## Helm TLS Configuration Summary
 
@@ -86,6 +88,7 @@ certificate authentication.
 | Neo4j | `neo4jTls.enabled`, `neo4jTls.existingSecret` | TLS with CA trust |
 | Valkey | `valkeyTls.enabled`, `valkeyTls.existingSecret` | TLS, mTLS with client cert |
 | NATS | `natsTls.mode`, `natsTls.existingSecret` | TLS, mTLS, tls_first |
+| OTel Collector | — | **Plaintext only** (mTLS in progress) |
 
 ## Recommendations for Production
 
@@ -94,6 +97,9 @@ certificate authentication.
 3. Use `secrets.existingSecret` for connection URIs — never inline credentials.
 4. Restrict NATS subject permissions to kernel-owned prefixes.
 5. Network-isolate the kernel namespace from untrusted workloads.
+6. Set `grafana.adminPassword` to a strong value and disable anonymous access
+   (`GF_AUTH_ANONYMOUS_ENABLED=false`) for any non-development deployment.
+7. Co-locate or network-isolate the OTel Collector until OTLP mTLS is implemented.
 
 ## What the Kernel Does NOT Do
 

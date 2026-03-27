@@ -8,7 +8,12 @@ Current contents:
 - [`container-image.md`](./container-image.md)
 - [`kubernetes-deploy.md`](./kubernetes-deploy.md)
 - [`kubernetes-transport-smoke.md`](./kubernetes-transport-smoke.md)
-- [`graph-explorer-demo.md`](./graph-explorer-demo.md)
+
+Related docs:
+
+- [`../testing.md`](../testing.md) — Testing guide
+- [`../observability.md`](../observability.md) — Observability stack
+- [`../adr/ADR-007-quality-metrics-observability.md`](../adr/ADR-007-quality-metrics-observability.md) — Architecture decision
 
 Key rule:
 

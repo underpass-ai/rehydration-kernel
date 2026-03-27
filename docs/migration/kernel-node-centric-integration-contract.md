@@ -1,133 +1,85 @@
 # Kernel Node-Centric Integration Contract
 
-Status: beta canonical
-Scope: kernel-owned public boundary for generic external consumers
+Status: v1beta1 (see [beta-status.md](../beta-status.md) for maturity and path to v1)
 
 ## Purpose
 
-Define the public contract that another system may depend on without importing
-`swe-ai-fleet` concepts into this repo.
+Define the public contract that any system may depend on to integrate with
+the rehydration kernel.
 
-This document is the kernel-side counterpart to:
-
-- [`swe-ai-fleet-node-centric-integration-strategy.md`](./swe-ai-fleet-node-centric-integration-strategy.md)
-- [`swe-ai-fleet-integration-checklist.md`](./swe-ai-fleet-integration-checklist.md)
+The kernel originated as a context engine for `swe-ai-fleet` and is designed
+to be adopted by that product as its primary context provider. However, the
+contract is generic — no product-specific nouns are part of the kernel surface.
 
 ## Contract Boundary
 
-The kernel public boundary is split into two parts:
+### 1. gRPC contract
 
-### 1. Kernel-owned gRPC contract
-
-Package:
-
-- canonical: `underpass.rehydration.kernel.v1beta1`
+Package: `underpass.rehydration.kernel.v1beta1`
 
 Services:
 
-- `ContextQueryService`
-- `ContextCommandService`
+- `ContextQueryService` — GetContext, GetContextPath, GetNodeDetail, RehydrateSession, ValidateScope
+- `ContextCommandService` — UpdateContext
 
-Primary identifiers and concepts:
+Primary identifiers:
 
-- `root_node_id`
-- `node_id`
-- `node_kind`
-- `relationship_type`
-- `BundleNodeDetail`
-- `RehydrationBundle`
+- `root_node_id` — bundle anchor (any node in the graph)
+- `node_id`, `node_kind` — entity identity and type
+- `relationship_type` — edge label
+- `semantic_class` — causal, motivational, evidential, constraint, procedural, structural
+- `BundleNodeDetail` — extended per-node content
+- `RehydrationBundle` — validated context container
 
-### 2. Kernel-owned async contract
+### 2. Async contract (NATS JetStream)
 
-Generic inbound subjects:
+Inbound (kernel consumes):
 
-- `graph.node.materialized`
-- `node.detail.materialized`
+- `{prefix}.graph.node.materialized` — nodes + relationships
+- `{prefix}.node.detail.materialized` — extended detail
 
-Generic outbound subjects:
+Outbound (kernel publishes):
 
-- `context.bundle.generated`
+- `{prefix}.context.bundle.generated` — **contract-only; not yet emitted by runtime**
 
-These subjects are documented in:
+Defined in [`api/asyncapi/context-projection.v1beta1.yaml`](../../api/asyncapi/context-projection.v1beta1.yaml).
 
-- [`api/asyncapi/context-projection.v1beta1.yaml`](api/asyncapi/context-projection.v1beta1.yaml)
-
-## What External Consumers May Rely On
-
-Consumers integrating directly with the kernel may treat these as stable:
+## What Consumers May Rely On
 
 - `root_node_id` is the primary bundle anchor
-- graph reads are expressed in terms of nodes and relationships
-- extended node context is carried as generic node detail
-- render budget and focus are generic request concerns, not domain nouns
-- snapshot persistence is generic and not tied to a planning model
-- async projection inputs remain node-centric
+- Graph reads are expressed in terms of nodes and relationships
+- Extended node context is carried as generic node detail
+- Render budget, focus, tiers, and mode are generic request concerns
+- Snapshot persistence is generic
+- Async projection inputs remain node-centric
 
-## What Is Not The Generic Kernel Contract
+## What the Kernel Does NOT Own
 
-The following surfaces exist for internal purposes, but should
-not be treated as the preferred generic integration boundary:
-
-- runtime-specific consumer guidance under `api/examples/runtime-reference`
-- internal implementation details that are not versioned public contracts
+The kernel does not contain product-specific nouns. If an integration requires
+the kernel to understand domain-specific entity types, that mapping belongs in
+an anti-corruption layer outside the kernel.
 
 ## Stability Rules
 
-For `underpass.rehydration.kernel.v1beta1` and the generic AsyncAPI subjects:
+For `v1beta1` gRPC and async subjects:
 
-- do not rename services, methods, or field names without an explicit contract
-  version change
-- do not replace `root_node_id` with product-specific identifiers
-- do not add `swe-ai-fleet` nouns to message names or field names
-- do not couple async subjects to one product's event vocabulary
-- prefer additive changes over semantic rewrites
+- Do not rename services, methods, or field names without a version bump
+- Do not replace `root_node_id` with product-specific identifiers
+- Do not add product nouns to message or field names
+- Do not couple async subjects to one product's event vocabulary
+- Prefer additive changes over semantic rewrites
 
-## Integration Invariants
+Breaking: renaming `root_node_id`, changing service names, changing semantic
+meaning of fields, renaming async subjects.
 
-Any external product integrating directly with the kernel should be able to:
+Non-breaking: adding optional request/response fields, adding new services
+or methods, adding new async subjects.
 
-- choose a `root_node_id`
-- publish graph materialization and node detail events
-- call query or command APIs without adopting kernel-internal storage concerns
-- render context around a focused node with bounded token budgets
-- persist and retrieve snapshots without importing product-specific write models
-
-If any integration requires this repo to learn product nouns such as
-`story`, `task`, `project`, `epic`, `ticket`, or similar, then the integration
-belongs in an anti-corruption layer outside the kernel.
-
-## Versioning Guidance
-
-Use `underpass.rehydration.kernel.v1beta1` as the stable boundary for new
-integrations.
-
-Breaking examples:
-
-- renaming `root_node_id`
-- changing service names
-- changing required semantic meaning of bundle fields
-- renaming kernel-owned async subjects
-
-Non-breaking examples:
-
-- adding optional request fields
-- adding optional response fields
-- adding new generic services or methods
-- adding new generic async subjects
-
-## Evidence In Repo
+## Evidence
 
 This contract is backed by:
 
-- proto definitions under [`api/proto/underpass/rehydration/kernel/v1beta1`](api/proto/underpass/rehydration/kernel/v1beta1)
-- async definitions under [`api/asyncapi/context-projection.v1beta1.yaml`](api/asyncapi/context-projection.v1beta1.yaml)
-- reference fixtures under [`api/examples/kernel/v1beta1`](api/examples/kernel/v1beta1)
-- descriptor and contract tests in [`crates/rehydration-proto/src/kernel_v1beta1_contract_tests.rs`](crates/rehydration-proto/src/kernel_v1beta1_contract_tests.rs), [`crates/rehydration-proto/src/reference_fixture_contract_tests.rs`](crates/rehydration-proto/src/reference_fixture_contract_tests.rs), and [`crates/rehydration-proto/src/asyncapi_contract_tests.rs`](crates/rehydration-proto/src/asyncapi_contract_tests.rs)
-
-## Exit Condition
-
-This contract can be treated as integration-ready when:
-
-- another system can build a thin adapter against it
-- the adapter does not need kernel changes to express its own domain
-- contract drift is caught by tests before merge
+- Proto: [`api/proto/underpass/rehydration/kernel/v1beta1`](../../api/proto/underpass/rehydration/kernel/v1beta1)
+- AsyncAPI: [`api/asyncapi/context-projection.v1beta1.yaml`](../../api/asyncapi/context-projection.v1beta1.yaml)
+- Fixtures: [`api/examples/kernel/v1beta1`](../../api/examples/kernel/v1beta1)
+- Contract tests: `kernel_v1beta1_contract_tests.rs`, `reference_fixture_contract_tests.rs`, `asyncapi_contract_tests.rs`
