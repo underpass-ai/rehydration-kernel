@@ -233,8 +233,8 @@ Production deployments must co-locate or network-isolate the collector.
 Helm chart deploys Grafana with `GF_AUTH_ANONYMOUS_ENABLED=true` and
 `GF_AUTH_ANONYMOUS_ORG_ROLE=Admin`. Acceptable for development, not for production.
 
-- [ ] Change Helm default to `GF_AUTH_ANONYMOUS_ENABLED=false`
-- [ ] Add `grafana.auth.anonymous` toggle in values.yaml (default: false)
+- [x] Change Helm default to `GF_AUTH_ANONYMOUS_ENABLED=false`
+- [x] Add `grafana.anonymousAccess` toggle in values.yaml (default: false)
 - [ ] Document production Grafana configuration in operations guide
 
 ### P2 — Neo4j client mTLS

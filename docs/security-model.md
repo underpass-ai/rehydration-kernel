@@ -77,7 +77,7 @@ graph LR
 | Credential exposure in config | Kubernetes secrets, not inline URIs | **Documented** |
 | Data exfiltration from backends | TLS transport, network isolation | **Available** |
 | Man-in-the-middle on OTLP | None — plaintext gRPC | **In progress** — mTLS support planned |
-| Grafana anonymous access | Helm default: anonymous=true, role=Admin | **Development only** — disable in production |
+| Grafana anonymous access | Helm default: anonymous=false. Dev overlay enables it | Configurable via `grafana.anonymousAccess` |
 
 
 ## Helm TLS Configuration Summary
@@ -97,8 +97,8 @@ graph LR
 3. Use `secrets.existingSecret` for connection URIs — never inline credentials.
 4. Restrict NATS subject permissions to kernel-owned prefixes.
 5. Network-isolate the kernel namespace from untrusted workloads.
-6. Set `grafana.adminPassword` to a strong value and disable anonymous access
-   (`GF_AUTH_ANONYMOUS_ENABLED=false`) for any non-development deployment.
+6. Set `grafana.adminPassword` to a strong value. Anonymous access is disabled
+   by default (`grafana.anonymousAccess=false`); only the dev overlay enables it.
 7. Co-locate or network-isolate the OTel Collector until OTLP mTLS is implemented.
 
 ## What the Kernel Does NOT Do

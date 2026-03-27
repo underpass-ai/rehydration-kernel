@@ -138,6 +138,8 @@ loki:
 grafana:
   enabled: false
   adminPassword: admin
+  anonymousAccess: false
+  anonymousRole: Viewer
   image:
     repository: docker.io/grafana/grafana
     tag: "11.6.0"

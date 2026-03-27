@@ -36,9 +36,9 @@ spec:
           image: "{{ .Values.grafana.image.repository }}:{{ .Values.grafana.image.tag }}"
           env:
             - name: GF_AUTH_ANONYMOUS_ENABLED
-              value: "true"
+              value: {{ .Values.grafana.anonymousAccess | default false | quote }}
             - name: GF_AUTH_ANONYMOUS_ORG_ROLE
-              value: Admin
+              value: {{ .Values.grafana.anonymousRole | default "Viewer" | quote }}
             - name: GF_SECURITY_ADMIN_PASSWORD
               value: {{ .Values.grafana.adminPassword | quote }}
           ports:

@@ -32,6 +32,7 @@ loki:
 
 grafana:
   enabled: true
+  anonymousAccess: true  # development only — disable in production
 
 otelCollector:
   enabled: true
