@@ -203,7 +203,7 @@ weaknesses. See [`docs/benchmark-2026-03-26-technical-review.md`](./benchmark-20
 - [x] Fix B: split `reason` metric into `reason_correct_main_path` and `reason_plausible_but_wrong`. Requires new judge verdict fields. The current binary makes it impossible to distinguish correct preservation from distractor leakage.
 
 **P1 — Replication** (blocks statistical claims):
-- [ ] Fix C: add `seeds_per_cell` to evaluation-matrix.yaml (default: 3). Loop the capture phase with different seeds per variant. 720 x 3 = 2160 evals per run. Enables within-condition variance estimation and robust confidence intervals.
+- [x] Fix C: add `seeds_per_cell` to evaluation-matrix.yaml (default: 3). Seed rotates node-kind order and varies rationale text. Capture loop generates N structurally different graphs per cell. Report includes within-condition variance table when seeds > 1. Validated: 18-eval run with 3 seeds, different chain kinds per seed visible in logs.
 
 **P1 — Model matrix balance** (blocks model comparison claims):
 - [x] Fix D: equilibrate the model matrix. Added sonnet-4.6 as third judge (3 agents × 3 judges - 3 self = 6 combos). Report now includes controlled comparison tables: "Agent comparison (fixed judge)" and "Judge comparison (fixed agent)" for balanced claims.

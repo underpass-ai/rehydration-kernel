@@ -513,6 +513,9 @@ async fn judge_prompt_evaluation_across_all_use_cases()
         ("mixed", &[("clean", NoiseMode::Structural), ("restart", NoiseMode::CompetingRestartPoint)]),
     ];
 
+    let seeds_per_cell = matrix["seeds_per_cell"].as_u64().unwrap_or(1) as usize;
+    run.log(&format!("[CONFIG] seeds_per_cell={seeds_per_cell}"));
+
     let mut captured: Vec<CapturedVariant> = Vec::new();
     let mut fixture: Option<TestFixture> = None;
 
@@ -530,10 +533,16 @@ async fn judge_prompt_evaluation_across_all_use_cases()
                     if !filter_noise.is_empty() && !filter_noise.contains(&noise_name.to_string()) {
                         continue;
                     }
+                for seed_idx in 0..seeds_per_cell {
                 let mut config = scale_fn(domain);
                 config.relation_mix = mix;
                 config.noise_mode = noise_mode;
-                let variant_id = format!("{scale_name}-{domain_name}-{mix_name}-{noise_name}");
+                config.seed = seed_idx;
+                let variant_id = if seeds_per_cell > 1 {
+                    format!("{scale_name}-{domain_name}-{mix_name}-{noise_name}-s{seed_idx}")
+                } else {
+                    format!("{scale_name}-{domain_name}-{mix_name}-{noise_name}")
+                };
                 config.id_prefix = variant_id.clone();
 
                 let seed = generate_seed(config.clone());
@@ -685,7 +694,8 @@ async fn judge_prompt_evaluation_across_all_use_cases()
                     Some(distractor_rationales.join("; "))
                 };
 
-                run.log(&format!("[CAPTURE] {variant_id}: {tokens} tokens, reason={}, distractor={}", reason.as_deref().unwrap_or("none"), distractor.as_deref().unwrap_or("none")));
+                let chain_kinds: String = chain_nodes.iter().map(|n| n.node_kind.as_str()).collect::<Vec<_>>().join("→");
+                run.log(&format!("[CAPTURE] {variant_id}: {tokens} tok, chain=[{chain_kinds}], reason={}, distractor={}", reason.as_deref().unwrap_or("none"), distractor.as_deref().unwrap_or("none")));
 
                 captured.push(CapturedVariant {
                     run_id: variant_id,
@@ -700,6 +710,7 @@ async fn judge_prompt_evaluation_across_all_use_cases()
                         domain_context: Some(domain_name.to_string()),
                     },
                 });
+                } // seed_idx
                 }
             }
         }

@@ -24,6 +24,11 @@ pub struct GraphSeedConfig {
     pub id_prefix: String,
     /// How realistic the noise branches are.
     pub noise_mode: NoiseMode,
+    /// Seed for varying graph structure. Different seeds with the same
+    /// config produce structurally different graphs (rotated kind order,
+    /// different rationale text suffixes). Enables within-condition
+    /// variance estimation for statistical confidence intervals.
+    pub seed: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -124,6 +129,7 @@ impl GraphSeedConfig {
             domain,
             id_prefix: "micro".to_string(),
             noise_mode: NoiseMode::default(),
+            seed: 0,
         }
     }
 
@@ -136,6 +142,7 @@ impl GraphSeedConfig {
             domain,
             id_prefix: "meso".to_string(),
             noise_mode: NoiseMode::default(),
+            seed: 0,
         }
     }
 
@@ -148,6 +155,7 @@ impl GraphSeedConfig {
             domain,
             id_prefix: "stress".to_string(),
             noise_mode: NoiseMode::default(),
+            seed: 0,
         }
     }
 }
@@ -174,9 +182,14 @@ pub fn generate_seed(config: GraphSeedConfig) -> GeneratedSeed {
 
     let mut previous_id = root.node_id.clone();
 
-    // Build the causal chain
+    // Build the causal chain.
+    // The seed rotates the kind order so different seeds produce different
+    // node-type sequences (e.g. seed=0: decision→task→artifact→evidence,
+    // seed=1: task→artifact→evidence→decision). This creates structurally
+    // distinct graphs from the same config.
+    let seed_offset = config.seed;
     for depth in 0..config.chain_length {
-        let kind_index = depth % vocab.chain_kinds.len();
+        let kind_index = (depth + seed_offset) % vocab.chain_kinds.len();
         let kind = vocab.chain_kinds[kind_index];
         let node_id = format!("{}:chain-{}", config.id_prefix, depth);
         let has_detail = config.detail_density >= 1.0
@@ -204,7 +217,11 @@ pub fn generate_seed(config: GraphSeedConfig) -> GeneratedSeed {
             .to_string(),
             semantic_class,
             rationale: if config.relation_mix != RelationMix::Structural {
-                Some(format!("{} at depth {depth}", vocab.chain_rationale))
+                if seed_offset == 0 {
+                    Some(format!("{} at depth {depth}", vocab.chain_rationale))
+                } else {
+                    Some(format!("{} at depth {depth} (variant {seed_offset})", vocab.chain_rationale))
+                }
             } else {
                 None
             },
@@ -473,6 +490,7 @@ mod tests {
             domain: Domain::Operations,
             id_prefix: "test".to_string(),
             noise_mode: NoiseMode::default(),
+            seed: 0,
         });
 
         for rel in &seed.relations {
@@ -492,6 +510,7 @@ mod tests {
             domain: Domain::Operations,
             id_prefix: "test".to_string(),
             noise_mode: NoiseMode::Structural,
+            seed: 0,
         });
 
         for rel in &seed.relations {
@@ -514,6 +533,7 @@ mod tests {
             domain: Domain::Operations,
             id_prefix: "test".to_string(),
             noise_mode: NoiseMode::CompetingCausal,
+            seed: 0,
         });
 
         for rel in &seed.relations {
@@ -700,6 +720,42 @@ mod tests {
         assert_eq!(
             default_seed.total_relations(),
             explicit_seed.total_relations()
+        );
+    }
+
+    #[test]
+    fn different_seeds_produce_different_graphs() {
+        let seed0 = generate_seed(GraphSeedConfig {
+            seed: 0,
+            ..GraphSeedConfig::meso(Domain::Operations)
+        });
+        let seed1 = generate_seed(GraphSeedConfig {
+            seed: 1,
+            ..GraphSeedConfig::meso(Domain::Operations)
+        });
+        let seed2 = generate_seed(GraphSeedConfig {
+            seed: 2,
+            ..GraphSeedConfig::meso(Domain::Operations)
+        });
+
+        // Same structure size
+        assert_eq!(seed0.total_nodes(), seed1.total_nodes());
+        assert_eq!(seed0.total_relations(), seed2.total_relations());
+
+        // Different node kinds at depth 0 (rotated by seed)
+        let kind0 = &seed0.nodes[0].node_kind;
+        let kind1 = &seed1.nodes[0].node_kind;
+        assert_ne!(
+            kind0, kind1,
+            "seed 0 and seed 1 should produce different node kinds at depth 0: {kind0} vs {kind1}"
+        );
+
+        // Different rationale text
+        let rat0 = seed0.relations[0].rationale.as_deref().unwrap_or("");
+        let rat1 = seed1.relations[0].rationale.as_deref().unwrap_or("");
+        assert_ne!(
+            rat0, rat1,
+            "seed 0 and seed 1 should produce different rationale: {rat0} vs {rat1}"
         );
     }
 }

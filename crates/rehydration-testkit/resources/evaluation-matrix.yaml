@@ -75,6 +75,13 @@ scales:
   meso: meso      # 21 nodes, ~1500 tokens
   stress: stress  # 49 nodes, ~4000 tokens
 
+# Number of distinct graph seeds per variant cell.
+# Each seed produces a structurally different graph (rotated node kinds,
+# varied rationale text). Enables within-condition variance estimation
+# for robust confidence intervals. Total variants = scales × domains ×
+# mixes × noise_per_mix × seeds_per_cell.
+seeds_per_cell: 3
+
 noise:
   clean: structural              # baseline: irrelevant structural nodes
   competing: competing-causal    # plausible alternative rationale

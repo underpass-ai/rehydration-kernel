@@ -44,11 +44,16 @@ def load_results(run_dir):
 
 
 def parse_variant(variant):
-    """Parse 'micro-ops-explanatory-clean' into components."""
+    """Parse 'micro-ops-explanatory-clean' or 'micro-ops-explanatory-clean-s0' into components."""
     parts = variant.split("-", 3)
     if len(parts) >= 4:
-        return {"scale": parts[0], "domain": parts[1], "mix": parts[2], "noise": parts[3]}
-    return {"scale": "?", "domain": "?", "mix": "?", "noise": "?"}
+        noise = parts[3]
+        seed = "0"
+        # Strip seed suffix like '-s0', '-s1'
+        if "-s" in noise:
+            noise, seed = noise.rsplit("-s", 1)
+        return {"scale": parts[0], "domain": parts[1], "mix": parts[2], "noise": noise, "seed": seed}
+    return {"scale": "?", "domain": "?", "mix": "?", "noise": "?", "seed": "0"}
 
 
 def parse_model(model):
@@ -661,6 +666,41 @@ def generate_report(run_dir, results):
             except Exception:
                 pass
             f.write(f'{i},"{agent}","{judge}","{r["prompt"]}","{r["variant"]}","{v["scale"]}","{v["domain"]}","{v["mix"]}","{v["noise"]}",{t},{re},{rx},{ro},{rcb},{rexp},{p},{rc},{rd},{lat},"{fp}","{rn}"\n')
+
+    # ── Within-condition variance (when seeds_per_cell > 1) ──
+    seeds_seen = set(parse_variant(r["variant"]).get("seed", "0") for r in results)
+    if len(seeds_seen) > 1:
+        md.append("### Within-Condition Variance (across seeds)")
+        md.append("")
+        md.append("Multiple graph seeds per cell enable variance estimation.")
+        md.append("Each row groups evals by condition (scale×domain×mix×noise), across seeds.")
+        md.append("")
+        md.append("| Condition | Seeds | Task rates | Task variance |")
+        md.append("|-----------|-------|------------|---------------|")
+
+        from collections import OrderedDict
+        conditions = OrderedDict()
+        for r in results:
+            v = parse_variant(r["variant"])
+            cond = f"{v['scale']}-{v['domain']}-{v['mix']}-{v['noise']}"
+            seed = v.get("seed", "0")
+            conditions.setdefault(cond, {}).setdefault(seed, []).append(r)
+
+        for cond, seed_map in sorted(conditions.items()):
+            if len(seed_map) < 2:
+                continue
+            seed_rates = []
+            for seed_key, seed_results in sorted(seed_map.items()):
+                n = len(seed_results)
+                ok = sum(1 for r in seed_results if r.get("task") is True)
+                seed_rates.append(ok / n if n > 0 else 0.0)
+            import math
+            mean = sum(seed_rates) / len(seed_rates)
+            var = sum((r - mean) ** 2 for r in seed_rates) / len(seed_rates)
+            rates_str = ", ".join(f"{r:.0%}" for r in seed_rates)
+            md.append(f"| {cond} | {len(seed_map)} | {rates_str} | {var:.4f} |")
+
+        md.append("")
 
     md.append("## Kernel Metrics")
     md.append(fig_ref(run_dir, "11_kernel_token_efficiency.png", "Kernel Token Efficiency"))
