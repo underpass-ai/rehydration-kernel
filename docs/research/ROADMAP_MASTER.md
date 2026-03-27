@@ -204,7 +204,7 @@ emits rpc.duration + quality + timing. `RehydrateSession` only emits rpc.duratio
 
 - [ ] `GetContextPath`: add bundle.nodes, bundle.relationships, rendered.tokens, truncation.total, mode.selected
 - [ ] `RehydrateSession`: add bundle metrics per role (blocked by P1 quality metrics above)
-- [ ] Wire `rehydration.bundle.details` — defined in KernelMetrics but never recorded
+- [x] Wire `rehydration.bundle.details` — now recorded in GetContext
 - [ ] Wire `rehydration.projection.lag` — defined in KernelMetrics but never recorded by projection runtime
 
 ### P2 — Async quality observer fan-out
@@ -259,6 +259,7 @@ Removed in this session. Verify no downstream consumers depend on `REHYDRATION_A
 - [ ] OTel collector integration test: container OTLP collector verifying trace and metric export
 - [ ] OpenTelemetry instrumentation for vLLM server: E2E traces from kernel gRPC → render → vLLM inference → evaluation
 - [ ] vLLM backpressure: rate limiting, queue depth monitoring, retry with backoff, circuit breaker for parallel/scale benchmarks
+- [ ] LLM API backpressure: rate limiting and retry with exponential backoff for Anthropic/OpenAI APIs (429 handling, quota awareness, cost circuit breaker for full matrix runs)
 - [x] Refine LLM-as-judge prompt: domain-aware ground truth, strict rationale preservation vs inference, lenient on IDs
 - [x] Benchmark with frontier models for README: GPT-5.4 (OpenAI) inference + Claude Opus 4 (Anthropic) judge — 18 configs, explanatory 94% vs structural 61%
 - [x] Externalize evaluation prompts to YAML (`resources/llm_prompts.yaml`) — overridable via `LLM_PROMPTS_PATH`

@@ -128,7 +128,7 @@ DDD, hexagonal boundaries, one concept per file, one use case per file.
 - **NATS JetStream** — event store (append-only, file-backed) + projection event bus
 - **gRPC + TLS/mTLS** — supports plaintext, server TLS, mutual TLS (default: plaintext)
 - **cl100k_base** — BPE tokenization (tiktoken-rs) for accurate token budgets
-- **OpenTelemetry + Loki** — 16 active instruments + structured JSON logs. See [observability](./docs/observability.md)
+- **OpenTelemetry + Loki** — 17 active instruments + structured JSON logs. See [observability](./docs/observability.md)
 - **Helm chart** — optional Neo4j/NATS/Valkey/Loki/Grafana/OTel Collector sidecars
 
 ## Multi-Resolution Rendering

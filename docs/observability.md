@@ -45,6 +45,7 @@ Both backends are always active.
 | `rehydration.rpc.duration` | f64 histogram (s) | RPC latency |
 | `rehydration.bundle.nodes` | u64 histogram | Nodes in bundle |
 | `rehydration.bundle.relationships` | u64 histogram | Relationships in bundle |
+| `rehydration.bundle.details` | u64 histogram | Node details in bundle |
 | `rehydration.rendered.tokens` | u64 histogram | Rendered token count |
 | `rehydration.truncation.total` | u64 counter | Renders requiring truncation |
 | `rehydration.mode.selected` | u64 counter | Resolved RehydrationMode (label: `mode`) |
@@ -95,7 +96,6 @@ These instruments exist in `KernelMetrics` but are not recorded by any RPC handl
 
 | Metric | Status |
 |:-------|:-------|
-| `rehydration.bundle.details` | Defined, never recorded |
 | `rehydration.projection.lag` | Defined, never recorded (projection runtime does not emit) |
 
 ## Structured Logs (Loki)

@@ -98,6 +98,10 @@ where
             .build()
             .record(result.bundle.stats().selected_relationships() as u64, attrs);
         meter
+            .u64_histogram("rehydration.bundle.details")
+            .build()
+            .record(result.bundle.stats().detailed_nodes() as u64, attrs);
+        meter
             .u64_histogram("rehydration.rendered.tokens")
             .build()
             .record(result.rendered.token_count as u64, attrs);
