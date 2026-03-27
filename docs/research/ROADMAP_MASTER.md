@@ -124,6 +124,30 @@ Documented in `beta-status.md`. Fields remain in the wire format for backward co
 
 ## Pending — Technical debt (from audit 2026-03-27)
 
+### P1 — Event store atomic concurrency (CAS)
+
+Both NATS and Valkey event stores use check-then-act for optimistic concurrency:
+`current_revision()` → compare → `publish()`. This is **not atomic** — two
+concurrent clients can both load revision N, both pass the check, and both
+append as N+1. The second write overwrites the first silently.
+
+Fix: use JetStream's `expected_last_subject_sequence` in publish options.
+The server rejects if sequence doesn't match, making the operation CAS.
+
+- [ ] Add `Publish::expected_last_subject_sequence()` to NATS append
+- [ ] Return `PortError::Conflict` when JetStream rejects sequence mismatch
+- [ ] Add equivalent CAS to Valkey store (WATCH/MULTI/EXEC or Lua script)
+- [ ] Add concurrent append integration test that exercises the race
+
+### P2 — Idempotency outcome reliability
+
+Idempotency outcome publish is silently ignored (`let _ = ...`). If event
+appends but outcome publish fails, retries are treated as new requests.
+
+- [ ] Log warning on idempotency outcome publish failure
+- [ ] Consider retry with backoff for outcome publish
+- [ ] Document retry semantics for consumers (at-least-once with idempotency key)
+
 ### P2 — Restructure docs/research/ index
 
 Current README.md is a flat list. Needs proper classification of what is

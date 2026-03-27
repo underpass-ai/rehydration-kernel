@@ -88,39 +88,47 @@ Full guides: [usage](./docs/usage-guide.md) | [testing](./docs/testing.md) |
 
 ## Architecture
 
+The kernel uses **CQRS with Event Sourcing**:
+
+- **Command side**: `UpdateContext` validates, appends events to an append-only
+  store (NATS JetStream or Valkey), with optimistic concurrency (revision check)
+  and idempotency key outcome recording
+- **Projection**: NATS JetStream durable consumers materialize events into the
+  read model (Neo4j for graph, Valkey for detail). Explicit ack, at-least-once delivery
+- **Query side**: `GetContext`, `GetContextPath`, `RehydrateSession` read from
+  the materialized projections and render token-budgeted text
+
 ```mermaid
 graph LR
-    subgraph Transport
-        G[gRPC mTLS<br/>GetContext · GetContextPath<br/>RehydrateSession · UpdateContext]
+    subgraph Command
+        UC[UpdateContext] --> ES[(Event Store<br/>NATS JetStream)]
     end
 
-    subgraph Application
-        A[rehydrate → render → truncate<br/>validate → append event]
+    subgraph Projection
+        ES -. durable consumers .-> PR[Projection Runtime]
+        PR --> N4[(Neo4j<br/>graph)]
+        PR --> VK[(Valkey<br/>detail)]
     end
 
-    subgraph Adapters
-        N4[(Neo4j)]
-        VK[(Valkey)]
-        NT[(NATS)]
-        OT[(OTLP)]
+    subgraph Query
+        GC[GetContext] --> N4
+        GC --> VK
+        GC -. rendered context .-> A[Agent]
     end
-
-    G --> A --> N4 & VK & NT & OT
 ```
 
 > All connections TLS. gRPC and Valkey support mTLS. OTLP is plaintext (mTLS in progress).
 
-Non-negotiable rules: DDD first, hexagonal boundaries, one concept per file,
-one use case per file.
+DDD, hexagonal boundaries, one concept per file, one use case per file.
 
 **Infrastructure:**
 
-- **Neo4j** — graph state (nodes, relationships, traversal)
-- **Valkey** — node detail, snapshots, event store (RESP protocol, batch MGET)
-- **NATS JetStream** — projection events, command event store (optimistic concurrency)
+- **Neo4j** — graph read model (nodes, relationships, traversal)
+- **Valkey** — node detail, snapshots, projection state (dedup + checkpoints)
+- **NATS JetStream** — event store (append-only, file-backed) + projection event bus
 - **gRPC + TLS/mTLS** — supports plaintext, server TLS, mutual TLS (default: plaintext)
 - **cl100k_base** — BPE tokenization (tiktoken-rs) for accurate token budgets
-- **OpenTelemetry + Loki** — 16 active instruments (+ 2 defined, not yet recorded) + structured JSON logs. See [observability](./docs/observability.md)
+- **OpenTelemetry + Loki** — 16 active instruments + structured JSON logs. See [observability](./docs/observability.md)
 - **Helm chart** — optional Neo4j/NATS/Valkey/Loki/Grafana/OTel Collector sidecars
 
 ## Multi-Resolution Rendering

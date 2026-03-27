@@ -17,6 +17,7 @@ The kernel targets a stable `v1` contract once these conditions are met:
 | OTLP mTLS to OTel Collector | In progress — plaintext today |
 | Neo4j client mTLS (currently CA-only server verification) | Not started |
 | Grafana: disable anonymous admin access by default | Not started — development default is anonymous=Admin |
+| Event store atomic CAS for optimistic concurrency | Not started — check-then-act today |
 | Breaking change window communicated to consumers | Not started |
 
 Until then, the `v1beta1` contract is **stable for current fields** — no breaking
@@ -99,3 +100,5 @@ These fields exist in the wire format for forward compatibility but have **no ef
 - **`RehydrateSession` quality metrics** — not yet emitted; per-role rendering planned
 - **`context.bundle.generated` not emitted** — defined in AsyncAPI contract but the kernel runtime does not publish this event. Test fixtures simulate it for downstream integration tests
 - **Single token estimator** — `cl100k_base` BPE via `tiktoken-rs` for all counting. No model-specific estimator selection
+- **Event store concurrency** — optimistic concurrency uses check-then-act (not atomic CAS). Under high concurrent writes to the same `(root_node_id, role)`, the second writer can silently overwrite the first. CAS via JetStream `expected_last_subject_sequence` is planned
+- **Idempotency outcome** — outcome publish is fire-and-forget. If it fails, retries are treated as new requests

@@ -248,6 +248,64 @@ Every response includes quality metrics:
 | `detailCoverage` | Fraction of nodes with extended detail loaded |
 | `noiseRatio` | Fraction of noise/distractor nodes (0.0 for clean graphs) |
 
+## Event Store and Projection Runtime
+
+### How events become graph state
+
+When you publish events to NATS, the kernel's projection runtime materializes
+them into Neo4j (graph) and Valkey (details):
+
+```mermaid
+graph LR
+    P[Your service] -- publish --> NT[NATS JetStream]
+    NT -- pull --> C1[Graph consumer]
+    NT -- pull --> C2[Detail consumer]
+    C1 -- upsert --> N4[(Neo4j)]
+    C2 -- upsert --> VK[(Valkey)]
+    C1 -. ack .-> NT
+    C2 -. ack .-> NT
+```
+
+Two durable pull consumers run in parallel:
+- `context-projection-graph-node-materialized` — writes nodes + relationships to Neo4j
+- `context-projection-node-detail-materialized` — writes detail to Valkey
+
+Both use explicit ack. If a handler fails, the message is nak'd (requeued)
+and the runtime stops — operator must investigate and restart.
+
+### Event store backend
+
+The kernel supports two event store backends for `UpdateContext`:
+
+| Backend | Config | Behavior |
+|:--------|:-------|:---------|
+| **Valkey** (default) | `REHYDRATION_EVENT_STORE_BACKEND=valkey` | Events stored as RESP keys, idempotency via key lookup |
+| **NATS JetStream** | `REHYDRATION_EVENT_STORE_BACKEND=nats` | Events stored in `CONTEXT_EVENTS` stream, file-backed |
+
+Both implement the same `ContextEventStore` port with:
+- **Optimistic concurrency** — `expected_revision` checked before append; returns `ABORTED` on conflict
+- **Idempotency** — outcome recording by key; same key returns same result on retry
+- **Revision tracking** — monotonic per `(root_node_id, role)` pair
+
+### NATS JetStream subjects
+
+| Subject pattern | Purpose |
+|:----------------|:--------|
+| `{prefix}.graph.node.materialized` | Inbound: nodes + relationships |
+| `{prefix}.node.detail.materialized` | Inbound: extended detail |
+| `{prefix}.cmd.evt.{root_node_id}.{role}` | Event store: command events |
+| `{prefix}.cmd.idem.{key}` | Event store: idempotency outcomes |
+
+Prefix is configured via `REHYDRATION_EVENTS_PREFIX` (default: `rehydration`).
+
+### Operational notes
+
+- **Ordering**: sequential within each subject, no cross-subject ordering between graph and detail
+- **Failure**: handler error stops the runtime (nak + exit). No poison-pill queue — operator must investigate
+- **Deduplication**: application-level via Valkey (`ProcessedEventStore`), separate from JetStream ack
+- **Checkpointing**: stored in Valkey (`ProjectionCheckpointStore`), survives restarts
+- **State dependency**: even with NATS event store, the projection runtime always uses Valkey for deduplication and checkpoints
+
 ## Further Reading
 
 - [Proto contracts](../api/proto/underpass/rehydration/kernel/v1beta1/) — gRPC API definition
