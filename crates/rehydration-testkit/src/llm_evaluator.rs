@@ -164,6 +164,10 @@ pub struct LlmEvaluationResult {
     pub llm_response: String,
     pub llm_task_success: bool,
     pub llm_restart_accuracy: bool,
+    pub llm_restart_exact: bool,
+    pub llm_restart_off_by_one: bool,
+    pub llm_restart_on_competing: bool,
+    pub llm_restart_explained: bool,
     /// Backward-compatible aggregate: true when `reason_correct_main_path` is true.
     pub llm_reason_preserved: bool,
     /// Agent cited rationale from the main causal chain (ground truth path).
@@ -406,32 +410,23 @@ pub async fn evaluate_with_llm(
     eprintln!("[LLM-EVAL] inference response: {}", content.replace('\n', " ").chars().take(500).collect::<String>());
     let (judge_result, judge_raw) = match judge_response(config, &judge_client, &content, ground_truth).await {
         Ok((verdict, raw)) => {
-            eprintln!("[LLM-EVAL] judge verdict: task={} restart={} reason_correct={} reason_distractor={}", verdict.task_correct, verdict.restart_correct, verdict.reason_correct_main_path, verdict.reason_plausible_but_wrong);
+            eprintln!("[LLM-EVAL] judge verdict: task={} restart={} (exact={} off1={} competing={} explained={}) reason_correct={} reason_distractor={}",
+                verdict.task_correct, verdict.restart_correct, verdict.restart_exact, verdict.restart_off_by_one, verdict.restart_on_competing_branch, verdict.restart_explained,
+                verdict.reason_correct_main_path, verdict.reason_plausible_but_wrong);
             (verdict, Some(raw))
         }
         Err(e) => {
             eprintln!("[LLM-EVAL] judge FAILED: {e}");
             (JudgeVerdict {
-                task_correct: false,
-                restart_correct: false,
-                reason_correct_main_path: false,
-                reason_plausible_but_wrong: false,
+                task_correct: false, restart_correct: false,
+                restart_exact: false, restart_off_by_one: false,
+                restart_on_competing_branch: false, restart_explained: false,
+                reason_correct_main_path: false, reason_plausible_but_wrong: false,
             }, None)
         }
     };
 
-    Ok(LlmEvaluationResult {
-        llm_response: content,
-        llm_task_success: judge_result.task_correct,
-        llm_restart_accuracy: judge_result.restart_correct,
-        llm_reason_preserved: judge_result.reason_correct_main_path,
-        llm_reason_correct: judge_result.reason_correct_main_path,
-        llm_reason_distractor: judge_result.reason_plausible_but_wrong,
-        llm_latency_ms: latency_ms,
-        llm_prompt_tokens: prompt_tokens,
-        llm_completion_tokens: completion_tokens,
-        llm_judge_raw: judge_raw,
-    })
+    Ok(verdict_to_result(judge_result, content, latency_ms, prompt_tokens, completion_tokens, judge_raw))
 }
 
 /// Evaluate with explicit prompt config and LLM config — no global state.
@@ -475,27 +470,42 @@ pub async fn evaluate_with_config(
     eprintln!("[LLM-EVAL] inference response: {}", content.replace('\n', " ").chars().take(500).collect::<String>());
     let (judge_result, judge_raw) = match judge_response_with_prompts(prompts, config, &judge_client, &content, ground_truth).await {
         Ok((verdict, raw)) => {
-            eprintln!("[LLM-EVAL] judge verdict: task={} restart={} reason_correct={} reason_distractor={}", verdict.task_correct, verdict.restart_correct, verdict.reason_correct_main_path, verdict.reason_plausible_but_wrong);
+            eprintln!("[LLM-EVAL] judge verdict: task={} restart={} (exact={} off1={} competing={} explained={}) reason_correct={} reason_distractor={}",
+                verdict.task_correct, verdict.restart_correct, verdict.restart_exact, verdict.restart_off_by_one, verdict.restart_on_competing_branch, verdict.restart_explained,
+                verdict.reason_correct_main_path, verdict.reason_plausible_but_wrong);
             (verdict, Some(raw))
         }
         Err(e) => {
             eprintln!("[LLM-EVAL] judge FAILED: {e}");
-            (JudgeVerdict { task_correct: false, restart_correct: false, reason_correct_main_path: false, reason_plausible_but_wrong: false }, None)
+            (JudgeVerdict {
+                task_correct: false, restart_correct: false,
+                restart_exact: false, restart_off_by_one: false,
+                restart_on_competing_branch: false, restart_explained: false,
+                reason_correct_main_path: false, reason_plausible_but_wrong: false,
+            }, None)
         }
     };
 
-    Ok(LlmEvaluationResult {
-        llm_response: content,
-        llm_task_success: judge_result.task_correct,
-        llm_restart_accuracy: judge_result.restart_correct,
-        llm_reason_preserved: judge_result.reason_correct_main_path,
-        llm_reason_correct: judge_result.reason_correct_main_path,
-        llm_reason_distractor: judge_result.reason_plausible_but_wrong,
+    Ok(verdict_to_result(judge_result, content, latency_ms, prompt_tokens, completion_tokens, judge_raw))
+}
+
+fn verdict_to_result(v: JudgeVerdict, response: String, latency_ms: f64, prompt_tokens: u32, completion_tokens: u32, judge_raw: Option<String>) -> LlmEvaluationResult {
+    LlmEvaluationResult {
+        llm_response: response,
+        llm_task_success: v.task_correct,
+        llm_restart_accuracy: v.restart_correct,
+        llm_restart_exact: v.restart_exact,
+        llm_restart_off_by_one: v.restart_off_by_one,
+        llm_restart_on_competing: v.restart_on_competing_branch,
+        llm_restart_explained: v.restart_explained,
+        llm_reason_preserved: v.reason_correct_main_path,
+        llm_reason_correct: v.reason_correct_main_path,
+        llm_reason_distractor: v.reason_plausible_but_wrong,
         llm_latency_ms: latency_ms,
         llm_prompt_tokens: prompt_tokens,
         llm_completion_tokens: completion_tokens,
         llm_judge_raw: judge_raw,
-    })
+    }
 }
 
 // ── judge ───────────────────────────────────────────────────────────
@@ -504,6 +514,14 @@ pub async fn evaluate_with_config(
 struct JudgeVerdict {
     task_correct: bool,
     restart_correct: bool,
+    #[serde(default)]
+    restart_exact: bool,
+    #[serde(default)]
+    restart_off_by_one: bool,
+    #[serde(default)]
+    restart_on_competing_branch: bool,
+    #[serde(default)]
+    restart_explained: bool,
     reason_correct_main_path: bool,
     #[serde(default)]
     reason_plausible_but_wrong: bool,
@@ -657,6 +675,10 @@ mod tests {
             llm_response: "test".to_string(),
             llm_task_success: true,
             llm_restart_accuracy: true,
+            llm_restart_exact: true,
+            llm_restart_off_by_one: false,
+            llm_restart_on_competing: false,
+            llm_restart_explained: true,
             llm_reason_preserved: false,
             llm_reason_correct: false,
             llm_reason_distractor: false,
@@ -669,6 +691,7 @@ mod tests {
         assert!(json.contains("llm_task_success"));
         assert!(json.contains("llm_judge_raw"));
         assert!(json.contains("llm_reason_correct"));
-        assert!(json.contains("llm_reason_distractor"));
+        assert!(json.contains("llm_restart_exact"));
+        assert!(json.contains("llm_restart_explained"));
     }
 }

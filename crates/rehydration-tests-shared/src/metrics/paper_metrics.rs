@@ -82,6 +82,14 @@ pub struct PaperUseCaseMetric {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub llm_restart_accuracy: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub llm_restart_exact: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub llm_restart_off_by_one: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub llm_restart_on_competing: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub llm_restart_explained: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub llm_reason_preserved: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub llm_reason_correct: Option<bool>,

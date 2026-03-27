@@ -161,6 +161,10 @@ struct EvalResult {
     variant: String,
     task: Option<bool>,
     restart: Option<bool>,
+    restart_exact: Option<bool>,
+    restart_off_by_one: Option<bool>,
+    restart_on_competing: Option<bool>,
+    restart_explained: Option<bool>,
     reason: Option<bool>,
     reason_correct: Option<bool>,
     reason_distractor: Option<bool>,
@@ -702,10 +706,14 @@ async fn judge_prompt_evaluation_across_all_use_cases()
                         Ok(e) => {
                             let t = if e.llm_task_success { "OK" } else { "FAIL" };
                             let r = if e.llm_restart_accuracy { "OK" } else { "FAIL" };
+                            let rx = if e.llm_restart_exact { "OK" } else { "FAIL" };
+                            let ro = if e.llm_restart_off_by_one { "OK" } else { "FAIL" };
+                            let rcb = if e.llm_restart_on_competing { "OK" } else { "FAIL" };
+                            let re = if e.llm_restart_explained { "OK" } else { "FAIL" };
                             let rc = if e.llm_reason_correct { "OK" } else { "FAIL" };
                             let rd = if e.llm_reason_distractor { "LEAK" } else { "clean" };
                             let resp_short: String = e.llm_response.replace('\n', " ").chars().take(120).collect();
-                            run.log(&format!("  [{cell_id}/{prompt_name}] {}: T={t} R={r} Rc={rc} Rd={rd}  agent=\"{resp_short}...\"  judge={}",
+                            run.log(&format!("  [{cell_id}/{prompt_name}] {}: T={t} R={r}(x={rx} o1={ro} cb={rcb} ex={re}) Rc={rc} Rd={rd}  agent=\"{resp_short}...\"  judge={}",
                                 ctx.run_id, e.llm_judge_raw.as_deref().unwrap_or("?")));
                             EvalResult {
                                 model: cell_id,
@@ -713,6 +721,10 @@ async fn judge_prompt_evaluation_across_all_use_cases()
                                 variant: ctx.run_id.clone(),
                                 task: Some(e.llm_task_success),
                                 restart: Some(e.llm_restart_accuracy),
+                                restart_exact: Some(e.llm_restart_exact),
+                                restart_off_by_one: Some(e.llm_restart_off_by_one),
+                                restart_on_competing: Some(e.llm_restart_on_competing),
+                                restart_explained: Some(e.llm_restart_explained),
                                 reason: Some(e.llm_reason_preserved),
                                 reason_correct: Some(e.llm_reason_correct),
                                 reason_distractor: Some(e.llm_reason_distractor),
@@ -727,7 +739,10 @@ async fn judge_prompt_evaluation_across_all_use_cases()
                                 model: cell_id,
                                 prompt: prompt_name.to_string(),
                                 variant: ctx.run_id.clone(),
-                                task: None, restart: None, reason: None,
+                                task: None, restart: None,
+                                restart_exact: None, restart_off_by_one: None,
+                                restart_on_competing: None, restart_explained: None,
+                                reason: None,
                                 reason_correct: None, reason_distractor: None,
                                 latency_ms: 0.0,
                                 agent_response: String::new(),

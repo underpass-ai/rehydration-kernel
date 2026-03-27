@@ -98,6 +98,10 @@ def generate_report(run_dir, results):
     task_fail = sum(1 for r in results if r.get("task") is False)
     task_err = sum(1 for r in results if r.get("task") is None)
     restart_ok = sum(1 for r in results if r.get("restart") is True)
+    restart_exact = sum(1 for r in results if r.get("restart_exact") is True)
+    restart_off1 = sum(1 for r in results if r.get("restart_off_by_one") is True)
+    restart_competing = sum(1 for r in results if r.get("restart_on_competing") is True)
+    restart_explained = sum(1 for r in results if r.get("restart_explained") is True)
     reason_ok = sum(1 for r in results if r.get("reason") is True)
     reason_correct_ok = sum(1 for r in results if r.get("reason_correct") is True)
     reason_distractor_ok = sum(1 for r in results if r.get("reason_distractor") is True)
@@ -108,7 +112,10 @@ def generate_report(run_dir, results):
     md.append("|--------|----|------|-----|------|")
     md.append(f"| Task | {task_ok} | {task_fail} | {task_err} | {ratio(task_ok, total)} |")
     md.append(f"| Restart | {restart_ok} | {total - restart_ok - task_err} | {task_err} | {ratio(restart_ok, total)} |")
-    md.append(f"| Reason (compat) | {reason_ok} | {total - reason_ok - task_err} | {task_err} | {ratio(reason_ok, total)} |")
+    md.append(f"| ↳ Exact | {restart_exact} | | | {ratio(restart_exact, total)} |")
+    md.append(f"| ↳ Off-by-one | {restart_off1} | | | {ratio(restart_off1, total)} |")
+    md.append(f"| ↳ Competing branch | {restart_competing} | | | {ratio(restart_competing, total)} |")
+    md.append(f"| ↳ Explained | {restart_explained} | | | {ratio(restart_explained, total)} |")
     md.append(f"| Reason Correct | {reason_correct_ok} | {total - reason_correct_ok - task_err} | {task_err} | {ratio(reason_correct_ok, total)} |")
     md.append(f"| Reason Distractor | {reason_distractor_ok} | | | {ratio(reason_distractor_ok, total)} |")
     md.append("")
@@ -519,6 +526,26 @@ def generate_report(run_dir, results):
     md.append(f"| **total** | | **{len(results)}** | **${total_cost:.2f}** |")
     md.append("")
 
+    # ── Restart diagnostic by noise mode ──
+    md.append("## Restart Diagnostic by Noise Mode")
+    md.append("")
+    md.append("| Noise | Restart | Exact | Off-by-1 | Competing | Explained | Evals |")
+    md.append("|-------|---------|-------|----------|-----------|-----------|-------|")
+
+    for noise in ["clean", "competing", "conflicting", "restart"]:
+        cell = by_noise.get(noise, [])
+        if not cell:
+            continue
+        n = len(cell)
+        re = sum(1 for r in cell if r.get("restart") is True)
+        rx = sum(1 for r in cell if r.get("restart_exact") is True)
+        ro = sum(1 for r in cell if r.get("restart_off_by_one") is True)
+        rcb = sum(1 for r in cell if r.get("restart_on_competing") is True)
+        rexp = sum(1 for r in cell if r.get("restart_explained") is True)
+        md.append(f"| **{noise}** | {ratio(re, n)} | {ratio(rx, n)} | {ratio(ro, n)} | {ratio(rcb, n)} | {ratio(rexp, n)} | {n} |")
+
+    md.append("")
+
     # ── Statistical summary per dimension ──
     md.append("## Statistical Summary")
     md.append(fig_ref(run_dir, "10_judge_strictness.png", "Judge Strictness"))
@@ -611,13 +638,17 @@ def generate_report(run_dir, results):
     # ── Export CSV ──
     csv_path = run_dir / "results.csv"
     with open(csv_path, "w") as f:
-        f.write("eval_num,agent,judge,prompt,variant,scale,domain,mix,noise,task,restart,reason,reason_correct,reason_distractor,latency_ms,failure_point,restart_node\n")
+        f.write("eval_num,agent,judge,prompt,variant,scale,domain,mix,noise,task,restart,restart_exact,restart_off_by_one,restart_on_competing,restart_explained,reason,reason_correct,reason_distractor,latency_ms,failure_point,restart_node\n")
         for i, r in enumerate(results, 1):
             agent, judge = parse_model(r["model"])
             v = parse_variant(r["variant"])
             t = "true" if r.get("task") else ("false" if r.get("task") is False else "null")
             re = "true" if r.get("restart") else ("false" if r.get("restart") is False else "null")
             p = "true" if r.get("reason") else ("false" if r.get("reason") is False else "null")
+            rx = "true" if r.get("restart_exact") else ("false" if r.get("restart_exact") is False else "null")
+            ro = "true" if r.get("restart_off_by_one") else ("false" if r.get("restart_off_by_one") is False else "null")
+            rcb = "true" if r.get("restart_on_competing") else ("false" if r.get("restart_on_competing") is False else "null")
+            rexp = "true" if r.get("restart_explained") else ("false" if r.get("restart_explained") is False else "null")
             rc = "true" if r.get("reason_correct") else ("false" if r.get("reason_correct") is False else "null")
             rd = "true" if r.get("reason_distractor") else ("false" if r.get("reason_distractor") is False else "null")
             lat = f"{r.get('latency_ms', 0):.1f}"
@@ -629,7 +660,7 @@ def generate_report(run_dir, results):
                 rn = parsed.get("restart_node", "").replace('"', '""')
             except Exception:
                 pass
-            f.write(f'{i},"{agent}","{judge}","{r["prompt"]}","{r["variant"]}","{v["scale"]}","{v["domain"]}","{v["mix"]}","{v["noise"]}",{t},{re},{p},{rc},{rd},{lat},"{fp}","{rn}"\n')
+            f.write(f'{i},"{agent}","{judge}","{r["prompt"]}","{r["variant"]}","{v["scale"]}","{v["domain"]}","{v["mix"]}","{v["noise"]}",{t},{re},{rx},{ro},{rcb},{rexp},{p},{rc},{rd},{lat},"{fp}","{rn}"\n')
 
     md.append("## Kernel Metrics")
     md.append(fig_ref(run_dir, "11_kernel_token_efficiency.png", "Kernel Token Efficiency"))

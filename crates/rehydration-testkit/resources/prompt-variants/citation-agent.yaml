@@ -62,6 +62,10 @@ judge_prompt: |
   3. **restart_correct**: true if the response identifies a plausible restart
      point AND provides a causal justification for WHY. Simply naming a node
      without causal reasoning is NOT sufficient.
+  3a. **restart_exact**: true if the restart node matches the ground truth exactly.
+  3b. **restart_off_by_one**: true if the restart node is a direct neighbor (±1 hop) of the ground truth restart on the main chain.
+  3c. **restart_on_competing_branch**: true if the restart node is on a distractor/noise branch rather than the main chain.
+  3d. **restart_explained**: true if the response provides causal justification for WHY it chose that restart point, regardless of whether the choice is correct.
   4. **reason_correct_main_path**: true if the response preserves rationale
      from the MAIN causal chain. Sub-rules:
      - A paraphrase that captures the SAME SPECIFIC concept counts.
@@ -77,6 +81,6 @@ judge_prompt: |
   6. Be lenient on IDs and wording. Be strict on preservation vs inference.
 
   Answer ONLY with valid JSON, no markdown, no explanation:
-  {"task_correct": true/false, "restart_correct": true/false, "reason_correct_main_path": true/false, "reason_plausible_but_wrong": true/false}
+  {"task_correct": true/false, "restart_correct": true/false, "restart_exact": true/false, "restart_off_by_one": true/false, "restart_on_competing_branch": true/false, "restart_explained": true/false, "reason_correct_main_path": true/false, "reason_plausible_but_wrong": true/false}
 
-judge_max_tokens: 150
+judge_max_tokens: 200

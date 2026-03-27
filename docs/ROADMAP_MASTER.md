@@ -212,7 +212,7 @@ weaknesses. See [`docs/benchmark-2026-03-26-technical-review.md`](./benchmark-20
 - [x] Fix E: replace binary `clean`/`competing` with granular noise taxonomy: `Structural` (baseline), `CompetingCausal` (plausible alt rationale), `ConflictingMainPath` (contradicts chain), `CompetingRestartPoint` (alt recovery node). Distributed across mixes to keep eval count flat (36 variants). Validated: restart noise drops restart accuracy to 0% while preserving reason_correct — targeted diagnostic power.
 
 **P2 — Restart sub-metrics** (restart is the weakest metric at 34%):
-- [ ] Fix F: replace binary `restart_correct` with: `restart_exact`, `restart_off_by_one`, `restart_on_competing_branch`, `restart_missing`, `restart_explained_correctly`. Enables targeted improvement of the weakest dimension.
+- [x] Fix F: replace binary `restart_correct` with sub-metrics: `restart_exact`, `restart_off_by_one`, `restart_on_competing_branch`, `restart_explained`. Propagated through JudgeVerdict, LlmEvaluationResult, all 5 judge prompts, PaperUseCaseMetric, EvalResult, BenchmarkResult. Validated: qwen3-8b gets 0% exact but 67% off-by-one — restart failures are ±1 hop, not confusion.
 
 **P1 — Scientific methodology** (blocks paper submission):
 - [ ] Restructure report to follow A-J template from [`anexo-procedimiento-cientifico-analisis-datos.md`](./anexo-procedimiento-cientifico-analisis-datos.md): research question, hypothesis + H0, variables, experimental design, metrics, data quality, descriptive, uncertainty, threats to validity, interpretation, conclusion with limitations.
