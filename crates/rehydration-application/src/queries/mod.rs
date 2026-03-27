@@ -39,7 +39,7 @@ pub use rehydrate_session::{
     RehydrateSessionQuery, RehydrateSessionResult, RehydrateSessionUseCase,
 };
 pub use render_graph_bundle::{
-    RenderedContext, RenderedSection, RenderedTier, render_graph_bundle,
+    BundleQualityMetrics, RenderedContext, RenderedSection, RenderedTier, render_graph_bundle,
     render_graph_bundle_with_options,
 };
 pub use timing_breakdown::QueryTimingBreakdown;

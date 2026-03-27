@@ -19,7 +19,7 @@ pub struct GetContextQuery {
     pub render_options: ContextRenderOptions,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct GetContextResult {
     pub bundle: RehydrationBundle,
     pub rendered: RenderedContext,

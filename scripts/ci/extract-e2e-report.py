@@ -702,6 +702,34 @@ def generate_report(run_dir, results):
 
         md.append("")
 
+    # ── Token efficiency (from kernel quality metrics) ──
+    has_quality = any(r.get("compression_ratio", 0) > 0 for r in results)
+    if has_quality:
+        md.append("## Token Efficiency (kernel-reported)")
+        md.append("")
+        md.append("Compression ratio = raw_equivalent_tokens / rendered_tokens. >1.0 means the structured graph uses fewer tokens than a flat text dump of the same data.")
+        md.append("")
+        md.append("| Mix | Avg Rendered | Avg Raw | Avg Compression | Causal Density | Detail Coverage |")
+        md.append("|-----|-------------|---------|-----------------|----------------|-----------------|")
+
+        for mix in ["explanatory", "structural", "mixed"]:
+            cell = by_mix.get(mix, [])
+            if not cell:
+                continue
+            rendered = [r["rendered_tokens"] for r in cell if r.get("rendered_tokens", 0) > 0]
+            raw = [r["raw_equivalent_tokens"] for r in cell if r.get("raw_equivalent_tokens", 0) > 0]
+            comp = [r["compression_ratio"] for r in cell if r.get("compression_ratio", 0) > 0]
+            cd = [r["causal_density"] for r in cell if "causal_density" in r]
+            dc = [r["detail_coverage"] for r in cell if "detail_coverage" in r]
+            avg_r = f"{sum(rendered)/len(rendered):.0f}" if rendered else "n/a"
+            avg_raw = f"{sum(raw)/len(raw):.0f}" if raw else "n/a"
+            avg_c = f"{sum(comp)/len(comp):.2f}x" if comp else "n/a"
+            avg_cd = f"{sum(cd)/len(cd):.0%}" if cd else "n/a"
+            avg_dc = f"{sum(dc)/len(dc):.0%}" if dc else "n/a"
+            md.append(f"| **{mix}** | {avg_r} | {avg_raw} | **{avg_c}** | {avg_cd} | {avg_dc} |")
+
+        md.append("")
+
     md.append("## Kernel Metrics")
     md.append(fig_ref(run_dir, "11_kernel_token_efficiency.png", "Kernel Token Efficiency"))
     md.append(fig_ref(run_dir, "12_kernel_causal_signal.png", "Causal Signal in Rendered Context"))

@@ -21,7 +21,7 @@ pub struct GetContextPathQuery {
     pub render_options: ContextRenderOptions,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct GetContextPathResult {
     pub path_bundle: RehydrationBundle,
     pub rendered: RenderedContext,

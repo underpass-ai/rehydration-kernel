@@ -1,8 +1,8 @@
-use rehydration_application::{GetContextResult, RenderedContext, RenderedTier};
+use rehydration_application::{BundleQualityMetrics, GetContextResult, RenderedContext, RenderedTier};
 use rehydration_domain::{RehydrationMode, ResolutionTier};
 use rehydration_proto::v1beta1::{
-    BundleRenderFormat, BundleSection, RenderedContext as ProtoRenderedContext,
-    RenderedTier as ProtoRenderedTier,
+    BundleQualityMetrics as ProtoQualityMetrics, BundleRenderFormat, BundleSection,
+    RenderedContext as ProtoRenderedContext, RenderedTier as ProtoRenderedTier,
 };
 
 pub(crate) fn proto_rendered_context_from_result_v1beta1(
@@ -37,6 +37,17 @@ pub(crate) fn proto_rendered_context_v1beta1(
             .map(|tier| proto_rendered_tier_v1beta1(tier, scopes))
             .collect(),
         resolved_mode: proto_rehydration_mode(rendered.resolved_mode) as i32,
+        quality: Some(proto_quality_metrics(&rendered.quality)),
+    }
+}
+
+fn proto_quality_metrics(q: &BundleQualityMetrics) -> ProtoQualityMetrics {
+    ProtoQualityMetrics {
+        raw_equivalent_tokens: q.raw_equivalent_tokens,
+        compression_ratio: q.compression_ratio,
+        causal_density: q.causal_density,
+        noise_ratio: q.noise_ratio,
+        detail_coverage: q.detail_coverage,
     }
 }
 

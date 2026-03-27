@@ -107,6 +107,29 @@ where
         );
         tracing::debug!(resolved_mode = %resolved_mode.as_str(), "mode resolved");
 
+        // Quality metrics
+        let q = &result.rendered.quality;
+        meter
+            .u64_histogram("rehydration.quality.raw_equivalent_tokens")
+            .build()
+            .record(q.raw_equivalent_tokens as u64, attrs);
+        meter
+            .f64_histogram("rehydration.quality.compression_ratio")
+            .build()
+            .record(q.compression_ratio, attrs);
+        meter
+            .f64_histogram("rehydration.quality.causal_density")
+            .build()
+            .record(q.causal_density, attrs);
+        meter
+            .f64_histogram("rehydration.quality.noise_ratio")
+            .build()
+            .record(q.noise_ratio, attrs);
+        meter
+            .f64_histogram("rehydration.quality.detail_coverage")
+            .build()
+            .record(q.detail_coverage, attrs);
+
         if let Some(ref timing) = result.timing {
             meter
                 .f64_histogram("rehydration.session.graph_load.duration")

@@ -26,7 +26,28 @@ pub struct RenderedTier {
     pub sections: Vec<RenderedSection>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Quality and efficiency metrics computed during rendering.
+///
+/// These are first-class observability signals — not benchmark artifacts.
+/// Every render produces them, and they flow through proto + OTel.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BundleQualityMetrics {
+    /// Token count for a flat text dump of the same data (no structure).
+    pub raw_equivalent_tokens: u32,
+    /// `raw_equivalent_tokens / rendered_token_count`. >1.0 means the
+    /// structured rendering compressed vs flat text.
+    pub compression_ratio: f64,
+    /// Fraction of relationships with causal/motivational/evidential
+    /// semantic class (vs structural/procedural). Higher = richer signal.
+    pub causal_density: f64,
+    /// Fraction of nodes that come from noise/distractor branches.
+    /// 0.0 for clean graphs, >0 when structural noise is present.
+    pub noise_ratio: f64,
+    /// Fraction of nodes that have extended detail attached.
+    pub detail_coverage: f64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct RenderedContext {
     pub content: String,
     pub token_count: u32,
@@ -36,6 +57,8 @@ pub struct RenderedContext {
     pub tiers: Vec<RenderedTier>,
     /// The mode that was actually used for tiered rendering.
     pub resolved_mode: RehydrationMode,
+    /// Quality and efficiency metrics for this render.
+    pub quality: BundleQualityMetrics,
 }
 
 pub fn render_graph_bundle(bundle: &RehydrationBundle) -> RenderedContext {
@@ -95,6 +118,9 @@ pub fn render_graph_bundle_with_estimator(
 
     let tiers = build_rendered_tiers(tiered_sections, &tier_budget, estimator);
 
+    // ── Quality metrics ───────────────────────────────────────────────
+    let quality = compute_quality_metrics(bundle, &detail_by_node_id, token_count, estimator);
+
     RenderedContext {
         content,
         token_count,
@@ -102,6 +128,125 @@ pub fn render_graph_bundle_with_estimator(
         truncation,
         tiers,
         resolved_mode,
+        quality,
+    }
+}
+
+fn compute_quality_metrics(
+    bundle: &RehydrationBundle,
+    detail_by_node_id: &BTreeMap<&str, &rehydration_domain::BundleNodeDetail>,
+    rendered_tokens: u32,
+    estimator: &dyn TokenEstimator,
+) -> BundleQualityMetrics {
+    // Raw equivalent: flat text dump of all nodes + relationships
+    let mut raw_text = String::new();
+
+    // Root node
+    let root = bundle.root_node();
+    raw_text.push_str(&format!(
+        "Node: {}. Kind: {}. Summary: {}.\n",
+        root.node_id(),
+        root.node_kind(),
+        root.summary()
+    ));
+    if let Some(detail) = detail_by_node_id.get(root.node_id()) {
+        raw_text.push_str(&format!("Detail: {}.\n", detail.detail()));
+    }
+
+    // Neighbor nodes
+    for node in bundle.neighbor_nodes() {
+        raw_text.push_str(&format!(
+            "Node: {}. Kind: {}. Summary: {}.\n",
+            node.node_id(),
+            node.node_kind(),
+            node.summary()
+        ));
+        if let Some(detail) = detail_by_node_id.get(node.node_id()) {
+            raw_text.push_str(&format!("Detail: {}.\n", detail.detail()));
+        }
+    }
+
+    // Relationships
+    for rel in bundle.relationships() {
+        raw_text.push_str(&format!(
+            "Relationship: {} connects to {} via {}. Semantic class: {}.",
+            rel.source_node_id(),
+            rel.target_node_id(),
+            rel.relationship_type(),
+            rel.explanation().semantic_class().as_str(),
+        ));
+        if let Some(r) = rel.explanation().rationale() {
+            raw_text.push_str(&format!(" Rationale: {r}."));
+        }
+        if let Some(m) = rel.explanation().motivation() {
+            raw_text.push_str(&format!(" Motivation: {m}."));
+        }
+        if let Some(m) = rel.explanation().method() {
+            raw_text.push_str(&format!(" Method: {m}."));
+        }
+        if let Some(d) = rel.explanation().decision_id() {
+            raw_text.push_str(&format!(" Decision: {d}."));
+        }
+        raw_text.push('\n');
+    }
+
+    let raw_equivalent_tokens = estimator.estimate_tokens(&raw_text);
+    let compression_ratio = if rendered_tokens > 0 {
+        raw_equivalent_tokens as f64 / rendered_tokens as f64
+    } else {
+        1.0
+    };
+
+    // Causal density: causal/motivational/evidential vs total relationships
+    let total_rels = bundle.relationships().len();
+    let causal_rels = bundle
+        .relationships()
+        .iter()
+        .filter(|r| {
+            matches!(
+                r.explanation().semantic_class(),
+                rehydration_domain::RelationSemanticClass::Causal
+                    | rehydration_domain::RelationSemanticClass::Motivational
+                    | rehydration_domain::RelationSemanticClass::Evidential
+            )
+        })
+        .count();
+    let causal_density = if total_rels > 0 {
+        causal_rels as f64 / total_rels as f64
+    } else {
+        0.0
+    };
+
+    // Noise ratio: nodes with "noise" or "distractor" in ID
+    let total_nodes = 1 + bundle.neighbor_nodes().len(); // root + neighbors
+    let noise_nodes = bundle
+        .neighbor_nodes()
+        .iter()
+        .filter(|n| {
+            let id = n.node_id();
+            id.contains("noise") || id.contains("distractor")
+        })
+        .count();
+    let noise_ratio = if total_nodes > 0 {
+        noise_nodes as f64 / total_nodes as f64
+    } else {
+        0.0
+    };
+
+    // Detail coverage: nodes with detail / total nodes
+    let nodes_with_detail = detail_by_node_id.len();
+    let detail_coverage = if total_nodes > 0 {
+        nodes_with_detail as f64 / total_nodes as f64
+    } else {
+        0.0
+    };
+
+    BundleQualityMetrics {
+        raw_equivalent_tokens,
+        compression_ratio,
+        causal_density,
+        noise_ratio,
+        detail_coverage,
     }
 }
 

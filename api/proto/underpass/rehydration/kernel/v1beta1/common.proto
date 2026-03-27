@@ -127,6 +127,23 @@ message RenderedContext {
   repeated RenderedTier tiers = 5;
   // The mode actually used for tiered rendering. UNSPECIFIED when auto-detected.
   RehydrationMode resolved_mode = 6;
+  // Quality and efficiency metrics for this render.
+  BundleQualityMetrics quality = 7;
+}
+
+// Quality and efficiency metrics computed during rendering.
+// These are first-class observability signals — not benchmark artifacts.
+message BundleQualityMetrics {
+  // Token count for a flat text dump of the same data (no structure).
+  uint32 raw_equivalent_tokens = 1;
+  // raw_equivalent_tokens / rendered_token_count. >1.0 means compression.
+  double compression_ratio = 2;
+  // Fraction of relationships with causal/motivational/evidential class.
+  double causal_density = 3;
+  // Fraction of nodes from noise/distractor branches.
+  double noise_ratio = 4;
+  // Fraction of nodes with extended detail attached.
+  double detail_coverage = 5;
 }
 
 message ScopeValidationResult {

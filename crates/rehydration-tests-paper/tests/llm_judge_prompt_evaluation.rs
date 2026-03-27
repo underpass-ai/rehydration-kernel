@@ -150,6 +150,11 @@ struct CapturedVariant {
     run_id: String,
     rendered_content: String,
     rendered_tokens: u32,
+    raw_equivalent_tokens: u32,
+    compression_ratio: f64,
+    causal_density: f64,
+    noise_ratio: f64,
+    detail_coverage: f64,
     question: String,
     ground_truth: EvaluationGroundTruth,
 }
@@ -169,6 +174,12 @@ struct EvalResult {
     reason_correct: Option<bool>,
     reason_distractor: Option<bool>,
     latency_ms: f64,
+    rendered_tokens: u32,
+    raw_equivalent_tokens: u32,
+    compression_ratio: f64,
+    causal_density: f64,
+    noise_ratio: f64,
+    detail_coverage: f64,
     agent_response: String,
     judge_raw: Option<String>,
 }
@@ -606,6 +617,7 @@ async fn judge_prompt_evaluation_across_all_use_cases()
                 let rendered = response.rendered.ok_or("missing rendered")?;
                 let eval_content = tier_content_for_eval(&rendered);
                 let tokens = rendered.token_count;
+                let quality = rendered.quality.unwrap_or_default();
 
                 // Build ground truth that rewards multi-layer graph reasoning.
                 //
@@ -695,12 +707,20 @@ async fn judge_prompt_evaluation_across_all_use_cases()
                 };
 
                 let chain_kinds: String = chain_nodes.iter().map(|n| n.node_kind.as_str()).collect::<Vec<_>>().join("→");
-                run.log(&format!("[CAPTURE] {variant_id}: {tokens} tok, chain=[{chain_kinds}], reason={}, distractor={}", reason.as_deref().unwrap_or("none"), distractor.as_deref().unwrap_or("none")));
+                run.log(&format!("[CAPTURE] {variant_id}: {tokens} tok (raw={}, compress={:.2}x, causal={:.0}%, noise={:.0}%, detail={:.0}%), chain=[{chain_kinds}], reason={}, distractor={}",
+                    quality.raw_equivalent_tokens, quality.compression_ratio,
+                    quality.causal_density * 100.0, quality.noise_ratio * 100.0, quality.detail_coverage * 100.0,
+                    reason.as_deref().unwrap_or("none"), distractor.as_deref().unwrap_or("none")));
 
                 captured.push(CapturedVariant {
                     run_id: variant_id,
                     rendered_content: eval_content,
                     rendered_tokens: tokens,
+                    raw_equivalent_tokens: quality.raw_equivalent_tokens,
+                    compression_ratio: quality.compression_ratio,
+                    causal_density: quality.causal_density,
+                    noise_ratio: quality.noise_ratio,
+                    detail_coverage: quality.detail_coverage,
                     question,
                     ground_truth: EvaluationGroundTruth {
                         expected_failure_point: Some(failure_desc),
@@ -788,6 +808,12 @@ async fn judge_prompt_evaluation_across_all_use_cases()
                                 reason_correct: Some(e.llm_reason_correct),
                                 reason_distractor: Some(e.llm_reason_distractor),
                                 latency_ms: e.llm_latency_ms,
+                                rendered_tokens: ctx.rendered_tokens,
+                                raw_equivalent_tokens: ctx.raw_equivalent_tokens,
+                                compression_ratio: ctx.compression_ratio,
+                                causal_density: ctx.causal_density,
+                                noise_ratio: ctx.noise_ratio,
+                                detail_coverage: ctx.detail_coverage,
                                 agent_response: e.llm_response,
                                 judge_raw: e.llm_judge_raw,
                             }
@@ -804,6 +830,12 @@ async fn judge_prompt_evaluation_across_all_use_cases()
                                 reason: None,
                                 reason_correct: None, reason_distractor: None,
                                 latency_ms: 0.0,
+                                rendered_tokens: ctx.rendered_tokens,
+                                raw_equivalent_tokens: ctx.raw_equivalent_tokens,
+                                compression_ratio: ctx.compression_ratio,
+                                causal_density: ctx.causal_density,
+                                noise_ratio: ctx.noise_ratio,
+                                detail_coverage: ctx.detail_coverage,
                                 agent_response: String::new(),
                                 judge_raw: None,
                             }
