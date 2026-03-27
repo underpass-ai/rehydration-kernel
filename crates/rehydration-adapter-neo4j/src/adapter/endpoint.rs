@@ -8,6 +8,8 @@ pub(crate) struct Neo4jEndpoint {
     pub(crate) user: String,
     pub(crate) password: String,
     pub(crate) tls_ca_path: Option<PathBuf>,
+    pub(crate) tls_cert_path: Option<PathBuf>,
+    pub(crate) tls_key_path: Option<PathBuf>,
 }
 
 pub(crate) struct UriParts<'a> {
@@ -45,55 +47,81 @@ impl Neo4jEndpoint {
 
         let authority = parse_authority(uri.authority, "graph")?;
         let tls_enabled = matches!(uri.scheme, "neo4j+s" | "neo4j+ssc" | "bolt+s" | "bolt+ssc");
-        let tls_ca_path = parse_query_params(uri.query, "graph", tls_enabled)?;
+        let tls_paths = parse_query_params(uri.query, "graph", tls_enabled)?;
 
         Ok(Self {
             connection_uri: format!("{}://{}", uri.scheme, authority.host_port),
             user: authority.user.unwrap_or_default(),
             password: authority.password.unwrap_or_default(),
-            tls_ca_path,
+            tls_ca_path: tls_paths.ca,
+            tls_cert_path: tls_paths.cert,
+            tls_key_path: tls_paths.key,
         })
     }
+}
+
+struct TlsPaths {
+    ca: Option<PathBuf>,
+    cert: Option<PathBuf>,
+    key: Option<PathBuf>,
 }
 
 fn parse_query_params(
     query: Option<&str>,
     name: &str,
     tls_enabled: bool,
-) -> Result<Option<PathBuf>, PortError> {
+) -> Result<TlsPaths, PortError> {
     let Some(query) = query else {
-        return Ok(None);
+        return Ok(TlsPaths {
+            ca: None,
+            cert: None,
+            key: None,
+        });
     };
 
-    let mut tls_ca_path = None;
+    let mut ca = None;
+    let mut cert = None;
+    let mut key = None;
+
     for pair in query.split('&') {
         if pair.is_empty() {
             continue;
         }
 
-        let (key, value) = pair.split_once('=').ok_or_else(|| {
+        let (k, value) = pair.split_once('=').ok_or_else(|| {
             PortError::InvalidState(format!("{name} uri query parameter `{pair}` is invalid"))
         })?;
 
-        match key {
-            "tls_ca_path" => {
+        match k {
+            "tls_ca_path" | "tls_cert_path" | "tls_key_path" => {
                 if !tls_enabled {
-                    return Err(PortError::InvalidState(
-                        "graph tls_ca_path requires bolt+s, bolt+ssc, neo4j+s, or neo4j+ssc"
-                            .to_string(),
-                    ));
+                    return Err(PortError::InvalidState(format!(
+                        "graph {k} requires bolt+s, bolt+ssc, neo4j+s, or neo4j+ssc"
+                    )));
                 }
-                tls_ca_path = Some(parse_tls_path(value, name, key)?);
+                let path = parse_tls_path(value, name, k)?;
+                match k {
+                    "tls_ca_path" => ca = Some(path),
+                    "tls_cert_path" => cert = Some(path),
+                    "tls_key_path" => key = Some(path),
+                    _ => unreachable!(),
+                }
             }
             _ => {
                 return Err(PortError::InvalidState(format!(
-                    "unsupported graph uri option `{key}`"
+                    "unsupported graph uri option `{k}`"
                 )));
             }
         }
     }
 
-    Ok(tls_ca_path)
+    if cert.is_some() != key.is_some() {
+        return Err(PortError::InvalidState(
+            "graph tls_cert_path and tls_key_path must be configured together".to_string(),
+        ));
+    }
+
+    Ok(TlsPaths { ca, cert, key })
 }
 
 pub(crate) fn split_uri<'a>(raw_uri: &'a str, name: &str) -> Result<UriParts<'a>, PortError> {

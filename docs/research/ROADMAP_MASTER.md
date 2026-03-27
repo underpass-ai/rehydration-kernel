@@ -244,8 +244,10 @@ Neo4j supports mTLS since v5.19+ (client certificate as 2FA). The `neo4rs`
 driver's `with_client_certificate()` can load client certs. Currently our
 adapter only passes a CA path for server verification.
 
-- [ ] Add `neo4jTls.keys.cert` and `neo4jTls.keys.key` to Helm values
-- [ ] Pass client cert+key to `ConfigBuilder` in Neo4j adapter
+- [x] Add `neo4jTls.keys.cert` and `neo4jTls.keys.key` to Helm values
+- [x] Parse `tls_cert_path` + `tls_key_path` in Neo4j endpoint (with pair validation)
+- [x] Helm helper appends cert+key query params to graph URI
+- [ ] Pass client cert+key to `ConfigBuilder` (neo4rs 0.8 only has `with_client_certificate` for CA; needs upgrade or manual rustls config)
 - [ ] Test with mTLS-enabled Neo4j container
 
 ### P2 — Vestigial `admin_bind` config field

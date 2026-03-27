@@ -42,7 +42,10 @@ graph LR
 - **Authentication**: URI-embedded credentials. Must be provided via
   Kubernetes secrets in production.
 - **Client mTLS**: Neo4j supports mTLS since v5.19+ (client cert as 2FA).
-  Currently the adapter only passes a CA path. Client cert+key support is planned.
+  Helm chart and URI parsing support `tls_cert_path` + `tls_key_path`.
+  Pending: `neo4rs` 0.8 `ConfigBuilder` only exposes `with_client_certificate`
+  for CA — passing the client cert to the driver requires upgrade or manual
+  rustls config.
 - **Authorization**: Single Neo4j connection identity per kernel instance.
 
 ### Boundary 3: Kernel → Valkey
@@ -85,7 +88,7 @@ graph LR
 | Component | Helm Values | Modes |
 |-----------|------------|-------|
 | gRPC transport | `tls.mode`, `tls.existingSecret` | disabled, server, mutual |
-| Neo4j | `neo4jTls.enabled`, `neo4jTls.existingSecret` | TLS with CA trust |
+| Neo4j | `neo4jTls.enabled`, `neo4jTls.existingSecret`, `neo4jTls.keys.{ca,cert,key}` | TLS with CA trust + client cert (driver pending) |
 | Valkey | `valkeyTls.enabled`, `valkeyTls.existingSecret` | TLS, mTLS with client cert |
 | NATS | `natsTls.mode`, `natsTls.existingSecret` | TLS, mTLS, tls_first |
 | OTel Collector | `otelCollector.tls.enabled`, `otelCollector.tls.existingSecret` | Plaintext or mTLS (receiver + Loki exporter). Kernel OTLP client TLS pending Rust code change |

@@ -256,6 +256,10 @@ underpassai
 {{- if and (ne (default "" $tls.existingSecret) "") (ne (default "" $tls.keys.ca) "") -}}
 {{- $params = append $params (printf "tls_ca_path=%s/%s" $tls.mountPath $tls.keys.ca) -}}
 {{- end -}}
+{{- if and (ne (default "" $tls.existingSecret) "") (ne (default "" $tls.keys.cert) "") (ne (default "" $tls.keys.key) "") -}}
+{{- $params = append $params (printf "tls_cert_path=%s/%s" $tls.mountPath $tls.keys.cert) -}}
+{{- $params = append $params (printf "tls_key_path=%s/%s" $tls.mountPath $tls.keys.key) -}}
+{{- end -}}
 {{- if gt (len $params) 0 -}}
 {{- if contains "?" $uri -}}
 {{- printf "%s&%s" $uri (join "&" $params) -}}
