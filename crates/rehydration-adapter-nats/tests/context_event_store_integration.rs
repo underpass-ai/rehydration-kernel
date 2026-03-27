@@ -132,3 +132,49 @@ async fn idempotency_key_deduplication() {
             .is_none()
     );
 }
+
+#[tokio::test]
+async fn content_hash_tracks_latest_event() {
+    let container = start_nats_container().await.expect("nats should start");
+    let host_port = container
+        .get_host_port_ipv4(NATS_INTERNAL_PORT.tcp())
+        .await
+        .expect("port should be mapped");
+    let url = format!("nats://127.0.0.1:{host_port}");
+    let client = connect_with_retry(&url).await.expect("nats should connect");
+
+    let store = NatsContextEventStore::new(client, "hash")
+        .await
+        .expect("store should initialize");
+
+    assert!(
+        store
+            .current_content_hash("node-1", "dev")
+            .await
+            .expect("should read")
+            .is_none(),
+        "empty store should return None"
+    );
+
+    store
+        .append(sample_event("node-1", "dev", 1, None), 0)
+        .await
+        .expect("append should succeed");
+
+    let hash = store
+        .current_content_hash("node-1", "dev")
+        .await
+        .expect("should read");
+    assert_eq!(hash.as_deref(), Some("hash-1"));
+
+    store
+        .append(sample_event("node-1", "dev", 2, None), 1)
+        .await
+        .expect("second append should succeed");
+
+    let hash2 = store
+        .current_content_hash("node-1", "dev")
+        .await
+        .expect("should read");
+    assert_eq!(hash2.as_deref(), Some("hash-2"));
+}

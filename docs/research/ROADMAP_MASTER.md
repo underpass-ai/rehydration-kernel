@@ -141,10 +141,10 @@ The server rejects if sequence doesn't match, making the operation CAS.
 
 ### P2 — Idempotency outcome reliability
 
-Idempotency outcome publish is silently ignored (`let _ = ...`). If event
-appends but outcome publish fails, retries are treated as new requests.
+Idempotency outcome publish was silently ignored (`let _ = ...`). If event
+appends but outcome publish fails, retries were treated as new requests.
 
-- [ ] Log warning on idempotency outcome publish failure
+- [x] Log warning on idempotency outcome publish failure (tracing::warn with key + error)
 - [ ] Consider retry with backoff for outcome publish
 - [ ] Document retry semantics for consumers (at-least-once with idempotency key)
 

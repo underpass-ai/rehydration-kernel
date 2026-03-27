@@ -134,14 +134,28 @@ impl ContextEventStore for NatsContextEventStore {
             let idem_payload = serde_json::to_vec(&idem_outcome).map_err(|error| {
                 PortError::Unavailable(format!("failed to serialize idempotent outcome: {error}"))
             })?;
-            let _ = self
+            match self
                 .js
                 .publish(idem_subject, idem_payload.into())
                 .await
-                .map_err(|error| {
-                    PortError::Unavailable(format!("publish idempotency failed: {error}"))
-                })?
-                .await;
+            {
+                Ok(ack_future) => {
+                    if let Err(error) = ack_future.await {
+                        tracing::warn!(
+                            idempotency_key = idem_key.as_str(),
+                            %error,
+                            "idempotency outcome ack failed — retries may be treated as new requests"
+                        );
+                    }
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        idempotency_key = idem_key.as_str(),
+                        %error,
+                        "idempotency outcome publish failed — retries may be treated as new requests"
+                    );
+                }
+            }
         }
 
         Ok(new_revision)
