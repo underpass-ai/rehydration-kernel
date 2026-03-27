@@ -629,6 +629,108 @@ fn strip_markdown_fences(s: &str) -> String {
     }
 }
 
+// ── calibration ─────────────────────────────────────────────────────
+
+/// Result of a single calibration case.
+#[derive(Debug)]
+pub struct CalibrationCase {
+    pub name: &'static str,
+    pub passed: bool,
+    pub expected: &'static str,
+    pub got: String,
+}
+
+/// Run judge calibration with known-good and known-bad synthetic responses.
+///
+/// Returns a list of calibration cases with pass/fail. Call this before
+/// the full benchmark to verify the judge model + prompt combination is
+/// producing sane verdicts. Avoids wasting money on a miscalibrated run.
+pub async fn calibrate_judge(
+    prompts: &PromptConfig,
+    config: &LlmEvaluatorConfig,
+) -> Result<Vec<CalibrationCase>, Box<dyn Error + Send + Sync>> {
+    let client = build_http_client(config)?;
+    let judge_client = if config.judge_endpoint.is_some() {
+        build_http_client(config)?
+    } else {
+        client
+    };
+
+    let ground_truth = EvaluationGroundTruth {
+        expected_failure_point: Some("evidence 3 (cal:chain-3) — operational step 3".to_string()),
+        expected_restart_node: Some("artifact 2 (cal:chain-2) — causal predecessor".to_string()),
+        expected_reason: Some("operational response required at depth 0; operational response required at depth 1".to_string()),
+        distractor_rationale: Some("alternative path (competing branch)".to_string()),
+        domain_context: Some("operations".to_string()),
+    };
+
+    // Known-good: response that correctly identifies failure, restart, and rationale
+    let good_response = r#"{"failure_point": "evidence 3 — the deepest node in the operational causal chain, representing the final step of operational response", "restart_node": "artifact 2 — causal predecessor of evidence 3, the correct recovery point because it is the last successful step before the failure", "reason": "The rationale connecting the chain is 'operational response required at depth 0' triggering the chain through depth 1, as stated in the relationship metadata."}"#;
+
+    // Known-bad: response that gets everything wrong
+    let bad_response = r#"{"failure_point": "the system root node", "restart_node": "some unrelated node", "reason": "I think something went wrong somewhere in the system."}"#;
+
+    let mut cases = Vec::new();
+
+    // Case 1: good response should get task=true, reason_correct=true
+    match judge_response_with_prompts(prompts, config, &judge_client, good_response, &ground_truth).await {
+        Ok((v, raw)) => {
+            let task_ok = v.task_correct;
+            let reason_ok = v.reason_correct_main_path;
+            cases.push(CalibrationCase {
+                name: "known-good: task_correct",
+                passed: task_ok,
+                expected: "true",
+                got: format!("{task_ok} (raw: {raw})"),
+            });
+            cases.push(CalibrationCase {
+                name: "known-good: reason_correct_main_path",
+                passed: reason_ok,
+                expected: "true",
+                got: format!("{reason_ok}"),
+            });
+        }
+        Err(e) => {
+            cases.push(CalibrationCase {
+                name: "known-good: judge call",
+                passed: false,
+                expected: "success",
+                got: format!("ERROR: {e}"),
+            });
+        }
+    }
+
+    // Case 2: bad response should get task=false, reason_correct=false
+    match judge_response_with_prompts(prompts, config, &judge_client, bad_response, &ground_truth).await {
+        Ok((v, raw)) => {
+            let task_fail = !v.task_correct;
+            let reason_fail = !v.reason_correct_main_path;
+            cases.push(CalibrationCase {
+                name: "known-bad: task_correct",
+                passed: task_fail,
+                expected: "false",
+                got: format!("{} (raw: {raw})", v.task_correct),
+            });
+            cases.push(CalibrationCase {
+                name: "known-bad: reason_correct_main_path",
+                passed: reason_fail,
+                expected: "false",
+                got: format!("{}", v.reason_correct_main_path),
+            });
+        }
+        Err(e) => {
+            cases.push(CalibrationCase {
+                name: "known-bad: judge call",
+                passed: false,
+                expected: "success",
+                got: format!("ERROR: {e}"),
+            });
+        }
+    }
+
+    Ok(cases)
+}
+
 fn build_http_client(
     config: &LlmEvaluatorConfig,
 ) -> Result<reqwest::Client, Box<dyn Error + Send + Sync>> {

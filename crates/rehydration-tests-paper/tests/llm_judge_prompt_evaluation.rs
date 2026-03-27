@@ -12,7 +12,7 @@ use rehydration_proto::v1beta1::{
 };
 use rehydration_testkit::{
     Domain, EvaluationGroundTruth, GraphSeedConfig, LlmEvaluatorConfig, LlmProvider,
-    NoiseMode, PromptConfig, RelationMix, evaluate_with_config, generate_seed,
+    NoiseMode, PromptConfig, RelationMix, calibrate_judge, evaluate_with_config, generate_seed,
     seed_publisher::seed_to_projection_events,
 };
 use rehydration_tests_shared::containers::connect_nats_with_retry;
@@ -439,6 +439,57 @@ async fn judge_prompt_evaluation_across_all_use_cases()
     let filter_scales = env_filter("FILTER_SCALES");
     let filter_noise = env_filter("FILTER_NOISE");
 
+    // ── Phase 0: Judge calibration ──
+    // Send known-good and known-bad synthetic responses to each judge
+    // to verify the judge model + prompt combination is sane before
+    // committing to the full benchmark. Aborts early on miscalibration.
+
+    let judges = matrix["judges"].as_mapping().expect("judges mapping");
+    let prompts_map = matrix["prompts"].as_mapping().expect("prompts mapping");
+    let filter_judges = env_filter("FILTER_JUDGES");
+
+    // Calibrate with the default prompt and first non-filtered judge
+    let default_prompt = PromptConfig::load(None)?;
+    for (judge_key, judge_cfg) in judges {
+        let judge_name = judge_key.as_str().expect("judge key");
+        if !filter_judges.is_empty() && !filter_judges.contains(&judge_name.to_string()) {
+            continue;
+        }
+
+        // Build a judge-only config (no agent needed for calibration)
+        let cal_config = LlmEvaluatorConfig {
+            endpoint: yaml_str(judge_cfg, "endpoint", "judge"),
+            model: yaml_str(judge_cfg, "model", "judge"),
+            provider: parse_provider(&yaml_str(judge_cfg, "provider", "judge")),
+            api_key: judge_cfg["api_key_env"].as_str().and_then(|e| std::env::var(e).ok()),
+            max_tokens: 200,
+            temperature: 0.0,
+            tls_cert_path: None,
+            tls_key_path: None,
+            tls_insecure: false,
+            judge_endpoint: Some(yaml_str(judge_cfg, "endpoint", "judge")),
+            judge_model: Some(yaml_str(judge_cfg, "model", "judge")),
+            judge_provider: Some(parse_provider(&yaml_str(judge_cfg, "provider", "judge"))),
+            judge_api_key: judge_cfg["api_key_env"].as_str().and_then(|e| std::env::var(e).ok()),
+        };
+
+        run.log(&format!("\n[CALIBRATION] Testing judge '{judge_name}' with known-good/known-bad cases..."));
+        let cases = calibrate_judge(&default_prompt, &cal_config).await?;
+        let mut cal_failed = false;
+        for case in &cases {
+            let icon = if case.passed { "\u{2714}" } else { "\u{2718}" };
+            run.log(&format!("  {icon} {}: expected={}, got={}", case.name, case.expected, case.got));
+            if !case.passed {
+                cal_failed = true;
+            }
+        }
+        if cal_failed {
+            run.log(&format!("[CALIBRATION] FAILED for judge '{judge_name}' — aborting to avoid wasting eval budget"));
+            panic!("judge calibration failed for '{judge_name}': judge is miscalibrated, fix prompt or switch model");
+        }
+        run.log(&format!("[CALIBRATION] Judge '{judge_name}' passed ({} cases)\n", cases.len()));
+    }
+
     // ── Phase 1: Boot + capture ──
 
     type ScaleEntry = (&'static str, fn(Domain) -> GraphSeedConfig);
@@ -660,10 +711,7 @@ async fn judge_prompt_evaluation_across_all_use_cases()
     // ── Phase 2: Evaluate model x prompt x captured variant ──
 
     let agents = matrix["agents"].as_mapping().expect("agents mapping");
-    let judges = matrix["judges"].as_mapping().expect("judges mapping");
-    let prompts = matrix["prompts"].as_mapping().expect("prompts mapping");
-
-    let filter_judges = env_filter("FILTER_JUDGES");
+    let prompts = prompts_map;
 
     let mut results: Vec<EvalResult> = Vec::new();
     let mut eval_count = 0u32;

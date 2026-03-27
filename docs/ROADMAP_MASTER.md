@@ -238,7 +238,7 @@ Root cause: prompt designed for flat bundles + Opus 4 calibration. See
 - [ ] Per-use-case judge prompt variants (failure diagnosis, handoff, constraint have different criteria)
 - [x] Log raw inference + judge responses in evaluator (done — `results/*.json` per eval)
 - [x] Store `llm_response` in paper metrics for post-hoc analysis (done — `agent_response` + `judge_raw`)
-- [ ] Judge calibration pre-check: validate known-good/known-bad before full benchmark
+- [x] Judge calibration pre-check: `calibrate_judge()` sends known-good and known-bad synthetic responses before any eval. Runs before container boot — zero waste on miscalibrated judges.
 - [ ] Pin judge model version in paper methodology section (sensitivity finding)
 - [ ] Re-run full benchmark matrix after methodology fixes
 
