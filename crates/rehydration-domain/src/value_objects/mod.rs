@@ -1,4 +1,5 @@
 pub mod bundle_metadata;
+pub mod bundle_quality_metrics;
 pub mod case_id;
 pub mod provenance;
 pub mod rehydration_mode;
@@ -9,6 +10,7 @@ pub mod role;
 pub mod source_kind;
 
 pub use bundle_metadata::BundleMetadata;
+pub use bundle_quality_metrics::BundleQualityMetrics;
 pub use case_id::CaseId;
 pub use provenance::Provenance;
 pub use rehydration_mode::RehydrationMode;

@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::time::Duration;
 
 use rehydration_config::{AppConfig, GrpcTlsConfig};
@@ -11,6 +12,7 @@ use rehydration_proto::v1beta1::{
     context_command_service_client::ContextCommandServiceClient,
     context_query_service_client::ContextQueryServiceClient,
 };
+use rehydration_observability::quality_observers::NoopQualityObserver;
 use rehydration_testkit::InMemoryContextEventStore;
 use rehydration_transport_grpc::GrpcServer;
 use tokio::net::TcpListener;
@@ -98,6 +100,7 @@ async fn grpc_server_supports_query_and_command_roundtrip() {
         EmptyNodeDetailReader,
         NoopSnapshotStore,
         InMemoryContextEventStore::new(),
+        Arc::new(NoopQualityObserver),
     );
     let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
 

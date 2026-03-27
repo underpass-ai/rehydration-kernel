@@ -228,12 +228,12 @@ weaknesses. See [`docs/benchmark-2026-03-26-technical-review.md`](./benchmark-20
 - [ ] Time-to-first-token from API response headers
 
 **P0 — BundleQualityMetrics bugs** (from audit 2026-03-27, blocks metric trust):
-- [ ] Fix raw dump parity: kernel `compute_quality_metrics()` missing `caused_by_node_id` field that testkit `raw_dump.rs` includes → `raw_equivalent_tokens` underestimated
-- [ ] Fix detail formatting: kernel uses `"Detail: {}.\n"` (newline), testkit uses `" Detail: {}."` (inline) → token count mismatch
-- [ ] Fix semantic class format: kernel uses `.as_str()` ("causal"), testkit uses `{:?}` ("Causal") → token count divergence
-- [ ] Add unit tests for all 5 quality metrics in `render_graph_bundle.rs` (zero coverage today)
-- [ ] Handle `quality = None` in E2E test explicitly instead of `unwrap_or_default()` zeros
-- [ ] Emit quality OTel metrics in `get_context_path()` and `rehydrate_session()`, not just `get_context()`
+- [x] Fix raw dump parity: kernel `compute_quality_metrics()` missing `caused_by_node_id` field that testkit `raw_dump.rs` includes → `raw_equivalent_tokens` underestimated
+- [x] Fix detail formatting: kernel uses `"Detail: {}.\n"` (newline), testkit uses `" Detail: {}."` (inline) → token count mismatch
+- [x] Fix semantic class format: both now use `.as_str()` ("causal") — testkit changed from `{:?}` ("Causal")
+- [x] Add unit tests for all 5 quality metrics in `render_graph_bundle.rs` (8 tests: positivity, compression ratio, causal density, noise ratio, detail coverage, caused_by_node_id inclusion, all-causal=1.0, no-rels=0.0)
+- [x] Handle `quality = None` in E2E test explicitly with `.ok_or()` instead of `unwrap_or_default()` zeros
+- [x] Emit quality OTel metrics in `get_context_path()` (5 histograms). Note: `rehydrate_session()` returns raw bundles without `RenderedContext` — quality OTel requires architecture change to add rendering to session path.
 
 ### Judge prompt redesign (from incident 2026-03-26)
 

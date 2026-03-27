@@ -18,6 +18,7 @@ use rehydration_proto::v1beta1::{
     ValidateScopeRequest, context_command_service_server::ContextCommandService,
     context_query_service_server::ContextQueryService,
 };
+use rehydration_observability::quality_observers::NoopQualityObserver;
 use rehydration_testkit::InMemoryContextEventStore;
 use tokio::sync::Mutex;
 use tonic::Request;
@@ -260,6 +261,7 @@ fn describe_mentions_bind_address() {
         EmptyNodeDetailReader,
         NoopSnapshotStore,
         InMemoryContextEventStore::new(),
+        Arc::new(NoopQualityObserver),
     );
 
     assert!(server.describe().contains("127.0.0.1:50054"));
@@ -286,6 +288,7 @@ async fn grpc_server_application_accessors_return_callable_services() {
         EmptyNodeDetailReader,
         NoopSnapshotStore,
         InMemoryContextEventStore::new(),
+        Arc::new(NoopQualityObserver),
     );
 
     let get_context_err = server
@@ -329,7 +332,7 @@ async fn query_service_returns_rendered_context() {
         Arc::new(NoopSnapshotStore),
         "0.1.0",
     ));
-    let service = QueryGrpcServiceV1Beta1::new(application);
+    let service = QueryGrpcServiceV1Beta1::new(application, Arc::new(NoopQualityObserver));
 
     let status = service
         .get_context(Request::new(GetContextRequest {
@@ -362,7 +365,7 @@ async fn query_service_forwards_requested_depth_to_application() {
         Arc::new(NoopSnapshotStore),
         "0.1.0",
     ));
-    let service = QueryGrpcServiceV1Beta1::new(application);
+    let service = QueryGrpcServiceV1Beta1::new(application, Arc::new(NoopQualityObserver));
 
     let _ = service
         .get_context(Request::new(GetContextRequest {
@@ -391,7 +394,7 @@ async fn query_service_returns_context_path_bundle() {
         Arc::new(NoopSnapshotStore),
         "0.1.0",
     ));
-    let service = QueryGrpcServiceV1Beta1::new(application);
+    let service = QueryGrpcServiceV1Beta1::new(application, Arc::new(NoopQualityObserver));
 
     let response = service
         .get_context_path(Request::new(GetContextPathRequest {
@@ -433,7 +436,7 @@ async fn query_service_returns_multi_resolution_tiers_in_rendered_context() {
         Arc::new(NoopSnapshotStore),
         "0.1.0",
     ));
-    let service = QueryGrpcServiceV1Beta1::new(application);
+    let service = QueryGrpcServiceV1Beta1::new(application, Arc::new(NoopQualityObserver));
 
     let response = service
         .get_context_path(Request::new(GetContextPathRequest {
@@ -481,7 +484,7 @@ async fn query_service_returns_node_detail_panel() {
         Arc::new(NoopSnapshotStore),
         "0.1.0",
     ));
-    let service = QueryGrpcServiceV1Beta1::new(application);
+    let service = QueryGrpcServiceV1Beta1::new(application, Arc::new(NoopQualityObserver));
 
     let response = service
         .get_node_detail(Request::new(GetNodeDetailRequest {
@@ -509,7 +512,7 @@ async fn query_service_returns_node_metadata_when_detail_is_missing() {
         Arc::new(NoopSnapshotStore),
         "0.1.0",
     ));
-    let service = QueryGrpcServiceV1Beta1::new(application);
+    let service = QueryGrpcServiceV1Beta1::new(application, Arc::new(NoopQualityObserver));
 
     let response = service
         .get_node_detail(Request::new(GetNodeDetailRequest {
@@ -534,7 +537,7 @@ async fn query_service_returns_not_found_for_missing_node_detail_target() {
         Arc::new(NoopSnapshotStore),
         "0.1.0",
     ));
-    let service = QueryGrpcServiceV1Beta1::new(application);
+    let service = QueryGrpcServiceV1Beta1::new(application, Arc::new(NoopQualityObserver));
 
     let error = service
         .get_node_detail(Request::new(GetNodeDetailRequest {
@@ -556,7 +559,7 @@ async fn query_service_validates_scope_diffs() {
         Arc::new(NoopSnapshotStore),
         "0.1.0",
     ));
-    let service = QueryGrpcServiceV1Beta1::new(application);
+    let service = QueryGrpcServiceV1Beta1::new(application, Arc::new(NoopQualityObserver));
 
     let response = service
         .validate_scope(Request::new(ValidateScopeRequest {

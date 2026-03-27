@@ -10,7 +10,8 @@ use rehydration_application::{
 };
 use rehydration_config::{AppConfig, GrpcTlsConfig, GrpcTlsMode};
 use rehydration_domain::{
-    ContextEventStore, GraphNeighborhoodReader, NodeDetailReader, RehydrationBundle, SnapshotStore,
+    ContextEventStore, GraphNeighborhoodReader, NodeDetailReader, QualityMetricsObserver,
+    RehydrationBundle, SnapshotStore,
 };
 use rehydration_proto::v1beta1::{
     BundleRenderFormat, FILE_DESCRIPTOR_SET, GetContextRequest, Phase,
@@ -23,12 +24,12 @@ use tonic::transport::{Certificate, Identity, Server, ServerTlsConfig};
 
 use crate::transport::{CommandGrpcService, QueryGrpcService};
 
-#[derive(Debug)]
 pub struct GrpcServer<G, D, S, E> {
     bind_addr: String,
     grpc_tls: GrpcTlsConfig,
     query_application: Arc<QueryApplicationService<G, D, S>>,
     command_application: Arc<CommandApplicationService<E>>,
+    quality_observer: Arc<dyn QualityMetricsObserver>,
     capability_name: &'static str,
 }
 
@@ -45,6 +46,7 @@ where
         detail_reader: D,
         snapshot_store: S,
         event_store: E,
+        quality_observer: Arc<dyn QualityMetricsObserver>,
     ) -> Self {
         let AppConfig {
             grpc_bind,
@@ -68,6 +70,7 @@ where
                 generator_version,
             )),
             command_application: Arc::new(CommandApplicationService::new(update_context)),
+            quality_observer,
             capability_name: RehydrationApplication::capability_name(),
         }
     }
@@ -103,7 +106,10 @@ where
     }
 
     pub fn query_service(&self) -> QueryGrpcService<G, D, S> {
-        QueryGrpcService::new(Arc::clone(&self.query_application))
+        QueryGrpcService::new(
+            Arc::clone(&self.query_application),
+            Arc::clone(&self.quality_observer),
+        )
     }
 
     pub fn command_service(&self) -> CommandGrpcService<E> {

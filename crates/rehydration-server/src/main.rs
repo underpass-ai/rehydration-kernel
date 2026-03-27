@@ -2,7 +2,7 @@ mod nats_tls;
 mod projection_nats_runtime;
 
 use std::process::ExitCode;
-use std::sync::Once;
+use std::sync::{Arc, Once};
 
 use rehydration_adapter_nats::{
     NatsContextEventStore, NatsProjectionConsumer, connect_nats_client,
@@ -13,6 +13,9 @@ use rehydration_adapter_valkey::{
 };
 use rehydration_config::{AppConfig, ProjectionRuntimeConfig};
 use rehydration_domain::ContextEventStore;
+use rehydration_observability::quality_observers::{
+    CompositeQualityObserver, OTelQualityObserver, TracingQualityObserver,
+};
 use rehydration_observability::{init_observability, shutdown_observability};
 use rehydration_transport_grpc::GrpcServer;
 
@@ -36,6 +39,14 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let projection_runtime_config = ProjectionRuntimeConfig::try_from_env()?;
     let otel_guard = init_observability(&config.service_name);
 
+    let meter = opentelemetry::global::meter("rehydration-kernel");
+    let quality_observer: Arc<dyn rehydration_domain::QualityMetricsObserver> = Arc::new(
+        CompositeQualityObserver::new(vec![
+            Box::new(OTelQualityObserver::new(&meter)),
+            Box::new(TracingQualityObserver),
+        ]),
+    );
+
     let graph_reader = Neo4jProjectionReader::new(config.graph_uri.clone())?;
     let detail_reader = ValkeyNodeDetailStore::new(config.detail_uri.clone())?;
     let snapshot_store = ValkeySnapshotStore::new(config.snapshot_uri.clone())?;
@@ -56,6 +67,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 detail_reader,
                 snapshot_store,
                 event_store,
+                quality_observer: quality_observer.clone(),
                 projection_config: projection_runtime_config,
             })
             .await?;
@@ -68,6 +80,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 detail_reader,
                 snapshot_store,
                 event_store,
+                quality_observer: quality_observer.clone(),
                 projection_config: projection_runtime_config,
             })
             .await?;
@@ -84,6 +97,7 @@ struct ServerContext<E, G, D> {
     detail_reader: D,
     snapshot_store: ValkeySnapshotStore,
     event_store: E,
+    quality_observer: Arc<dyn rehydration_domain::QualityMetricsObserver>,
     projection_config: ProjectionRuntimeConfig,
 }
 
@@ -111,6 +125,7 @@ where
         ctx.detail_reader.clone(),
         ctx.snapshot_store,
         ctx.event_store,
+        ctx.quality_observer,
     );
     let events_consumer = NatsProjectionConsumer::new(ctx.config.events_subject_prefix.clone());
     let projection_runtime = connect_projection_runtime(

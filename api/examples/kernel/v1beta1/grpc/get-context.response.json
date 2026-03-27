@@ -100,7 +100,14 @@
       }
     ],
     "tiers": [],
-    "resolvedMode": "REHYDRATION_MODE_UNSPECIFIED"
+    "resolvedMode": "REHYDRATION_MODE_UNSPECIFIED",
+    "quality": {
+      "rawEquivalentTokens": 210,
+      "compressionRatio": 1.64,
+      "causalDensity": 0.0,
+      "noiseRatio": 0.0,
+      "detailCoverage": 0.5
+    }
   },
   "scopeValidation": {
     "allowed": true,

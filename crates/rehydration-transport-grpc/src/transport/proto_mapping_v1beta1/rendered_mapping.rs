@@ -1,4 +1,5 @@
-use rehydration_application::{BundleQualityMetrics, GetContextResult, RenderedContext, RenderedTier};
+use rehydration_application::{GetContextResult, RenderedContext, RenderedTier};
+use rehydration_domain::BundleQualityMetrics;
 use rehydration_domain::{RehydrationMode, ResolutionTier};
 use rehydration_proto::v1beta1::{
     BundleQualityMetrics as ProtoQualityMetrics, BundleRenderFormat, BundleSection,
@@ -43,11 +44,11 @@ pub(crate) fn proto_rendered_context_v1beta1(
 
 fn proto_quality_metrics(q: &BundleQualityMetrics) -> ProtoQualityMetrics {
     ProtoQualityMetrics {
-        raw_equivalent_tokens: q.raw_equivalent_tokens,
-        compression_ratio: q.compression_ratio,
-        causal_density: q.causal_density,
-        noise_ratio: q.noise_ratio,
-        detail_coverage: q.detail_coverage,
+        raw_equivalent_tokens: q.raw_equivalent_tokens(),
+        compression_ratio: q.compression_ratio(),
+        causal_density: q.causal_density(),
+        noise_ratio: q.noise_ratio(),
+        detail_coverage: q.detail_coverage(),
     }
 }
 

@@ -2186,6 +2186,9 @@ dependencies = [
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
+ "rehydration-domain",
+ "serde",
+ "serde_json",
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",
@@ -2214,6 +2217,7 @@ dependencies = [
 name = "rehydration-server"
 version = "0.1.0"
 dependencies = [
+ "opentelemetry",
  "rehydration-adapter-nats",
  "rehydration-adapter-neo4j",
  "rehydration-adapter-valkey",
@@ -2292,6 +2296,7 @@ dependencies = [
  "rehydration-application",
  "rehydration-config",
  "rehydration-domain",
+ "rehydration-observability",
  "rehydration-ports",
  "rehydration-proto",
  "rehydration-testkit",
@@ -2316,6 +2321,7 @@ dependencies = [
  "rehydration-application",
  "rehydration-config",
  "rehydration-domain",
+ "rehydration-observability",
  "rehydration-ports",
  "rehydration-proto",
  "rehydration-testkit",

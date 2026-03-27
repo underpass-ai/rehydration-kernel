@@ -14,6 +14,7 @@ rehydration-adapter-valkey.workspace = true
 rehydration-application.workspace = true
 rehydration-config.workspace = true
 rehydration-domain.workspace = true
+opentelemetry.workspace = true
 rehydration-observability.workspace = true
 rehydration-transport-grpc.workspace = true
 tokio.workspace = true

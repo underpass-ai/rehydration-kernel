@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 
 use rehydration_domain::{
-    RehydrationBundle, RehydrationMode, ResolutionTier, TierBudget, TokenEstimator,
+    BundleQualityMetrics, RehydrationBundle, RehydrationMode, ResolutionTier, TierBudget,
+    TokenEstimator,
 };
 
 use crate::queries::ContextRenderOptions;
@@ -24,27 +25,6 @@ pub struct RenderedTier {
     pub content: String,
     pub token_count: u32,
     pub sections: Vec<RenderedSection>,
-}
-
-/// Quality and efficiency metrics computed during rendering.
-///
-/// These are first-class observability signals — not benchmark artifacts.
-/// Every render produces them, and they flow through proto + OTel.
-#[derive(Debug, Clone, PartialEq)]
-pub struct BundleQualityMetrics {
-    /// Token count for a flat text dump of the same data (no structure).
-    pub raw_equivalent_tokens: u32,
-    /// `raw_equivalent_tokens / rendered_token_count`. >1.0 means the
-    /// structured rendering compressed vs flat text.
-    pub compression_ratio: f64,
-    /// Fraction of relationships with causal/motivational/evidential
-    /// semantic class (vs structural/procedural). Higher = richer signal.
-    pub causal_density: f64,
-    /// Fraction of nodes that come from noise/distractor branches.
-    /// 0.0 for clean graphs, >0 when structural noise is present.
-    pub noise_ratio: f64,
-    /// Fraction of nodes that have extended detail attached.
-    pub detail_coverage: f64,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -118,8 +98,8 @@ pub fn render_graph_bundle_with_estimator(
 
     let tiers = build_rendered_tiers(tiered_sections, &tier_budget, estimator);
 
-    // ── Quality metrics ───────────────────────────────────────────────
-    let quality = compute_quality_metrics(bundle, &detail_by_node_id, token_count, estimator);
+    // ── Quality metrics (domain value object) ────────────────────────
+    let quality = BundleQualityMetrics::compute(bundle, token_count, estimator);
 
     RenderedContext {
         content,
@@ -129,124 +109,6 @@ pub fn render_graph_bundle_with_estimator(
         tiers,
         resolved_mode,
         quality,
-    }
-}
-
-fn compute_quality_metrics(
-    bundle: &RehydrationBundle,
-    detail_by_node_id: &BTreeMap<&str, &rehydration_domain::BundleNodeDetail>,
-    rendered_tokens: u32,
-    estimator: &dyn TokenEstimator,
-) -> BundleQualityMetrics {
-    // Raw equivalent: flat text dump of all nodes + relationships
-    let mut raw_text = String::new();
-
-    // Root node
-    let root = bundle.root_node();
-    raw_text.push_str(&format!(
-        "Node: {}. Kind: {}. Summary: {}.\n",
-        root.node_id(),
-        root.node_kind(),
-        root.summary()
-    ));
-    if let Some(detail) = detail_by_node_id.get(root.node_id()) {
-        raw_text.push_str(&format!("Detail: {}.\n", detail.detail()));
-    }
-
-    // Neighbor nodes
-    for node in bundle.neighbor_nodes() {
-        raw_text.push_str(&format!(
-            "Node: {}. Kind: {}. Summary: {}.\n",
-            node.node_id(),
-            node.node_kind(),
-            node.summary()
-        ));
-        if let Some(detail) = detail_by_node_id.get(node.node_id()) {
-            raw_text.push_str(&format!("Detail: {}.\n", detail.detail()));
-        }
-    }
-
-    // Relationships
-    for rel in bundle.relationships() {
-        raw_text.push_str(&format!(
-            "Relationship: {} connects to {} via {}. Semantic class: {}.",
-            rel.source_node_id(),
-            rel.target_node_id(),
-            rel.relationship_type(),
-            rel.explanation().semantic_class().as_str(),
-        ));
-        if let Some(r) = rel.explanation().rationale() {
-            raw_text.push_str(&format!(" Rationale: {r}."));
-        }
-        if let Some(m) = rel.explanation().motivation() {
-            raw_text.push_str(&format!(" Motivation: {m}."));
-        }
-        if let Some(m) = rel.explanation().method() {
-            raw_text.push_str(&format!(" Method: {m}."));
-        }
-        if let Some(d) = rel.explanation().decision_id() {
-            raw_text.push_str(&format!(" Decision: {d}."));
-        }
-        raw_text.push('\n');
-    }
-
-    let raw_equivalent_tokens = estimator.estimate_tokens(&raw_text);
-    let compression_ratio = if rendered_tokens > 0 {
-        raw_equivalent_tokens as f64 / rendered_tokens as f64
-    } else {
-        1.0
-    };
-
-    // Causal density: causal/motivational/evidential vs total relationships
-    let total_rels = bundle.relationships().len();
-    let causal_rels = bundle
-        .relationships()
-        .iter()
-        .filter(|r| {
-            matches!(
-                r.explanation().semantic_class(),
-                rehydration_domain::RelationSemanticClass::Causal
-                    | rehydration_domain::RelationSemanticClass::Motivational
-                    | rehydration_domain::RelationSemanticClass::Evidential
-            )
-        })
-        .count();
-    let causal_density = if total_rels > 0 {
-        causal_rels as f64 / total_rels as f64
-    } else {
-        0.0
-    };
-
-    // Noise ratio: nodes with "noise" or "distractor" in ID
-    let total_nodes = 1 + bundle.neighbor_nodes().len(); // root + neighbors
-    let noise_nodes = bundle
-        .neighbor_nodes()
-        .iter()
-        .filter(|n| {
-            let id = n.node_id();
-            id.contains("noise") || id.contains("distractor")
-        })
-        .count();
-    let noise_ratio = if total_nodes > 0 {
-        noise_nodes as f64 / total_nodes as f64
-    } else {
-        0.0
-    };
-
-    // Detail coverage: nodes with detail / total nodes
-    let nodes_with_detail = detail_by_node_id.len();
-    let detail_coverage = if total_nodes > 0 {
-        nodes_with_detail as f64 / total_nodes as f64
-    } else {
-        0.0
-    };
-
-    BundleQualityMetrics {
-        raw_equivalent_tokens,
-        compression_ratio,
-        causal_density,
-        noise_ratio,
-        detail_coverage,
     }
 }
 
@@ -310,9 +172,9 @@ mod tests {
     use std::collections::BTreeMap;
 
     use rehydration_domain::{
-        BundleMetadata, BundleNode, BundleNodeDetail, BundleRelationship, CaseId, Provenance,
-        RehydrationBundle, RelationExplanation, RelationSemanticClass, ResolutionTier, Role,
-        SourceKind,
+        BundleMetadata, BundleNode, BundleNodeDetail, BundleQualityMetrics, BundleRelationship,
+        CaseId, Provenance, RehydrationBundle, RelationExplanation, RelationSemanticClass,
+        ResolutionTier, Role, SourceKind,
     };
 
     /// Budget so tight it forces truncation on any multi-section bundle.
@@ -824,6 +686,228 @@ mod tests {
         assert!(
             !rendered.content.contains("[source:"),
             "rendered should NOT include provenance bracket when absent"
+        );
+    }
+
+    // ── Quality metrics tests ───────────────────────────────────────────
+
+    fn quality_bundle() -> RehydrationBundle {
+        RehydrationBundle::new(
+            CaseId::new("root").expect("valid"),
+            Role::new("dev").expect("valid"),
+            BundleNode::new(
+                "root",
+                "incident",
+                "Root",
+                "Root summary",
+                "ACTIVE",
+                vec![],
+                BTreeMap::new(),
+            ),
+            vec![
+                BundleNode::new(
+                    "node-a",
+                    "decision",
+                    "Decision A",
+                    "Decision summary",
+                    "ACTIVE",
+                    vec![],
+                    BTreeMap::new(),
+                ),
+                BundleNode::new(
+                    "noise-1",
+                    "task",
+                    "Noise node",
+                    "Distractor summary",
+                    "ACTIVE",
+                    vec![],
+                    BTreeMap::new(),
+                ),
+            ],
+            vec![
+                BundleRelationship::new(
+                    "root",
+                    "node-a",
+                    "CAUSED",
+                    RelationExplanation::new(RelationSemanticClass::Causal)
+                        .with_rationale("failure triggered reroute")
+                        .with_caused_by_node_id("root"),
+                ),
+                BundleRelationship::new(
+                    "root",
+                    "noise-1",
+                    "CONTAINS",
+                    RelationExplanation::new(RelationSemanticClass::Structural),
+                ),
+            ],
+            vec![BundleNodeDetail::new(
+                "root",
+                "Extended root detail",
+                "hash-r",
+                1,
+            )],
+            BundleMetadata::initial("0.1.0"),
+        )
+        .expect("valid")
+    }
+
+    #[test]
+    fn quality_raw_equivalent_tokens_is_positive() {
+        let rendered = render_graph_bundle(&quality_bundle());
+        assert!(
+            rendered.quality.raw_equivalent_tokens() > 0,
+            "raw_equivalent_tokens should be positive"
+        );
+    }
+
+    #[test]
+    fn quality_compression_ratio_reflects_raw_vs_rendered() {
+        let rendered = render_graph_bundle(&quality_bundle());
+        let expected = rendered.quality.raw_equivalent_tokens() as f64
+            / rendered.token_count as f64;
+        let diff = (rendered.quality.compression_ratio() - expected).abs();
+        assert!(
+            diff < 0.001,
+            "compression_ratio {:.4} should equal raw/rendered {:.4}",
+            rendered.quality.compression_ratio(),
+            expected
+        );
+    }
+
+    #[test]
+    fn quality_causal_density_counts_explanatory_relations() {
+        let rendered = render_graph_bundle(&quality_bundle());
+        // 1 Causal out of 2 total → 0.5
+        let diff = (rendered.quality.causal_density() - 0.5).abs();
+        assert!(
+            diff < 0.001,
+            "causal_density should be 0.5, got {:.4}",
+            rendered.quality.causal_density()
+        );
+    }
+
+    #[test]
+    fn quality_noise_ratio_detects_noise_nodes() {
+        let rendered = render_graph_bundle(&quality_bundle());
+        // 1 noise node out of 3 total (root + 2 neighbors) → 1/3
+        let expected = 1.0 / 3.0;
+        let diff = (rendered.quality.noise_ratio() - expected).abs();
+        assert!(
+            diff < 0.001,
+            "noise_ratio should be {:.4}, got {:.4}",
+            expected,
+            rendered.quality.noise_ratio()
+        );
+    }
+
+    #[test]
+    fn quality_detail_coverage_tracks_detail_presence() {
+        let rendered = render_graph_bundle(&quality_bundle());
+        // 1 detail (root) out of 3 nodes → 1/3
+        let expected = 1.0 / 3.0;
+        let diff = (rendered.quality.detail_coverage() - expected).abs();
+        assert!(
+            diff < 0.001,
+            "detail_coverage should be {:.4}, got {:.4}",
+            expected,
+            rendered.quality.detail_coverage()
+        );
+    }
+
+    #[test]
+    fn quality_raw_text_includes_caused_by_node_id() {
+        use crate::queries::cl100k_estimator::Cl100kEstimator;
+
+        let bundle = quality_bundle();
+        let estimator = Cl100kEstimator::new();
+        let metrics = BundleQualityMetrics::compute(&bundle, 100, &estimator);
+
+        let bundle_no_caused_by = RehydrationBundle::new(
+            CaseId::new("root").expect("valid"),
+            Role::new("dev").expect("valid"),
+            BundleNode::new(
+                "root", "incident", "Root", "Root summary", "ACTIVE", vec![], BTreeMap::new(),
+            ),
+            vec![BundleNode::new(
+                "node-a", "decision", "Decision A", "Decision summary", "ACTIVE", vec![], BTreeMap::new(),
+            )],
+            vec![BundleRelationship::new(
+                "root",
+                "node-a",
+                "CAUSED",
+                RelationExplanation::new(RelationSemanticClass::Causal)
+                    .with_rationale("failure triggered reroute"),
+            )],
+            vec![BundleNodeDetail::new("root", "Extended root detail", "hash-r", 1)],
+            BundleMetadata::initial("0.1.0"),
+        )
+        .expect("valid");
+
+        let metrics2 = BundleQualityMetrics::compute(&bundle_no_caused_by, 100, &estimator);
+
+        assert!(
+            metrics.raw_equivalent_tokens() > metrics2.raw_equivalent_tokens(),
+            "caused_by_node_id should increase raw tokens: with={} without={}",
+            metrics.raw_equivalent_tokens(),
+            metrics2.raw_equivalent_tokens()
+        );
+    }
+
+    #[test]
+    fn quality_all_causal_density_is_one() {
+        let bundle = RehydrationBundle::new(
+            CaseId::new("root").expect("valid"),
+            Role::new("dev").expect("valid"),
+            BundleNode::new(
+                "root", "case", "Root", "", "ACTIVE", vec![], BTreeMap::new(),
+            ),
+            vec![
+                BundleNode::new("a", "task", "A", "", "ACTIVE", vec![], BTreeMap::new()),
+                BundleNode::new("b", "task", "B", "", "ACTIVE", vec![], BTreeMap::new()),
+            ],
+            vec![
+                BundleRelationship::new(
+                    "root",
+                    "a",
+                    "CAUSED",
+                    RelationExplanation::new(RelationSemanticClass::Causal),
+                ),
+                BundleRelationship::new(
+                    "root",
+                    "b",
+                    "JUSTIFIED",
+                    RelationExplanation::new(RelationSemanticClass::Evidential),
+                ),
+            ],
+            Vec::new(),
+            BundleMetadata::initial("0.1.0"),
+        )
+        .expect("valid");
+
+        let rendered = render_graph_bundle(&bundle);
+        let diff = (rendered.quality.causal_density() - 1.0).abs();
+        assert!(diff < 0.001, "all-causal density should be 1.0");
+    }
+
+    #[test]
+    fn quality_no_relationships_has_zero_causal_density() {
+        let bundle = RehydrationBundle::new(
+            CaseId::new("root").expect("valid"),
+            Role::new("dev").expect("valid"),
+            BundleNode::new(
+                "root", "case", "Root", "", "ACTIVE", vec![], BTreeMap::new(),
+            ),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            BundleMetadata::initial("0.1.0"),
+        )
+        .expect("valid");
+
+        let rendered = render_graph_bundle(&bundle);
+        assert!(
+            rendered.quality.causal_density().abs() < 0.001,
+            "no-relationship bundle should have 0 causal density"
         );
     }
 }

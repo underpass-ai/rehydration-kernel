@@ -1,8 +1,10 @@
 use std::error::Error;
+use std::sync::Arc;
 use std::time::Duration;
 
 use rehydration_config::{AppConfig, GrpcTlsConfig};
 use rehydration_domain::{GraphNeighborhoodReader, NodeDetailReader, SnapshotStore};
+use rehydration_observability::quality_observers::NoopQualityObserver;
 use rehydration_transport_grpc::GrpcServer;
 use tokio::net::TcpListener;
 use tokio::sync::oneshot;
@@ -46,6 +48,7 @@ impl RunningTlsGrpcServer {
             detail_reader,
             snapshot_store,
             rehydration_testkit::InMemoryContextEventStore::new(),
+            Arc::new(NoopQualityObserver),
         );
         let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
         let server_task = tokio::spawn(async move {

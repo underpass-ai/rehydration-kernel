@@ -1,4 +1,5 @@
 pub mod metrics;
+pub mod quality_observers;
 
 use opentelemetry::trace::TracerProvider as _;
 use opentelemetry_sdk::metrics::SdkMeterProvider;

@@ -617,7 +617,7 @@ async fn judge_prompt_evaluation_across_all_use_cases()
                 let rendered = response.rendered.ok_or("missing rendered")?;
                 let eval_content = tier_content_for_eval(&rendered);
                 let tokens = rendered.token_count;
-                let quality = rendered.quality.unwrap_or_default();
+                let quality = rendered.quality.ok_or("missing quality metrics in rendered context")?;
 
                 // Build ground truth that rewards multi-layer graph reasoning.
                 //

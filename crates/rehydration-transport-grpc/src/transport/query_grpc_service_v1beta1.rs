@@ -6,7 +6,10 @@ use rehydration_application::{
     ContextRenderOptions, GetContextPathQuery, GetContextQuery, GetNodeDetailQuery,
     QueryApplicationService, RehydrateSessionQuery, ValidateScopeQuery,
 };
-use rehydration_domain::{GraphNeighborhoodReader, NodeDetailReader, SnapshotStore};
+use rehydration_domain::{
+    GraphNeighborhoodReader, NodeDetailReader, QualityMetricsObserver,
+    QualityObservationContext, SnapshotStore,
+};
 use rehydration_proto::v1beta1::{
     GetContextPathRequest, GetContextPathResponse, GetContextRequest, GetContextResponse,
     GetNodeDetailRequest, GetNodeDetailResponse, RehydrateSessionRequest, RehydrateSessionResponse,
@@ -22,14 +25,21 @@ use crate::transport::proto_mapping_v1beta1::{
 };
 use crate::transport::support::map_application_error;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct QueryGrpcServiceV1Beta1<G, D, S> {
     application: Arc<QueryApplicationService<G, D, S>>,
+    quality_observer: Arc<dyn QualityMetricsObserver>,
 }
 
 impl<G, D, S> QueryGrpcServiceV1Beta1<G, D, S> {
-    pub fn new(application: Arc<QueryApplicationService<G, D, S>>) -> Self {
-        Self { application }
+    pub fn new(
+        application: Arc<QueryApplicationService<G, D, S>>,
+        quality_observer: Arc<dyn QualityMetricsObserver>,
+    ) -> Self {
+        Self {
+            application,
+            quality_observer,
+        }
     }
 }
 
@@ -107,28 +117,15 @@ where
         );
         tracing::debug!(resolved_mode = %resolved_mode.as_str(), "mode resolved");
 
-        // Quality metrics
-        let q = &result.rendered.quality;
-        meter
-            .u64_histogram("rehydration.quality.raw_equivalent_tokens")
-            .build()
-            .record(q.raw_equivalent_tokens as u64, attrs);
-        meter
-            .f64_histogram("rehydration.quality.compression_ratio")
-            .build()
-            .record(q.compression_ratio, attrs);
-        meter
-            .f64_histogram("rehydration.quality.causal_density")
-            .build()
-            .record(q.causal_density, attrs);
-        meter
-            .f64_histogram("rehydration.quality.noise_ratio")
-            .build()
-            .record(q.noise_ratio, attrs);
-        meter
-            .f64_histogram("rehydration.quality.detail_coverage")
-            .build()
-            .record(q.detail_coverage, attrs);
+        // Quality metrics — delegated to observer (OTel + Loki/Tracing)
+        self.quality_observer.observe(
+            &result.rendered.quality,
+            &QualityObservationContext {
+                rpc: "GetContext".to_string(),
+                root_node_id: result.bundle.root_node_id().as_str().to_string(),
+                role: result.bundle.role().as_str().to_string(),
+            },
+        );
 
         if let Some(ref timing) = result.timing {
             meter
@@ -165,6 +162,8 @@ where
     ) -> Result<Response<GetContextPathResponse>, Status> {
         let start = Instant::now();
         let request = request.into_inner();
+        let obs_root = request.root_node_id.clone();
+        let obs_role = request.role.clone();
         tracing::debug!(
             root_node_id = %request.root_node_id,
             target_node_id = %request.target_node_id,
@@ -212,6 +211,16 @@ where
                 .build()
                 .record(timing.batch_size as u64, attrs);
         }
+
+        // Quality metrics — delegated to observer (OTel + Loki/Tracing)
+        self.quality_observer.observe(
+            &result.rendered.quality,
+            &QualityObservationContext {
+                rpc: "GetContextPath".to_string(),
+                root_node_id: obs_root,
+                role: obs_role,
+            },
+        );
 
         Ok(Response::new(GetContextPathResponse {
             path_bundle: Some(proto_bundle_from_single_role_v1beta1(&result.path_bundle)),

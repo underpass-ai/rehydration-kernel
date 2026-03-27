@@ -40,8 +40,11 @@ pub fn render_raw_dump(seed: &GeneratedSeed) -> String {
     // All relationships
     for rel in &seed.relations {
         out.push_str(&format!(
-            "Relationship: {} connects to {} via {}. Semantic class: {:?}.",
-            rel.source_node_id, rel.target_node_id, rel.relation_type, rel.semantic_class,
+            "Relationship: {} connects to {} via {}. Semantic class: {}.",
+            rel.source_node_id,
+            rel.target_node_id,
+            rel.relation_type,
+            rel.semantic_class.as_str(),
         ));
         if let Some(rationale) = &rel.rationale {
             out.push_str(&format!(" Rationale: {rationale}."));

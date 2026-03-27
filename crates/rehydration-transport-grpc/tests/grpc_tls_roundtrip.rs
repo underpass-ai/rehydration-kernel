@@ -2,7 +2,7 @@ use std::fs;
 use std::io;
 use std::path::PathBuf;
 use std::process::Command;
-use std::sync::Once;
+use std::sync::{Arc, Once};
 
 use rehydration_config::{AppConfig, GrpcTlsConfig, GrpcTlsMode};
 use rehydration_domain::{
@@ -13,6 +13,7 @@ use rehydration_proto::v1beta1::{
     BundleRenderFormat, GetContextRequest, Phase,
     context_query_service_client::ContextQueryServiceClient,
 };
+use rehydration_observability::quality_observers::NoopQualityObserver;
 use rehydration_testkit::InMemoryContextEventStore;
 use rehydration_transport_grpc::GrpcServer;
 use tempfile::TempDir;
@@ -338,6 +339,7 @@ async fn start_server(
         EmptyNodeDetailReader,
         NoopSnapshotStore,
         InMemoryContextEventStore::new(),
+        Arc::new(NoopQualityObserver),
     );
     let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
     let server_task = tokio::spawn(async move {
