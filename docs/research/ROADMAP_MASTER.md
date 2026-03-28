@@ -539,18 +539,38 @@ bounded graph tasks that normally require frontier models. The benchmark should 
 
 **Model matrix for vLLM (local GPU inference, zero API cost):**
 
-- [ ] Qwen3-8B (current baseline)
-- [ ] Qwen3-4B (smaller, tests minimum viable model size)
-- [ ] Qwen3-1.7B (stress test: can the kernel compensate for extreme model weakness?)
-- [ ] Phi-4-mini (3.8B, Microsoft — different architecture family)
-- [ ] Gemma-3-4B (Google — different training data/approach)
-- [ ] DeepSeek-R1-Distill-Qwen-7B (reasoning-capable, tests if CoT + kernel compounds)
+Infrastructure: 4x RTX 3090 (96GB VRAM). vLLM tensor parallelism.
 
-Each model runs the same `baseline-planner-v1.yaml` config (108 evals, ~15 min per model).
-Compare: Task accuracy, Reason preservation, Restart accuracy across the model size spectrum.
+Small (1 GPU, fp16):
+- [ ] Qwen3-1.7B — stress test: minimum viable model size
+- [ ] Phi-4-mini (3.8B) — Microsoft, different architecture family
+- [ ] Qwen3-4B — small but capable
+- [ ] Gemma-3-4B-it — Google, different training data
+- [ ] DeepSeek-R1-Distill-Qwen-7B — reasoning/CoT, tests if thinking + kernel compounds
+- [x] Qwen3-8B — current baseline
 
-**Key question:** at what model size does the kernel stop compensating? Is there a floor
-below which structured context cannot help?
+Medium (1-2 GPUs, fp16):
+- [ ] Qwen3-14B — sweet spot: single GPU, much more capable than 8B
+- [ ] Mistral-Small-3.2-24B-Instruct — strong instruction follower
+- [ ] Gemma-3-27B-it — largest single-architecture that fits in 2 GPUs
+
+Large (2-4 GPUs, fp16):
+- [ ] Qwen3-32B — 2 GPUs, tests if more params overcome structural-only context
+- [ ] DeepSeek-R1-Distill-Qwen-32B — reasoning + 32B, strongest local reasoning model
+- [ ] Llama-3.3-70B-Instruct — 4 GPUs fp16, frontier-class local model
+
+MoE (fits easily despite large total params):
+- [ ] Qwen3-30B-A3B — 30B total but only 3B active, very fast inference
+- [ ] Qwen3-235B-A22B — 235B total, 22B active, fits in 4x24GB with 4-bit quant
+
+Each model runs the same 108-eval config (~15 min per model, zero API cost).
+The full matrix (15 models × 108 evals = 1620 evals) takes ~4 hours.
+
+**Key questions:**
+1. At what model size does the kernel stop compensating for model weakness?
+2. Does reasoning (CoT) compound with structured context or is it redundant?
+3. Do MoE models benefit differently from dense models at similar active param counts?
+4. Is there a model where structural-only context matches explanatory? (kernel ceiling)
 
 **Infrastructure:** all models run on vLLM via `llm.underpassai.com`. Add model entries
 to `evaluation-matrix.yaml` — the YAML-driven config makes this trivial.
