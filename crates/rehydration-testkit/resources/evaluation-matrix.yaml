@@ -24,6 +24,8 @@ tls:
   cert: /tmp/vllm-client.crt
   key: /tmp/vllm-client.key
 
+# Pin model versions for reproducibility. Use exact IDs (with date suffix)
+# when available. vLLM models are pinned by the deployed checkpoint.
 agents:
   qwen3-8b:
     endpoint: https://llm.underpassai.com/v1/chat/completions
@@ -34,32 +36,32 @@ agents:
 
   gpt-5.4:
     endpoint: https://api.openai.com/v1/chat/completions
-    model: gpt-5.4
+    model: gpt-5.4-20250327
     provider: openai-new
     api_key_env: OPENAI_KEY
 
   opus-4.6:
     endpoint: https://api.anthropic.com/v1/messages
-    model: claude-opus-4-6
+    model: claude-opus-4-6-20250514
     provider: anthropic
     api_key_env: ANTHROPIC_KEY
 
 judges:
   opus-4.6:
     endpoint: https://api.anthropic.com/v1/messages
-    model: claude-opus-4-6
+    model: claude-opus-4-6-20250514
     provider: anthropic
     api_key_env: ANTHROPIC_KEY
 
   gpt-5.4:
     endpoint: https://api.openai.com/v1/chat/completions
-    model: gpt-5.4
+    model: gpt-5.4-20250327
     provider: openai-new
     api_key_env: OPENAI_KEY
 
   sonnet-4.6:
     endpoint: https://api.anthropic.com/v1/messages
-    model: claude-sonnet-4-6
+    model: claude-sonnet-4-6-20250514
     provider: anthropic
     api_key_env: ANTHROPIC_KEY
 

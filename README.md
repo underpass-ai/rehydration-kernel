@@ -59,7 +59,7 @@ What is in place:
 - Hexagonal domain/application/adapter/transport layers
 - gRPC + async (NATS) contracts with CI protection (`buf breaking`, AsyncAPI checks)
 - TLS/mTLS on all infrastructure boundaries
-- 270 unit tests + 9 container-backed integration tests + [LLM-as-judge E2E benchmark](./docs/testing.md#benchmark-tests-llm-as-judge--primary-validation) (the primary validation of the kernel's value)
+- 270 unit tests + 9 container-backed integration tests + [LLM-as-judge E2E benchmark](./docs/testing.md#benchmark-tests-llm-as-judge) (primary empirical validation harness — methodology refinement ongoing)
 - Multi-resolution rendering (L0/L1/L2) with auto mode selection
 - Quality metrics with OTel + Loki observability
 - Helm chart with optional infrastructure sidecars

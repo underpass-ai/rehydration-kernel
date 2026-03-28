@@ -15,7 +15,7 @@ container-tests = []
 [dependencies]
 
 [dev-dependencies]
-async-nats = "0.39.0"
+async-nats = "0.46.0"
 rehydration-proto.workspace = true
 rehydration-testkit.workspace = true
 rehydration-tests-shared.workspace = true
