@@ -506,26 +506,25 @@ Root cause: prompt designed for flat bundles + Opus 4 calibration. See
 - [x] Pin judge model version in evaluation-matrix.yaml (date-suffixed IDs: claude-opus-4-6-20250514, etc.)
 - [ ] Re-run full benchmark matrix after methodology fixes
 
-## Core Thesis (validated 2026-03-28)
+## Core Thesis (directional evidence, 2026-03-28)
 
-The kernel's value proposition has two dimensions:
+Two dimensions:
 
 1. **Accuracy**: explanatory context (causal chains + rationale metadata) enables
-   LLMs — especially small models — to perform bounded graph tasks that require
-   understanding *why*, not just *what*. Structural-only context fails because it
-   lacks the reasoning substrate.
+   LLMs to perform bounded graph tasks that structural-only context cannot support.
 
-2. **Auditability**: the kernel makes LLM reasoning verifiable. When `causal_density > 0`,
-   rationale exists in the graph and can be cross-referenced against the LLM's response.
-   When `causal_density = 0`, any rationale the LLM provides is fabricated — detectable
-   deterministically by comparing the model's `reason_source` declaration against the
-   kernel's ground truth.
+2. **Auditability**: the kernel makes LLM reasoning verifiable. `causal_density > 0`
+   means rationale exists in the graph. Consumers can cross-reference the LLM's
+   declared `reason_source` against the kernel's ground truth to detect fabrication
+   deterministically — no judge needed.
 
-Evidence from smoke test (2026-03-28, 6 evals, Qwen3-8B + Sonnet-4.6 judge):
-- Explanatory: 92% reason preservation, 0% fabrication
-- Structural: 0% reason preservation, 100% fabrication detected
-- Qwen3-8B declares `confidence: high` on ALL responses including fabricated ones
-- Without the kernel's ground truth, fabricated rationale is indistinguishable from real
+Early signal (smoke test, 6 evals, Qwen3-8B, not yet statistically robust):
+- Explanatory preserves rationale; structural does not
+- Fabrication detection fires correctly on structural variants
+- Qwen3-8B declares `confidence: high` on fabricated rationale — model honesty
+  varies by size (under investigation in model matrix)
+
+Full validation pending: 108-eval baseline + multi-model matrix.
 
 ## Pending — Research
 

@@ -33,23 +33,15 @@ into LLM-ready text. It is built around four concepts:
 
 ## Why This Matters
 
-The kernel solves two problems at once:
+**Structured context for small models.** A small model with causal chains and
+rationale metadata can perform bounded graph tasks that it fails without structure.
+The kernel provides the *why*, not just the *what*.
 
-**1. Small models become capable.** A 8B-parameter model with the right rehydrated
-context — causal chains, rationale metadata, semantic classes — can perform bounded
-graph tasks that would otherwise require a frontier model. Without the kernel, the
-same model fails because it lacks the structure to reason about *why* things are
-connected, not just *what* is connected.
-
-**2. Reasoning becomes auditable.** When an LLM responds based on kernel context,
-you can verify whether it preserved rationale from the graph or fabricated it.
-The kernel knows what rationale exists (`causal_density > 0`) and what doesn't.
-If the model claims to cite graph metadata but none exists, that's detectable
-fabrication — not just a wrong answer, but a dishonest one.
-
-Without structured context, there is no way to distinguish preserved knowledge
-from plausible-sounding invention. The kernel makes this distinction possible
-because the graph is the ground truth.
+**Auditable reasoning.** The kernel knows what rationale exists in the graph
+(`causal_density > 0`). Consumers can cross-reference the LLM's response against
+this ground truth to detect when reasoning is fabricated rather than preserved.
+Early benchmarks show this distinction is real — investigation ongoing
+(see [ROADMAP](./docs/research/ROADMAP_MASTER.md#core-thesis-validated-2026-03-28)).
 
 ```mermaid
 graph LR
