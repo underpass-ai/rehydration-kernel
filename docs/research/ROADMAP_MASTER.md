@@ -202,7 +202,7 @@ Fix requires rendering per-role bundles at the session level — architecture ch
 rendered.tokens, truncation.total, mode.selected + timing). `GetContextPath` only
 emits rpc.duration + quality + timing. `RehydrateSession` only emits rpc.duration + timing.
 
-- [ ] `GetContextPath`: add bundle.nodes, bundle.relationships, rendered.tokens, truncation.total, mode.selected
+- [x] `GetContextPath`: add bundle.nodes, bundle.relationships, bundle.details, rendered.tokens, truncation.total, mode.selected
 - [ ] `RehydrateSession`: add bundle metrics per role (blocked by P1 quality metrics above)
 - [x] Wire `rehydration.bundle.details` — now recorded in GetContext
 - [ ] Wire `rehydration.projection.lag` — defined in KernelMetrics but never recorded by projection runtime

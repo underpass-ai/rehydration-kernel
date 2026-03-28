@@ -196,6 +196,36 @@ where
             .f64_histogram("rehydration.rpc.duration")
             .build()
             .record(start.elapsed().as_secs_f64(), attrs);
+        meter
+            .u64_histogram("rehydration.bundle.nodes")
+            .build()
+            .record(result.path_bundle.stats().selected_nodes() as u64, attrs);
+        meter
+            .u64_histogram("rehydration.bundle.relationships")
+            .build()
+            .record(result.path_bundle.stats().selected_relationships() as u64, attrs);
+        meter
+            .u64_histogram("rehydration.bundle.details")
+            .build()
+            .record(result.path_bundle.stats().detailed_nodes() as u64, attrs);
+        meter
+            .u64_histogram("rehydration.rendered.tokens")
+            .build()
+            .record(result.rendered.token_count as u64, attrs);
+        if result.rendered.truncation.is_some() {
+            meter
+                .u64_counter("rehydration.truncation.total")
+                .build()
+                .add(1, attrs);
+        }
+        let resolved_mode = result.rendered.resolved_mode;
+        meter.u64_counter("rehydration.mode.selected").build().add(
+            1,
+            &[
+                KeyValue::new("rpc", "GetContextPath"),
+                KeyValue::new("mode", resolved_mode.as_str().to_string()),
+            ],
+        );
 
         if let Some(ref timing) = result.timing {
             meter

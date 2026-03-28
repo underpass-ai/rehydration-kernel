@@ -57,6 +57,12 @@ Both backends are always active.
 | Metric | Type | Description |
 |:-------|:-----|:------------|
 | `rehydration.rpc.duration` | f64 histogram (s) | RPC latency |
+| `rehydration.bundle.nodes` | u64 histogram | Nodes in bundle |
+| `rehydration.bundle.relationships` | u64 histogram | Relationships in bundle |
+| `rehydration.bundle.details` | u64 histogram | Node details in bundle |
+| `rehydration.rendered.tokens` | u64 histogram | Rendered token count |
+| `rehydration.truncation.total` | u64 counter | Renders requiring truncation |
+| `rehydration.mode.selected` | u64 counter | Resolved RehydrationMode (label: `mode`) |
 | `rehydration.quality.*` | via observer | 5 quality metrics (see below) |
 | `rehydration.session.*` | f64/u64 histograms | Timing breakdown (when available) |
 
@@ -212,6 +218,5 @@ kubectl port-forward svc/<release>-grafana 3000:3000 -n <namespace>
 - OTLP export supports mTLS via `OTEL_EXPORTER_OTLP_{CA,CERT,KEY}_PATH` env vars. Plaintext by default when no env vars set.
 - `rehydration.bundle.details` and `rehydration.projection.lag` are defined
   but not yet recorded by any handler.
-- `GetContextPath` does not emit `bundle.nodes`, `bundle.relationships`,
-  `rendered.tokens`, `truncation.total`, or `mode.selected` — only quality
-  metrics and timing.
+- `GetContext` and `GetContextPath` have full OTel parity. `RehydrateSession`
+  only emits `rpc.duration` and timing.
