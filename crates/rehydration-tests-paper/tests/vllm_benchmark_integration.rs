@@ -187,7 +187,7 @@ async fn vllm_benchmark_across_scales_domains_and_variants()
             let total_start = Instant::now();
             let query_start = Instant::now();
 
-            let target_node_id = seed
+            let _target_node_id = seed
                 .nodes
                 .first()
                 .map(|n| n.node_id.clone())

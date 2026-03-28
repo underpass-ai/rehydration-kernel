@@ -1026,7 +1026,7 @@ fn build_llm_config(matrix: &serde_yaml::Value, agent_cfg: &serde_yaml::Value, j
 async fn wait_for_context(
     fixture: &TestFixture,
     root_node_id: &str,
-    focus_node_id: &str,
+    _focus_node_id: &str,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let mut qc = fixture.query_client();
     for _ in 0..40 {

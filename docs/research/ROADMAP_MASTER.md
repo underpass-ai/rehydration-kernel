@@ -127,21 +127,10 @@ evidence rather than definitive validation.
 | Extract RESP protocol | adapter-valkey/io.rs | 663 | Shared module for RESP encoding |
 | Extract TLS config | transport/grpc_server.rs | 222 | Separate TLS module |
 
-### P1 — async-nats version conflict in TLS test fixtures
+### P1 — async-nats version conflict in TLS test fixtures (done)
 
-The `async-nats` upgrade (0.39 → 0.46, commit `ee16469`) left TLS integration test
-fixtures using the old `async_nats::Client` type while the rest of the codebase uses
-0.46's `async_nats::client::Client`. Two container-test targets fail to compile with
-`--all-features`:
-
-- `kernel_full_journey_tls_integration.rs` — `publish_kernel_e2e_projection_events(&publisher)`
-- `support/kernel_tls_fixture.rs` — `seed_projection(publisher.clone())`
-
-Fix: align these fixtures to async-nats 0.46 API.
-
-- [ ] Update `kernel_tls_fixture.rs` to use async-nats 0.46 `Client`
-- [ ] Update `kernel_full_journey_tls_integration.rs` publisher usage
-- [ ] Verify `cargo check --workspace --all-targets --all-features` passes clean
+- [x] Bump `rehydration-tests-kernel` dev-dependency from async-nats 0.39 → 0.46
+- [x] `cargo clippy --workspace --all-targets --all-features -D warnings` passes clean
 
 ### Coverage gaps (accepted, documented)
 

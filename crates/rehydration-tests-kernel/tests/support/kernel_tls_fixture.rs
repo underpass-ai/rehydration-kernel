@@ -204,7 +204,7 @@ impl RunningTlsProjectionRuntime {
 async fn wait_for_context_ready(
     mut query_client: ContextQueryServiceClient<Channel>,
     root_node_id: &str,
-    focus_node_id: &str,
+    _focus_node_id: &str,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let mut last_error: Option<Box<dyn Error + Send + Sync>> = None;
 
@@ -244,9 +244,7 @@ async fn wait_for_context_ready(
     }
 
     Err(last_error.unwrap_or_else(|| {
-        format!(
-            "tls context projection did not become ready before timeout"
-        )
+        "tls context projection did not become ready before timeout".to_string()
         .into()
     }))
 }
