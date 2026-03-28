@@ -572,6 +572,30 @@ The full matrix (15 models × 108 evals = 1620 evals) takes ~4 hours.
 3. Do MoE models benefit differently from dense models at similar active param counts?
 4. Is there a model where structural-only context matches explanatory? (kernel ceiling)
 
+### P0 — Anti-fabrication: explicit "not available" + source declaration
+
+The inference prompt forces the model to fill `reason` even when no rationale metadata
+exists in the context. This causes fabrication. Two changes required before the next
+exhaustive run:
+
+**A — Explicit NOT_AVAILABLE path** (inference prompt change):
+- [ ] Add instruction: "If no rationale, method, or decision_id metadata is present in the
+  relationships, you MUST respond with `reason: NOT_AVAILABLE` — do not infer or fabricate."
+- [ ] Update judge Rule 4: `reason_correct_main_path` MUST be FALSE when response says NOT_AVAILABLE
+  AND ground truth has rationale (model missed it). MUST be TRUE when both are NOT_AVAILABLE.
+
+**B — Source declaration + confidence** (response schema change):
+- [ ] Add `reason_source` field: `graph_metadata` | `inferred` | `not_available`
+- [ ] Add `confidence` field: `high` | `medium` | `low`
+- [ ] Update `JudgeVerdict` struct: add `reason_source_correct` (did the model honestly declare its source?)
+- [ ] Update `LlmEvaluationResult`: add `reason_source`, `confidence`, `reason_source_correct`
+- [ ] Update `BenchmarkResult` in both tests
+- [ ] New judge rule: if model says `graph_metadata` but ground truth has no rationale → fabrication detected
+- [ ] New metric: `fabrication_rate` = evals where model claims graph_metadata but reason_correct=false
+
+**Validation:** re-run the 6-eval smoke test. Structural variants should now show
+`reason: NOT_AVAILABLE, reason_source: not_available` instead of fabricated rationale.
+
 ### Level 1 — Fabricated vs preserved rationale (research gap from 2026-03-28)
 
 In the baseline run, structural variants show `restart_explained: true` even though
