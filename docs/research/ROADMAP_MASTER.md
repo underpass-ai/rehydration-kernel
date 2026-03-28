@@ -112,12 +112,18 @@ evidence rather than definitive validation.
 
 ### P2 — Planner enrichment
 
-`mode_heuristic.rs` uses a single signal (`tokens_per_node < 30`). Incorporate:
+`mode_heuristic.rs` now uses token pressure + causal density (planner v2, commit 6d99eb4).
 
+- [x] Causal density: `>= 0.5` keeps ReasonPreserving even under budget pressure
 - [ ] Endpoint type (GetContext vs RehydrateSession may warrant different mode defaults)
 - [ ] Focus/path presence (if focus node exists, ResumeFocused may be better even with budget room)
-- [ ] Causal density (high explanatory relation ratio → prefer ReasonPreserving)
 - [ ] Relation distribution (structural-heavy graphs may benefit from pruning even at generous budgets)
+- [ ] Benchmark with `BENCHMARK_TOKEN_BUDGET=512` to exercise planner under real pressure (4096/49=83 tok/node doesn't trigger the heuristic)
+
+Planner v2 A/B results (36 evals, budget=4096, no pressure activated):
+- micro: explanatory 5/6 reason vs structural 0/6 (gap holds)
+- stress: explanatory 3/6 reason vs structural 0/6 (gap holds, degrades with chain depth)
+- All modes: reason_preserving (budget too generous to trigger switch)
 
 ## Pending — Architecture (low priority, all test-only)
 
