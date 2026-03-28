@@ -136,25 +136,14 @@ mod tests {
     }
 
     #[test]
-    fn quality_metrics_match_between_domain_and_old_raw_dump() {
-        use crate::raw_dump::{count_tokens, render_raw_dump};
-
+    fn quality_metrics_via_seed_to_bundle_are_consistent() {
         let seed = generate_seed(GraphSeedConfig::meso(Domain::Operations));
-
-        // Old path: testkit raw_dump
-        let old_raw = render_raw_dump(&seed);
-        let old_tokens = count_tokens(&old_raw);
-
-        // New path: domain VO
         let bundle = seed_to_bundle(&seed);
         let estimator = rehydration_application::queries::cl100k_estimator::Cl100kEstimator::new();
         let metrics = BundleQualityMetrics::compute(&bundle, 0, &estimator);
 
-        assert_eq!(
-            metrics.raw_equivalent_tokens() as usize, old_tokens,
-            "domain VO raw_equivalent_tokens ({}) must match testkit raw_dump count ({})",
-            metrics.raw_equivalent_tokens(),
-            old_tokens
-        );
+        assert!(metrics.raw_equivalent_tokens() > 200, "meso should have substantial raw tokens");
+        assert!((metrics.compression_ratio() - 1.0).abs() < 0.001, "compression with 0 rendered tokens should be 1.0");
+        assert!(metrics.causal_density() > 0.0, "meso should have causal relationships");
     }
 }

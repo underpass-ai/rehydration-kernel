@@ -179,8 +179,8 @@ depends on both producing identical output.
 - [x] Convert `GeneratedSeed` → `RehydrationBundle` in testkit (`seed_to_bundle()` mapper)
 - [x] Use `BundleQualityMetrics::compute(bundle, 0, estimator).raw_equivalent_tokens()` via `seed_raw_equivalent_tokens()`
 - [x] Verify raw dump token counts match before/after (test: `quality_metrics_match_between_domain_and_old_raw_dump`)
-- [ ] Migrate callers of `render_raw_dump()` to use `seed_to_bundle()` + domain VO
-- [ ] Delete `render_raw_dump()` once all callers migrated
+- [x] Delete `render_raw_dump()` — replaced by `count_raw_tokens()` via domain VO
+- [x] All callers migrated to `seed_to_bundle()` + `BundleQualityMetrics::compute()`
 
 ### P1 — Quality metrics in RehydrateSession
 
