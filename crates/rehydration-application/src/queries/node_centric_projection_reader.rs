@@ -542,10 +542,7 @@ mod tests {
             multi[0].neighbor_nodes().len(),
             single.neighbor_nodes().len()
         );
-        assert_eq!(
-            multi[0].relationships().len(),
-            single.relationships().len()
-        );
+        assert_eq!(multi[0].relationships().len(), single.relationships().len());
         assert_eq!(multi[0].node_details().len(), single.node_details().len());
     }
 
@@ -561,11 +558,7 @@ mod tests {
         let (bundles, _timing) = reader
             .load_bundles_for_roles(
                 "node-root",
-                &[
-                    "dev".to_string(),
-                    "reviewer".to_string(),
-                    "ops".to_string(),
-                ],
+                &["dev".to_string(), "reviewer".to_string(), "ops".to_string()],
                 "0.1.0",
                 DEFAULT_NATIVE_GRAPH_TRAVERSAL_DEPTH,
             )

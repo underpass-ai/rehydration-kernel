@@ -70,17 +70,14 @@ impl NatsContainer {
 /// Standalone connect function for cases where the URL is known
 /// but no `NatsContainer` handle is available (e.g., TLS fixtures).
 pub async fn connect_nats_with_retry(url: &str) -> Result<Client, BoxError> {
-    timeout(
-        CONNECT_TIMEOUT,
-        connect_nats_inner(url.to_string()),
-    )
-    .await
-    .map_err(|_| {
-        std::io::Error::new(
-            std::io::ErrorKind::TimedOut,
-            format!("nats connection did not become ready within {CONNECT_TIMEOUT:?}"),
-        )
-    })?
+    timeout(CONNECT_TIMEOUT, connect_nats_inner(url.to_string()))
+        .await
+        .map_err(|_| {
+            std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                format!("nats connection did not become ready within {CONNECT_TIMEOUT:?}"),
+            )
+        })?
 }
 
 async fn connect_nats_inner(url: String) -> Result<Client, BoxError> {

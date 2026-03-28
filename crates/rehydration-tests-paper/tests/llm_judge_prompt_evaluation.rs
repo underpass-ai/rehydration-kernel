@@ -9,8 +9,8 @@ use rehydration_proto::v1beta1::{
     GetContextRequest, RehydrationMode, RenderedContext, ResolutionTier,
 };
 use rehydration_testkit::{
-    Domain, EvaluationGroundTruth, GraphSeedConfig, LlmEvaluatorConfig, LlmProvider,
-    NoiseMode, PromptConfig, RelationMix, calibrate_judge, evaluate_with_config, generate_seed,
+    Domain, EvaluationGroundTruth, GraphSeedConfig, LlmEvaluatorConfig, LlmProvider, NoiseMode,
+    PromptConfig, RelationMix, calibrate_judge, evaluate_with_config, generate_seed,
     seed_publisher::seed_to_projection_events,
 };
 use rehydration_tests_shared::containers::connect_nats_with_retry;
@@ -35,8 +35,7 @@ impl RunDir {
         let base = std::env::var("E2E_OUTPUT_DIR")
             .map(PathBuf::from)
             .unwrap_or_else(|_| {
-                PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                    .join("../../artifacts/e2e-runs")
+                PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../artifacts/e2e-runs")
             });
         let ts = chrono_stamp();
         let path = base.join(ts);
@@ -52,13 +51,23 @@ impl RunDir {
         let _ = writeln!(self.log, "{msg}");
     }
 
-    fn write_result(&self, name: &str, result: &EvalResult) -> Result<(), Box<dyn Error + Send + Sync>> {
+    fn write_result(
+        &self,
+        name: &str,
+        result: &EvalResult,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
         let json = serde_json::to_vec_pretty(result)?;
         fs::write(self.path.join("results").join(format!("{name}.json")), json)?;
         Ok(())
     }
 
-    fn write_summary(&mut self, results: &[EvalResult], captured: &[CapturedVariant], boot_ms: f64, total_ms: f64) -> Result<(), Box<dyn Error + Send + Sync>> {
+    fn write_summary(
+        &mut self,
+        results: &[EvalResult],
+        captured: &[CapturedVariant],
+        boot_ms: f64,
+        total_ms: f64,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
         // JSON summary
         let summary = serde_json::to_vec_pretty(results)?;
         fs::write(self.path.join("summary.json"), summary)?;
@@ -74,11 +83,25 @@ impl RunDir {
         md.push_str("| Model | Prompt | Variant | Task | Restart | Reason | Latency |\n");
         md.push_str("|-------|--------|---------|------|---------|--------|---------|\n");
         for r in results {
-            let t = match r.task { Some(true) => "OK", Some(false) => "FAIL", None => "ERR" };
-            let re = match r.restart { Some(true) => "OK", Some(false) => "FAIL", None => "ERR" };
-            let p = match r.reason { Some(true) => "OK", Some(false) => "FAIL", None => "ERR" };
-            md.push_str(&format!("| {} | {} | {} | {} | {} | {} | {:.0}ms |\n",
-                r.model, r.prompt, r.variant, t, re, p, r.latency_ms));
+            let t = match r.task {
+                Some(true) => "OK",
+                Some(false) => "FAIL",
+                None => "ERR",
+            };
+            let re = match r.restart {
+                Some(true) => "OK",
+                Some(false) => "FAIL",
+                None => "ERR",
+            };
+            let p = match r.reason {
+                Some(true) => "OK",
+                Some(false) => "FAIL",
+                None => "ERR",
+            };
+            md.push_str(&format!(
+                "| {} | {} | {} | {} | {} | {} | {:.0}ms |\n",
+                r.model, r.prompt, r.variant, t, re, p, r.latency_ms
+            ));
         }
 
         // Aggregates by model x prompt
@@ -88,17 +111,22 @@ impl RunDir {
         let mut seen: Vec<(String, String)> = Vec::new();
         for r in results {
             let key = (r.model.clone(), r.prompt.clone());
-            if seen.contains(&key) { continue; }
+            if seen.contains(&key) {
+                continue;
+            }
             seen.push(key);
-            let cell: Vec<&EvalResult> = results.iter()
+            let cell: Vec<&EvalResult> = results
+                .iter()
                 .filter(|x| x.model == r.model && x.prompt == r.prompt)
                 .collect();
             let n = cell.iter().filter(|x| x.task.is_some()).count();
             let t = cell.iter().filter(|x| x.task == Some(true)).count();
             let re = cell.iter().filter(|x| x.restart == Some(true)).count();
             let p = cell.iter().filter(|x| x.reason == Some(true)).count();
-            md.push_str(&format!("| {} | {} | {}/{} | {}/{} | {}/{} |\n",
-                r.model, r.prompt, t, n, re, n, p, n));
+            md.push_str(&format!(
+                "| {} | {} | {}/{} | {}/{} | {}/{} |\n",
+                r.model, r.prompt, t, n, re, n, p, n
+            ));
         }
 
         fs::write(self.path.join("report.md"), md)?;
@@ -216,7 +244,11 @@ fn tier_content_for_eval(rendered: &RenderedContext) -> String {
             parts.push(tier.content.as_str());
         }
     }
-    if parts.is_empty() { rendered.content.clone() } else { parts.join("\n\n") }
+    if parts.is_empty() {
+        rendered.content.clone()
+    } else {
+        parts.join("\n\n")
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -247,11 +279,15 @@ fn precheck(resources: &str, matrix_path: &str) -> PrecheckResult {
                 let valid_providers = ["openai", "openai-new", "anthropic"];
 
                 // Validate TLS section
-                let any_tls_agent = matrix["agents"].as_mapping()
+                let any_tls_agent = matrix["agents"]
+                    .as_mapping()
                     .map(|a| a.values().any(|c| c["tls"].as_bool().unwrap_or(false)))
                     .unwrap_or(false);
                 if any_tls_agent {
-                    match (matrix["tls"]["cert"].as_str(), matrix["tls"]["key"].as_str()) {
+                    match (
+                        matrix["tls"]["cert"].as_str(),
+                        matrix["tls"]["key"].as_str(),
+                    ) {
                         (Some(c), Some(k)) => {
                             ok.push(format!("tls section: cert={c}, key={k}"));
                         }
@@ -279,7 +315,10 @@ fn precheck(resources: &str, matrix_path: &str) -> PrecheckResult {
                         match cfg["provider"].as_str() {
                             None => errors.push(format!("agent '{name}': missing provider")),
                             Some(p) if !valid_providers.contains(&p) => {
-                                errors.push(format!("agent '{name}': unknown provider '{p}' — expected: {}", valid_providers.join(", ")));
+                                errors.push(format!(
+                                    "agent '{name}': unknown provider '{p}' — expected: {}",
+                                    valid_providers.join(", ")
+                                ));
                             }
                             Some(_) => {}
                         }
@@ -292,11 +331,14 @@ fn precheck(resources: &str, matrix_path: &str) -> PrecheckResult {
                                 // Connectivity check
                                 if let Some(endpoint) = cfg["endpoint"].as_str() {
                                     let api_key = std::env::var(env_name).unwrap_or_default();
-                                    let reachable = check_api_endpoint(endpoint, Some(&api_key), None, None);
+                                    let reachable =
+                                        check_api_endpoint(endpoint, Some(&api_key), None, None);
                                     if reachable {
                                         ok.push(format!("agent '{name}': endpoint reachable"));
                                     } else {
-                                        errors.push(format!("agent '{name}': endpoint unreachable ({endpoint})"));
+                                        errors.push(format!(
+                                            "agent '{name}': endpoint unreachable ({endpoint})"
+                                        ));
                                     }
                                 }
                             }
@@ -307,19 +349,32 @@ fn precheck(resources: &str, matrix_path: &str) -> PrecheckResult {
                             let key_path_val = matrix["tls"]["key"].as_str();
 
                             match (cert_path, key_path_val) {
-                                (None, _) => errors.push(format!("agent '{name}': tls.cert not set in YAML")),
-                                (_, None) => errors.push(format!("agent '{name}': tls.key not set in YAML")),
+                                (None, _) => {
+                                    errors.push(format!("agent '{name}': tls.cert not set in YAML"))
+                                }
+                                (_, None) => {
+                                    errors.push(format!("agent '{name}': tls.key not set in YAML"))
+                                }
                                 (Some(cert), Some(key)) => {
                                     if !std::path::Path::new(cert).exists() {
                                         errors.push(format!("agent '{name}': TLS cert not found at {cert} (tls.cert in YAML)"));
                                     } else if !std::path::Path::new(key).exists() {
                                         errors.push(format!("agent '{name}': TLS key not found at {key} (tls.key in YAML)"));
                                     } else {
-                                        ok.push(format!("agent '{name}': TLS certs present ({cert}, {key})"));
+                                        ok.push(format!(
+                                            "agent '{name}': TLS certs present ({cert}, {key})"
+                                        ));
                                         if let Some(endpoint) = cfg["endpoint"].as_str() {
-                                            let reachable = check_api_endpoint(endpoint, None, Some(cert), Some(key));
+                                            let reachable = check_api_endpoint(
+                                                endpoint,
+                                                None,
+                                                Some(cert),
+                                                Some(key),
+                                            );
                                             if reachable {
-                                                ok.push(format!("agent '{name}': TLS endpoint reachable"));
+                                                ok.push(format!(
+                                                    "agent '{name}': TLS endpoint reachable"
+                                                ));
                                             } else {
                                                 errors.push(format!("agent '{name}': TLS endpoint unreachable ({endpoint})"));
                                             }
@@ -362,11 +417,14 @@ fn precheck(resources: &str, matrix_path: &str) -> PrecheckResult {
                                 ok.push(format!("judge '{name}': {env_name} set"));
                                 if let Some(endpoint) = cfg["endpoint"].as_str() {
                                     let api_key = std::env::var(env_name).unwrap_or_default();
-                                    let reachable = check_api_endpoint(endpoint, Some(&api_key), None, None);
+                                    let reachable =
+                                        check_api_endpoint(endpoint, Some(&api_key), None, None);
                                     if reachable {
                                         ok.push(format!("judge '{name}': endpoint reachable"));
                                     } else {
-                                        errors.push(format!("judge '{name}': endpoint unreachable ({endpoint})"));
+                                        errors.push(format!(
+                                            "judge '{name}': endpoint unreachable ({endpoint})"
+                                        ));
                                     }
                                 }
                             }
@@ -385,7 +443,9 @@ fn precheck(resources: &str, matrix_path: &str) -> PrecheckResult {
                             if std::path::Path::new(&full_path).exists() {
                                 ok.push(format!("prompt '{name}': {path}"));
                             } else {
-                                errors.push(format!("prompt '{name}': file not found at {full_path}"));
+                                errors.push(format!(
+                                    "prompt '{name}': file not found at {full_path}"
+                                ));
                             }
                         }
                         // null means compiled-in default — always ok
@@ -398,9 +458,13 @@ fn precheck(resources: &str, matrix_path: &str) -> PrecheckResult {
     }
 
     // 3. Container runtime
-    let has_docker = std::process::Command::new("docker").arg("info").output()
+    let has_docker = std::process::Command::new("docker")
+        .arg("info")
+        .output()
         .is_ok_and(|o| o.status.success());
-    let has_podman = std::process::Command::new("podman").arg("info").output()
+    let has_podman = std::process::Command::new("podman")
+        .arg("info")
+        .output()
         .is_ok_and(|o| o.status.success());
     if has_docker {
         ok.push("container runtime: docker".to_string());
@@ -411,7 +475,13 @@ fn precheck(resources: &str, matrix_path: &str) -> PrecheckResult {
     }
 
     // 4. Filters (informational)
-    for filter in &["FILTER_MODELS", "FILTER_PROMPTS", "FILTER_SCALES", "FILTER_NOISE", "FILTER_JUDGES"] {
+    for filter in &[
+        "FILTER_MODELS",
+        "FILTER_PROMPTS",
+        "FILTER_SCALES",
+        "FILTER_NOISE",
+        "FILTER_JUDGES",
+    ] {
         if let Ok(val) = std::env::var(filter) {
             warnings.push(format!("{filter}={val} (subset mode)"));
         }
@@ -430,9 +500,12 @@ fn precheck(resources: &str, matrix_path: &str) -> PrecheckResult {
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
-async fn judge_prompt_evaluation_across_all_use_cases()
--> Result<(), Box<dyn Error + Send + Sync>> {
-    let resources = concat!(env!("CARGO_MANIFEST_DIR"), "/../../crates/rehydration-testkit/resources");
+async fn judge_prompt_evaluation_across_all_use_cases() -> Result<(), Box<dyn Error + Send + Sync>>
+{
+    let resources = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../crates/rehydration-testkit/resources"
+    );
     let matrix_path = std::env::var("EVAL_MATRIX_PATH")
         .unwrap_or_else(|_| format!("{resources}/evaluation-matrix.yaml"));
 
@@ -463,9 +536,7 @@ async fn judge_prompt_evaluation_across_all_use_cases()
     let mut run = RunDir::create()?;
     let boot_start = Instant::now();
 
-    let matrix: serde_yaml::Value = serde_yaml::from_str(
-        &std::fs::read_to_string(&matrix_path)?,
-    )?;
+    let matrix: serde_yaml::Value = serde_yaml::from_str(&std::fs::read_to_string(&matrix_path)?)?;
     run.log(&format!("[CONFIG] matrix={matrix_path}"));
 
     let filter_models = env_filter("FILTER_MODELS");
@@ -495,7 +566,9 @@ async fn judge_prompt_evaluation_across_all_use_cases()
             endpoint: yaml_str(judge_cfg, "endpoint", "judge"),
             model: yaml_str(judge_cfg, "model", "judge"),
             provider: parse_provider(&yaml_str(judge_cfg, "provider", "judge")),
-            api_key: judge_cfg["api_key_env"].as_str().and_then(|e| std::env::var(e).ok()),
+            api_key: judge_cfg["api_key_env"]
+                .as_str()
+                .and_then(|e| std::env::var(e).ok()),
             max_tokens: 200,
             temperature: 0.0,
             tls_cert_path: None,
@@ -504,24 +577,36 @@ async fn judge_prompt_evaluation_across_all_use_cases()
             judge_endpoint: Some(yaml_str(judge_cfg, "endpoint", "judge")),
             judge_model: Some(yaml_str(judge_cfg, "model", "judge")),
             judge_provider: Some(parse_provider(&yaml_str(judge_cfg, "provider", "judge"))),
-            judge_api_key: judge_cfg["api_key_env"].as_str().and_then(|e| std::env::var(e).ok()),
+            judge_api_key: judge_cfg["api_key_env"]
+                .as_str()
+                .and_then(|e| std::env::var(e).ok()),
         };
 
-        run.log(&format!("\n[CALIBRATION] Testing judge '{judge_name}' with known-good/known-bad cases..."));
+        run.log(&format!(
+            "\n[CALIBRATION] Testing judge '{judge_name}' with known-good/known-bad cases..."
+        ));
         let cases = calibrate_judge(&default_prompt, &cal_config).await?;
         let mut cal_failed = false;
         for case in &cases {
             let icon = if case.passed { "\u{2714}" } else { "\u{2718}" };
-            run.log(&format!("  {icon} {}: expected={}, got={}", case.name, case.expected, case.got));
+            run.log(&format!(
+                "  {icon} {}: expected={}, got={}",
+                case.name, case.expected, case.got
+            ));
             if !case.passed {
                 cal_failed = true;
             }
         }
         if cal_failed {
             run.log(&format!("[CALIBRATION] FAILED for judge '{judge_name}' — aborting to avoid wasting eval budget"));
-            panic!("judge calibration failed for '{judge_name}': judge is miscalibrated, fix prompt or switch model");
+            panic!(
+                "judge calibration failed for '{judge_name}': judge is miscalibrated, fix prompt or switch model"
+            );
         }
-        run.log(&format!("[CALIBRATION] Judge '{judge_name}' passed ({} cases)\n", cases.len()));
+        run.log(&format!(
+            "[CALIBRATION] Judge '{judge_name}' passed ({} cases)\n",
+            cases.len()
+        ));
     }
 
     // ── Phase 1: Boot + capture ──
@@ -534,15 +619,29 @@ async fn judge_prompt_evaluation_across_all_use_cases()
     ];
     let yaml_scales: Vec<String> = matrix["scales"]
         .as_mapping()
-        .map(|m| m.keys().filter_map(|k| k.as_str().map(String::from)).collect())
+        .map(|m| {
+            m.keys()
+                .filter_map(|k| k.as_str().map(String::from))
+                .collect()
+        })
         .unwrap_or_default();
     let scales: Vec<ScaleEntry> = if yaml_scales.is_empty() {
         all_scales
     } else {
-        all_scales.into_iter().filter(|(name, _)| yaml_scales.iter().any(|s| s == name)).collect()
+        all_scales
+            .into_iter()
+            .filter(|(name, _)| yaml_scales.iter().any(|s| s == name))
+            .collect()
     };
-    let domains = [("ops", Domain::Operations), ("debug", Domain::SoftwareDebugging)];
-    let mixes = [("explanatory", RelationMix::Explanatory), ("structural", RelationMix::Structural), ("mixed", RelationMix::Mixed)];
+    let domains = [
+        ("ops", Domain::Operations),
+        ("debug", Domain::SoftwareDebugging),
+    ];
+    let mixes = [
+        ("explanatory", RelationMix::Explanatory),
+        ("structural", RelationMix::Structural),
+        ("mixed", RelationMix::Mixed),
+    ];
     // Noise modes are distributed across mixes rather than fully crossed,
     // keeping the total variant count constant at 36 (same as the original
     // binary clean/competing). Each mix gets 2 noise modes:
@@ -551,14 +650,34 @@ async fn judge_prompt_evaluation_across_all_use_cases()
     //   mixed       → clean + restart (restart accuracy under pressure)
     // This ensures every noise mode is tested while the eval budget stays flat.
     let noise_for_mix: &[(&str, &[(&str, NoiseMode)])] = &[
-        ("explanatory", &[("clean", NoiseMode::Structural), ("competing", NoiseMode::CompetingCausal)]),
-        ("structural", &[("clean", NoiseMode::Structural), ("conflicting", NoiseMode::ConflictingMainPath)]),
-        ("mixed", &[("clean", NoiseMode::Structural), ("restart", NoiseMode::CompetingRestartPoint)]),
+        (
+            "explanatory",
+            &[
+                ("clean", NoiseMode::Structural),
+                ("competing", NoiseMode::CompetingCausal),
+            ],
+        ),
+        (
+            "structural",
+            &[
+                ("clean", NoiseMode::Structural),
+                ("conflicting", NoiseMode::ConflictingMainPath),
+            ],
+        ),
+        (
+            "mixed",
+            &[
+                ("clean", NoiseMode::Structural),
+                ("restart", NoiseMode::CompetingRestartPoint),
+            ],
+        ),
     ];
 
     let seeds_per_cell = matrix["seeds_per_cell"].as_u64().unwrap_or(1) as usize;
     let active_scale_names: Vec<&str> = scales.iter().map(|(name, _)| *name).collect();
-    run.log(&format!("[CONFIG] seeds_per_cell={seeds_per_cell}, scales={active_scale_names:?}"));
+    run.log(&format!(
+        "[CONFIG] seeds_per_cell={seeds_per_cell}, scales={active_scale_names:?}"
+    ));
 
     let mut captured: Vec<CapturedVariant> = Vec::new();
     let mut fixture: Option<TestFixture> = None;
@@ -569,7 +688,8 @@ async fn judge_prompt_evaluation_across_all_use_cases()
         }
         for &(domain_name, domain) in &domains {
             for &(mix_name, mix) in &mixes {
-                let noises = noise_for_mix.iter()
+                let noises = noise_for_mix
+                    .iter()
                     .find(|(m, _)| *m == mix_name)
                     .map(|(_, n)| *n)
                     .unwrap_or(&[("clean", NoiseMode::Structural)]);
@@ -577,228 +697,279 @@ async fn judge_prompt_evaluation_across_all_use_cases()
                     if !filter_noise.is_empty() && !filter_noise.contains(&noise_name.to_string()) {
                         continue;
                     }
-                for seed_idx in 0..seeds_per_cell {
-                let mut config = scale_fn(domain);
-                config.relation_mix = mix;
-                config.noise_mode = noise_mode;
-                config.seed = seed_idx;
-                let variant_id = if seeds_per_cell > 1 {
-                    format!("{scale_name}-{domain_name}-{mix_name}-{noise_name}-s{seed_idx}")
-                } else {
-                    format!("{scale_name}-{domain_name}-{mix_name}-{noise_name}")
-                };
-                config.id_prefix = variant_id.clone();
+                    for seed_idx in 0..seeds_per_cell {
+                        let mut config = scale_fn(domain);
+                        config.relation_mix = mix;
+                        config.noise_mode = noise_mode;
+                        config.seed = seed_idx;
+                        let variant_id = if seeds_per_cell > 1 {
+                            format!(
+                                "{scale_name}-{domain_name}-{mix_name}-{noise_name}-s{seed_idx}"
+                            )
+                        } else {
+                            format!("{scale_name}-{domain_name}-{mix_name}-{noise_name}")
+                        };
+                        config.id_prefix = variant_id.clone();
 
-                let seed = generate_seed(config.clone());
-                let events = seed_to_projection_events(&seed, SUBJECT_PREFIX, &variant_id)?;
+                        let seed = generate_seed(config.clone());
+                        let events = seed_to_projection_events(&seed, SUBJECT_PREFIX, &variant_id)?;
 
-                let root_id = seed.root.node_id.clone();
-                let focus_id = seed.nodes.first()
-                    .map(|n| n.node_id.clone())
-                    .unwrap_or_else(|| root_id.clone());
+                        let root_id = seed.root.node_id.clone();
+                        let focus_id = seed
+                            .nodes
+                            .first()
+                            .map(|n| n.node_id.clone())
+                            .unwrap_or_else(|| root_id.clone());
 
-                match &fixture {
-                    None => {
-                        run.log(&format!("[INFRA] Booting containers for {variant_id}..."));
-                        let f = TestFixture::builder()
-                            .with_neo4j()
-                            .with_valkey()
-                            .with_nats()
-                            .with_projection_runtime()
-                            .with_grpc_server()
-                            .build()
-                            .await?;
+                        match &fixture {
+                            None => {
+                                run.log(&format!("[INFRA] Booting containers for {variant_id}..."));
+                                let f = TestFixture::builder()
+                                    .with_neo4j()
+                                    .with_valkey()
+                                    .with_nats()
+                                    .with_projection_runtime()
+                                    .with_grpc_server()
+                                    .build()
+                                    .await?;
 
-                        let client = connect_nats_with_retry(f.nats_url()).await?;
-                        for (subject, payload) in &events {
-                            client.publish(subject.clone(), payload.clone().into()).await?;
+                                let client = connect_nats_with_retry(f.nats_url()).await?;
+                                for (subject, payload) in &events {
+                                    client
+                                        .publish(subject.clone(), payload.clone().into())
+                                        .await?;
+                                }
+                                client.flush().await?;
+
+                                wait_for_context(&f, &root_id, &focus_id).await?;
+                                fixture = Some(f);
+                            }
+                            Some(f) => {
+                                run.log(&format!("[INFRA] Reseeding {variant_id}..."));
+                                let client = connect_nats_with_retry(f.nats_url()).await?;
+                                for (subject, payload) in &events {
+                                    client
+                                        .publish(subject.clone(), payload.clone().into())
+                                        .await?;
+                                }
+                                client.flush().await?;
+
+                                wait_for_context(f, &root_id, &focus_id).await?;
+                            }
                         }
-                        client.flush().await?;
 
-                        wait_for_context(&f, &root_id, &focus_id).await?;
-                        fixture = Some(f);
-                    }
-                    Some(f) => {
-                        run.log(&format!("[INFRA] Reseeding {variant_id}..."));
-                        let client = connect_nats_with_retry(f.nats_url()).await?;
-                        for (subject, payload) in &events {
-                            client.publish(subject.clone(), payload.clone().into()).await?;
-                        }
-                        client.flush().await?;
+                        sleep(Duration::from_millis(500)).await;
 
-                        wait_for_context(f, &root_id, &focus_id).await?;
-                    }
-                }
+                        let mut qc = fixture
+                            .as_ref()
+                            .expect("fixture should be Some")
+                            .query_client();
+                        let response = qc
+                            .get_context(GetContextRequest {
+                                root_node_id: root_id.clone(),
+                                role: BENCHMARK_ROLE.to_string(),
+                                token_budget: 4096,
+                                requested_scopes: vec![],
+                                depth: config.chain_length as u32,
+                                max_tier: 0,
+                                rehydration_mode: 0,
+                            })
+                            .await?
+                            .into_inner();
 
-                sleep(Duration::from_millis(500)).await;
+                        let rendered = response.rendered.ok_or("missing rendered")?;
+                        let eval_content = tier_content_for_eval(&rendered);
+                        let tokens = rendered.token_count;
+                        let quality = rendered
+                            .quality
+                            .ok_or("missing quality metrics in rendered context")?;
 
-                let mut qc = fixture.as_ref().expect("fixture should be Some").query_client();
-                let response = qc.get_context(GetContextRequest {
-                    root_node_id: root_id.clone(),
-                    role: BENCHMARK_ROLE.to_string(),
-                    token_budget: 4096,
-                    requested_scopes: vec![],
-                    depth: config.chain_length as u32,
-                    max_tier: 0,
-                    rehydration_mode: 0,
-                }).await?.into_inner();
+                        // Build ground truth that rewards multi-layer graph reasoning.
+                        //
+                        // The graph has layers:
+                        //   L0 (summary): root node kind + summary — surface info
+                        //   L1 (causal spine): chain-0 → chain-1 → ... → chain-N with rationales
+                        //   L2 (evidence): details, structural relations
+                        //
+                        // The chain is: root → chain-0 → chain-1 → ... → chain-N
+                        //
+                        // Ground truth rewards DEPTH of reasoning:
+                        //   - Failure point = leaf node (deepest chain node). A model that
+                        //     says "root" only read L0. A model that says "chain-N" traced L1.
+                        //   - Restart node = predecessor of the leaf. Shows the model
+                        //     understood the causal direction.
+                        //   - Reason = ALL chain rationales. Shows the model read L1 metadata,
+                        //     not just structural connections.
+                        let chain_nodes: Vec<&rehydration_testkit::GeneratedNode> = seed
+                            .nodes
+                            .iter()
+                            .filter(|n| {
+                                !n.node_id.contains("noise") && !n.node_id.contains("distractor")
+                            })
+                            .collect();
 
-                let rendered = response.rendered.ok_or("missing rendered")?;
-                let eval_content = tier_content_for_eval(&rendered);
-                let tokens = rendered.token_count;
-                let quality = rendered.quality.ok_or("missing quality metrics in rendered context")?;
-
-                // Build ground truth that rewards multi-layer graph reasoning.
-                //
-                // The graph has layers:
-                //   L0 (summary): root node kind + summary — surface info
-                //   L1 (causal spine): chain-0 → chain-1 → ... → chain-N with rationales
-                //   L2 (evidence): details, structural relations
-                //
-                // The chain is: root → chain-0 → chain-1 → ... → chain-N
-                //
-                // Ground truth rewards DEPTH of reasoning:
-                //   - Failure point = leaf node (deepest chain node). A model that
-                //     says "root" only read L0. A model that says "chain-N" traced L1.
-                //   - Restart node = predecessor of the leaf. Shows the model
-                //     understood the causal direction.
-                //   - Reason = ALL chain rationales. Shows the model read L1 metadata,
-                //     not just structural connections.
-                let chain_nodes: Vec<&rehydration_testkit::GeneratedNode> = seed
-                    .nodes
-                    .iter()
-                    .filter(|n| !n.node_id.contains("noise") && !n.node_id.contains("distractor"))
-                    .collect();
-
-                let question = format!(
-                    "Given this rehydrated context from a {domain_name} graph:\n\
+                        let question = format!(
+                            "Given this rehydrated context from a {domain_name} graph:\n\
                      1. What is the deepest failure point in the causal chain?\n\
                      2. Which node should the system restart from to recover?\n\
                      3. What rationale connects the nodes in the causal chain?"
-                );
+                        );
 
-                // Failure point: the leaf of the causal chain — proves L1 tracing.
-                // The judge prompt already accepts causally connected nodes (line 62-64
-                // of llm_prompts.yaml), so intermediate nodes are also valid.
-                let failure_desc = if let Some(leaf) = chain_nodes.last() {
-                    format!(
-                        "{} ({}) \u{2014} {}. Causal chain: {} \u{2192} {}",
-                        leaf.title,
-                        leaf.node_id,
-                        leaf.summary,
-                        seed.root.title,
-                        chain_nodes.iter().map(|n| n.title.as_str()).collect::<Vec<_>>().join(" \u{2192} ")
-                    )
-                } else {
-                    format!("{} \u{2014} {} (single node, no chain)", seed.root.node_kind, seed.root.summary)
-                };
+                        // Failure point: the leaf of the causal chain — proves L1 tracing.
+                        // The judge prompt already accepts causally connected nodes (line 62-64
+                        // of llm_prompts.yaml), so intermediate nodes are also valid.
+                        let failure_desc = if let Some(leaf) = chain_nodes.last() {
+                            format!(
+                                "{} ({}) \u{2014} {}. Causal chain: {} \u{2192} {}",
+                                leaf.title,
+                                leaf.node_id,
+                                leaf.summary,
+                                seed.root.title,
+                                chain_nodes
+                                    .iter()
+                                    .map(|n| n.title.as_str())
+                                    .collect::<Vec<_>>()
+                                    .join(" \u{2192} ")
+                            )
+                        } else {
+                            format!(
+                                "{} \u{2014} {} (single node, no chain)",
+                                seed.root.node_kind, seed.root.summary
+                            )
+                        };
 
-                // Restart node: predecessor of the leaf — proves causal direction.
-                let restart_desc = if chain_nodes.len() >= 2 {
-                    let predecessor = &chain_nodes[chain_nodes.len() - 2];
-                    format!(
-                        "{} ({}) \u{2014} causal predecessor of the failure leaf",
-                        predecessor.title, predecessor.node_id
-                    )
-                } else if let Some(first) = chain_nodes.first() {
-                    format!(
-                        "{} ({}) \u{2014} first node after root",
-                        first.title, first.node_id
-                    )
-                } else {
-                    format!("{} (root, only node)", seed.root.node_kind)
-                };
+                        // Restart node: predecessor of the leaf — proves causal direction.
+                        let restart_desc = if chain_nodes.len() >= 2 {
+                            let predecessor = &chain_nodes[chain_nodes.len() - 2];
+                            format!(
+                                "{} ({}) \u{2014} causal predecessor of the failure leaf",
+                                predecessor.title, predecessor.node_id
+                            )
+                        } else if let Some(first) = chain_nodes.first() {
+                            format!(
+                                "{} ({}) \u{2014} first node after root",
+                                first.title, first.node_id
+                            )
+                        } else {
+                            format!("{} (root, only node)", seed.root.node_kind)
+                        };
 
-                // Reason: ALL chain rationales — proves L1 metadata was read.
-                let chain_rationales: Vec<String> = seed
-                    .relations
-                    .iter()
-                    .filter(|r| !r.source_node_id.contains("noise"))
-                    .filter_map(|r| r.rationale.clone())
-                    .collect();
-                let reason = if chain_rationales.is_empty() {
-                    None
-                } else {
-                    Some(chain_rationales.join("; "))
-                };
+                        // Reason: ALL chain rationales — proves L1 metadata was read.
+                        let chain_rationales: Vec<String> = seed
+                            .relations
+                            .iter()
+                            .filter(|r| !r.source_node_id.contains("noise"))
+                            .filter_map(|r| r.rationale.clone())
+                            .collect();
+                        let reason = if chain_rationales.is_empty() {
+                            None
+                        } else {
+                            Some(chain_rationales.join("; "))
+                        };
 
-                // Distractor rationale from noise/competing branches.
-                let distractor_rationales: Vec<String> = seed
-                    .relations
-                    .iter()
-                    .filter(|r| r.source_node_id.contains("noise") || r.target_node_id.contains("noise"))
-                    .filter_map(|r| r.rationale.clone())
-                    .collect();
-                let distractor = if distractor_rationales.is_empty() {
-                    None
-                } else {
-                    Some(distractor_rationales.join("; "))
-                };
+                        // Distractor rationale from noise/competing branches.
+                        let distractor_rationales: Vec<String> = seed
+                            .relations
+                            .iter()
+                            .filter(|r| {
+                                r.source_node_id.contains("noise")
+                                    || r.target_node_id.contains("noise")
+                            })
+                            .filter_map(|r| r.rationale.clone())
+                            .collect();
+                        let distractor = if distractor_rationales.is_empty() {
+                            None
+                        } else {
+                            Some(distractor_rationales.join("; "))
+                        };
 
-                let chain_kinds: String = chain_nodes.iter().map(|n| n.node_kind.as_str()).collect::<Vec<_>>().join("→");
-                run.log(&format!("[CAPTURE] {variant_id}: {tokens} tok (raw={}, compress={:.2}x, causal={:.0}%, noise={:.0}%, detail={:.0}%), chain=[{chain_kinds}], reason={}, distractor={}",
+                        let chain_kinds: String = chain_nodes
+                            .iter()
+                            .map(|n| n.node_kind.as_str())
+                            .collect::<Vec<_>>()
+                            .join("→");
+                        run.log(&format!("[CAPTURE] {variant_id}: {tokens} tok (raw={}, compress={:.2}x, causal={:.0}%, noise={:.0}%, detail={:.0}%), chain=[{chain_kinds}], reason={}, distractor={}",
                     quality.raw_equivalent_tokens, quality.compression_ratio,
                     quality.causal_density * 100.0, quality.noise_ratio * 100.0, quality.detail_coverage * 100.0,
                     reason.as_deref().unwrap_or("none"), distractor.as_deref().unwrap_or("none")));
 
-                // Kernel domain observability
-                let resolved_mode = match RehydrationMode::try_from(rendered.resolved_mode) {
-                    Ok(RehydrationMode::ResumeFocused) => "resume_focused",
-                    Ok(RehydrationMode::ReasonPreserving) => "reason_preserving",
-                    Ok(RehydrationMode::TemporalDelta) => "temporal_delta",
-                    Ok(RehydrationMode::GlobalSummary) => "global_summary",
-                    _ => "auto",
-                }.to_string();
-                let tier_l0_tokens = rendered.tiers.iter()
-                    .find(|t| t.tier == ResolutionTier::L0Summary as i32)
-                    .map(|t| t.token_count).unwrap_or(0);
-                let tier_l1_tokens = rendered.tiers.iter()
-                    .find(|t| t.tier == ResolutionTier::L1CausalSpine as i32)
-                    .map(|t| t.token_count).unwrap_or(0);
-                let tier_l2_tokens = rendered.tiers.iter()
-                    .find(|t| t.tier == ResolutionTier::L2EvidencePack as i32)
-                    .map(|t| t.token_count).unwrap_or(0);
-                let timing = response.timing.as_ref();
-                let graph_load_ms = timing.map(|t| t.graph_load_seconds * 1000.0).unwrap_or(0.0);
-                let detail_load_ms = timing.map(|t| t.detail_load_seconds * 1000.0).unwrap_or(0.0);
-                let bundle_assembly_ms = timing.map(|t| t.bundle_assembly_seconds * 1000.0).unwrap_or(0.0);
-                let timing_batch_size = timing.map(|t| t.batch_size).unwrap_or(0);
+                        // Kernel domain observability
+                        let resolved_mode = match RehydrationMode::try_from(rendered.resolved_mode)
+                        {
+                            Ok(RehydrationMode::ResumeFocused) => "resume_focused",
+                            Ok(RehydrationMode::ReasonPreserving) => "reason_preserving",
+                            Ok(RehydrationMode::TemporalDelta) => "temporal_delta",
+                            Ok(RehydrationMode::GlobalSummary) => "global_summary",
+                            _ => "auto",
+                        }
+                        .to_string();
+                        let tier_l0_tokens = rendered
+                            .tiers
+                            .iter()
+                            .find(|t| t.tier == ResolutionTier::L0Summary as i32)
+                            .map(|t| t.token_count)
+                            .unwrap_or(0);
+                        let tier_l1_tokens = rendered
+                            .tiers
+                            .iter()
+                            .find(|t| t.tier == ResolutionTier::L1CausalSpine as i32)
+                            .map(|t| t.token_count)
+                            .unwrap_or(0);
+                        let tier_l2_tokens = rendered
+                            .tiers
+                            .iter()
+                            .find(|t| t.tier == ResolutionTier::L2EvidencePack as i32)
+                            .map(|t| t.token_count)
+                            .unwrap_or(0);
+                        let timing = response.timing.as_ref();
+                        let graph_load_ms =
+                            timing.map(|t| t.graph_load_seconds * 1000.0).unwrap_or(0.0);
+                        let detail_load_ms = timing
+                            .map(|t| t.detail_load_seconds * 1000.0)
+                            .unwrap_or(0.0);
+                        let bundle_assembly_ms = timing
+                            .map(|t| t.bundle_assembly_seconds * 1000.0)
+                            .unwrap_or(0.0);
+                        let timing_batch_size = timing.map(|t| t.batch_size).unwrap_or(0);
 
-                captured.push(CapturedVariant {
-                    run_id: variant_id,
-                    rendered_content: eval_content,
-                    rendered_tokens: tokens,
-                    raw_equivalent_tokens: quality.raw_equivalent_tokens,
-                    compression_ratio: quality.compression_ratio,
-                    causal_density: quality.causal_density,
-                    noise_ratio: quality.noise_ratio,
-                    detail_coverage: quality.detail_coverage,
-                    resolved_mode,
-                    tier_l0_tokens,
-                    tier_l1_tokens,
-                    tier_l2_tokens,
-                    tier_total_tokens: tier_l0_tokens + tier_l1_tokens + tier_l2_tokens,
-                    graph_load_ms,
-                    detail_load_ms,
-                    bundle_assembly_ms,
-                    timing_batch_size,
-                    question,
-                    ground_truth: EvaluationGroundTruth {
-                        expected_failure_point: Some(failure_desc),
-                        expected_restart_node: Some(restart_desc),
-                        expected_reason: reason,
-                        distractor_rationale: distractor,
-                        domain_context: Some(domain_name.to_string()),
-                    },
-                });
-                } // seed_idx
+                        captured.push(CapturedVariant {
+                            run_id: variant_id,
+                            rendered_content: eval_content,
+                            rendered_tokens: tokens,
+                            raw_equivalent_tokens: quality.raw_equivalent_tokens,
+                            compression_ratio: quality.compression_ratio,
+                            causal_density: quality.causal_density,
+                            noise_ratio: quality.noise_ratio,
+                            detail_coverage: quality.detail_coverage,
+                            resolved_mode,
+                            tier_l0_tokens,
+                            tier_l1_tokens,
+                            tier_l2_tokens,
+                            tier_total_tokens: tier_l0_tokens + tier_l1_tokens + tier_l2_tokens,
+                            graph_load_ms,
+                            detail_load_ms,
+                            bundle_assembly_ms,
+                            timing_batch_size,
+                            question,
+                            ground_truth: EvaluationGroundTruth {
+                                expected_failure_point: Some(failure_desc),
+                                expected_restart_node: Some(restart_desc),
+                                expected_reason: reason,
+                                distractor_rationale: distractor,
+                                domain_context: Some(domain_name.to_string()),
+                            },
+                        });
+                    } // seed_idx
                 }
             }
         }
     }
 
     let boot_ms = boot_start.elapsed().as_secs_f64() * 1000.0;
-    run.log(&format!("[INFRA] {} variants captured in {boot_ms:.0}ms\n", captured.len()));
+    run.log(&format!(
+        "[INFRA] {} variants captured in {boot_ms:.0}ms\n",
+        captured.len()
+    ));
 
     // ── Phase 2: Evaluate model x prompt x captured variant ──
 
@@ -819,13 +990,16 @@ async fn judge_prompt_evaluation_across_all_use_cases()
             if !filter_judges.is_empty() && !filter_judges.contains(&judge_name.to_string()) {
                 continue;
             }
-            if agent_name == judge_name { continue; }
+            if agent_name == judge_name {
+                continue;
+            }
 
             let llm_config = build_llm_config(&matrix, agent_cfg, judge_cfg);
 
             for (prompt_key, prompt_val) in prompts {
                 let prompt_name = prompt_key.as_str().expect("prompt key");
-                if !filter_prompts.is_empty() && !filter_prompts.contains(&prompt_name.to_string()) {
+                if !filter_prompts.is_empty() && !filter_prompts.contains(&prompt_name.to_string())
+                {
                     continue;
                 }
 
@@ -837,9 +1011,13 @@ async fn judge_prompt_evaluation_across_all_use_cases()
                 for ctx in &captured {
                     eval_count += 1;
                     let eval = evaluate_with_config(
-                        &prompts_cfg, &llm_config,
-                        &ctx.rendered_content, &ctx.question, &ctx.ground_truth,
-                    ).await;
+                        &prompts_cfg,
+                        &llm_config,
+                        &ctx.rendered_content,
+                        &ctx.question,
+                        &ctx.ground_truth,
+                    )
+                    .await;
 
                     let cell_id = format!("{agent_name}\u{2192}{judge_name}");
                     let result = match eval {
@@ -847,12 +1025,33 @@ async fn judge_prompt_evaluation_across_all_use_cases()
                             let t = if e.llm_task_success { "OK" } else { "FAIL" };
                             let r = if e.llm_restart_accuracy { "OK" } else { "FAIL" };
                             let rx = if e.llm_restart_exact { "OK" } else { "FAIL" };
-                            let ro = if e.llm_restart_off_by_one { "OK" } else { "FAIL" };
-                            let rcb = if e.llm_restart_on_competing { "OK" } else { "FAIL" };
-                            let re = if e.llm_restart_explained { "OK" } else { "FAIL" };
+                            let ro = if e.llm_restart_off_by_one {
+                                "OK"
+                            } else {
+                                "FAIL"
+                            };
+                            let rcb = if e.llm_restart_on_competing {
+                                "OK"
+                            } else {
+                                "FAIL"
+                            };
+                            let re = if e.llm_restart_explained {
+                                "OK"
+                            } else {
+                                "FAIL"
+                            };
                             let rc = if e.llm_reason_correct { "OK" } else { "FAIL" };
-                            let rd = if e.llm_reason_distractor { "LEAK" } else { "clean" };
-                            let resp_short: String = e.llm_response.replace('\n', " ").chars().take(120).collect();
+                            let rd = if e.llm_reason_distractor {
+                                "LEAK"
+                            } else {
+                                "clean"
+                            };
+                            let resp_short: String = e
+                                .llm_response
+                                .replace('\n', " ")
+                                .chars()
+                                .take(120)
+                                .collect();
                             run.log(&format!("  [{cell_id}/{prompt_name}] {}: T={t} R={r}(x={rx} o1={ro} cb={rcb} ex={re}) Rc={rc} Rd={rd}  agent=\"{resp_short}...\"  judge={}",
                                 ctx.run_id, e.llm_judge_raw.as_deref().unwrap_or("?")));
                             EvalResult {
@@ -891,16 +1090,23 @@ async fn judge_prompt_evaluation_across_all_use_cases()
                             }
                         }
                         Err(err) => {
-                            run.log(&format!("  [{cell_id}/{prompt_name}] {}: ERROR {err}", ctx.run_id));
+                            run.log(&format!(
+                                "  [{cell_id}/{prompt_name}] {}: ERROR {err}",
+                                ctx.run_id
+                            ));
                             EvalResult {
                                 model: cell_id,
                                 prompt: prompt_name.to_string(),
                                 variant: ctx.run_id.clone(),
-                                task: None, restart: None,
-                                restart_exact: None, restart_off_by_one: None,
-                                restart_on_competing: None, restart_explained: None,
+                                task: None,
+                                restart: None,
+                                restart_exact: None,
+                                restart_off_by_one: None,
+                                restart_on_competing: None,
+                                restart_explained: None,
                                 reason: None,
-                                reason_correct: None, reason_distractor: None,
+                                reason_correct: None,
+                                reason_distractor: None,
                                 latency_ms: 0.0,
                                 rendered_tokens: ctx.rendered_tokens,
                                 raw_equivalent_tokens: ctx.raw_equivalent_tokens,
@@ -925,7 +1131,10 @@ async fn judge_prompt_evaluation_across_all_use_cases()
                         }
                     };
 
-                    let result_name = format!("{eval_count:04}_{agent_name}_{judge_name}_{prompt_name}_{}", ctx.run_id);
+                    let result_name = format!(
+                        "{eval_count:04}_{agent_name}_{judge_name}_{prompt_name}_{}",
+                        ctx.run_id
+                    );
                     run.write_result(&result_name, &result)?;
                     results.push(result);
                 }
@@ -945,20 +1154,43 @@ async fn judge_prompt_evaluation_across_all_use_cases()
     for r in &results {
         let ctx = captured.iter().find(|c| c.run_id == r.variant);
         let question = ctx.map(|c| c.question.as_str()).unwrap_or("?");
-        let expected = ctx.and_then(|c| c.ground_truth.expected_reason.as_deref()).unwrap_or("none");
+        let expected = ctx
+            .and_then(|c| c.ground_truth.expected_reason.as_deref())
+            .unwrap_or("none");
         let tokens = ctx.map(|c| c.rendered_tokens).unwrap_or(0);
 
-        let t = match r.task { Some(true) => "OK", Some(false) => "FAIL", None => "ERR" };
-        let re = match r.restart { Some(true) => "OK", Some(false) => "FAIL", None => "ERR" };
-        let p = match r.reason { Some(true) => "OK", Some(false) => "FAIL", None => "ERR" };
+        let t = match r.task {
+            Some(true) => "OK",
+            Some(false) => "FAIL",
+            None => "ERR",
+        };
+        let re = match r.restart {
+            Some(true) => "OK",
+            Some(false) => "FAIL",
+            None => "ERR",
+        };
+        let p = match r.reason {
+            Some(true) => "OK",
+            Some(false) => "FAIL",
+            None => "ERR",
+        };
 
-        run.log(&format!("\u{250c}\u{2500}\u{2500} {:<14} \u{00d7} {:<14} / {} ({tokens} tok) \u{2500}\u{2500}", r.model, r.prompt, r.variant));
+        run.log(&format!(
+            "\u{250c}\u{2500}\u{2500} {:<14} \u{00d7} {:<14} / {} ({tokens} tok) \u{2500}\u{2500}",
+            r.model, r.prompt, r.variant
+        ));
         run.log(&format!("\u{2502} 1. Question:        {question}"));
         run.log(&format!("\u{2502} 2. Expected reason: {expected}"));
         let resp = r.agent_response.replace('\n', " ");
         run.log(&format!("\u{2502} 3. Agent response:  {resp}"));
-        run.log(&format!("\u{2502} 4. Judge response:  {}", r.judge_raw.as_deref().unwrap_or("(none)")));
-        run.log(&format!("\u{2502} 5. Result:          Task={t}  Restart={re}  Reason={p}  ({:.0}ms)", r.latency_ms));
+        run.log(&format!(
+            "\u{2502} 4. Judge response:  {}",
+            r.judge_raw.as_deref().unwrap_or("(none)")
+        ));
+        run.log(&format!(
+            "\u{2502} 5. Result:          Task={t}  Restart={re}  Reason={p}  ({:.0}ms)",
+            r.latency_ms
+        ));
         run.log("\u{2514}\u{2500}\u{2500}\n");
     }
 
@@ -975,17 +1207,22 @@ fn print_summary(run: &mut RunDir, results: &[EvalResult]) {
     run.log(&format!("\u{2554}{}\u{2557}", "\u{2550}".repeat(78)));
     run.log(&format!("\u{2551}  SUMMARY{}\u{2551}", " ".repeat(70)));
     run.log(&format!("\u{2560}{}\u{2563}", "\u{2550}".repeat(78)));
-    run.log(&format!("\u{2551}  {:<16} {:<16} {:>8} {:>8} {:>8} {:>8} \u{2551}",
-        "Model", "Prompt", "Task", "Restart", "Reason", "LLM ms"));
+    run.log(&format!(
+        "\u{2551}  {:<16} {:<16} {:>8} {:>8} {:>8} {:>8} \u{2551}",
+        "Model", "Prompt", "Task", "Restart", "Reason", "LLM ms"
+    ));
     run.log(&format!("\u{2560}{}\u{2563}", "\u{2550}".repeat(78)));
 
     let mut seen: Vec<(String, String)> = Vec::new();
     for r in results {
         let key = (r.model.clone(), r.prompt.clone());
-        if seen.contains(&key) { continue; }
+        if seen.contains(&key) {
+            continue;
+        }
         seen.push(key);
 
-        let cell: Vec<&EvalResult> = results.iter()
+        let cell: Vec<&EvalResult> = results
+            .iter()
             .filter(|x| x.model == r.model && x.prompt == r.prompt)
             .collect();
         let n = cell.iter().filter(|x| x.task.is_some()).count();
@@ -994,15 +1231,22 @@ fn print_summary(run: &mut RunDir, results: &[EvalResult]) {
         let p = cell.iter().filter(|x| x.reason == Some(true)).count();
         let ms: f64 = cell.iter().map(|x| x.latency_ms).sum();
 
-        run.log(&format!("\u{2551}  {:<16} {:<16} {:>3}/{:<4} {:>3}/{:<4} {:>3}/{:<4} {:>6.0} \u{2551}",
-            r.model, r.prompt, t, n, re, n, p, n, ms));
+        run.log(&format!(
+            "\u{2551}  {:<16} {:<16} {:>3}/{:<4} {:>3}/{:<4} {:>3}/{:<4} {:>6.0} \u{2551}",
+            r.model, r.prompt, t, n, re, n, p, n, ms
+        ));
     }
     run.log(&format!("\u{255a}{}\u{255d}", "\u{2550}".repeat(78)));
 
     run.log("\nBy scale:");
     for scale in &["micro", "meso", "stress"] {
-        let sr: Vec<&EvalResult> = results.iter().filter(|r| r.variant.starts_with(scale)).collect();
-        if sr.is_empty() { continue; }
+        let sr: Vec<&EvalResult> = results
+            .iter()
+            .filter(|r| r.variant.starts_with(scale))
+            .collect();
+        if sr.is_empty() {
+            continue;
+        }
         let n = sr.iter().filter(|x| x.task.is_some()).count();
         let t = sr.iter().filter(|x| x.task == Some(true)).count();
         let p = sr.iter().filter(|x| x.reason == Some(true)).count();
@@ -1012,7 +1256,9 @@ fn print_summary(run: &mut RunDir, results: &[EvalResult]) {
     run.log("\nBy relation mix:");
     for mix in &["explanatory", "structural", "mixed"] {
         let mr: Vec<&EvalResult> = results.iter().filter(|r| r.variant.contains(mix)).collect();
-        if mr.is_empty() { continue; }
+        if mr.is_empty() {
+            continue;
+        }
         let n = mr.iter().filter(|x| x.task.is_some()).count();
         let t = mr.iter().filter(|x| x.task == Some(true)).count();
         let p = mr.iter().filter(|x| x.reason == Some(true)).count();
@@ -1022,12 +1268,25 @@ fn print_summary(run: &mut RunDir, results: &[EvalResult]) {
 
 /// Checks that an LLM endpoint is reachable with a real HTTP request.
 /// For OpenAI-compatible: GET /v1/models. For Anthropic: GET /v1/models (returns 404 but proves connectivity).
-fn check_api_endpoint(endpoint: &str, api_key: Option<&str>, tls_cert: Option<&str>, tls_key: Option<&str>) -> bool {
+fn check_api_endpoint(
+    endpoint: &str,
+    api_key: Option<&str>,
+    tls_cert: Option<&str>,
+    tls_key: Option<&str>,
+) -> bool {
     let probe_url = endpoint
         .replace("/v1/chat/completions", "/v1/models")
         .replace("/v1/messages", "/v1/models");
 
-    let mut args = vec!["-s", "--max-time", "10", "-o", "/dev/null", "-w", "%{http_code}"];
+    let mut args = vec![
+        "-s",
+        "--max-time",
+        "10",
+        "-o",
+        "/dev/null",
+        "-w",
+        "%{http_code}",
+    ];
     if tls_cert.is_some() {
         args.push("-k");
     }
@@ -1078,7 +1337,9 @@ fn parse_provider(s: &str) -> LlmProvider {
         "openai" => LlmProvider::OpenAI,
         "openai-new" => LlmProvider::OpenAINew,
         "anthropic" => LlmProvider::Anthropic,
-        other => panic!("unknown provider '{other}' in YAML — expected: openai, openai-new, anthropic"),
+        other => {
+            panic!("unknown provider '{other}' in YAML — expected: openai, openai-new, anthropic")
+        }
     }
 }
 
@@ -1089,17 +1350,31 @@ fn yaml_str(cfg: &serde_yaml::Value, field: &str, context: &str) -> String {
         .to_string()
 }
 
-fn build_llm_config(matrix: &serde_yaml::Value, agent_cfg: &serde_yaml::Value, judge_cfg: &serde_yaml::Value) -> LlmEvaluatorConfig {
+fn build_llm_config(
+    matrix: &serde_yaml::Value,
+    agent_cfg: &serde_yaml::Value,
+    judge_cfg: &serde_yaml::Value,
+) -> LlmEvaluatorConfig {
     let tls = agent_cfg["tls"].as_bool().unwrap_or(false);
     let tls_section = &matrix["tls"];
-    let tls_cert = if tls { Some(yaml_str(tls_section, "cert", "tls")) } else { None };
-    let tls_key = if tls { Some(yaml_str(tls_section, "key", "tls")) } else { None };
+    let tls_cert = if tls {
+        Some(yaml_str(tls_section, "cert", "tls"))
+    } else {
+        None
+    };
+    let tls_key = if tls {
+        Some(yaml_str(tls_section, "key", "tls"))
+    } else {
+        None
+    };
 
     LlmEvaluatorConfig {
         endpoint: yaml_str(agent_cfg, "endpoint", "agent"),
         model: yaml_str(agent_cfg, "model", "agent"),
         provider: parse_provider(&yaml_str(agent_cfg, "provider", "agent")),
-        api_key: agent_cfg["api_key_env"].as_str().and_then(|e| std::env::var(e).ok()),
+        api_key: agent_cfg["api_key_env"]
+            .as_str()
+            .and_then(|e| std::env::var(e).ok()),
         max_tokens: 200,
         temperature: 0.0,
         tls_cert_path: tls_cert,
@@ -1108,7 +1383,9 @@ fn build_llm_config(matrix: &serde_yaml::Value, agent_cfg: &serde_yaml::Value, j
         judge_endpoint: Some(yaml_str(judge_cfg, "endpoint", "judge")),
         judge_model: Some(yaml_str(judge_cfg, "model", "judge")),
         judge_provider: Some(parse_provider(&yaml_str(judge_cfg, "provider", "judge"))),
-        judge_api_key: judge_cfg["api_key_env"].as_str().and_then(|e| std::env::var(e).ok()),
+        judge_api_key: judge_cfg["api_key_env"]
+            .as_str()
+            .and_then(|e| std::env::var(e).ok()),
     }
 }
 
@@ -1119,19 +1396,25 @@ async fn wait_for_context(
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let mut qc = fixture.query_client();
     for _ in 0..40 {
-        if let Ok(resp) = qc.get_context(GetContextRequest {
-            root_node_id: root_node_id.to_string(),
-            role: BENCHMARK_ROLE.to_string(),
-            token_budget: 1200,
-            requested_scopes: vec!["implementation".to_string()],
-            depth: 0,
-            max_tier: 0,
-            rehydration_mode: 0,
-        }).await {
+        if let Ok(resp) = qc
+            .get_context(GetContextRequest {
+                root_node_id: root_node_id.to_string(),
+                role: BENCHMARK_ROLE.to_string(),
+                token_budget: 1200,
+                requested_scopes: vec!["implementation".to_string()],
+                depth: 0,
+                max_tier: 0,
+                rehydration_mode: 0,
+            })
+            .await
+        {
             let resp = resp.into_inner();
             if let Some(bundle) = resp.bundle
                 && bundle.root_node_id == root_node_id
-                && bundle.bundles.first().is_some_and(|b| !b.neighbor_nodes.is_empty())
+                && bundle
+                    .bundles
+                    .first()
+                    .is_some_and(|b| !b.neighbor_nodes.is_empty())
             {
                 return Ok(());
             }

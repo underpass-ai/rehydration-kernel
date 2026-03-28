@@ -252,9 +252,7 @@ fn compute_detail_coverage(
 mod tests {
     use std::collections::BTreeMap;
 
-    use crate::model::{
-        BundleNode, BundleNodeDetail, BundleRelationship, RehydrationBundle,
-    };
+    use crate::model::{BundleNode, BundleNodeDetail, BundleRelationship, RehydrationBundle};
     use crate::value_objects::{
         BundleMetadata, CaseId, RelationExplanation, RelationSemanticClass, Role,
     };
@@ -441,10 +439,22 @@ mod tests {
             CaseId::new("root").expect("valid"),
             Role::new("dev").expect("valid"),
             BundleNode::new(
-                "root", "incident", "Root", "Root summary", "ACTIVE", vec![], BTreeMap::new(),
+                "root",
+                "incident",
+                "Root",
+                "Root summary",
+                "ACTIVE",
+                vec![],
+                BTreeMap::new(),
             ),
             vec![BundleNode::new(
-                "node-a", "decision", "A", "A summary", "ACTIVE", vec![], BTreeMap::new(),
+                "node-a",
+                "decision",
+                "A",
+                "A summary",
+                "ACTIVE",
+                vec![],
+                BTreeMap::new(),
             )],
             vec![BundleRelationship::new(
                 "root",
@@ -453,7 +463,12 @@ mod tests {
                 RelationExplanation::new(RelationSemanticClass::Causal)
                     .with_rationale("failure triggered reroute"),
             )],
-            vec![BundleNodeDetail::new("root", "Extended root detail", "hash-r", 1)],
+            vec![BundleNodeDetail::new(
+                "root",
+                "Extended root detail",
+                "hash-r",
+                1,
+            )],
             BundleMetadata::initial("0.1.0"),
         )
         .expect("valid");
@@ -474,7 +489,13 @@ mod tests {
             CaseId::new("root").expect("valid"),
             Role::new("dev").expect("valid"),
             BundleNode::new(
-                "root", "case", "Root", "", "ACTIVE", vec![], BTreeMap::new(),
+                "root",
+                "case",
+                "Root",
+                "",
+                "ACTIVE",
+                vec![],
+                BTreeMap::new(),
             ),
             vec![
                 BundleNode::new("a", "task", "A", "", "ACTIVE", vec![], BTreeMap::new()),
@@ -482,11 +503,15 @@ mod tests {
             ],
             vec![
                 BundleRelationship::new(
-                    "root", "a", "CAUSED",
+                    "root",
+                    "a",
+                    "CAUSED",
                     RelationExplanation::new(RelationSemanticClass::Causal),
                 ),
                 BundleRelationship::new(
-                    "root", "b", "JUSTIFIED",
+                    "root",
+                    "b",
+                    "JUSTIFIED",
                     RelationExplanation::new(RelationSemanticClass::Evidential),
                 ),
             ],
@@ -505,7 +530,13 @@ mod tests {
             CaseId::new("root").expect("valid"),
             Role::new("dev").expect("valid"),
             BundleNode::new(
-                "root", "case", "Root", "", "ACTIVE", vec![], BTreeMap::new(),
+                "root",
+                "case",
+                "Root",
+                "",
+                "ACTIVE",
+                vec![],
+                BTreeMap::new(),
             ),
             Vec::new(),
             Vec::new(),

@@ -14,8 +14,8 @@ pub mod ordered_neighborhood;
 pub mod query_application_service;
 pub mod rehydrate_session;
 pub mod render_graph_bundle;
-pub mod timing_breakdown;
 pub(crate) mod tier_section_classifier;
+pub mod timing_breakdown;
 pub mod validate_scope;
 
 pub use bundle_assembler::BundleAssembler;

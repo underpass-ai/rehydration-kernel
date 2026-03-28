@@ -18,8 +18,7 @@ pub use rehydration_transport_grpc::starship_e2e::{
     ROOT_NODE_ID, ROOT_TITLE, TASK_DETAIL, TASK_ID, TASK_TITLE,
 };
 
-pub const SUBJECT_PREFIX: &str =
-    rehydration_transport_grpc::starship_e2e::DEFAULT_SUBJECT_PREFIX;
+pub const SUBJECT_PREFIX: &str = rehydration_transport_grpc::starship_e2e::DEFAULT_SUBJECT_PREFIX;
 
 pub async fn publish_kernel_e2e_projection_events(
     client: &Client,

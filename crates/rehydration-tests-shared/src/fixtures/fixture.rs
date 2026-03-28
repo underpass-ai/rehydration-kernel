@@ -7,7 +7,7 @@ use rehydration_proto::v1beta1::{
 use tokio::time::sleep;
 use tonic::transport::Channel;
 
-use crate::containers::{Neo4jContainer, NatsContainer, ValkeyContainer};
+use crate::containers::{NatsContainer, Neo4jContainer, ValkeyContainer};
 use crate::debug::{debug_log, debug_log_value};
 use crate::error::BoxError;
 use crate::ports::SeedContext;

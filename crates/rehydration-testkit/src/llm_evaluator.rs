@@ -382,7 +382,14 @@ pub async fn evaluate_with_llm(
         .replace("{rendered_context}", rendered_context)
         .replace("{question}", question);
 
-    eprintln!("[LLM-EVAL] inference question: {}", question.replace('\n', " ").chars().take(200).collect::<String>());
+    eprintln!(
+        "[LLM-EVAL] inference question: {}",
+        question
+            .replace('\n', " ")
+            .chars()
+            .take(200)
+            .collect::<String>()
+    );
 
     let client = build_http_client(config)?;
 
@@ -407,26 +414,62 @@ pub async fn evaluate_with_llm(
     } else {
         client
     };
-    eprintln!("[LLM-EVAL] inference response: {}", content.replace('\n', " ").chars().take(500).collect::<String>());
-    let (judge_result, judge_raw) = match judge_response(config, &judge_client, &content, ground_truth).await {
+    eprintln!(
+        "[LLM-EVAL] inference response: {}",
+        content
+            .replace('\n', " ")
+            .chars()
+            .take(500)
+            .collect::<String>()
+    );
+    let (judge_result, judge_raw) = match judge_response(
+        config,
+        &judge_client,
+        &content,
+        ground_truth,
+    )
+    .await
+    {
         Ok((verdict, raw)) => {
-            eprintln!("[LLM-EVAL] judge verdict: task={} restart={} (exact={} off1={} competing={} explained={}) reason_correct={} reason_distractor={}",
-                verdict.task_correct, verdict.restart_correct, verdict.restart_exact, verdict.restart_off_by_one, verdict.restart_on_competing_branch, verdict.restart_explained,
-                verdict.reason_correct_main_path, verdict.reason_plausible_but_wrong);
+            eprintln!(
+                "[LLM-EVAL] judge verdict: task={} restart={} (exact={} off1={} competing={} explained={}) reason_correct={} reason_distractor={}",
+                verdict.task_correct,
+                verdict.restart_correct,
+                verdict.restart_exact,
+                verdict.restart_off_by_one,
+                verdict.restart_on_competing_branch,
+                verdict.restart_explained,
+                verdict.reason_correct_main_path,
+                verdict.reason_plausible_but_wrong
+            );
             (verdict, Some(raw))
         }
         Err(e) => {
             eprintln!("[LLM-EVAL] judge FAILED: {e}");
-            (JudgeVerdict {
-                task_correct: false, restart_correct: false,
-                restart_exact: false, restart_off_by_one: false,
-                restart_on_competing_branch: false, restart_explained: false,
-                reason_correct_main_path: false, reason_plausible_but_wrong: false,
-            }, None)
+            (
+                JudgeVerdict {
+                    task_correct: false,
+                    restart_correct: false,
+                    restart_exact: false,
+                    restart_off_by_one: false,
+                    restart_on_competing_branch: false,
+                    restart_explained: false,
+                    reason_correct_main_path: false,
+                    reason_plausible_but_wrong: false,
+                },
+                None,
+            )
         }
     };
 
-    Ok(verdict_to_result(judge_result, content, latency_ms, prompt_tokens, completion_tokens, judge_raw))
+    Ok(verdict_to_result(
+        judge_result,
+        content,
+        latency_ms,
+        prompt_tokens,
+        completion_tokens,
+        judge_raw,
+    ))
 }
 
 /// Evaluate with explicit prompt config and LLM config — no global state.
@@ -443,7 +486,14 @@ pub async fn evaluate_with_config(
         .replace("{rendered_context}", rendered_context)
         .replace("{question}", question);
 
-    eprintln!("[LLM-EVAL] inference question: {}", question.replace('\n', " ").chars().take(200).collect::<String>());
+    eprintln!(
+        "[LLM-EVAL] inference question: {}",
+        question
+            .replace('\n', " ")
+            .chars()
+            .take(200)
+            .collect::<String>()
+    );
 
     let client = build_http_client(config)?;
 
@@ -467,29 +517,73 @@ pub async fn evaluate_with_config(
     } else {
         client
     };
-    eprintln!("[LLM-EVAL] inference response: {}", content.replace('\n', " ").chars().take(500).collect::<String>());
-    let (judge_result, judge_raw) = match judge_response_with_prompts(prompts, config, &judge_client, &content, ground_truth).await {
+    eprintln!(
+        "[LLM-EVAL] inference response: {}",
+        content
+            .replace('\n', " ")
+            .chars()
+            .take(500)
+            .collect::<String>()
+    );
+    let (judge_result, judge_raw) = match judge_response_with_prompts(
+        prompts,
+        config,
+        &judge_client,
+        &content,
+        ground_truth,
+    )
+    .await
+    {
         Ok((verdict, raw)) => {
-            eprintln!("[LLM-EVAL] judge verdict: task={} restart={} (exact={} off1={} competing={} explained={}) reason_correct={} reason_distractor={}",
-                verdict.task_correct, verdict.restart_correct, verdict.restart_exact, verdict.restart_off_by_one, verdict.restart_on_competing_branch, verdict.restart_explained,
-                verdict.reason_correct_main_path, verdict.reason_plausible_but_wrong);
+            eprintln!(
+                "[LLM-EVAL] judge verdict: task={} restart={} (exact={} off1={} competing={} explained={}) reason_correct={} reason_distractor={}",
+                verdict.task_correct,
+                verdict.restart_correct,
+                verdict.restart_exact,
+                verdict.restart_off_by_one,
+                verdict.restart_on_competing_branch,
+                verdict.restart_explained,
+                verdict.reason_correct_main_path,
+                verdict.reason_plausible_but_wrong
+            );
             (verdict, Some(raw))
         }
         Err(e) => {
             eprintln!("[LLM-EVAL] judge FAILED: {e}");
-            (JudgeVerdict {
-                task_correct: false, restart_correct: false,
-                restart_exact: false, restart_off_by_one: false,
-                restart_on_competing_branch: false, restart_explained: false,
-                reason_correct_main_path: false, reason_plausible_but_wrong: false,
-            }, None)
+            (
+                JudgeVerdict {
+                    task_correct: false,
+                    restart_correct: false,
+                    restart_exact: false,
+                    restart_off_by_one: false,
+                    restart_on_competing_branch: false,
+                    restart_explained: false,
+                    reason_correct_main_path: false,
+                    reason_plausible_but_wrong: false,
+                },
+                None,
+            )
         }
     };
 
-    Ok(verdict_to_result(judge_result, content, latency_ms, prompt_tokens, completion_tokens, judge_raw))
+    Ok(verdict_to_result(
+        judge_result,
+        content,
+        latency_ms,
+        prompt_tokens,
+        completion_tokens,
+        judge_raw,
+    ))
 }
 
-fn verdict_to_result(v: JudgeVerdict, response: String, latency_ms: f64, prompt_tokens: u32, completion_tokens: u32, judge_raw: Option<String>) -> LlmEvaluationResult {
+fn verdict_to_result(
+    v: JudgeVerdict,
+    response: String,
+    latency_ms: f64,
+    prompt_tokens: u32,
+    completion_tokens: u32,
+    judge_raw: Option<String>,
+) -> LlmEvaluationResult {
     LlmEvaluationResult {
         llm_response: response,
         llm_task_success: v.task_correct,
@@ -582,7 +676,13 @@ async fn judge_response_with_prompts(
         .as_deref()
         .or(config.api_key.as_deref());
 
-    eprintln!("[LLM-EVAL] judge prompt ground truth: failure={} restart={} reason={} distractor={}", expected_failure.chars().take(80).collect::<String>(), expected_restart.chars().take(80).collect::<String>(), expected_reason.chars().take(80).collect::<String>(), distractor.chars().take(80).collect::<String>());
+    eprintln!(
+        "[LLM-EVAL] judge prompt ground truth: failure={} restart={} reason={} distractor={}",
+        expected_failure.chars().take(80).collect::<String>(),
+        expected_restart.chars().take(80).collect::<String>(),
+        expected_reason.chars().take(80).collect::<String>(),
+        distractor.chars().take(80).collect::<String>()
+    );
 
     let (judge_content, _, _) = call_llm(
         client,
@@ -620,10 +720,7 @@ fn strip_markdown_fences(s: &str) -> String {
         } else {
             trimmed
         };
-        without_opening
-            .trim_end_matches("```")
-            .trim()
-            .to_string()
+        without_opening.trim_end_matches("```").trim().to_string()
     } else {
         trimmed.to_string()
     }
@@ -659,7 +756,10 @@ pub async fn calibrate_judge(
     let ground_truth = EvaluationGroundTruth {
         expected_failure_point: Some("evidence 3 (cal:chain-3) — operational step 3".to_string()),
         expected_restart_node: Some("artifact 2 (cal:chain-2) — causal predecessor".to_string()),
-        expected_reason: Some("operational response required at depth 0; operational response required at depth 1".to_string()),
+        expected_reason: Some(
+            "operational response required at depth 0; operational response required at depth 1"
+                .to_string(),
+        ),
         distractor_rationale: Some("alternative path (competing branch)".to_string()),
         domain_context: Some("operations".to_string()),
     };
@@ -673,7 +773,9 @@ pub async fn calibrate_judge(
     let mut cases = Vec::new();
 
     // Case 1: good response should get task=true, reason_correct=true
-    match judge_response_with_prompts(prompts, config, &judge_client, good_response, &ground_truth).await {
+    match judge_response_with_prompts(prompts, config, &judge_client, good_response, &ground_truth)
+        .await
+    {
         Ok((v, raw)) => {
             let task_ok = v.task_correct;
             let reason_ok = v.reason_correct_main_path;
@@ -701,7 +803,9 @@ pub async fn calibrate_judge(
     }
 
     // Case 2: bad response should get task=false, reason_correct=false
-    match judge_response_with_prompts(prompts, config, &judge_client, bad_response, &ground_truth).await {
+    match judge_response_with_prompts(prompts, config, &judge_client, bad_response, &ground_truth)
+        .await
+    {
         Ok((v, raw)) => {
             let task_fail = !v.task_correct;
             let reason_fail = !v.reason_correct_main_path;

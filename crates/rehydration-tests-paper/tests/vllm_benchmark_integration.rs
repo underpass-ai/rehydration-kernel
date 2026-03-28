@@ -9,8 +9,8 @@ use rehydration_proto::v1beta1::{
     GetContextRequest, RehydrationMode, RenderedContext, ResolutionTier,
 };
 use rehydration_testkit::{
-    Domain, EvaluationGroundTruth, GraphSeedConfig, LlmEvaluatorConfig, LlmProvider,
-    NoiseMode, RelationMix, calibrate_judge, evaluate_with_llm, generate_seed,
+    Domain, EvaluationGroundTruth, GraphSeedConfig, LlmEvaluatorConfig, LlmProvider, NoiseMode,
+    RelationMix, calibrate_judge, evaluate_with_llm, generate_seed,
     seed_publisher::seed_to_projection_events,
 };
 use rehydration_tests_shared::fixtures::TestFixture;
@@ -35,8 +35,7 @@ impl RunDir {
         let base = std::env::var("E2E_OUTPUT_DIR")
             .map(PathBuf::from)
             .unwrap_or_else(|_| {
-                PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                    .join("../../artifacts/e2e-runs")
+                PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../artifacts/e2e-runs")
             });
         let ts = chrono_stamp();
         let path = base.join(format!("vllm-{ts}"));
@@ -52,7 +51,11 @@ impl RunDir {
         let _ = writeln!(self.log, "{msg}");
     }
 
-    fn write_result(&self, name: &str, result: &BenchmarkResult) -> Result<(), Box<dyn Error + Send + Sync>> {
+    fn write_result(
+        &self,
+        name: &str,
+        result: &BenchmarkResult,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
         let json = serde_json::to_vec_pretty(result)?;
         fs::write(self.path.join("results").join(format!("{name}.json")), json)?;
         Ok(())
@@ -160,7 +163,11 @@ fn tier_content_for_eval(rendered: &RenderedContext) -> String {
             parts.push(tier.content.as_str());
         }
     }
-    if parts.is_empty() { rendered.content.clone() } else { parts.join("\n\n") }
+    if parts.is_empty() {
+        rendered.content.clone()
+    } else {
+        parts.join("\n\n")
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -196,14 +203,24 @@ fn build_llm_config(
 ) -> LlmEvaluatorConfig {
     let tls = agent_cfg["tls"].as_bool().unwrap_or(false);
     let tls_section = &matrix["tls"];
-    let tls_cert = if tls { Some(yaml_str(tls_section, "cert", "tls")) } else { None };
-    let tls_key = if tls { Some(yaml_str(tls_section, "key", "tls")) } else { None };
+    let tls_cert = if tls {
+        Some(yaml_str(tls_section, "cert", "tls"))
+    } else {
+        None
+    };
+    let tls_key = if tls {
+        Some(yaml_str(tls_section, "key", "tls"))
+    } else {
+        None
+    };
 
     LlmEvaluatorConfig {
         endpoint: yaml_str(agent_cfg, "endpoint", "agent"),
         model: yaml_str(agent_cfg, "model", "agent"),
         provider: parse_provider(&yaml_str(agent_cfg, "provider", "agent")),
-        api_key: agent_cfg["api_key_env"].as_str().and_then(|e| std::env::var(e).ok()),
+        api_key: agent_cfg["api_key_env"]
+            .as_str()
+            .and_then(|e| std::env::var(e).ok()),
         max_tokens: 200,
         temperature: 0.0,
         tls_cert_path: tls_cert,
@@ -212,7 +229,9 @@ fn build_llm_config(
         judge_endpoint: Some(yaml_str(judge_cfg, "endpoint", "judge")),
         judge_model: Some(yaml_str(judge_cfg, "model", "judge")),
         judge_provider: Some(parse_provider(&yaml_str(judge_cfg, "provider", "judge"))),
-        judge_api_key: judge_cfg["api_key_env"].as_str().and_then(|e| std::env::var(e).ok()),
+        judge_api_key: judge_cfg["api_key_env"]
+            .as_str()
+            .and_then(|e| std::env::var(e).ok()),
     }
 }
 
@@ -223,14 +242,15 @@ fn build_llm_config(
 #[tokio::test]
 async fn vllm_benchmark_across_scales_domains_and_variants()
 -> Result<(), Box<dyn Error + Send + Sync>> {
-    let resources = concat!(env!("CARGO_MANIFEST_DIR"), "/../../crates/rehydration-testkit/resources");
+    let resources = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../crates/rehydration-testkit/resources"
+    );
     let matrix_path = std::env::var("EVAL_MATRIX_PATH")
         .unwrap_or_else(|_| format!("{resources}/evaluation-matrix.yaml"));
 
     // ── Load matrix ──
-    let matrix: serde_yaml::Value = serde_yaml::from_str(
-        &fs::read_to_string(&matrix_path)?,
-    )?;
+    let matrix: serde_yaml::Value = serde_yaml::from_str(&fs::read_to_string(&matrix_path)?)?;
 
     // ── Pick first agent + first judge from YAML (or filtered) ──
     let filter_models = env_filter("FILTER_MODELS");
@@ -278,13 +298,21 @@ async fn vllm_benchmark_across_scales_domains_and_variants()
     let mut cal_failed = false;
     for case in &cases {
         let icon = if case.passed { "✔" } else { "✘" };
-        run.log(&format!("  {icon} {}: expected={}, got={}", case.name, case.expected, case.got));
-        if !case.passed { cal_failed = true; }
+        run.log(&format!(
+            "  {icon} {}: expected={}, got={}",
+            case.name, case.expected, case.got
+        ));
+        if !case.passed {
+            cal_failed = true;
+        }
     }
     if cal_failed {
         panic!("judge calibration failed for '{judge_name}'");
     }
-    run.log(&format!("[CALIBRATION] Judge '{judge_name}' passed ({} cases)\n", cases.len()));
+    run.log(&format!(
+        "[CALIBRATION] Judge '{judge_name}' passed ({} cases)\n",
+        cases.len()
+    ));
 
     // ── Build variant space from YAML ──
     type ScaleEntry = (&'static str, fn(Domain) -> GraphSeedConfig);
@@ -295,29 +323,59 @@ async fn vllm_benchmark_across_scales_domains_and_variants()
     ];
     let yaml_scales: Vec<String> = matrix["scales"]
         .as_mapping()
-        .map(|m| m.keys().filter_map(|k| k.as_str().map(String::from)).collect())
+        .map(|m| {
+            m.keys()
+                .filter_map(|k| k.as_str().map(String::from))
+                .collect()
+        })
         .unwrap_or_default();
     let scales: Vec<ScaleEntry> = if yaml_scales.is_empty() {
         all_scales
     } else {
-        all_scales.into_iter().filter(|(name, _)| yaml_scales.iter().any(|s| s == name)).collect()
+        all_scales
+            .into_iter()
+            .filter(|(name, _)| yaml_scales.iter().any(|s| s == name))
+            .collect()
     };
 
-    let domains = [("ops", Domain::Operations), ("debug", Domain::SoftwareDebugging)];
+    let domains = [
+        ("ops", Domain::Operations),
+        ("debug", Domain::SoftwareDebugging),
+    ];
     let mixes = [
         ("explanatory", RelationMix::Explanatory),
         ("structural", RelationMix::Structural),
         ("mixed", RelationMix::Mixed),
     ];
     let noise_for_mix: &[(&str, &[(&str, NoiseMode)])] = &[
-        ("explanatory", &[("clean", NoiseMode::Structural), ("competing", NoiseMode::CompetingCausal)]),
-        ("structural", &[("clean", NoiseMode::Structural), ("conflicting", NoiseMode::ConflictingMainPath)]),
-        ("mixed", &[("clean", NoiseMode::Structural), ("restart", NoiseMode::CompetingRestartPoint)]),
+        (
+            "explanatory",
+            &[
+                ("clean", NoiseMode::Structural),
+                ("competing", NoiseMode::CompetingCausal),
+            ],
+        ),
+        (
+            "structural",
+            &[
+                ("clean", NoiseMode::Structural),
+                ("conflicting", NoiseMode::ConflictingMainPath),
+            ],
+        ),
+        (
+            "mixed",
+            &[
+                ("clean", NoiseMode::Structural),
+                ("restart", NoiseMode::CompetingRestartPoint),
+            ],
+        ),
     ];
 
     let seeds_per_cell = matrix["seeds_per_cell"].as_u64().unwrap_or(1) as usize;
     let active_scale_names: Vec<&str> = scales.iter().map(|(name, _)| *name).collect();
-    run.log(&format!("[CONFIG] seeds_per_cell={seeds_per_cell}, scales={active_scale_names:?}"));
+    run.log(&format!(
+        "[CONFIG] seeds_per_cell={seeds_per_cell}, scales={active_scale_names:?}"
+    ));
 
     let boot_start = Instant::now();
     let mut results: Vec<BenchmarkResult> = Vec::new();
@@ -328,7 +386,8 @@ async fn vllm_benchmark_across_scales_domains_and_variants()
         }
         for &(domain_name, domain) in &domains {
             for &(mix_name, mix) in &mixes {
-                let noises = noise_for_mix.iter()
+                let noises = noise_for_mix
+                    .iter()
                     .find(|(m, _)| *m == mix_name)
                     .map(|(_, n)| *n)
                     .unwrap_or(&[("clean", NoiseMode::Structural)]);
@@ -339,7 +398,9 @@ async fn vllm_benchmark_across_scales_domains_and_variants()
                     }
                     for seed_idx in 0..seeds_per_cell {
                         let variant_id = if seeds_per_cell > 1 {
-                            format!("{scale_name}-{domain_name}-{mix_name}-{noise_name}-s{seed_idx}")
+                            format!(
+                                "{scale_name}-{domain_name}-{mix_name}-{noise_name}-s{seed_idx}"
+                            )
                         } else {
                             format!("{scale_name}-{domain_name}-{mix_name}-{noise_name}")
                         };
@@ -353,7 +414,9 @@ async fn vllm_benchmark_across_scales_domains_and_variants()
 
                         let events = seed_to_projection_events(&seed, SUBJECT_PREFIX, &variant_id)?;
                         let root_id = seed.root.node_id.clone();
-                        let focus_id = seed.nodes.first()
+                        let focus_id = seed
+                            .nodes
+                            .first()
                             .map(|n| n.node_id.clone())
                             .unwrap_or_else(|| "chain-0".to_string());
 
@@ -576,7 +639,10 @@ async fn vllm_benchmark_across_scales_domains_and_variants()
     let total_ms = boot_start.elapsed().as_secs_f64() * 1000.0;
 
     // ── Summary table ──
-    run.log(&format!("\n=== vLLM Kernel Benchmark ({} evals, {total_ms:.0}ms) ===\n", results.len()));
+    run.log(&format!(
+        "\n=== vLLM Kernel Benchmark ({} evals, {total_ms:.0}ms) ===\n",
+        results.len()
+    ));
     run.log(&format!(
         "{:<40} {:>6} {:>6} {:>6} {:>6} {:>8} {:>8} {:>8}",
         "Variant", "Tok", "Raw", "Compr", "Caus%", "TaskOK", "RestOK", "ReasOK"
@@ -584,13 +650,28 @@ async fn vllm_benchmark_across_scales_domains_and_variants()
     run.log(&"-".repeat(100));
 
     for r in &results {
-        let task = r.llm_task_success.map(|v| if v { "yes" } else { "no" }).unwrap_or("n/a");
-        let restart = r.llm_restart_accuracy.map(|v| if v { "yes" } else { "no" }).unwrap_or("n/a");
-        let reason = r.llm_reason_correct.map(|v| if v { "yes" } else { "no" }).unwrap_or("n/a");
+        let task = r
+            .llm_task_success
+            .map(|v| if v { "yes" } else { "no" })
+            .unwrap_or("n/a");
+        let restart = r
+            .llm_restart_accuracy
+            .map(|v| if v { "yes" } else { "no" })
+            .unwrap_or("n/a");
+        let reason = r
+            .llm_reason_correct
+            .map(|v| if v { "yes" } else { "no" })
+            .unwrap_or("n/a");
         run.log(&format!(
             "{:<40} {:>6} {:>6} {:>6.2} {:>5.0}% {:>8} {:>8} {:>8}",
-            r.run_id, r.rendered_token_count, r.raw_equivalent_tokens,
-            r.compression_ratio, r.causal_density * 100.0, task, restart, reason,
+            r.run_id,
+            r.rendered_token_count,
+            r.raw_equivalent_tokens,
+            r.compression_ratio,
+            r.causal_density * 100.0,
+            task,
+            restart,
+            reason,
         ));
     }
 
@@ -598,15 +679,27 @@ async fn vllm_benchmark_across_scales_domains_and_variants()
     run.log("\n--- Explanatory vs Structural ---");
     for scale in &active_scale_names {
         for domain in &["ops", "debug"] {
-            let exp: Vec<&BenchmarkResult> = results.iter()
-                .filter(|r| r.scale == *scale && r.domain == *domain && r.relation_mix == "explanatory")
+            let exp: Vec<&BenchmarkResult> = results
+                .iter()
+                .filter(|r| {
+                    r.scale == *scale && r.domain == *domain && r.relation_mix == "explanatory"
+                })
                 .collect();
-            let str_: Vec<&BenchmarkResult> = results.iter()
-                .filter(|r| r.scale == *scale && r.domain == *domain && r.relation_mix == "structural")
+            let str_: Vec<&BenchmarkResult> = results
+                .iter()
+                .filter(|r| {
+                    r.scale == *scale && r.domain == *domain && r.relation_mix == "structural"
+                })
                 .collect();
 
-            let exp_task = exp.iter().filter(|r| r.llm_task_success == Some(true)).count();
-            let str_task = str_.iter().filter(|r| r.llm_task_success == Some(true)).count();
+            let exp_task = exp
+                .iter()
+                .filter(|r| r.llm_task_success == Some(true))
+                .count();
+            let str_task = str_
+                .iter()
+                .filter(|r| r.llm_task_success == Some(true))
+                .count();
             let exp_n = exp.iter().filter(|r| r.llm_task_success.is_some()).count();
             let str_n = str_.iter().filter(|r| r.llm_task_success.is_some()).count();
 
@@ -621,12 +714,19 @@ async fn vllm_benchmark_across_scales_domains_and_variants()
     // ── Write summary JSON ──
     let summary = serde_json::to_vec_pretty(&results)?;
     fs::write(run.path.join("summary.json"), summary)?;
-    run.log(&format!("\n[RUN] results written to {}", run.path.display()));
+    run.log(&format!(
+        "\n[RUN] results written to {}",
+        run.path.display()
+    ));
 
     // ── Structural invariants (always, even without LLM) ──
     for r in &results {
         assert!(r.bundle_nodes > 0, "{}: bundle should have nodes", r.run_id);
-        assert!(r.rendered_token_count > 0, "{}: should have tokens", r.run_id);
+        assert!(
+            r.rendered_token_count > 0,
+            "{}: should have tokens",
+            r.run_id
+        );
     }
 
     Ok(())

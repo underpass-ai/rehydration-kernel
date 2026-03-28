@@ -12,13 +12,13 @@ use rehydration_domain::{
     NodeNeighborhood, NodeProjection, NodeRelationProjection, PortError, RehydrationBundle,
     RelationExplanation, RelationSemanticClass, Role, SnapshotSaveOptions, SnapshotStore,
 };
+use rehydration_observability::quality_observers::NoopQualityObserver;
 use rehydration_proto::v1beta1::{
-    ContextChange, ContextChangeOperation, GetContextPathRequest,
-    GetContextRequest, GetNodeDetailRequest, ResolutionTier, UpdateContextRequest,
-    ValidateScopeRequest, context_command_service_server::ContextCommandService,
+    ContextChange, ContextChangeOperation, GetContextPathRequest, GetContextRequest,
+    GetNodeDetailRequest, ResolutionTier, UpdateContextRequest, ValidateScopeRequest,
+    context_command_service_server::ContextCommandService,
     context_query_service_server::ContextQueryService,
 };
-use rehydration_observability::quality_observers::NoopQualityObserver;
 use rehydration_testkit::InMemoryContextEventStore;
 use tokio::sync::Mutex;
 use tonic::Request;

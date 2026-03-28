@@ -53,10 +53,7 @@ impl FakeUnderpassRuntime {
         &self.base_url
     }
 
-    pub fn read_file(
-        &self,
-        path: &str,
-    ) -> Result<Option<String>, Box<dyn Error + Send + Sync>> {
+    pub fn read_file(&self, path: &str) -> Result<Option<String>, Box<dyn Error + Send + Sync>> {
         let files = self
             .files
             .lock()

@@ -7,8 +7,8 @@ use rehydration_application::{
     QueryApplicationService, RehydrateSessionQuery, ValidateScopeQuery,
 };
 use rehydration_domain::{
-    GraphNeighborhoodReader, NodeDetailReader, QualityMetricsObserver,
-    QualityObservationContext, SnapshotStore,
+    GraphNeighborhoodReader, NodeDetailReader, QualityMetricsObserver, QualityObservationContext,
+    SnapshotStore,
 };
 use rehydration_proto::v1beta1::{
     GetContextPathRequest, GetContextPathResponse, GetContextRequest, GetContextResponse,
@@ -203,7 +203,10 @@ where
         meter
             .u64_histogram("rehydration.bundle.relationships")
             .build()
-            .record(result.path_bundle.stats().selected_relationships() as u64, attrs);
+            .record(
+                result.path_bundle.stats().selected_relationships() as u64,
+                attrs,
+            );
         meter
             .u64_histogram("rehydration.bundle.details")
             .build()

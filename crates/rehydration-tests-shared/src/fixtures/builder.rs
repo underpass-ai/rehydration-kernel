@@ -3,7 +3,7 @@ use rehydration_proto::v1beta1::{
     context_query_service_client::ContextQueryServiceClient,
 };
 
-use crate::containers::{Neo4jContainer, NatsContainer, ValkeyContainer};
+use crate::containers::{NatsContainer, Neo4jContainer, ValkeyContainer};
 use crate::debug::{debug_log, debug_log_value};
 use crate::error::BoxError;
 use crate::fixtures::fixture::wait_for_context_ready;
@@ -132,15 +132,14 @@ impl TestFixtureBuilder {
         // 3. Start projection runtime (requires NATS + stores).
         let projection_runtime = if self.projection_runtime {
             let nats_ref = nats.as_ref().expect("projection_runtime requires NATS");
-            let gs = graph_store.clone().expect("projection_runtime requires Neo4j");
-            let ds = detail_store.clone().expect("projection_runtime requires Valkey");
-            let rt = RunningProjectionRuntime::start(
-                &nats_ref.url(),
-                "rehydration",
-                gs,
-                ds,
-            )
-            .await?;
+            let gs = graph_store
+                .clone()
+                .expect("projection_runtime requires Neo4j");
+            let ds = detail_store
+                .clone()
+                .expect("projection_runtime requires Valkey");
+            let rt =
+                RunningProjectionRuntime::start(&nats_ref.url(), "rehydration", gs, ds).await?;
             debug_log("projection runtime started");
             Some(rt)
         } else {
@@ -176,17 +175,12 @@ impl TestFixtureBuilder {
         }
 
         // 6. Wait for readiness.
-        if let (Some(root), Some(focus)) =
-            (self.readiness_root.as_deref(), self.readiness_focus.as_deref())
-            && let Some(qc) = &query_client
+        if let (Some(root), Some(focus)) = (
+            self.readiness_root.as_deref(),
+            self.readiness_focus.as_deref(),
+        ) && let Some(qc) = &query_client
         {
-            wait_for_context_ready(
-                qc.clone(),
-                root,
-                focus,
-                self.readiness_require_detail,
-            )
-            .await?;
+            wait_for_context_ready(qc.clone(), root, focus, self.readiness_require_detail).await?;
             debug_log("context readiness check passed");
         }
 

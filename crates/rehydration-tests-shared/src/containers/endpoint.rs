@@ -15,10 +15,7 @@ impl ContainerEndpoint {
 
     /// `neo4j://neo4j:{password}@{host}:{port}`
     pub fn neo4j_uri(&self, password: &str) -> String {
-        format!(
-            "neo4j://neo4j:{password}@{}:{}",
-            self.host, self.port
-        )
+        format!("neo4j://neo4j:{password}@{}:{}", self.host, self.port)
     }
 
     /// `neo4j://{host}:{port}` (no credentials, for admin operations like clear).

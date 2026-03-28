@@ -85,7 +85,9 @@ where
 }
 
 /// Read an MGET response: a RESP array of bulk strings.
-pub(crate) async fn read_bulk_string_array<R>(reader: &mut R) -> Result<Vec<Option<String>>, PortError>
+pub(crate) async fn read_bulk_string_array<R>(
+    reader: &mut R,
+) -> Result<Vec<Option<String>>, PortError>
 where
     R: AsyncBufRead + AsyncRead + Unpin,
 {
@@ -108,9 +110,9 @@ where
         )));
     }
 
-    let count = remainder.parse::<isize>().map_err(|error| {
-        PortError::Unavailable(format!("invalid valkey array length: {error}"))
-    })?;
+    let count = remainder
+        .parse::<isize>()
+        .map_err(|error| PortError::Unavailable(format!("invalid valkey array length: {error}")))?;
 
     if count <= 0 {
         return Ok(Vec::new());
@@ -247,11 +249,7 @@ mod tests {
 
         assert_eq!(
             result,
-            vec![
-                Some("hello".to_string()),
-                None,
-                Some("world".to_string()),
-            ]
+            vec![Some("hello".to_string()), None, Some("world".to_string()),]
         );
     }
 

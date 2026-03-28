@@ -32,7 +32,9 @@ pub(crate) fn proto_rehydrate_session_response_v1beta1(
     }
 }
 
-pub(crate) fn proto_timing_breakdown_v1beta1(timing: &QueryTimingBreakdown) -> ProtoTimingBreakdown {
+pub(crate) fn proto_timing_breakdown_v1beta1(
+    timing: &QueryTimingBreakdown,
+) -> ProtoTimingBreakdown {
     ProtoTimingBreakdown {
         graph_load_seconds: timing.graph_load.as_secs_f64(),
         detail_load_seconds: timing.detail_load.as_secs_f64(),

@@ -8,11 +8,11 @@ use tokio::task::JoinHandle;
 use tokio_stream::StreamExt;
 use tonic::transport::Channel;
 
+use crate::containers::connect_nats_with_retry;
 use crate::debug::{debug_log, debug_log_value};
 use crate::seed::bundle_event::{
     context_bundle_generated_subject, parse_context_bundle_generated_event,
 };
-use crate::containers::connect_nats_with_retry;
 use rehydration_proto::v1beta1::context_query_service_client::ContextQueryServiceClient;
 
 pub struct EventDrivenRuntimeTrigger<R> {

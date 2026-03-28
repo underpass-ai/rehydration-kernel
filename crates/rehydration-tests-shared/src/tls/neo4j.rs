@@ -12,8 +12,8 @@ use testcontainers::{
 };
 use tokio::time::{sleep, timeout};
 
-use crate::debug::debug_enabled;
 use crate::containers::NEO4J_PASSWORD;
+use crate::debug::debug_enabled;
 use crate::tls::material::{TlsMaterial, ensure_crypto_provider};
 
 const NEO4J_IMAGE: &str = "docker.io/neo4j";

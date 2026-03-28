@@ -10,8 +10,7 @@ use rehydration_application::{ProjectionApplicationService, RoutingProjectionWri
 use rehydration_config::{GrpcTlsConfig, GrpcTlsMode};
 use rehydration_domain::ProjectionWriter;
 use rehydration_proto::v1beta1::{
-    GetContextRequest,
-    context_command_service_client::ContextCommandServiceClient,
+    GetContextRequest, context_command_service_client::ContextCommandServiceClient,
     context_query_service_client::ContextQueryServiceClient,
 };
 use rehydration_testkit::{InMemoryProcessedEventStore, InMemoryProjectionCheckpointStore};
@@ -244,7 +243,8 @@ async fn wait_for_context_ready(
     }
 
     Err(last_error.unwrap_or_else(|| {
-        "tls context projection did not become ready before timeout".to_string()
-        .into()
+        "tls context projection did not become ready before timeout"
+            .to_string()
+            .into()
     }))
 }

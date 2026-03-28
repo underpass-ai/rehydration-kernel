@@ -10,6 +10,7 @@ use rehydration_proto::v1beta1::{
 use tonic::transport::Channel;
 
 use crate::fixtures::TestFixture;
+use crate::metrics::{PaperMetricRelationship, PaperUseCaseMetric, ratio};
 use crate::ports::ClosureSeed;
 use crate::seed::explanatory_data::{
     ARTIFACT_NODE_ID, BAD_DECISION_NODE_ID, BAD_TASK_NODE_ID, CONSTRAINT_DECISION_NODE_ID,
@@ -22,12 +23,11 @@ use crate::seed::explanatory_data::{
     HANDOFF_RESUME_RATIONALE, HANDOFF_RESUMED_DETAIL, HANDOFF_RESUMED_TASK_NODE_ID,
     HANDOFF_ROOT_NODE_ID, HANDOFF_SUCCESS_ARTIFACT_NODE_ID, HANDOFF_SUCCESS_RATIONALE,
     HANDOFF_TASK_STARTED_NODE_ID, ProjectionSeedVariant, RECOVERY_DECISION_RATIONALE,
-    RECOVERY_DECISION_RELATION, RECOVERY_SUCCESS_RATIONALE, ROOT_NODE_ID,
-    RelationExplanationMode, TASK_TO_ARTIFACT_METHOD, TASK_TO_ARTIFACT_RELATION,
+    RECOVERY_DECISION_RELATION, RECOVERY_SUCCESS_RATIONALE, ROOT_NODE_ID, RelationExplanationMode,
+    TASK_TO_ARTIFACT_METHOD, TASK_TO_ARTIFACT_RELATION,
     publish_constraint_projection_events_variant, publish_explanatory_projection_events_variant,
     publish_flawed_task_projection_events_variant, publish_handoff_projection_events_variant,
 };
-use crate::metrics::{PaperMetricRelationship, PaperUseCaseMetric, ratio};
 
 pub const DEFAULT_TOKEN_BUDGET: u32 = 4096;
 pub const LOW_TOKEN_BUDGET: u32 = 192;
@@ -42,10 +42,8 @@ pub const WHY_IMPLEMENTED_QUESTION: &str = "Given a task that was implemented in
 pub const HANDOFF_RESUME_USE_CASE_ID: &str = "uc3_interrupted_handoff_resume";
 pub const HANDOFF_RESUME_TITLE: &str = "Interrupted handoff and resumable execution";
 pub const HANDOFF_RESUME_QUESTION: &str = "Given a task interrupted after a failed implementation step, can the system recover why it was handed off and from which upstream node execution should resume?";
-pub const CONSTRAINT_PRESSURE_USE_CASE_ID: &str =
-    "uc4_constraint_reason_under_token_pressure";
-pub const CONSTRAINT_PRESSURE_TITLE: &str =
-    "Constraint-preserving retrieval under token pressure";
+pub const CONSTRAINT_PRESSURE_USE_CASE_ID: &str = "uc4_constraint_reason_under_token_pressure";
+pub const CONSTRAINT_PRESSURE_TITLE: &str = "Constraint-preserving retrieval under token pressure";
 pub const CONSTRAINT_PRESSURE_QUESTION: &str = "Given a task chosen under a binding safety constraint, can the system preserve the dominant reason even when the rendered context is strongly budgeted?";
 
 #[derive(Debug, Clone, Copy)]

@@ -40,12 +40,11 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let otel_guard = init_observability(&config.service_name);
 
     let meter = opentelemetry::global::meter("rehydration-kernel");
-    let quality_observer: Arc<dyn rehydration_domain::QualityMetricsObserver> = Arc::new(
-        CompositeQualityObserver::new(vec![
+    let quality_observer: Arc<dyn rehydration_domain::QualityMetricsObserver> =
+        Arc::new(CompositeQualityObserver::new(vec![
             Box::new(OTelQualityObserver::new(&meter)),
             Box::new(TracingQualityObserver),
-        ]),
-    );
+        ]));
 
     let graph_reader = Neo4jProjectionReader::new(config.graph_uri.clone())?;
     let detail_reader = ValkeyNodeDetailStore::new(config.detail_uri.clone())?;

@@ -76,12 +76,7 @@ impl Neo4jContainer {
 
     /// Raw Neo4j graph handle for direct queries.
     pub async fn connect_with_retry(&self) -> Result<Graph, BoxError> {
-        connect_neo4j_with_retry(
-            self.endpoint.neo4j_admin_uri(),
-            "neo4j",
-            NEO4J_PASSWORD,
-        )
-        .await
+        connect_neo4j_with_retry(self.endpoint.neo4j_admin_uri(), "neo4j", NEO4J_PASSWORD).await
     }
 
     /// Keeps the underlying container alive (moved into the fixture).
@@ -103,9 +98,7 @@ async fn connect_neo4j_with_retry(
     .map_err(|_| {
         std::io::Error::new(
             std::io::ErrorKind::TimedOut,
-            format!(
-                "neo4j connection did not become ready within {CONNECT_TIMEOUT:?}"
-            ),
+            format!("neo4j connection did not become ready within {CONNECT_TIMEOUT:?}"),
         )
     })?
 }

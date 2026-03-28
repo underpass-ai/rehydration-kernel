@@ -5,9 +5,7 @@
 //! - [`CompositeQualityObserver`]: Fan-out to multiple observers
 
 use opentelemetry::metrics::{Histogram, Meter};
-use rehydration_domain::{
-    BundleQualityMetrics, QualityMetricsObserver, QualityObservationContext,
-};
+use rehydration_domain::{BundleQualityMetrics, QualityMetricsObserver, QualityObservationContext};
 
 // ── OTel adapter ────────────────────────────────────────────────────────
 
@@ -57,8 +55,7 @@ impl QualityMetricsObserver for OTelQualityObserver {
             .record(metrics.raw_equivalent_tokens() as u64, attrs);
         self.compression_ratio
             .record(metrics.compression_ratio(), attrs);
-        self.causal_density
-            .record(metrics.causal_density(), attrs);
+        self.causal_density.record(metrics.causal_density(), attrs);
         self.noise_ratio.record(metrics.noise_ratio(), attrs);
         self.detail_coverage
             .record(metrics.detail_coverage(), attrs);
@@ -142,7 +139,9 @@ mod tests {
         BundleQualityMetrics, QualityMetricsObserver, QualityObservationContext,
     };
 
-    use super::{CompositeQualityObserver, NoopQualityObserver, OTelQualityObserver, TracingQualityObserver};
+    use super::{
+        CompositeQualityObserver, NoopQualityObserver, OTelQualityObserver, TracingQualityObserver,
+    };
 
     fn sample_metrics() -> BundleQualityMetrics {
         BundleQualityMetrics::new(200, 1.5, 0.6, 0.1, 0.8).expect("valid")

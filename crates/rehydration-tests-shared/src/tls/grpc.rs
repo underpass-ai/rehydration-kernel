@@ -73,9 +73,7 @@ impl RunningTlsGrpcServer {
         ensure_crypto_provider();
 
         let mut tls = ClientTlsConfig::new()
-            .ca_certificate(Certificate::from_pem(
-                tls_material.ca_certificate_pem(),
-            ))
+            .ca_certificate(Certificate::from_pem(tls_material.ca_certificate_pem()))
             .domain_name("localhost");
         if include_client_identity {
             let (client_cert_pem, client_key_pem) = tls_material.client_identity_pem();
@@ -102,9 +100,7 @@ impl RunningTlsGrpcServer {
     }
 }
 
-pub async fn stop_server(
-    server: RunningTlsGrpcServer,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub async fn stop_server(server: RunningTlsGrpcServer) -> Result<(), Box<dyn Error + Send + Sync>> {
     let RunningTlsGrpcServer {
         shutdown_tx,
         server_task,

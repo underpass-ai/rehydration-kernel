@@ -134,11 +134,7 @@ impl ContextEventStore for NatsContextEventStore {
             let idem_payload = serde_json::to_vec(&idem_outcome).map_err(|error| {
                 PortError::Unavailable(format!("failed to serialize idempotent outcome: {error}"))
             })?;
-            match self
-                .js
-                .publish(idem_subject, idem_payload.into())
-                .await
-            {
+            match self.js.publish(idem_subject, idem_payload.into()).await {
                 Ok(ack_future) => {
                     if let Err(error) = ack_future.await {
                         tracing::warn!(

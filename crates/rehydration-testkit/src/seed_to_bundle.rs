@@ -23,12 +23,7 @@ pub fn seed_to_bundle(seed: &GeneratedSeed) -> RehydrationBundle {
 
     let mut details: Vec<BundleNodeDetail> = Vec::new();
     if let Some(detail) = &seed.root.detail {
-        details.push(BundleNodeDetail::new(
-            &seed.root.node_id,
-            detail,
-            "seed",
-            1,
-        ));
+        details.push(BundleNodeDetail::new(&seed.root.node_id, detail, "seed", 1));
     }
     for node in &seed.nodes {
         if let Some(detail) = &node.detail {
@@ -108,10 +103,7 @@ mod tests {
     fn seed_to_bundle_preserves_node_count() {
         let seed = generate_seed(GraphSeedConfig::micro(Domain::Operations));
         let bundle = seed_to_bundle(&seed);
-        assert_eq!(
-            bundle.stats().selected_nodes() as usize,
-            seed.total_nodes()
-        );
+        assert_eq!(bundle.stats().selected_nodes() as usize, seed.total_nodes());
     }
 
     #[test]
@@ -142,8 +134,17 @@ mod tests {
         let estimator = rehydration_application::queries::cl100k_estimator::Cl100kEstimator::new();
         let metrics = BundleQualityMetrics::compute(&bundle, 0, &estimator);
 
-        assert!(metrics.raw_equivalent_tokens() > 200, "meso should have substantial raw tokens");
-        assert!((metrics.compression_ratio() - 1.0).abs() < 0.001, "compression with 0 rendered tokens should be 1.0");
-        assert!(metrics.causal_density() > 0.0, "meso should have causal relationships");
+        assert!(
+            metrics.raw_equivalent_tokens() > 200,
+            "meso should have substantial raw tokens"
+        );
+        assert!(
+            (metrics.compression_ratio() - 1.0).abs() < 0.001,
+            "compression with 0 rendered tokens should be 1.0"
+        );
+        assert!(
+            metrics.causal_density() > 0.0,
+            "meso should have causal relationships"
+        );
     }
 }

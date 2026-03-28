@@ -34,7 +34,10 @@ mod tests {
     fn raw_tokens_is_positive() {
         let seed = generate_seed(GraphSeedConfig::micro(Domain::Operations));
         let tokens = count_raw_tokens(&seed);
-        assert!(tokens > 50, "raw tokens should be significant, got {tokens}");
+        assert!(
+            tokens > 50,
+            "raw tokens should be significant, got {tokens}"
+        );
     }
 
     #[test]

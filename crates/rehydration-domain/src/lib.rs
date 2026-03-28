@@ -14,11 +14,13 @@ pub use projection::{
 };
 pub use repositories::{
     ContextEventChange, ContextEventStore, ContextUpdatedEvent, GraphNeighborhoodReader,
-    IdempotentOutcome, NodeDetailReader, PortError, ProcessedEventStore,
-    ProjectionCheckpointStore, ProjectionWriter, QualityMetricsObserver,
-    QualityObservationContext, SnapshotSaveOptions, SnapshotStore, TokenEstimator,
+    IdempotentOutcome, NodeDetailReader, PortError, ProcessedEventStore, ProjectionCheckpointStore,
+    ProjectionWriter, QualityMetricsObserver, QualityObservationContext, SnapshotSaveOptions,
+    SnapshotStore, TokenEstimator,
 };
-pub use value_objects::{BundleMetadata, BundleQualityMetrics, CaseId, Provenance, Role, SourceKind};
+pub use value_objects::{
+    BundleMetadata, BundleQualityMetrics, CaseId, Provenance, Role, SourceKind,
+};
 pub use value_objects::{RehydrationMode, ResolutionTier, TierBudget};
 pub use value_objects::{RelationExplanation, RelationSemanticClass};
 

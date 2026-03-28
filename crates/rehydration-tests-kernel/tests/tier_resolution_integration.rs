@@ -8,8 +8,7 @@
 use std::error::Error;
 
 use rehydration_proto::v1beta1::{
-    GetContextRequest, ResolutionTier,
-    context_query_service_client::ContextQueryServiceClient,
+    GetContextRequest, ResolutionTier, context_query_service_client::ContextQueryServiceClient,
 };
 use rehydration_tests_shared::fixtures::TestFixture;
 use rehydration_tests_shared::ports::ClosureSeed;
@@ -83,12 +82,22 @@ async fn tiers_are_populated_in_grpc_response_with_explanatory_data()
         .iter()
         .find(|t| t.tier == ResolutionTier::L0Summary as i32)
         .expect("L0 tier should exist");
-    assert!(l0.content.contains("Objective:"), "L0 should have Objective line");
+    assert!(
+        l0.content.contains("Objective:"),
+        "L0 should have Objective line"
+    );
     assert!(l0.content.contains("Status:"), "L0 should have Status line");
-    assert!(l0.content.contains("Blocker:"), "L0 should have Blocker line");
+    assert!(
+        l0.content.contains("Blocker:"),
+        "L0 should have Blocker line"
+    );
     assert!(l0.content.contains("Next:"), "L0 should have Next line");
     assert!(l0.token_count > 0);
-    assert!(l0.token_count <= 150, "L0 should fit in ~100 tokens, got {}", l0.token_count);
+    assert!(
+        l0.token_count <= 150,
+        "L0 should fit in ~100 tokens, got {}",
+        l0.token_count
+    );
 
     let l1 = rendered
         .tiers
@@ -101,7 +110,10 @@ async fn tiers_are_populated_in_grpc_response_with_explanatory_data()
             || l1.content.contains("[evidential]"),
         "L1 should contain explanatory relationships"
     );
-    assert!(!l1.content.contains("Detail "), "L1 should not contain node details");
+    assert!(
+        !l1.content.contains("Detail "),
+        "L1 should not contain node details"
+    );
     assert!(l1.token_count > 0);
 
     fixture.shutdown().await?;
@@ -125,8 +137,10 @@ async fn l0_summary_is_self_contained_for_status_check() -> Result<(), Box<dyn E
 
     let lines: Vec<_> = l0.content.lines().collect();
     assert_eq!(
-        lines.len(), 4,
-        "L0 should be 4 lines: Objective, Status, Blocker, Next. Got:\n{}", l0.content
+        lines.len(),
+        4,
+        "L0 should be 4 lines: Objective, Status, Blocker, Next. Got:\n{}",
+        l0.content
     );
     assert!(lines[0].starts_with("Objective:"));
     assert!(lines[1].starts_with("Status:"));
@@ -152,7 +166,10 @@ async fn l1_causal_spine_contains_explanatory_but_not_structural()
         .find(|t| t.tier == ResolutionTier::L1CausalSpine as i32)
         .expect("L1 should exist");
 
-    assert!(l1.content.contains("Node "), "L1 should contain the root node render");
+    assert!(
+        l1.content.contains("Node "),
+        "L1 should contain the root node render"
+    );
 
     let has_explanatory = l1.content.contains("[causal]")
         || l1.content.contains("[motivational]")
@@ -161,7 +178,10 @@ async fn l1_causal_spine_contains_explanatory_but_not_structural()
     assert!(has_explanatory, "L1 should have explanatory relationships");
 
     let has_structural = l1.content.contains("[structural]");
-    assert!(!has_structural, "L1 should NOT have structural relationships");
+    assert!(
+        !has_structural,
+        "L1 should NOT have structural relationships"
+    );
 
     fixture.shutdown().await?;
     Ok(())

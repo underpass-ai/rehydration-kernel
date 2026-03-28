@@ -220,7 +220,10 @@ pub fn generate_seed(config: GraphSeedConfig) -> GeneratedSeed {
                 if seed_offset == 0 {
                     Some(format!("{} at depth {depth}", vocab.chain_rationale))
                 } else {
-                    Some(format!("{} at depth {depth} (variant {seed_offset})", vocab.chain_rationale))
+                    Some(format!(
+                        "{} at depth {depth} (variant {seed_offset})",
+                        vocab.chain_rationale
+                    ))
                 }
             } else {
                 None
@@ -347,9 +350,7 @@ pub fn generate_seed(config: GraphSeedConfig) -> GeneratedSeed {
                             "branch {branch} offers an alternative restart at depth {depth} with partial resolution"
                         )),
                         vocab.chain_kinds[kind_index].to_string(),
-                        format!(
-                            "recovery candidate {depth}-{branch}",
-                            ),
+                        format!("recovery candidate {depth}-{branch}",),
                         format!(
                             "alternative restart {} branch {branch} at depth {depth}",
                             vocab.chain_summary
@@ -517,7 +518,8 @@ mod tests {
             assert!(
                 rel.rationale.is_none(),
                 "structural variant must have no rationale, but {:?} has {:?}",
-                rel.target_node_id, rel.rationale
+                rel.target_node_id,
+                rel.rationale
             );
         }
     }
@@ -540,12 +542,14 @@ mod tests {
             assert!(
                 rel.rationale.is_none(),
                 "structural+competing variant must have no rationale, but {:?} has {:?}",
-                rel.target_node_id, rel.rationale
+                rel.target_node_id,
+                rel.rationale
             );
             assert!(
                 rel.motivation.is_none(),
                 "structural+competing variant must have no motivation, but {:?} has {:?}",
-                rel.target_node_id, rel.motivation
+                rel.target_node_id,
+                rel.motivation
             );
         }
     }
@@ -703,7 +707,9 @@ mod tests {
             "competing restart noise should suggest restart"
         );
         assert!(
-            noise_relations.iter().any(|r| r.relation_type == "RECOVERY_CANDIDATE"),
+            noise_relations
+                .iter()
+                .any(|r| r.relation_type == "RECOVERY_CANDIDATE"),
             "competing restart noise should use RECOVERY_CANDIDATE relation type"
         );
     }

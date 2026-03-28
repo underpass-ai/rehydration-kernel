@@ -33,8 +33,7 @@ pub const ROOT_TO_DECISION_RELATION: &str = "TRIGGERS";
 pub const DECISION_TO_TASK_RELATION: &str = "AUTHORIZES";
 pub const TASK_TO_ARTIFACT_RELATION: &str = "VERIFIED_BY";
 
-pub const ROOT_TO_DECISION_RATIONALE: &str =
-    "containment margin dropped below the safe threshold";
+pub const ROOT_TO_DECISION_RATIONALE: &str = "containment margin dropped below the safe threshold";
 pub const DECISION_TO_TASK_RATIONALE: &str = "reserve power must be diverted before repair";
 pub const DECISION_TO_TASK_MOTIVATION: &str =
     "stabilize the containment loop before engineers enter the manifold bay";
@@ -75,8 +74,7 @@ pub const HANDOFF_RESUME_RATIONALE: &str =
 pub const HANDOFF_RESUME_MOTIVATION: &str =
     "handoff to an EVA specialist already staged near the override panel";
 pub const HANDOFF_RESUMED_DETAIL: &str = "Continue from the failed remote isolation attempt, clear the valve cage manually, and complete the coolant isolation without restarting the containment plan.";
-pub const HANDOFF_SUCCESS_ARTIFACT_NODE_ID: &str =
-    "node:artifact:coolant-isolation-confirmed";
+pub const HANDOFF_SUCCESS_ARTIFACT_NODE_ID: &str = "node:artifact:coolant-isolation-confirmed";
 pub const HANDOFF_SUCCESS_RATIONALE: &str = "post-override telemetry confirms the coolant isolation completed and reactor-bay pressure stabilized";
 pub const HANDOFF_SUCCESS_METHOD: &str = "post-override coolant telemetry validation";
 

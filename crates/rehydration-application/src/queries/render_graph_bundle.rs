@@ -763,8 +763,8 @@ mod tests {
     #[test]
     fn quality_compression_ratio_reflects_raw_vs_rendered() {
         let rendered = render_graph_bundle(&quality_bundle());
-        let expected = rendered.quality.raw_equivalent_tokens() as f64
-            / rendered.token_count as f64;
+        let expected =
+            rendered.quality.raw_equivalent_tokens() as f64 / rendered.token_count as f64;
         let diff = (rendered.quality.compression_ratio() - expected).abs();
         assert!(
             diff < 0.001,
@@ -826,10 +826,22 @@ mod tests {
             CaseId::new("root").expect("valid"),
             Role::new("dev").expect("valid"),
             BundleNode::new(
-                "root", "incident", "Root", "Root summary", "ACTIVE", vec![], BTreeMap::new(),
+                "root",
+                "incident",
+                "Root",
+                "Root summary",
+                "ACTIVE",
+                vec![],
+                BTreeMap::new(),
             ),
             vec![BundleNode::new(
-                "node-a", "decision", "Decision A", "Decision summary", "ACTIVE", vec![], BTreeMap::new(),
+                "node-a",
+                "decision",
+                "Decision A",
+                "Decision summary",
+                "ACTIVE",
+                vec![],
+                BTreeMap::new(),
             )],
             vec![BundleRelationship::new(
                 "root",
@@ -838,7 +850,12 @@ mod tests {
                 RelationExplanation::new(RelationSemanticClass::Causal)
                     .with_rationale("failure triggered reroute"),
             )],
-            vec![BundleNodeDetail::new("root", "Extended root detail", "hash-r", 1)],
+            vec![BundleNodeDetail::new(
+                "root",
+                "Extended root detail",
+                "hash-r",
+                1,
+            )],
             BundleMetadata::initial("0.1.0"),
         )
         .expect("valid");
@@ -859,7 +876,13 @@ mod tests {
             CaseId::new("root").expect("valid"),
             Role::new("dev").expect("valid"),
             BundleNode::new(
-                "root", "case", "Root", "", "ACTIVE", vec![], BTreeMap::new(),
+                "root",
+                "case",
+                "Root",
+                "",
+                "ACTIVE",
+                vec![],
+                BTreeMap::new(),
             ),
             vec![
                 BundleNode::new("a", "task", "A", "", "ACTIVE", vec![], BTreeMap::new()),
@@ -895,7 +918,13 @@ mod tests {
             CaseId::new("root").expect("valid"),
             Role::new("dev").expect("valid"),
             BundleNode::new(
-                "root", "case", "Root", "", "ACTIVE", vec![], BTreeMap::new(),
+                "root",
+                "case",
+                "Root",
+                "",
+                "ACTIVE",
+                vec![],
+                BTreeMap::new(),
             ),
             Vec::new(),
             Vec::new(),

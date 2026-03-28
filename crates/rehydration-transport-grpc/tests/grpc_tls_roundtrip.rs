@@ -9,11 +9,10 @@ use rehydration_domain::{
     ContextPathNeighborhood, GraphNeighborhoodReader, NodeDetailProjection, NodeDetailReader,
     NodeNeighborhood, PortError, RehydrationBundle, SnapshotSaveOptions, SnapshotStore,
 };
-use rehydration_proto::v1beta1::{
-    GetContextRequest,
-    context_query_service_client::ContextQueryServiceClient,
-};
 use rehydration_observability::quality_observers::NoopQualityObserver;
+use rehydration_proto::v1beta1::{
+    GetContextRequest, context_query_service_client::ContextQueryServiceClient,
+};
 use rehydration_testkit::InMemoryContextEventStore;
 use rehydration_transport_grpc::GrpcServer;
 use tempfile::TempDir;

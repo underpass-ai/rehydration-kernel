@@ -25,9 +25,7 @@ impl ValkeyContainer {
 
         let container = GenericImage::new(VALKEY_IMAGE, VALKEY_TAG)
             .with_exposed_port(VALKEY_INTERNAL_PORT.tcp())
-            .with_wait_for(WaitFor::message_on_stdout(
-                "Ready to accept connections",
-            ))
+            .with_wait_for(WaitFor::message_on_stdout("Ready to accept connections"))
             .start()
             .await?;
 
