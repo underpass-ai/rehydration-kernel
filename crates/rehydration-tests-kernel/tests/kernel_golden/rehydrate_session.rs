@@ -21,8 +21,6 @@ async fn grpc_rehydrate_session_matches_v1beta1_golden_contract()
             .rehydrate_session(RehydrateSessionRequest {
                 root_node_id: ROOT_NODE_ID.to_string(),
                 roles: vec![DEVELOPER_ROLE.to_string()],
-                include_timeline: true,
-                include_summaries: true,
                 timeline_window: REHYDRATE_TIMELINE_EVENTS as u32,
                 persist_snapshot: false,
                 snapshot_ttl: None,

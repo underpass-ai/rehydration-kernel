@@ -1,8 +1,7 @@
 use std::io;
 
 use rehydration_proto::v1beta1::{
-    BundleRenderFormat, GetContextRequest, Phase,
-    context_query_service_client::ContextQueryServiceClient,
+    GetContextRequest, context_query_service_client::ContextQueryServiceClient,
 };
 use serde_json::json;
 use tonic::transport::Channel;
@@ -32,7 +31,6 @@ where
         &self.runtime
     }
 
-    #[allow(deprecated)] // proto fields phase, work_item_id, render_format, include_debug_sections
     pub async fn execute(&mut self, request: AgentRequest) -> RuntimeResult<AgentExecution> {
         debug_log_value("agent root_node_id", &request.root_node_id);
         debug_log_value("agent root_node_kind", &request.root_node_kind);
@@ -60,12 +58,8 @@ where
             .get_context(GetContextRequest {
                 root_node_id: request.root_node_id,
                 role: request.role,
-                phase: request.phase as i32,
-                work_item_id: focus_node_id.clone(),
                 token_budget: request.token_budget,
                 requested_scopes: request.requested_scopes,
-                render_format: request.render_format as i32,
-                include_debug_sections: request.include_debug_sections,
                 depth: 0,
                 max_tier: 0,
                 rehydration_mode: 0,
@@ -135,7 +129,6 @@ where
         })
     }
 
-    #[allow(deprecated)] // proto fields phase, work_item_id, render_format, include_debug_sections
     async fn select_focus_node_id(
         &mut self,
         root_node_id: &str,
@@ -147,12 +140,8 @@ where
             .get_context(GetContextRequest {
                 root_node_id: root_node_id.to_string(),
                 role: role.to_string(),
-                phase: Phase::Build as i32,
-                work_item_id: String::new(),
                 token_budget: 0,
                 requested_scopes: Vec::new(),
-                render_format: BundleRenderFormat::Structured as i32,
-                include_debug_sections: false,
                 depth: 1,
                 max_tier: 0,
                 rehydration_mode: 0,

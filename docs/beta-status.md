@@ -8,15 +8,15 @@ The kernel targets a stable `v1` contract once these conditions are met:
 
 | Condition | Status |
 |:----------|:-------|
-| All deprecated proto fields removed or implemented | Pending — 8 fields deprecated |
+| All deprecated proto fields removed or implemented | Done — 8 fields pruned, numbers reserved |
 | Authorization backend for scope validation | Not started |
 | Timeline and summary filtering in RehydrateSession | Not started |
 | Quality metrics in all render paths (including RehydrateSession) | Partial — GetContext and GetContextPath only |
 | Full benchmark matrix validated (3 agents x 3 judges x 4 noise) | Planned — see [ROADMAP_MASTER.md](research/ROADMAP_MASTER.md) |
 | Async contract: `context.bundle.generated` actually emitted by runtime | Not started — contract-only today |
-| OTLP mTLS to OTel Collector | In progress — plaintext today |
-| Neo4j client mTLS (2FA since Neo4j 5.19+) | Not started — adapter only passes CA today |
-| Grafana: disable anonymous admin access by default | Not started — development default is anonymous=Admin |
+| OTLP mTLS to OTel Collector | Done — env-var TLS config, Helm wiring, cert-manager |
+| Neo4j client mTLS (2FA since Neo4j 5.19+) | Partial — Helm + URI parsing done, neo4rs client cert pending |
+| Grafana: disable anonymous admin access by default | Done — default `false`, toggle via `grafana.anonymousAccess` |
 | Event store atomic CAS for optimistic concurrency | Not started — check-then-act today |
 | Breaking change window communicated to consumers | Not started |
 
@@ -27,17 +27,17 @@ changes to fields that are implemented. Deprecated fields may be removed in `v1`
 
 | RPC | Status | Notes |
 |-----|--------|-------|
-| `GetContext` | Production-ready | Proto fields `phase`, `work_item_id`, `render_format`, and `include_debug_sections` are deprecated and do not alter query behavior in v1beta1. `scope_validation` is `None` (no authorization backend). |
+| `GetContext` | Production-ready | `scope_validation` is `None` (no authorization backend). |
 | `GetContextPath` | Production-ready | Returns `NOT_FOUND` when neither the path nor the target node exist. |
 | `GetNodeDetail` | Production-ready | |
-| `RehydrateSession` | Production-ready | `include_timeline` and `include_summaries` are deprecated (reserved for future use, currently ignored). `timeline_window` is echoed in the response but does not filter events. `snapshot_ttl` is required when `persist_snapshot` is true. |
-| `ValidateScope` | Production-ready | Standalone set comparison. Proto fields `role` and `phase` are deprecated and do not affect the comparison — only `required_scopes` and `provided_scopes` are evaluated. |
+| `RehydrateSession` | Production-ready | `timeline_window` is echoed in the response but does not filter events. `snapshot_ttl` is required when `persist_snapshot` is true. |
+| `ValidateScope` | Production-ready | Standalone set comparison — only `required_scopes` and `provided_scopes` are evaluated. |
 
 ## ContextCommandService
 
 | RPC | Status | Notes |
 |-----|--------|-------|
-| `UpdateContext` | Production-ready | Persists full domain events (changes, requested_by, occurred_at) to the context event store as JSON. Optimistic concurrency via `expected_revision`. Content hash validated via `expected_content_hash`. Idempotency via `idempotency_key`. Returns `ABORTED` on revision or hash conflict. Proto field `persist_snapshot` is accepted but not acted upon — snapshot persistence is the responsibility of the query path (`RehydrateSession`). |
+| `UpdateContext` | Production-ready | Persists full domain events (changes, requested_by, occurred_at) to the context event store as JSON. Optimistic concurrency via `expected_revision`. Content hash validated via `expected_content_hash`. Idempotency via `idempotency_key`. Returns `ABORTED` on revision or hash conflict. |
 
 ## Async Contract (NATS JetStream)
 
@@ -78,17 +78,6 @@ Delivered through the `QualityMetricsObserver` hexagonal port with two active ad
 
 **In progress**: `RehydrateSession` does not yet emit quality metrics — per-role
 rendering is planned (see [ROADMAP_MASTER.md](research/ROADMAP_MASTER.md)).
-
-## Proto Fields Accepted but Ignored
-
-These fields exist in the wire format for forward compatibility but have **no effect** in v1beta1:
-
-| RPC | Field | Status |
-|:----|:------|:-------|
-| `GetContext` | `phase`, `work_item_id`, `render_format`, `include_debug_sections` | Deprecated. Do not alter query behavior |
-| `ValidateScope` | `role`, `phase` | Deprecated. Only `required_scopes` / `provided_scopes` are evaluated |
-| `RehydrateSession` | `include_timeline`, `include_summaries` | Reserved for future use. `timeline_window` is echoed but does not filter |
-| `UpdateContext` | `persist_snapshot` | Accepted but not acted upon — snapshot persistence is owned by `RehydrateSession` |
 
 ## Known Limitations
 

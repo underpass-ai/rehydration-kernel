@@ -1,4 +1,3 @@
-#![allow(deprecated)]
 #![cfg(feature = "container-tests")]
 
 use std::error::Error;
@@ -18,7 +17,6 @@ use rehydration_tests_shared::seed::kernel_e2e_data::{
 /// Both paths exercise real Neo4j graph reads and real Valkey MGET/GET detail loads.
 /// The timing breakdown in the proto response shows the per-phase durations.
 #[tokio::test]
-#[allow(deprecated)]
 async fn p1_performance_measurement_multi_role_vs_repeated_single_role()
 -> Result<(), Box<dyn Error + Send + Sync>> {
     let fixture = TestFixture::builder()
@@ -48,8 +46,6 @@ async fn p1_performance_measurement_multi_role_vs_repeated_single_role()
             .rehydrate_session(rehydration_proto::v1beta1::RehydrateSessionRequest {
                 root_node_id: ROOT_NODE_ID.to_string(),
                 roles: vec![DEVELOPER_ROLE.to_string()],
-                include_timeline: false,
-                include_summaries: false,
                 persist_snapshot: false,
                 timeline_window: 0,
                 snapshot_ttl: None,
@@ -64,8 +60,6 @@ async fn p1_performance_measurement_multi_role_vs_repeated_single_role()
                 .rehydrate_session(rehydration_proto::v1beta1::RehydrateSessionRequest {
                     root_node_id: ROOT_NODE_ID.to_string(),
                     roles: vec![role.clone()],
-                    include_timeline: false,
-                    include_summaries: false,
                     persist_snapshot: false,
                     timeline_window: 0,
                     snapshot_ttl: None,
@@ -82,8 +76,6 @@ async fn p1_performance_measurement_multi_role_vs_repeated_single_role()
             .rehydrate_session(rehydration_proto::v1beta1::RehydrateSessionRequest {
                 root_node_id: ROOT_NODE_ID.to_string(),
                 roles: roles.clone(),
-                include_timeline: false,
-                include_summaries: false,
                 persist_snapshot: false,
                 timeline_window: 0,
                 snapshot_ttl: None,

@@ -10,7 +10,7 @@ use rehydration_domain::{
     NodeNeighborhood, PortError, RehydrationBundle, SnapshotSaveOptions, SnapshotStore,
 };
 use rehydration_proto::v1beta1::{
-    BundleRenderFormat, GetContextRequest, Phase,
+    GetContextRequest,
     context_query_service_client::ContextQueryServiceClient,
 };
 use rehydration_observability::quality_observers::NoopQualityObserver;
@@ -405,7 +405,6 @@ async fn connect_tls_channel(
     }
 }
 
-#[allow(deprecated)] // proto fields phase, work_item_id, render_format, include_debug_sections
 async fn get_context(
     client: &mut ContextQueryServiceClient<Channel>,
 ) -> Result<tonic::Response<rehydration_proto::v1beta1::GetContextResponse>, tonic::Status> {
@@ -413,12 +412,8 @@ async fn get_context(
         .get_context(GetContextRequest {
             root_node_id: "case-123".to_string(),
             role: "developer".to_string(),
-            phase: Phase::Build as i32,
-            work_item_id: String::new(),
             token_budget: 1024,
             requested_scopes: vec!["graph".to_string()],
-            render_format: BundleRenderFormat::Structured as i32,
-            include_debug_sections: false,
             depth: 0,
             max_tier: 0,
             rehydration_mode: 0,

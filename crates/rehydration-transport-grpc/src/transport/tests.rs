@@ -13,8 +13,8 @@ use rehydration_domain::{
     RelationExplanation, RelationSemanticClass, Role, SnapshotSaveOptions, SnapshotStore,
 };
 use rehydration_proto::v1beta1::{
-    BundleRenderFormat, ContextChange, ContextChangeOperation, GetContextPathRequest,
-    GetContextRequest, GetNodeDetailRequest, Phase, ResolutionTier, UpdateContextRequest,
+    ContextChange, ContextChangeOperation, GetContextPathRequest,
+    GetContextRequest, GetNodeDetailRequest, ResolutionTier, UpdateContextRequest,
     ValidateScopeRequest, context_command_service_server::ContextCommandService,
     context_query_service_server::ContextQueryService,
 };
@@ -322,7 +322,6 @@ async fn grpc_server_application_accessors_return_callable_services() {
 }
 
 #[tokio::test]
-#[allow(deprecated)] // proto fields phase, work_item_id, render_format, include_debug_sections
 async fn query_service_returns_rendered_context() {
     let application = Arc::new(QueryApplicationService::new(
         Arc::new(EmptyGraphNeighborhoodReader),
@@ -336,12 +335,8 @@ async fn query_service_returns_rendered_context() {
         .get_context(Request::new(GetContextRequest {
             root_node_id: "node-123".to_string(),
             role: "developer".to_string(),
-            phase: Phase::Build as i32,
-            work_item_id: String::new(),
             token_budget: 1024,
             requested_scopes: vec!["graph".to_string()],
-            render_format: BundleRenderFormat::Structured as i32,
-            include_debug_sections: false,
             depth: 0,
             max_tier: 0,
             rehydration_mode: 0,
@@ -352,7 +347,6 @@ async fn query_service_returns_rendered_context() {
 }
 
 #[tokio::test]
-#[allow(deprecated)] // proto fields phase, work_item_id, render_format, include_debug_sections
 async fn query_service_forwards_requested_depth_to_application() {
     let depths = Arc::new(Mutex::new(Vec::new()));
     let application = Arc::new(QueryApplicationService::new(
@@ -369,12 +363,8 @@ async fn query_service_forwards_requested_depth_to_application() {
         .get_context(Request::new(GetContextRequest {
             root_node_id: "node-123".to_string(),
             role: "developer".to_string(),
-            phase: Phase::Build as i32,
-            work_item_id: String::new(),
             token_budget: 1024,
             requested_scopes: vec!["graph".to_string()],
-            render_format: BundleRenderFormat::Structured as i32,
-            include_debug_sections: false,
             depth: 17,
             max_tier: 0,
             rehydration_mode: 0,
@@ -549,7 +539,6 @@ async fn query_service_returns_not_found_for_missing_node_detail_target() {
 }
 
 #[tokio::test]
-#[allow(deprecated)] // proto fields role, phase on ValidateScopeRequest
 async fn query_service_validates_scope_diffs() {
     let application = Arc::new(QueryApplicationService::new(
         Arc::new(EmptyGraphNeighborhoodReader),
@@ -561,8 +550,6 @@ async fn query_service_validates_scope_diffs() {
 
     let response = service
         .validate_scope(Request::new(ValidateScopeRequest {
-            role: "developer".to_string(),
-            phase: Phase::Build as i32,
             required_scopes: vec!["graph".to_string()],
             provided_scopes: vec!["details".to_string()],
         }))

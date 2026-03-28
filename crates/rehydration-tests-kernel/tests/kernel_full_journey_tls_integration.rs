@@ -1,4 +1,3 @@
-#![allow(deprecated)]
 #![cfg(feature = "container-tests")]
 
 mod support;
@@ -7,8 +6,8 @@ use std::error::Error;
 
 use prost_types::Duration;
 use rehydration_proto::v1beta1::{
-    BundleRenderFormat, CommandMetadata, ContextChange, ContextChangeOperation, GetContextRequest,
-    GetNodeDetailRequest, Phase, UpdateContextRequest,
+    CommandMetadata, ContextChange, ContextChangeOperation, GetContextRequest,
+    GetNodeDetailRequest, UpdateContextRequest,
 };
 use rehydration_tests_shared::seed::kernel_data::DEVELOPER_ROLE;
 use rehydration_tests_shared::seed::kernel_e2e_data::{
@@ -41,12 +40,8 @@ async fn kernel_full_journey_supports_tls_across_query_and_command_surfaces()
             .get_context(GetContextRequest {
                 root_node_id: ROOT_NODE_ID.to_string(),
                 role: DEVELOPER_ROLE.to_string(),
-                phase: Phase::Build as i32,
-                work_item_id: TASK_ID.to_string(),
                 token_budget: 8192,
                 requested_scopes: vec!["graph".to_string(), "decisions".to_string()],
-                render_format: BundleRenderFormat::Structured as i32,
-                include_debug_sections: true,
                 depth: 1,
                 max_tier: 0,
                 rehydration_mode: 0,
@@ -88,12 +83,8 @@ async fn kernel_full_journey_supports_tls_across_query_and_command_surfaces()
             .get_context(GetContextRequest {
                 root_node_id: ROOT_NODE_ID.to_string(),
                 role: DEVELOPER_ROLE.to_string(),
-                phase: Phase::Build as i32,
-                work_item_id: TASK_ID.to_string(),
                 token_budget: 8192,
                 requested_scopes: vec!["graph".to_string(), "decisions".to_string()],
-                render_format: BundleRenderFormat::Structured as i32,
-                include_debug_sections: true,
                 depth: 3,
                 max_tier: 0,
                 rehydration_mode: 0,
@@ -148,12 +139,8 @@ async fn kernel_full_journey_supports_tls_across_query_and_command_surfaces()
             .get_context(GetContextRequest {
                 root_node_id: EXPLORER_WORKSTREAM_ID.to_string(),
                 role: DEVELOPER_ROLE.to_string(),
-                phase: Phase::Build as i32,
-                work_item_id: String::new(),
                 token_budget: 8192,
                 requested_scopes: vec!["graph".to_string(), "details".to_string()],
-                render_format: BundleRenderFormat::Structured as i32,
-                include_debug_sections: true,
                 depth: 2,
                 max_tier: 0,
                 rehydration_mode: 0,
@@ -180,8 +167,6 @@ async fn kernel_full_journey_supports_tls_across_query_and_command_surfaces()
             .rehydrate_session(rehydration_proto::v1beta1::RehydrateSessionRequest {
                 root_node_id: ROOT_NODE_ID.to_string(),
                 roles: vec![DEVELOPER_ROLE.to_string()],
-                include_timeline: true,
-                include_summaries: true,
                 persist_snapshot: true,
                 timeline_window: 11,
                 snapshot_ttl: Some(Duration { seconds: 600, nanos: 0 }),
@@ -205,8 +190,6 @@ async fn kernel_full_journey_supports_tls_across_query_and_command_surfaces()
             .rehydrate_session(rehydration_proto::v1beta1::RehydrateSessionRequest {
                 root_node_id: EXPLORER_LEAF_ID.to_string(),
                 roles: vec![DEVELOPER_ROLE.to_string()],
-                include_timeline: false,
-                include_summaries: true,
                 persist_snapshot: false,
                 timeline_window: 0,
                 snapshot_ttl: None,

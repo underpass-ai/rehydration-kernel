@@ -33,7 +33,6 @@ pub const TASK_ROLE: &str = "DEV";
 pub const TASK_PRIORITY: &str = "3";
 
 pub const DEVELOPER_ROLE: &str = "developer";
-pub const BUILD_PHASE: &str = "BUILD";
 
 pub const ROOT_DETAIL: &str = "Extended story detail";
 pub const ROOT_DETAIL_HASH: &str = "hash-story";

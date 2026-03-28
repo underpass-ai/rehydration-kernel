@@ -10,14 +10,14 @@ use rehydration_application::{ProjectionApplicationService, RoutingProjectionWri
 use rehydration_config::{GrpcTlsConfig, GrpcTlsMode};
 use rehydration_domain::ProjectionWriter;
 use rehydration_proto::v1beta1::{
-    BundleRenderFormat, GetContextRequest, Phase,
+    GetContextRequest,
     context_command_service_client::ContextCommandServiceClient,
     context_query_service_client::ContextQueryServiceClient,
 };
 use rehydration_testkit::{InMemoryProcessedEventStore, InMemoryProjectionCheckpointStore};
 use rehydration_tests_shared::containers::NEO4J_PASSWORD;
 use rehydration_tests_shared::debug::{debug_log, debug_log_value};
-use rehydration_tests_shared::seed::kernel_data::{BUILD_PHASE, DEVELOPER_ROLE};
+use rehydration_tests_shared::seed::kernel_data::DEVELOPER_ROLE;
 use rehydration_tests_shared::tls::grpc::{RunningTlsGrpcServer, stop_server};
 use rehydration_tests_shared::tls::material::TlsMaterial;
 use rehydration_tests_shared::tls::nats::{
@@ -213,12 +213,8 @@ async fn wait_for_context_ready(
             .get_context(GetContextRequest {
                 root_node_id: root_node_id.to_string(),
                 role: DEVELOPER_ROLE.to_string(),
-                phase: Phase::Build as i32,
-                work_item_id: focus_node_id.to_string(),
                 token_budget: 1200,
                 requested_scopes: vec!["implementation".to_string()],
-                render_format: BundleRenderFormat::Structured as i32,
-                include_debug_sections: false,
                 depth: 0,
                 max_tier: 0,
                 rehydration_mode: 0,
@@ -249,7 +245,7 @@ async fn wait_for_context_ready(
 
     Err(last_error.unwrap_or_else(|| {
         format!(
-            "tls context projection for phase {BUILD_PHASE} did not become ready before timeout"
+            "tls context projection did not become ready before timeout"
         )
         .into()
     }))

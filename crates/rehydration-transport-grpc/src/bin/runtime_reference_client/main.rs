@@ -22,7 +22,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             "root_node_id": request.root_node_id,
             "root_node_kind": request.root_node_kind,
             "role": request.role,
-            "phase": format!("{:?}", request.phase),
             "focus_node_kind": request.focus_node_kind,
             "requested_scopes": request.requested_scopes,
             "token_budget": request.token_budget,

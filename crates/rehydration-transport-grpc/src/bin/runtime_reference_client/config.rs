@@ -1,7 +1,6 @@
 use std::env;
 use std::io;
 
-use rehydration_proto::v1beta1::{BundleRenderFormat, Phase};
 use rehydration_transport_grpc::agentic_reference::{AgentRequest, SUMMARY_PATH};
 
 #[derive(Debug)]
@@ -25,7 +24,6 @@ impl AppConfig {
         let root_node_id = required_value(&lookup, "ROOT_NODE_ID")?;
         let root_node_kind = lookup_or_default(&lookup, "ROOT_NODE_KIND", "workspace");
         let role = lookup_or_default(&lookup, "AGENT_ROLE", "implementer");
-        let phase = parse_phase(&lookup_or_default(&lookup, "AGENT_PHASE", "build"))?;
         let focus_node_kind = lookup_or_default(&lookup, "AGENT_FOCUS_NODE_KIND", "work_item");
         let requested_scopes = parse_scopes(lookup_or_default(
             &lookup,
@@ -42,12 +40,9 @@ impl AppConfig {
                 root_node_id,
                 root_node_kind,
                 role,
-                phase,
                 focus_node_kind,
                 requested_scopes,
                 token_budget,
-                render_format: BundleRenderFormat::LlmPrompt,
-                include_debug_sections: false,
                 summary_path,
             },
         })
@@ -96,22 +91,6 @@ fn parse_scopes(value: String) -> Vec<String> {
         .collect()
 }
 
-fn parse_phase(value: &str) -> io::Result<Phase> {
-    match value.to_ascii_lowercase().as_str() {
-        "unspecified" => Ok(Phase::Unspecified),
-        "discovery" => Ok(Phase::Discovery),
-        "planning" => Ok(Phase::Planning),
-        "design" => Ok(Phase::Design),
-        "build" => Ok(Phase::Build),
-        "validate" => Ok(Phase::Validate),
-        "release" => Ok(Phase::Release),
-        _ => Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            format!("unsupported AGENT_PHASE `{value}`"),
-        )),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
@@ -147,7 +126,6 @@ mod tests {
                 [
                     ("ROOT_NODE_KIND", "claim"),
                     ("AGENT_ROLE", "reviewer"),
-                    ("AGENT_PHASE", "validate"),
                     ("AGENT_FOCUS_NODE_KIND", "incident"),
                     ("AGENT_SCOPES", "triage,summary"),
                     ("AGENT_TOKEN_BUDGET", "900"),
@@ -163,7 +141,6 @@ mod tests {
 
         assert_eq!(config.request.root_node_kind, "claim");
         assert_eq!(config.request.role, "reviewer");
-        assert_eq!(format!("{:?}", config.request.phase), "Validate");
         assert_eq!(config.request.focus_node_kind, "incident");
         assert_eq!(
             config.request.requested_scopes,
@@ -171,19 +148,6 @@ mod tests {
         );
         assert_eq!(config.request.token_budget, 900);
         assert_eq!(config.request.summary_path, "notes/context.md");
-    }
-
-    #[test]
-    fn from_env_rejects_invalid_phase() {
-        let env = required_env()
-            .into_iter()
-            .chain([("AGENT_PHASE".to_string(), "ship-it".to_string())])
-            .collect::<BTreeMap<_, _>>();
-
-        let error = AppConfig::from_lookup(|key| env.get(key).cloned())
-            .expect_err("invalid phase should fail");
-
-        assert!(error.to_string().contains("unsupported AGENT_PHASE"));
     }
 
     fn required_env() -> BTreeMap<String, String> {

@@ -1,11 +1,9 @@
 #![cfg(feature = "container-tests")]
-#![allow(deprecated)]
-
 use std::error::Error;
 use std::time::{Duration, Instant};
 
 use rehydration_proto::v1beta1::{
-    BundleRenderFormat, GetContextRequest, Phase, RenderedContext, ResolutionTier,
+    GetContextRequest, RenderedContext, ResolutionTier,
 };
 use rehydration_testkit::{
     Domain, EvaluationGroundTruth, GraphSeedConfig, LlmEvaluatorConfig, NoiseMode, RelationMix,
@@ -199,15 +197,11 @@ async fn vllm_benchmark_across_scales_domains_and_variants()
                 .get_context(GetContextRequest {
                     root_node_id: seed.root.node_id.clone(),
                     role: BENCHMARK_ROLE.to_string(),
-                    phase: Phase::Build as i32,
-                    work_item_id: target_node_id.clone(),
                     token_budget: std::env::var("BENCHMARK_TOKEN_BUDGET")
                         .ok()
                         .and_then(|v| v.parse().ok())
                         .unwrap_or(4096),
                     requested_scopes: vec![],
-                    render_format: BundleRenderFormat::Structured as i32,
-                    include_debug_sections: false,
                     depth: config.chain_length as u32,
                     max_tier: 0,
                     rehydration_mode: 0,

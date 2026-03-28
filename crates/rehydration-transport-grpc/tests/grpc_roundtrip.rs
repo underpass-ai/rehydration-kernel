@@ -7,8 +7,8 @@ use rehydration_domain::{
     NodeNeighborhood, PortError, RehydrationBundle, SnapshotSaveOptions, SnapshotStore,
 };
 use rehydration_proto::v1beta1::{
-    BundleRenderFormat, ContextChange, ContextChangeOperation, GetContextPathRequest,
-    GetContextRequest, Phase, UpdateContextRequest,
+    ContextChange, ContextChangeOperation, GetContextPathRequest,
+    GetContextRequest, UpdateContextRequest,
     context_command_service_client::ContextCommandServiceClient,
     context_query_service_client::ContextQueryServiceClient,
 };
@@ -76,7 +76,6 @@ impl SnapshotStore for NoopSnapshotStore {
 }
 
 #[tokio::test]
-#[allow(deprecated)] // proto fields phase, work_item_id, render_format, include_debug_sections
 async fn grpc_server_supports_query_and_command_roundtrip() {
     let listener = match TcpListener::bind("127.0.0.1:0").await {
         Ok(listener) => listener,
@@ -120,12 +119,8 @@ async fn grpc_server_supports_query_and_command_roundtrip() {
         .get_context(GetContextRequest {
             root_node_id: "case-123".to_string(),
             role: "developer".to_string(),
-            phase: Phase::Build as i32,
-            work_item_id: String::new(),
             token_budget: 1024,
             requested_scopes: vec!["decisions".to_string()],
-            render_format: BundleRenderFormat::Structured as i32,
-            include_debug_sections: false,
             depth: 0,
             max_tier: 0,
             rehydration_mode: 0,

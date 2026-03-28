@@ -1,13 +1,13 @@
 use std::error::Error;
 
 use rehydration_proto::v1beta1::{
-    Phase, ValidateScopeRequest, context_query_service_client::ContextQueryServiceClient,
+    ValidateScopeRequest, context_query_service_client::ContextQueryServiceClient,
 };
 use rehydration_tests_shared::empty_ports::{
     EmptyGraphNeighborhoodReader, EmptyNodeDetailReader, NoopSnapshotStore,
 };
 use rehydration_tests_shared::seed::kernel_data::{
-    DEVELOPER_ROLE, allowed_validate_scope_request_scopes, rejected_validate_scope_request_scopes,
+    allowed_validate_scope_request_scopes, rejected_validate_scope_request_scopes,
 };
 use rehydration_tests_shared::server::{RunningGrpcServer, stop_server};
 
@@ -30,8 +30,6 @@ async fn grpc_validate_scope_allowed_matches_v1beta1_golden_contract()
     let result = async {
         let response = client
             .validate_scope(ValidateScopeRequest {
-                role: DEVELOPER_ROLE.to_string(),
-                phase: Phase::Build as i32,
                 required_scopes: allowed_validate_scope_request_scopes(),
                 provided_scopes: allowed_validate_scope_request_scopes(),
             })
@@ -62,8 +60,6 @@ async fn grpc_validate_scope_rejected_matches_v1beta1_golden_contract()
     let result = async {
         let response = client
             .validate_scope(ValidateScopeRequest {
-                role: DEVELOPER_ROLE.to_string(),
-                phase: Phase::Build as i32,
                 required_scopes: allowed_validate_scope_request_scopes(),
                 provided_scopes: rejected_validate_scope_request_scopes(),
             })

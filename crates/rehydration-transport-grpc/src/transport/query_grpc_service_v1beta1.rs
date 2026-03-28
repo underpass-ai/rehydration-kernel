@@ -298,9 +298,6 @@ where
             persist_snapshot = request.persist_snapshot,
             "handling rehydrate_session"
         );
-        // NOTE: `request.include_timeline` and `request.include_summaries` are
-        // proto fields reserved for future use. They are intentionally not mapped
-        // to application-layer queries in v1beta1.
         let snapshot_ttl_seconds = match (request.persist_snapshot, request.snapshot_ttl) {
             (true, None) => {
                 return Err(Status::invalid_argument(

@@ -7,27 +7,11 @@ import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/underpass-ai/rehydration-kernel/api/gen/go/underpass/rehydration/kernel/v1beta1;rehydrationkernelv1beta1";
 
-enum Phase {
-  PHASE_UNSPECIFIED = 0;
-  PHASE_DISCOVERY = 1;
-  PHASE_PLANNING = 2;
-  PHASE_DESIGN = 3;
-  PHASE_BUILD = 4;
-  PHASE_VALIDATE = 5;
-  PHASE_RELEASE = 6;
-}
-
 enum BundleRenderFormat {
   BUNDLE_RENDER_FORMAT_UNSPECIFIED = 0;
   BUNDLE_RENDER_FORMAT_STRUCTURED = 1;
   BUNDLE_RENDER_FORMAT_LLM_PROMPT = 2;
   BUNDLE_RENDER_FORMAT_DEBUG_JSON = 3;
-}
-
-enum ReplayMode {
-  REPLAY_MODE_UNSPECIFIED = 0;
-  REPLAY_MODE_DRY_RUN = 1;
-  REPLAY_MODE_REBUILD = 2;
 }
 
 enum GraphRelationshipSemanticClass {

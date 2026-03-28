@@ -14,7 +14,7 @@ use rehydration_domain::{
     RehydrationBundle, SnapshotStore,
 };
 use rehydration_proto::v1beta1::{
-    BundleRenderFormat, FILE_DESCRIPTOR_SET, GetContextRequest, Phase,
+    FILE_DESCRIPTOR_SET, GetContextRequest,
     context_command_service_server::ContextCommandServiceServer,
     context_query_service_server::ContextQueryServiceServer,
 };
@@ -84,17 +84,12 @@ where
         )
     }
 
-    #[allow(deprecated)] // proto fields phase, work_item_id, render_format, include_debug_sections
     pub fn bootstrap_request(&self) -> GetContextRequest {
         GetContextRequest {
             root_node_id: "bootstrap-node".to_string(),
             role: "system".to_string(),
-            phase: Phase::Build as i32,
-            work_item_id: String::new(),
             token_budget: 4096,
             requested_scopes: Vec::new(),
-            render_format: BundleRenderFormat::Structured as i32,
-            include_debug_sections: false,
             depth: DEFAULT_NATIVE_GRAPH_TRAVERSAL_DEPTH,
             max_tier: 0,
             rehydration_mode: 0,

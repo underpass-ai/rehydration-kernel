@@ -1,12 +1,11 @@
-#![allow(deprecated)]
 #![cfg(feature = "container-tests")]
 
 use std::error::Error;
 
 use prost_types::Duration;
 use rehydration_proto::v1beta1::{
-    BundleRenderFormat, CommandMetadata, ContextChange, ContextChangeOperation, GetContextRequest,
-    GetNodeDetailRequest, Phase, UpdateContextRequest,
+    CommandMetadata, ContextChange, ContextChangeOperation, GetContextRequest,
+    GetNodeDetailRequest, UpdateContextRequest,
 };
 use rehydration_tests_shared::fixtures::TestFixture;
 use rehydration_tests_shared::ports::ClosureSeed;
@@ -23,7 +22,6 @@ use rehydration_tests_shared::seed::kernel_e2e_data::{
 };
 
 #[tokio::test]
-#[allow(deprecated)]
 async fn kernel_full_journey_covers_projection_query_and_command()
 -> Result<(), Box<dyn Error + Send + Sync>> {
     let fixture = TestFixture::builder()
@@ -48,12 +46,8 @@ async fn kernel_full_journey_covers_projection_query_and_command()
             .get_context(GetContextRequest {
                 root_node_id: ROOT_NODE_ID.to_string(),
                 role: DEVELOPER_ROLE.to_string(),
-                phase: Phase::Build as i32,
-                work_item_id: TASK_ID.to_string(),
                 token_budget: 8192,
                 requested_scopes: vec!["graph".to_string(), "decisions".to_string()],
-                render_format: BundleRenderFormat::Structured as i32,
-                include_debug_sections: true,
                 depth: 1,
                 max_tier: 0,
                 rehydration_mode: 0,
@@ -95,12 +89,8 @@ async fn kernel_full_journey_covers_projection_query_and_command()
             .get_context(GetContextRequest {
                 root_node_id: ROOT_NODE_ID.to_string(),
                 role: DEVELOPER_ROLE.to_string(),
-                phase: Phase::Build as i32,
-                work_item_id: TASK_ID.to_string(),
                 token_budget: 8192,
                 requested_scopes: vec!["graph".to_string(), "decisions".to_string()],
-                render_format: BundleRenderFormat::Structured as i32,
-                include_debug_sections: true,
                 depth: 3,
                 max_tier: 0,
                 rehydration_mode: 0,
@@ -243,12 +233,8 @@ async fn kernel_full_journey_covers_projection_query_and_command()
             .get_context(GetContextRequest {
                 root_node_id: EXPLORER_WORKSTREAM_ID.to_string(),
                 role: DEVELOPER_ROLE.to_string(),
-                phase: Phase::Build as i32,
-                work_item_id: String::new(),
                 token_budget: 8192,
                 requested_scopes: vec!["graph".to_string(), "details".to_string()],
-                render_format: BundleRenderFormat::Structured as i32,
-                include_debug_sections: true,
                 depth: 2,
                 max_tier: 0,
                 rehydration_mode: 0,
@@ -288,8 +274,6 @@ async fn kernel_full_journey_covers_projection_query_and_command()
             .rehydrate_session(rehydration_proto::v1beta1::RehydrateSessionRequest {
                 root_node_id: ROOT_NODE_ID.to_string(),
                 roles: vec![DEVELOPER_ROLE.to_string()],
-                include_timeline: true,
-                include_summaries: true,
                 persist_snapshot: true,
                 timeline_window: 11,
                 snapshot_ttl: Some(Duration {
@@ -340,8 +324,6 @@ async fn kernel_full_journey_covers_projection_query_and_command()
             .rehydrate_session(rehydration_proto::v1beta1::RehydrateSessionRequest {
                 root_node_id: EXPLORER_LEAF_ID.to_string(),
                 roles: vec![DEVELOPER_ROLE.to_string()],
-                include_timeline: false,
-                include_summaries: true,
                 persist_snapshot: false,
                 timeline_window: 0,
                 snapshot_ttl: None,
@@ -368,7 +350,6 @@ async fn kernel_full_journey_covers_projection_query_and_command()
         );
 
         // -- Multi-role rehydration: shared graph read, per-role bundles --
-        #[allow(deprecated)]
         let multi_role_rehydrate = query_client
             .rehydrate_session(rehydration_proto::v1beta1::RehydrateSessionRequest {
                 root_node_id: ROOT_NODE_ID.to_string(),
@@ -377,8 +358,6 @@ async fn kernel_full_journey_covers_projection_query_and_command()
                     "reviewer".to_string(),
                     "ops".to_string(),
                 ],
-                include_timeline: false,
-                include_summaries: false,
                 persist_snapshot: false,
                 timeline_window: 0,
                 snapshot_ttl: None,

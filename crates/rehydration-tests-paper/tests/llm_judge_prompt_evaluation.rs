@@ -1,6 +1,4 @@
 #![cfg(feature = "container-tests")]
-#![allow(deprecated)]
-
 use std::error::Error;
 use std::fs;
 use std::io::Write;
@@ -8,7 +6,7 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use rehydration_proto::v1beta1::{
-    BundleRenderFormat, GetContextRequest, Phase, RenderedContext, ResolutionTier,
+    GetContextRequest, RenderedContext, ResolutionTier,
 };
 use rehydration_testkit::{
     Domain, EvaluationGroundTruth, GraphSeedConfig, LlmEvaluatorConfig, LlmProvider,
@@ -603,12 +601,8 @@ async fn judge_prompt_evaluation_across_all_use_cases()
                 let response = qc.get_context(GetContextRequest {
                     root_node_id: root_id.clone(),
                     role: BENCHMARK_ROLE.to_string(),
-                    phase: Phase::Build as i32,
-                    work_item_id: focus_id.clone(),
                     token_budget: 4096,
                     requested_scopes: vec![],
-                    render_format: BundleRenderFormat::Structured as i32,
-                    include_debug_sections: false,
                     depth: config.chain_length as u32,
                     max_tier: 0,
                     rehydration_mode: 0,
@@ -1039,12 +1033,8 @@ async fn wait_for_context(
         if let Ok(resp) = qc.get_context(GetContextRequest {
             root_node_id: root_node_id.to_string(),
             role: BENCHMARK_ROLE.to_string(),
-            phase: Phase::Build as i32,
-            work_item_id: focus_node_id.to_string(),
             token_budget: 1200,
             requested_scopes: vec!["implementation".to_string()],
-            render_format: BundleRenderFormat::Structured as i32,
-            include_debug_sections: false,
             depth: 0,
             max_tier: 0,
             rehydration_mode: 0,

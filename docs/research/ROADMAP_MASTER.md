@@ -56,6 +56,11 @@ Single source of truth for kernel maturity, technical debt, and next steps.
 
 ## Pending — Hardening (from external review 2026-03-25)
 
+> **Snapshot-5 analysis (2026-03-28)** confirmed: N+1 batch loading and per-role
+> recomputation are resolved. Architecture and command runtime are **green**.
+> Main remaining debt is documentary/contractual, not structural.
+> New items added: P0 beta-status.md drift, P2 README claim, query field pruning decision.
+
 ### P0 — Documentation drift
 
 Active docs still reference `ContextAdminService` and admin path, removed in PR #57.
@@ -64,21 +69,46 @@ Active docs still reference `ContextAdminService` and admin path, removed in PR 
 - [x] `README.md:34` — remove `admin` from `projection -> query -> compatibility -> command -> admin` journey
 - [x] `docs/migration/kernel-node-centric-integration-contract.md:30` — remove `ContextAdminService` from services list
 
-### P0/P1 — Query contract overexpression
+### P0 — beta-status.md factual drift (from snapshot-5 analysis 2026-03-28)
 
-Proto fields accepted but ignored in runtime. Marked `[deprecated = true]` in proto.
+`docs/beta-status.md` still references `persist_snapshot` as accepted-but-ignored in
+`UpdateContext`, and lists it in the ignored-fields table. That field was **removed**
+from `command.proto` — these are now factual errors.
 
-- [x] `GetContext`: `phase`, `work_item_id`, `render_format`, `include_debug_sections` — deprecated in proto
-- [x] `ValidateScope`: `role`, `phase` — deprecated in proto
-- [x] `RehydrateSession`: `include_timeline`, `include_summaries` — deprecated in proto
+- [x] Remove `persist_snapshot` from UpdateContext description in beta-status.md
+- [x] Remove `persist_snapshot` row from the ignored-fields table in beta-status.md
+- [x] Grep confirmed: remaining `persist_snapshot` refs are in RehydrateSession (correct — field exists in query.proto)
+- [x] Bonus: updated Path to v1 table (OTLP mTLS → Done, Grafana anonymous → Done, Neo4j → Partial)
 
-Documented in `beta-status.md`. Fields remain in the wire format for backward compatibility but are explicitly deprecated.
+### P0/P1 — Query contract overexpression (done)
+
+8 deprecated proto fields pruned from v1beta1 (Option A — no consumers exist).
+Field numbers reserved in proto. `Phase` and `ReplayMode` enums removed (dead code).
+`BundleRenderFormat` retained (used in `RenderedContext.format`).
+
+- [x] `GetContext`: removed `phase`, `work_item_id`, `render_format`, `include_debug_sections`
+- [x] `ValidateScope`: removed `role`, `phase`
+- [x] `RehydrateSession`: removed `include_timeline`, `include_summaries`
+- [x] Proto: `reserved` field numbers + names on all three messages
+- [x] Rust: all transport, agentic reference, reference client, test fixtures cleaned
+- [x] `Phase` enum removed from `common.proto` (dead after field pruning)
+- [x] `ReplayMode` enum removed from `common.proto` (never referenced anywhere)
+- [x] clippy --tests -D warnings: zero warnings
 
 ### P1 — Performance hotspots
 
 - [x] Batch `NodeDetailReader`: `load_node_details_batch()` port method + Valkey MGET adapter. Replaces N+1 sequential reads with a single multi-key fetch.
 - [x] Cache graph reads across roles in `RehydrateSession`: `load_bundles_for_roles()` loads graph + details once, builds per-role bundles from shared data.
 - [x] Performance observability: `QueryTimingBreakdown` (stdlib-only, no infra deps in application layer) captures graph_load / detail_load / bundle_assembly durations. Proto `QueryTimingBreakdown` message on `RehydrateSessionResponse`. OTel histograms: `rehydration.session.{graph_load,detail_load,bundle_assembly}.duration`, `role_count`, `batch_size`. Paper metrics extended with `graph_load_ms`, `detail_load_ms`, `bundle_assembly_ms`, `detail_batch_size`.
+
+### P2 — README benchmark claim (from snapshot-5 analysis 2026-03-28)
+
+README describes the LLM E2E benchmark as "the primary validation of the kernel's value".
+Given current benchmark methodology debt, this overclaims. Soften to reflect directional
+evidence rather than definitive validation.
+
+- [ ] Replace "primary validation" with "primary exploratory validation artifact" or "current empirical validation harness"
+- [ ] Review any other README claims that assume benchmark methodology is complete
 
 ### P2 — Planner enrichment
 
@@ -96,6 +126,22 @@ Documented in `beta-status.md`. Fields remain in the wire format for backward co
 | Split transport tests | transport/tests.rs | 902 | Separate files by feature (tests only, no prod impact) |
 | Extract RESP protocol | adapter-valkey/io.rs | 663 | Shared module for RESP encoding |
 | Extract TLS config | transport/grpc_server.rs | 222 | Separate TLS module |
+
+### P1 — async-nats version conflict in TLS test fixtures
+
+The `async-nats` upgrade (0.39 → 0.46, commit `ee16469`) left TLS integration test
+fixtures using the old `async_nats::Client` type while the rest of the codebase uses
+0.46's `async_nats::client::Client`. Two container-test targets fail to compile with
+`--all-features`:
+
+- `kernel_full_journey_tls_integration.rs` — `publish_kernel_e2e_projection_events(&publisher)`
+- `support/kernel_tls_fixture.rs` — `seed_projection(publisher.clone())`
+
+Fix: align these fixtures to async-nats 0.46 API.
+
+- [ ] Update `kernel_tls_fixture.rs` to use async-nats 0.46 `Client`
+- [ ] Update `kernel_full_journey_tls_integration.rs` publisher usage
+- [ ] Verify `cargo check --workspace --all-targets --all-features` passes clean
 
 ### Coverage gaps (accepted, documented)
 
@@ -313,6 +359,22 @@ End-to-end: `source_kind`, `source_agent`, `observed_at` on nodes.
 - [ ] Provenance on relationships (BundleRelationship + GraphRelationship)
 - [ ] `derived_from`, `effective_at`, `staleness` (computed)
 - [ ] `supports`, `contradicts` semantic classes
+
+### Phase-aware rehydration (future — concept valid, implementation pending)
+
+Agent lifecycle phases (Discovery, Planning, Design, Build, Validate, Release) should
+influence what context gets rehydrated and how it is prioritized. The concept was part
+of the original proto design (commit `11479f5`, 2026-03-07) but was never implemented
+— the `Phase` enum carried through v1alpha1 → v1beta1 as a no-op and was pruned in
+the contract cleanup (2026-03-28).
+
+The idea remains sound: a Build-phase agent needs implementation detail and dependency
+context; a Discovery-phase agent needs broader exploratory context with less depth.
+
+- [ ] Define phase-specific salience profiles (which semantic classes, relation types, and detail levels each phase prioritizes)
+- [ ] Add `phase` back to `GetContextRequest` when implementation is ready (new field number, not reusing reserved 3)
+- [ ] Phase × RehydrationMode interaction: phase may influence the mode heuristic (e.g., Discovery → ReasonPreserving even under pressure)
+- [ ] Phase-aware planner: feed phase signal into `mode_heuristic.rs` alongside token pressure, causal density, endpoint type
 
 ### Associative rehydration (low priority, high complexity)
 Move beyond root + fixed depth:

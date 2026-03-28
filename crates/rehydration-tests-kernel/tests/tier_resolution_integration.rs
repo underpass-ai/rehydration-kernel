@@ -1,4 +1,3 @@
-#![allow(deprecated)]
 #![cfg(feature = "container-tests")]
 
 //! Integration tests for multi-resolution tiers (L0/L1/L2).
@@ -9,7 +8,7 @@
 use std::error::Error;
 
 use rehydration_proto::v1beta1::{
-    BundleRenderFormat, GetContextRequest, Phase, ResolutionTier,
+    GetContextRequest, ResolutionTier,
     context_query_service_client::ContextQueryServiceClient,
 };
 use rehydration_tests_shared::fixtures::TestFixture;
@@ -50,12 +49,8 @@ async fn get_context_with_max_tier(
         .get_context(GetContextRequest {
             root_node_id: ROOT_NODE_ID.to_string(),
             role: "implementer".to_string(),
-            phase: Phase::Build as i32,
-            work_item_id: FAILURE_FOCUS_NODE_ID.to_string(),
             token_budget: TOKEN_BUDGET,
             requested_scopes: vec![],
-            render_format: BundleRenderFormat::Structured as i32,
-            include_debug_sections: false,
             depth: 3,
             max_tier,
             rehydration_mode: 0,

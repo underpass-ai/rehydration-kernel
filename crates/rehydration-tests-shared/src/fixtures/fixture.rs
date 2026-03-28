@@ -1,8 +1,7 @@
 use std::time::Duration;
 
 use rehydration_proto::v1beta1::{
-    BundleRenderFormat, GetContextRequest, Phase,
-    context_command_service_client::ContextCommandServiceClient,
+    GetContextRequest, context_command_service_client::ContextCommandServiceClient,
     context_query_service_client::ContextQueryServiceClient,
 };
 use tokio::time::sleep;
@@ -121,13 +120,13 @@ impl TestFixture {
 }
 
 /// Polls GetContext until the projection has populated the graph.
-#[allow(deprecated)]
 pub(crate) async fn wait_for_context_ready(
     mut query_client: ContextQueryServiceClient<Channel>,
     root_node_id: &str,
     focus_node_id: &str,
     require_node_detail: bool,
 ) -> Result<(), BoxError> {
+    let _ = focus_node_id; // retained for API compatibility
     let mut last_error: Option<BoxError> = None;
 
     for _ in 0..40 {
@@ -135,12 +134,8 @@ pub(crate) async fn wait_for_context_ready(
             .get_context(GetContextRequest {
                 root_node_id: root_node_id.to_string(),
                 role: "implementer".to_string(),
-                phase: Phase::Build as i32,
-                work_item_id: focus_node_id.to_string(),
                 token_budget: 1200,
                 requested_scopes: vec!["implementation".to_string()],
-                render_format: BundleRenderFormat::Structured as i32,
-                include_debug_sections: false,
                 depth: 0,
                 max_tier: 0,
                 rehydration_mode: 0,
