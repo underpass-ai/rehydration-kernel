@@ -5,71 +5,154 @@ How to deploy the rehydration kernel with mutual TLS on all boundaries.
 ## Prerequisites
 
 - `kubectl` with access to the target cluster
-- `openssl` for certificate generation
 - `helm` 3.x
-- A kernel image with OTLP TLS support (`quality-observers` tag or later)
+- cert-manager installed with a working `ClusterIssuer`
+- A kernel image with OTLP TLS support (`mtls` tag or later)
 
-## Step 1 — Generate certificates
+## Option A — cert-manager (recommended)
 
-Create a shared CA and per-service certificates. All services use the same CA
-so they can mutually verify each other.
+Uses cert-manager to issue and auto-rotate certificates from an internal CA.
+
+### Step 1 — Create internal CA issuer
+
+```bash
+NS=underpass-runtime
+
+# Self-signed issuer for bootstrapping the CA
+kubectl apply -f - <<EOF
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: rehydration-kernel-ca-issuer
+  namespace: $NS
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: rehydration-kernel-internal-ca
+  namespace: $NS
+spec:
+  isCA: true
+  commonName: rehydration-kernel-internal-ca
+  secretName: rehydration-kernel-internal-ca
+  issuerRef:
+    name: rehydration-kernel-ca-issuer
+    kind: Issuer
+  duration: 8760h
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: rehydration-kernel-internal-issuer
+  namespace: $NS
+spec:
+  ca:
+    secretName: rehydration-kernel-internal-ca
+EOF
+```
+
+### Step 2 — Issue per-service certificates
+
+```bash
+for svc in grpc nats valkey otel; do
+kubectl apply -f - <<EOF
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: rehydration-kernel-${svc}-cert
+  namespace: $NS
+spec:
+  secretName: rehydration-kernel-${svc}-tls
+  issuerRef:
+    name: rehydration-kernel-internal-issuer
+    kind: Issuer
+  commonName: rehydration-kernel-${svc}
+  dnsNames:
+    - rehydration-kernel
+    - rehydration-kernel-${svc}
+    - rehydration-kernel.${NS}.svc
+    - rehydration-kernel-${svc}.${NS}.svc
+    - rehydration-kernel.${NS}.svc.cluster.local
+    - rehydration-kernel-${svc}.${NS}.svc.cluster.local
+  usages:
+    - server auth
+    - client auth
+  duration: 8760h
+EOF
+done
+```
+
+Each secret contains `tls.crt`, `tls.key`, and `ca.crt` — exactly what
+the Helm chart expects. cert-manager auto-rotates before expiry.
+
+### Step 3 — (Optional) Ingress TLS with Let's Encrypt
+
+For external gRPC access with a real certificate:
+
+```bash
+kubectl apply -f - <<EOF
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: rehydration-kernel-tls
+  namespace: $NS
+spec:
+  secretName: rehydration-kernel-tls-prod
+  issuerRef:
+    name: letsencrypt-prod-r53
+    kind: ClusterIssuer
+  dnsNames:
+    - rehydration-kernel.underpassai.com
+EOF
+```
+
+Requires a DNS A record pointing to your ingress controller (MetalLB IP):
+
+```bash
+aws route53 change-resource-record-sets --hosted-zone-id <ZONE_ID> --change-batch '{
+  "Changes": [{"Action":"UPSERT","ResourceRecordSet":{
+    "Name":"rehydration-kernel.underpassai.com","Type":"A","TTL":300,
+    "ResourceRecords":[{"Value":"<METALLB_IP>"}]
+  }}]
+}'
+```
+
+## Option B — Manual OpenSSL (development / air-gapped)
+
+For environments without cert-manager.
+
+### Step 1 — Generate certificates
 
 ```bash
 mkdir -p /tmp/kernel-certs && cd /tmp/kernel-certs
 
-# CA
 openssl req -x509 -newkey rsa:2048 -days 365 -nodes \
-  -keyout ca.key -out ca.crt \
-  -subj "/CN=rehydration-kernel-ca"
+  -keyout ca.key -out ca.crt -subj "/CN=rehydration-kernel-ca"
 
-# Per-service certs (gRPC, NATS, Valkey, OTel)
 for svc in grpc nats valkey otel; do
   openssl req -newkey rsa:2048 -nodes \
     -keyout ${svc}.key -out ${svc}.csr \
     -subj "/CN=rehydration-kernel-${svc}"
-
-  cat > ${svc}.ext <<EOF
+  cat > ${svc}.ext <<EXTEOF
 [v3_req]
 subjectAltName=DNS:rehydration-kernel-${svc},DNS:rehydration-kernel-${svc}.underpass-runtime.svc,DNS:rehydration-kernel-${svc}.underpass-runtime.svc.cluster.local,DNS:rehydration-kernel
 extendedKeyUsage=serverAuth,clientAuth
-EOF
-
+EXTEOF
   openssl x509 -req -in ${svc}.csr -CA ca.crt -CAkey ca.key -CAcreateserial \
     -out ${svc}.crt -days 365 -extfile ${svc}.ext -extensions v3_req
 done
 ```
 
-Each cert has SANs for the Kubernetes service DNS names and allows both
-`serverAuth` and `clientAuth` (required for mTLS).
-
-## Step 2 — Create Kubernetes secrets
+### Step 2 — Create Kubernetes secrets
 
 ```bash
 NS=underpass-runtime
-
-# gRPC (server cert + CA for client verification)
-kubectl create secret generic rehydration-kernel-grpc-tls \
-  -n $NS --from-file=tls.crt=grpc.crt --from-file=tls.key=grpc.key --from-file=ca.crt=ca.crt
-
-# NATS (server cert + CA)
-kubectl create secret generic rehydration-kernel-nats-tls \
-  -n $NS --from-file=tls.crt=nats.crt --from-file=tls.key=nats.key --from-file=ca.crt=ca.crt
-kubectl create secret generic rehydration-kernel-nats-ca \
-  -n $NS --from-file=ca.crt=ca.crt
-
-# Valkey (server cert + CA)
-kubectl create secret generic rehydration-kernel-valkey-tls \
-  -n $NS --from-file=tls.crt=valkey.crt --from-file=tls.key=valkey.key --from-file=ca.crt=ca.crt
-kubectl create secret generic rehydration-kernel-valkey-ca \
-  -n $NS --from-file=ca.crt=ca.crt
-
-# Neo4j (CA only — mTLS pending driver upgrade)
-kubectl create secret generic rehydration-kernel-neo4j-tls \
-  -n $NS --from-file=ca.crt=ca.crt
-
-# OTel Collector (server cert + CA)
-kubectl create secret generic rehydration-kernel-otel-tls \
-  -n $NS --from-file=tls.crt=otel.crt --from-file=tls.key=otel.key --from-file=ca.crt=ca.crt
+for svc in grpc nats valkey otel; do
+  kubectl create secret generic rehydration-kernel-${svc}-tls \
+    -n $NS --from-file=tls.crt=${svc}.crt --from-file=tls.key=${svc}.key --from-file=ca.crt=ca.crt
+done
 ```
 
 ## Step 3 — Deploy with Helm

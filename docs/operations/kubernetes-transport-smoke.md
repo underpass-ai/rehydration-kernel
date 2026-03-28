@@ -131,6 +131,40 @@ OTEL_TLS_SECRET_NAME=rehydration-kernel-otel-tls \
 bash scripts/ci/kubernetes-transport-smoke.sh outbound
 ```
 
+Use `VALUES_FILE` to provide a base values file without ingress conflicts:
+
+```yaml
+# /tmp/smoke-values.yaml
+image:
+  pullPolicy: Always
+development:
+  allowMutableImageTags: true
+  allowInlineConnections: true
+ingress:
+  enabled: false
+neo4j:
+  enabled: true
+  auth: "neo4j/underpassai"
+nats:
+  enabled: true
+valkey:
+  enabled: true
+```
+
+```bash
+VALUES_FILE=/tmp/smoke-values.yaml \
+CLEANUP_RELEASE=true \
+IMAGE_TAG=mtls \
+GRPC_SMOKE_MODE=mutual \
+NATS_TLS_MODE=mutual \
+NATS_TLS_SECRET_NAME=rehydration-kernel-nats-tls \
+VALKEY_TLS_ENABLED=true \
+VALKEY_TLS_SECRET_NAME=rehydration-kernel-valkey-tls \
+OTEL_TLS_ENABLED=true \
+OTEL_TLS_SECRET_NAME=rehydration-kernel-otel-tls \
+bash scripts/ci/kubernetes-transport-smoke.sh outbound
+```
+
 This verifies:
 - gRPC mTLS (anonymous client rejected, authenticated client accepted)
 - NATS mTLS (kernel connects with client cert)

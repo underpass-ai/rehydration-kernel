@@ -247,6 +247,11 @@ EOF
 
   if [[ "${NATS_TLS_MODE}" != "disabled" || -n "${NATS_TLS_SECRET_NAME}" ]]; then
     cat >>"${override_file}" <<EOF
+nats:
+  tls:
+    enabled: true
+    existingSecret: ${NATS_TLS_SECRET_NAME}
+    caSecret: ${NATS_TLS_SECRET_NAME}
 natsTls:
   mode: ${NATS_TLS_MODE}
   existingSecret: ${NATS_TLS_SECRET_NAME}
@@ -260,8 +265,13 @@ EOF
 
   if bool_is_true "${VALKEY_TLS_ENABLED}" || [[ -n "${VALKEY_TLS_SECRET_NAME}" ]]; then
     cat >>"${override_file}" <<EOF
+valkey:
+  tls:
+    enabled: true
+    existingSecret: ${VALKEY_TLS_SECRET_NAME}
+    caSecret: ${VALKEY_TLS_SECRET_NAME}
 valkeyTls:
-  enabled: ${VALKEY_TLS_ENABLED}
+  enabled: true
   existingSecret: ${VALKEY_TLS_SECRET_NAME}
   keys:
     ca: ${VALKEY_TLS_CA_KEY}
