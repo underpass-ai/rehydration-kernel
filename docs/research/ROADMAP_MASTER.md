@@ -107,8 +107,8 @@ README describes the LLM E2E benchmark as "the primary validation of the kernel'
 Given current benchmark methodology debt, this overclaims. Soften to reflect directional
 evidence rather than definitive validation.
 
-- [ ] Replace "primary validation" with "primary exploratory validation artifact" or "current empirical validation harness"
-- [ ] Review any other README claims that assume benchmark methodology is complete
+- [x] Soften testing.md claim to "primary empirical validation harness" with methodology debt link
+- [ ] Soften README.md claim (same language)
 
 ### P2 — Planner enrichment
 
@@ -432,6 +432,36 @@ weaknesses. See [`docs/benchmark-2026-03-26-technical-review.md`](incidents/benc
 - [ ] Truncation impact at multiple token budgets (512, 1024, 2048, 4096)
 - [ ] Time-to-first-token from API response headers
 
+**P1 — Domain data not captured in benchmark results** (from session 2026-03-28):
+
+The kernel domain exposes these in the gRPC response but the tests don't persist them:
+
+- [ ] `resolved_mode` (RehydrationMode selected by planner) — in `rendered.resolved_mode`
+- [ ] Per-tier token counts (L0/L1/L2 breakdown) — in `rendered.tiers[].token_count`
+- [ ] `QueryTimingBreakdown` (graph_load, detail_load, bundle_assembly, batch_size) — in `response.timing`
+- [ ] `llm_prompt_tokens` + `llm_completion_tokens` — in `LlmEvaluationResult` but not persisted
+- [ ] `served_at` timestamp — in `response.served_at`
+
+**P1 — TruncationMetadata not in proto** (domain gap):
+
+`TruncationMetadata` (budget_requested, budget_used, sections_kept/dropped) exists in the
+application layer (`bundle_truncator.rs`) but is not mapped to the proto response. The test
+cannot capture it until it's exposed. Blocks "truncation impact" metric above.
+
+- [ ] Add `TruncationMetadata` message to `common.proto`
+- [ ] Add `truncation` field to `RenderedContext` proto message
+- [ ] Map application `TruncationMetadata` → proto in `rendered_mapping.rs`
+- [ ] Capture in benchmark results once available
+
+**P2 — AsyncAPI `context.bundle.generated` has no quality data**:
+
+The only kernel async output carries zero observability: no quality metrics, timing,
+mode, or truncation. Downstream NATS consumers get revision+hash only.
+
+- [ ] Add quality metrics fields to `ContextBundleGeneratedData` schema
+- [ ] Add `resolved_mode`, `rendered_tokens`, `compression_ratio` at minimum
+- [ ] Implement the publish (currently contract-only, not emitted by runtime)
+
 **P0 — BundleQualityMetrics bugs** (from audit 2026-03-27, blocks metric trust):
 - [x] Fix raw dump parity: kernel `compute_quality_metrics()` missing `caused_by_node_id` field that testkit `raw_dump.rs` includes → `raw_equivalent_tokens` underestimated
 - [x] Fix detail formatting: kernel uses `"Detail: {}.\n"` (newline), testkit uses `" Detail: {}."` (inline) → token count mismatch
@@ -446,8 +476,8 @@ Opus 4.6 as judge rejects 100% of verdicts that Opus 4 accepted at 94%.
 Root cause: prompt designed for flat bundles + Opus 4 calibration. See
 [`docs/incident-report-benchmark-2026-03-26.md`](incidents/incident-report-benchmark-2026-03-26.md).
 
-- [ ] Judge prompt v2: causal-chain-aware `task_correct` (accept causal ancestors)
-- [ ] Judge prompt v2: paraphrase-gradient `reason_preserved` (context-derived vs generic)
+- [x] Judge prompt v2: causal-chain-aware `task_correct` (accept causal ancestors) — Rule 2 in llm_prompts.yaml
+- [x] Judge prompt v2: paraphrase-gradient `reason_preserved` (context-derived vs generic) — Rule 4 sub-rules in llm_prompts.yaml
 - [ ] Per-use-case judge prompt variants (failure diagnosis, handoff, constraint have different criteria)
 - [x] Log raw inference + judge responses in evaluator (done — `results/*.json` per eval)
 - [x] Store `llm_response` in paper metrics for post-hoc analysis (done — `agent_response` + `judge_raw`)
