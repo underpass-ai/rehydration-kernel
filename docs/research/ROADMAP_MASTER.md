@@ -572,7 +572,7 @@ The full matrix (15 models × 108 evals = 1620 evals) takes ~4 hours.
 3. Do MoE models benefit differently from dense models at similar active param counts?
 4. Is there a model where structural-only context matches explanatory? (kernel ceiling)
 
-### Level 2 — Fabricated vs preserved rationale (research gap from 2026-03-28)
+### Level 1 — Fabricated vs preserved rationale (research gap from 2026-03-28)
 
 In the baseline run, structural variants show `restart_explained: true` even though
 `reason_correct_main_path: false`. The LLM fabricates plausible-sounding justifications
