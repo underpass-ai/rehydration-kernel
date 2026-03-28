@@ -1,9 +1,13 @@
-use rehydration_application::{QueryTimingBreakdown, RehydrateSessionResult};
+use rehydration_application::{
+    QueryTimingBreakdown, RehydrateSessionResult, RenderedContext,
+};
 use rehydration_domain::RehydrationBundle;
 use rehydration_proto::v1beta1::{
     GraphRoleBundle, QueryTimingBreakdown as ProtoTimingBreakdown, RehydrateSessionResponse,
     RehydrationBundle as ProtoRehydrationBundle, RehydrationStats,
 };
+
+use super::rendered_mapping::proto_rendered_context_v1beta1;
 
 use crate::transport::proto_mapping_v1beta1::{
     proto_bundle_node_detail_v1beta1, proto_bundle_node_v1beta1, proto_bundle_relationship_v1beta1,
@@ -20,7 +24,8 @@ pub(crate) fn proto_rehydrate_session_response_v1beta1(
             bundles: result
                 .bundles
                 .iter()
-                .map(proto_graph_role_bundle_v1beta1)
+                .zip(result.rendered_contexts.iter().map(Some).chain(std::iter::repeat(None)))
+                .map(|(bundle, rendered)| proto_graph_role_bundle_with_rendered_v1beta1(bundle, rendered))
                 .collect(),
             stats: Some(proto_session_stats_v1beta1(result)),
             version: Some(proto_bundle_version_v1beta1(&result.version)),
@@ -56,6 +61,13 @@ pub(crate) fn proto_bundle_from_single_role_v1beta1(
 }
 
 fn proto_graph_role_bundle_v1beta1(bundle: &RehydrationBundle) -> GraphRoleBundle {
+    proto_graph_role_bundle_with_rendered_v1beta1(bundle, None)
+}
+
+fn proto_graph_role_bundle_with_rendered_v1beta1(
+    bundle: &RehydrationBundle,
+    rendered: Option<&RenderedContext>,
+) -> GraphRoleBundle {
     GraphRoleBundle {
         role: bundle.role().as_str().to_string(),
         root_node: Some(proto_bundle_node_v1beta1(bundle.root_node())),
@@ -74,6 +86,7 @@ fn proto_graph_role_bundle_v1beta1(bundle: &RehydrationBundle) -> GraphRoleBundl
             .iter()
             .map(proto_bundle_node_detail_v1beta1)
             .collect(),
+        rendered: rendered.map(|r| proto_rendered_context_v1beta1(r, &[])),
     }
 }
 

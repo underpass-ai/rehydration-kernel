@@ -54,6 +54,9 @@ message GraphRoleBundle {
   repeated GraphNode neighbor_nodes = 3;
   repeated GraphRelationship relationships = 4;
   repeated BundleNodeDetail node_details = 5;
+  // Per-role rendered context with quality metrics. Present in RehydrateSession
+  // responses; empty in GetContext (which returns a single top-level RenderedContext).
+  RenderedContext rendered = 6;
 }
 
 message RehydrationStats {
@@ -113,6 +116,18 @@ message RenderedContext {
   RehydrationMode resolved_mode = 6;
   // Quality and efficiency metrics for this render.
   BundleQualityMetrics quality = 7;
+  // Truncation metadata. Present when a token budget was applied.
+  TruncationMetadata truncation = 8;
+}
+
+// Truncation metadata when a token budget constrains the render.
+message TruncationMetadata {
+  uint32 budget_requested = 1;
+  uint32 budget_used = 2;
+  uint32 total_before_truncation = 3;
+  uint32 sections_kept = 4;
+  uint32 sections_dropped = 5;
+  string token_estimator = 6;
 }
 
 // Quality and efficiency metrics computed during rendering.

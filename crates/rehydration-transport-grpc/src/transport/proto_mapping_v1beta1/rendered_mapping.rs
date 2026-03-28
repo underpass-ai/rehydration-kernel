@@ -1,9 +1,11 @@
+use rehydration_application::queries::bundle_truncator::TruncationMetadata;
 use rehydration_application::{GetContextResult, RenderedContext, RenderedTier};
 use rehydration_domain::BundleQualityMetrics;
 use rehydration_domain::{RehydrationMode, ResolutionTier};
 use rehydration_proto::v1beta1::{
     BundleQualityMetrics as ProtoQualityMetrics, BundleRenderFormat, BundleSection,
     RenderedContext as ProtoRenderedContext, RenderedTier as ProtoRenderedTier,
+    TruncationMetadata as ProtoTruncationMetadata,
 };
 
 pub(crate) fn proto_rendered_context_from_result_v1beta1(
@@ -39,6 +41,18 @@ pub(crate) fn proto_rendered_context_v1beta1(
             .collect(),
         resolved_mode: proto_rehydration_mode(rendered.resolved_mode) as i32,
         quality: Some(proto_quality_metrics(&rendered.quality)),
+        truncation: rendered.truncation.as_ref().map(proto_truncation_metadata),
+    }
+}
+
+fn proto_truncation_metadata(t: &TruncationMetadata) -> ProtoTruncationMetadata {
+    ProtoTruncationMetadata {
+        budget_requested: t.budget_requested,
+        budget_used: t.budget_used,
+        total_before_truncation: t.total_before_truncation,
+        sections_kept: t.sections_kept,
+        sections_dropped: t.sections_dropped,
+        token_estimator: t.token_estimator.clone(),
     }
 }
 

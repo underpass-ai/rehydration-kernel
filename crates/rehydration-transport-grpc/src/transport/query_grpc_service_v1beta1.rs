@@ -352,6 +352,54 @@ where
                 .record(timing.batch_size as u64, attrs);
         }
 
+        // Per-role bundle stats + quality metrics
+        for (bundle, rendered) in result.bundles.iter().zip(result.rendered_contexts.iter()) {
+            let role_attrs = &[
+                KeyValue::new("rpc", "RehydrateSession"),
+                KeyValue::new("role", bundle.role().as_str().to_string()),
+            ];
+            meter
+                .u64_histogram("rehydration.bundle.nodes")
+                .build()
+                .record(bundle.stats().selected_nodes() as u64, role_attrs);
+            meter
+                .u64_histogram("rehydration.bundle.relationships")
+                .build()
+                .record(bundle.stats().selected_relationships() as u64, role_attrs);
+            meter
+                .u64_histogram("rehydration.bundle.details")
+                .build()
+                .record(bundle.stats().detailed_nodes() as u64, role_attrs);
+            meter
+                .u64_histogram("rehydration.rendered.tokens")
+                .build()
+                .record(rendered.token_count as u64, role_attrs);
+            if rendered.truncation.is_some() {
+                meter
+                    .u64_counter("rehydration.truncation.total")
+                    .build()
+                    .add(1, role_attrs);
+            }
+            meter
+                .u64_counter("rehydration.mode.selected")
+                .build()
+                .add(
+                    1,
+                    &[
+                        KeyValue::new("rpc", "RehydrateSession"),
+                        KeyValue::new("mode", rendered.resolved_mode.as_str().to_string()),
+                    ],
+                );
+            self.quality_observer.observe(
+                &rendered.quality,
+                &QualityObservationContext {
+                    rpc: "RehydrateSession".to_string(),
+                    root_node_id: result.root_node_id.clone(),
+                    role: bundle.role().as_str().to_string(),
+                },
+            );
+        }
+
         Ok(Response::new(proto_rehydrate_session_response_v1beta1(
             &result,
         )))

@@ -7,7 +7,11 @@ use rehydration_domain::{
 };
 
 use crate::ApplicationError;
-use crate::queries::{NodeCentricProjectionReader, QueryApplicationService, QueryTimingBreakdown};
+use crate::queries::{
+    NodeCentricProjectionReader, QueryApplicationService, QueryTimingBreakdown,
+    render_graph_bundle::render_graph_bundle,
+};
+use super::render_graph_bundle::RenderedContext;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RehydrateSessionQuery {
@@ -18,10 +22,12 @@ pub struct RehydrateSessionQuery {
     pub snapshot_ttl_seconds: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct RehydrateSessionResult {
     pub root_node_id: String,
     pub bundles: Vec<RehydrationBundle>,
+    /// Per-role rendered context with quality metrics, tiers, and truncation.
+    pub rendered_contexts: Vec<RenderedContext>,
     pub timeline_events: u32,
     pub version: BundleMetadata,
     pub snapshot_persisted: bool,
@@ -148,6 +154,9 @@ where
             }
         };
 
+        let rendered_contexts: Vec<RenderedContext> =
+            bundles.iter().map(render_graph_bundle).collect();
+
         if query.persist_snapshot {
             for bundle in &bundles {
                 self.snapshot_store
@@ -169,6 +178,7 @@ where
         Ok(RehydrateSessionResult {
             root_node_id: query.root_node_id,
             bundles,
+            rendered_contexts,
             timeline_events: query.timeline_window,
             version: BundleMetadata::initial(self.generator_version),
             snapshot_persisted: query.persist_snapshot,

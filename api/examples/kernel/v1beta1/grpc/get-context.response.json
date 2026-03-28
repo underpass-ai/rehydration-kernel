@@ -65,7 +65,8 @@
             "contentHash": "sha256:retry-handler-v3",
             "revision": "7"
           }
-        ]
+        ],
+        "rendered": {}
       }
     ],
     "stats": {
@@ -107,6 +108,14 @@
       "causalDensity": 0.0,
       "noiseRatio": 0.0,
       "detailCoverage": 0.5
+    },
+    "truncation": {
+      "budgetRequested": 1600,
+      "budgetUsed": 128,
+      "totalBeforeTruncation": 128,
+      "sectionsKept": 4,
+      "sectionsDropped": 0,
+      "tokenEstimator": "cl100k_base"
     }
   },
   "scopeValidation": {

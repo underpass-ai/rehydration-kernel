@@ -213,6 +213,7 @@ fn expected_role_bundle() -> GraphRoleBundle {
                 revision: DECISION_DETAIL_REVISION,
             },
         ],
+        rendered: None,
     }
 }
 

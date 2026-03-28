@@ -599,19 +599,16 @@ exists in the context. This causes fabrication. Two changes required before the 
 exhaustive run:
 
 **A — Explicit NOT_AVAILABLE path** (inference prompt change):
-- [ ] Add instruction: "If no rationale, method, or decision_id metadata is present in the
-  relationships, you MUST respond with `reason: NOT_AVAILABLE` — do not infer or fabricate."
-- [ ] Update judge Rule 4: `reason_correct_main_path` MUST be FALSE when response says NOT_AVAILABLE
-  AND ground truth has rationale (model missed it). MUST be TRUE when both are NOT_AVAILABLE.
+- [x] Add NOT_AVAILABLE instruction to inference prompt
+- [x] Judge Rule 4 already handles empty ground truth correctly (no change needed)
 
 **B — Source declaration + confidence** (response schema change):
-- [ ] Add `reason_source` field: `graph_metadata` | `inferred` | `not_available`
-- [ ] Add `confidence` field: `high` | `medium` | `low`
-- [ ] Update `JudgeVerdict` struct: add `reason_source_correct` (did the model honestly declare its source?)
-- [ ] Update `LlmEvaluationResult`: add `reason_source`, `confidence`, `reason_source_correct`
-- [ ] Update `BenchmarkResult` in both tests
-- [ ] New judge rule: if model says `graph_metadata` but ground truth has no rationale → fabrication detected
-- [ ] New metric: `fabrication_rate` = evals where model claims graph_metadata but reason_correct=false
+- [x] Add `reason_source` field to inference prompt JSON schema
+- [x] Add `confidence` field to inference prompt JSON schema
+- [x] Update `LlmEvaluationResult`: `llm_reason_source`, `llm_confidence`, `llm_reason_fabricated`
+- [x] Update `BenchmarkResult` in both tests
+- [x] Fabrication detection in evaluator (deterministic, not judge): `reason_source == graph_metadata AND ground_truth.reason.is_none()`
+- [x] `extract_source_fields()` parses reason_source/confidence from inference response JSON
 
 **Validation (2026-03-28):** smoke test confirmed fabrication detection works.
 Qwen3-8B claims `graph_metadata` + `confidence: high` on ALL variants including

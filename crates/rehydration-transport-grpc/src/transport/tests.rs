@@ -698,9 +698,15 @@ fn helper_mappers_cover_versions_errors_and_trim_logic() {
         map_application_error(ApplicationError::NotFound("missing".to_string())).code(),
         tonic::Code::NotFound
     );
+    let session_bundle = sample_bundle("node-123", "developer", "Section one");
+    let rendered_contexts = vec![rehydration_application::render_graph_bundle_with_options(
+        &session_bundle,
+        &Default::default(),
+    )];
     let response = proto_rehydrate_session_response_v1beta1(&RehydrateSessionResult {
         root_node_id: "node-123".to_string(),
-        bundles: vec![sample_bundle("node-123", "developer", "Section one")],
+        bundles: vec![session_bundle],
+        rendered_contexts,
         timeline_events: 9,
         version: BundleMetadata::initial("0.1.0"),
         snapshot_persisted: true,

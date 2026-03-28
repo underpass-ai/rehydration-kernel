@@ -1,6 +1,6 @@
 pub mod bundle_assembler;
 pub(crate) mod bundle_section_renderer;
-pub(crate) mod bundle_truncator;
+pub mod bundle_truncator;
 pub mod cl100k_estimator;
 pub mod context_render_options;
 pub mod get_context;
