@@ -621,10 +621,18 @@ Qwen3-8B claims `graph_metadata` + `confidence: high` on ALL variants including
 structural (causal_density=0.0). The model ignores NOT_AVAILABLE instructions
 entirely. `llm_reason_fabricated=true` fires correctly on both structural variants.
 
-**Finding:** small models are not honest about their reasoning source — they
-declare high confidence in fabricated rationale. The kernel's ground truth is
-the only way to detect this. Key question for the model matrix: are larger
-models more honest about declaring `not_available` / `inferred`?
+**Finding (Qwen3-8B):** small models are not honest about their reasoning source —
+they declare high confidence in fabricated rationale.
+
+**Finding (Qwen3-14B reasoning, 2026-03-29):** larger models with thinking ARE honest.
+Qwen3-14B declares `not_available` + `low` confidence on structural variants
+(zero fabrication). But overall accuracy drops (1/6 Task vs 3/6 for 8B) — the
+thinking makes the model more cautious, possibly over-cautious.
+
+Key questions remaining:
+- Does prompt tuning recover the accuracy loss from thinking?
+- Is the honesty/accuracy tradeoff consistent across model sizes?
+- At what size does honesty emerge without thinking?
 
 ### Level 1 — Fabricated vs preserved rationale (research gap from 2026-03-28)
 

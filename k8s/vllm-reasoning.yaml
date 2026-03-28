@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-reasoning
+  namespace: underpass-runtime
+  labels:
+    app: vllm-reasoning
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vllm-reasoning
+  template:
+    metadata:
+      labels:
+        app: vllm-reasoning
+    spec:
+      containers:
+        - name: vllm
+          image: docker.io/vllm/vllm-openai:v0.15.0-cu130
+          args:
+            - "--model=Qwen/Qwen3-14B"
+            - "--tensor-parallel-size=2"
+            - "--max-model-len=8192"
+            - "--gpu-memory-utilization=0.90"
+            - "--trust-remote-code"
+            - "--host=0.0.0.0"
+          env:
+            - name: HF_HOME
+              value: /tmp/hf-cache
+            - name: LD_LIBRARY_PATH
+              value: /usr/lib
+            - name: VLLM_ATTENTION_BACKEND
+              value: FLASHINFER
+          ports:
+            - containerPort: 8000
+              protocol: TCP
+          resources:
+            requests:
+              cpu: "2"
+              memory: "32Gi"
+              nvidia.com/gpu: "2"
+            limits:
+              cpu: "4"
+              memory: "48Gi"
+              nvidia.com/gpu: "2"
+          volumeMounts:
+            - mountPath: /tmp/hf-cache
+              name: hf-cache
+            - mountPath: /dev/shm
+              name: shm
+      volumes:
+        - name: hf-cache
+          emptyDir:
+            sizeLimit: 30Gi
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 4Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-reasoning
+  namespace: underpass-runtime
+spec:
+  selector:
+    app: vllm-reasoning
+  ports:
+    - port: 8000
+      targetPort: 8000
+      protocol: TCP
