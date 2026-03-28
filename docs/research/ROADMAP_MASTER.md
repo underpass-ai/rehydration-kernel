@@ -118,6 +118,11 @@ evidence rather than definitive validation.
 - [ ] Endpoint type (GetContext vs RehydrateSession may warrant different mode defaults)
 - [ ] Focus/path presence (if focus node exists, ResumeFocused may be better even with budget room)
 - [ ] Relation distribution (structural-heavy graphs may benefit from pruning even at generous budgets)
+- [ ] **Truncation algorithm upgrade**: current greedy packing drops sections that don't fit.
+  Evaluate: tiered budget allocation (L0 guaranteed, L1 prioritized, L2 sacrificed),
+  knapsack optimization, and `rationale_summary` field on relationships for graceful
+  degradation without LLM-in-the-loop. Sliding window + summary ruled out (requires
+  LLM call inside kernel, breaks determinism, introduces fabrication risk).
 - [ ] Benchmark with `BENCHMARK_TOKEN_BUDGET=512` to exercise planner under real pressure (4096/49=83 tok/node doesn't trigger the heuristic)
 
 Planner v2 A/B results (36 evals, budget=4096, no pressure activated):
@@ -253,10 +258,10 @@ get zero observability on render quality.
 
 Fix requires rendering per-role bundles at the session level — architecture change:
 
-- [ ] Add `RenderedContext` per role to `RehydrateSessionResult` (or a summary aggregate)
-- [ ] Call `BundleQualityMetrics::compute()` for each role bundle
-- [ ] Emit quality metrics via observer with `rpc=RehydrateSession`
-- [ ] Proto: add `rendered` field to `GraphRoleBundle` or top-level `RehydrateSessionResponse`
+- [x] Add `RenderedContext` per role to `RehydrateSessionResult` — `rendered_contexts: Vec<RenderedContext>`
+- [x] Call `BundleQualityMetrics::compute()` for each role bundle — via `render_graph_bundle()`
+- [x] Emit quality metrics via observer with `rpc=RehydrateSession` — per-role in handler
+- [x] Proto: add `rendered` field (6) to `GraphRoleBundle`
 - [ ] Update beta-status.md when done (currently listed as limitation)
 
 ### P1 — OTel metric parity across RPCs
@@ -266,7 +271,7 @@ rendered.tokens, truncation.total, mode.selected + timing). `GetContextPath` onl
 emits rpc.duration + quality + timing. `RehydrateSession` only emits rpc.duration + timing.
 
 - [x] `GetContextPath`: add bundle.nodes, bundle.relationships, bundle.details, rendered.tokens, truncation.total, mode.selected
-- [ ] `RehydrateSession`: add bundle metrics per role (blocked by P1 quality metrics above)
+- [x] `RehydrateSession`: add bundle metrics per role — nodes, rels, details, tokens, truncation, mode, quality observer
 - [x] Wire `rehydration.bundle.details` — now recorded in GetContext
 - [ ] Wire `rehydration.projection.lag` — defined in KernelMetrics but never recorded by projection runtime
 
@@ -475,10 +480,10 @@ The kernel domain exposes these in the gRPC response but the tests don't persist
 application layer (`bundle_truncator.rs`) but is not mapped to the proto response. The test
 cannot capture it until it's exposed. Blocks "truncation impact" metric above.
 
-- [ ] Add `TruncationMetadata` message to `common.proto`
-- [ ] Add `truncation` field to `RenderedContext` proto message
-- [ ] Map application `TruncationMetadata` → proto in `rendered_mapping.rs`
-- [ ] Capture in benchmark results once available
+- [x] Add `TruncationMetadata` message to `common.proto`
+- [x] Add `truncation` field (8) to `RenderedContext` proto message
+- [x] Map application `TruncationMetadata` → proto in `rendered_mapping.rs`
+- [ ] Capture truncation fields in benchmark results (available in proto, not yet in BenchmarkResult)
 
 **P2 — AsyncAPI `context.bundle.generated` has no quality data**:
 
