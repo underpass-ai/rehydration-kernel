@@ -94,10 +94,31 @@ fn classify_default(
     }
 
     // ── L2 Evidence Pack ────────────────────────────────────────────
-    // Procedural and structural relationships
-    for rel in &relationships {
-        let class = rel.explanation().semantic_class();
-        if !is_explanatory(class) {
+    let focus_id = focus_node_id.map(|n| n.node_id());
+    append_l2_evidence(
+        &mut sections,
+        &relationships,
+        bundle,
+        detail_by_node_id,
+        options,
+        focus_id,
+    );
+
+    sections
+}
+
+/// Appends L2 evidence pack sections: non-explanatory relationships,
+/// remaining neighbor nodes, and prioritized details.
+fn append_l2_evidence(
+    sections: &mut Vec<TieredSection>,
+    relationships: &[&rehydration_domain::BundleRelationship],
+    bundle: &RehydrationBundle,
+    detail_by_node_id: &BTreeMap<&str, &BundleNodeDetail>,
+    options: &ContextRenderOptions,
+    focus_id: Option<&str>,
+) {
+    for rel in relationships {
+        if !is_explanatory(rel.explanation().semantic_class()) {
             sections.push(TieredSection {
                 tier: ResolutionTier::L2EvidencePack,
                 content: render_relationship(rel),
@@ -105,8 +126,6 @@ fn classify_default(
         }
     }
 
-    // Remaining neighbor nodes (not focus, not root)
-    let focus_id = focus_node_id.map(|n| n.node_id());
     for node in bundle.neighbor_nodes() {
         if Some(node.node_id()) != focus_id {
             sections.push(TieredSection {
@@ -116,7 +135,6 @@ fn classify_default(
         }
     }
 
-    // All details
     let details = prioritized_details(bundle, options.focus_node_id.as_deref());
     for detail in details {
         sections.push(TieredSection {
@@ -124,8 +142,6 @@ fn classify_default(
             content: render_detail(detail, detail_by_node_id),
         });
     }
-
-    sections
 }
 
 /// Resume-focused classification: only causal spine in L1, no L2.

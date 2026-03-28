@@ -30,6 +30,8 @@ run_container_coverage_test() {
     --no-report \
     -- \
     --test-threads=1
+
+  return 0
 }
 
 run_container_coverage_test rehydration-adapter-valkey valkey_integration
