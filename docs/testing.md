@@ -72,7 +72,13 @@ cargo test -p rehydration-tests-kernel \
   -- --nocapture --test-threads=1
 ```
 
-## Benchmark Tests (LLM-as-Judge)
+## Benchmark Tests (LLM-as-Judge) — Primary Validation
+
+> **This is the most important test in the project.** It is the only test
+> that validates the kernel's core value proposition end-to-end: explanatory
+> relationships improve LLM context quality over structural-only edges.
+> All other tests verify structure — this one proves the kernel actually
+> helps agents reason better.
 
 Each evaluation calls an LLM for inference (agent) and a second LLM for judging.
 The test uses testcontainers to spin up Neo4j + Valkey + NATS + kernel locally,
