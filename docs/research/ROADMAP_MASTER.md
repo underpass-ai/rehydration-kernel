@@ -146,7 +146,7 @@ appends but outcome publish fails, retries were treated as new requests.
 
 - [x] Log warning on idempotency outcome publish failure (tracing::warn with key + error)
 - [ ] Consider retry with backoff for outcome publish
-- [ ] Document retry semantics for consumers (at-least-once with idempotency key)
+- [x] Document retry semantics for consumers (at-least-once with idempotency key) — usage-guide.md
 
 ### P2 — Restructure docs/research/ index
 

@@ -306,6 +306,53 @@ Prefix is configured via `REHYDRATION_EVENTS_PREFIX` (default: `rehydration`).
 - **Checkpointing**: stored in Valkey (`ProjectionCheckpointStore`), survives restarts
 - **State dependency**: even with NATS event store, the projection runtime always uses Valkey for deduplication and checkpoints
 
+### Retry semantics for consumers
+
+The kernel provides **at-least-once** delivery with idempotency key support.
+Consumers should design for safe retries.
+
+**UpdateContext retries:**
+
+```
+Client                          Kernel
+  │                                │
+  │  UpdateContext(key="abc")      │
+  │───────────────────────────────>│  1. Check idempotency key "abc"
+  │                                │  2. Not found → process command
+  │                                │  3. Append event (revision N+1)
+  │                                │  4. Record outcome for key "abc"
+  │  ←── OK (revision N+1)        │
+  │                                │
+  │  (network timeout — retry)     │
+  │                                │
+  │  UpdateContext(key="abc")      │
+  │───────────────────────────────>│  1. Check idempotency key "abc"
+  │                                │  2. Found → return cached outcome
+  │  ←── OK (revision N+1, same)  │  (no re-processing)
+```
+
+**Rules for consumers:**
+
+- Always set `metadata.idempotency_key` on `UpdateContext`. Without it, retries
+  are treated as new requests
+- Use a deterministic key per logical operation (e.g. `{correlation_id}:{entity_id}`)
+- If you get `ABORTED` (revision conflict), reload current revision and retry
+  with the new `expected_revision`
+- Idempotency outcomes are persisted but not TTL'd — they live as long as the
+  event store retains data
+
+**Projection event retries (NATS):**
+
+- Durable consumers with explicit ack — messages are redelivered on nak
+- Application-level deduplication via `ProcessedEventStore` (Valkey) prevents
+  re-processing of already-materialized events
+- If the projection handler fails, the runtime stops. Restart the pod to
+  resume from the last acked message
+
+**Known limitation:** idempotency outcome publish is fire-and-forget. If the
+event appends but the outcome publish fails (network issue), the next retry
+will be treated as a new request. The kernel logs a warning when this happens.
+
 ## Further Reading
 
 - [Proto contracts](../api/proto/underpass/rehydration/kernel/v1beta1/) — gRPC API definition
