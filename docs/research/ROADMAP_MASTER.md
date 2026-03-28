@@ -108,7 +108,7 @@ Given current benchmark methodology debt, this overclaims. Soften to reflect dir
 evidence rather than definitive validation.
 
 - [x] Soften testing.md claim to "primary empirical validation harness" with methodology debt link
-- [ ] Soften README.md claim (same language)
+- [x] Soften README.md claim (same language) — commit d62408d
 
 ### P2 — Planner enrichment
 
@@ -355,7 +355,7 @@ Observability (done):
 - [x] Log resolved_mode in gRPC handler (tracing span field)
 - [x] OTel metric: `rehydration.mode.selected` counter by mode
 - [x] Proto: `RehydrationMode` enum, `rehydration_mode` on request, `resolved_mode` on response
-- [ ] Include resolved_mode in benchmark diagnostic output (next iteration)
+- [x] Include resolved_mode in benchmark diagnostic output — persisted in result JSON
 
 ### Provenance and auditability (observability feature — done)
 End-to-end: `source_kind`, `source_agent`, `observed_at` on nodes.
@@ -447,7 +447,7 @@ weaknesses. See [`docs/benchmark-2026-03-26-technical-review.md`](incidents/benc
 - [ ] Separate observation / interpretation / conclusion in all report sections
 
 **Pending metrics** (need test code changes):
-- [ ] L0/L1/L2 tier token desglose (persist `tier_tokens` in result JSON)
+- [x] L0/L1/L2 tier token desglose (persist `tier_tokens` in result JSON) — tier_l0/l1/l2/total_tokens
 - [x] Token efficiency vs raw document dump baseline
 - [ ] Detail presence impact (run with/without node details)
 - [ ] Truncation impact at multiple token budgets (512, 1024, 2048, 4096)
@@ -457,10 +457,10 @@ weaknesses. See [`docs/benchmark-2026-03-26-technical-review.md`](incidents/benc
 
 The kernel domain exposes these in the gRPC response but the tests don't persist them:
 
-- [ ] `resolved_mode` (RehydrationMode selected by planner) — in `rendered.resolved_mode`
-- [ ] Per-tier token counts (L0/L1/L2 breakdown) — in `rendered.tiers[].token_count`
-- [ ] `QueryTimingBreakdown` (graph_load, detail_load, bundle_assembly, batch_size) — in `response.timing`
-- [ ] `llm_prompt_tokens` + `llm_completion_tokens` — in `LlmEvaluationResult` but not persisted
+- [x] `resolved_mode` (RehydrationMode selected by planner) — in `rendered.resolved_mode`
+- [x] Per-tier token counts (L0/L1/L2 + tier_total_tokens) — in `rendered.tiers[].token_count`
+- [x] `QueryTimingBreakdown` (graph_load, detail_load, bundle_assembly, batch_size) — in `response.timing`
+- [x] `llm_prompt_tokens` + `llm_completion_tokens` — from `LlmEvaluationResult`
 - [ ] `served_at` timestamp — in `response.served_at`
 
 **P1 — TruncationMetadata not in proto** (domain gap):
@@ -503,7 +503,7 @@ Root cause: prompt designed for flat bundles + Opus 4 calibration. See
 - [x] Log raw inference + judge responses in evaluator (done — `results/*.json` per eval)
 - [x] Store `llm_response` in paper metrics for post-hoc analysis (done — `agent_response` + `judge_raw`)
 - [x] Judge calibration pre-check: `calibrate_judge()` sends known-good and known-bad synthetic responses before any eval. Runs before container boot — zero waste on miscalibrated judges.
-- [ ] Pin judge model version in paper methodology section (sensitivity finding)
+- [x] Pin judge model version in evaluation-matrix.yaml (date-suffixed IDs: claude-opus-4-6-20250514, etc.)
 - [ ] Re-run full benchmark matrix after methodology fixes
 
 ## Pending — Research
