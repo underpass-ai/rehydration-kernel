@@ -572,6 +572,29 @@ The full matrix (15 models × 108 evals = 1620 evals) takes ~4 hours.
 3. Do MoE models benefit differently from dense models at similar active param counts?
 4. Is there a model where structural-only context matches explanatory? (kernel ceiling)
 
+### Level 2 — Fabricated vs preserved rationale (research gap from 2026-03-28)
+
+In the baseline run, structural variants show `restart_explained: true` even though
+`reason_correct_main_path: false`. The LLM fabricates plausible-sounding justifications
+("the incident root is the starting point of the causal chain") that are **not grounded
+in graph metadata** — they are inference, not preservation.
+
+The judge currently distinguishes these via two independent fields:
+- `restart_explained`: did the model give ANY causal justification? (yes/no)
+- `reason_correct_main_path`: does it match the actual rationale from the graph?
+
+But this gap deserves deeper investigation:
+
+- [ ] **Fabrication rate by mix**: how often does the model invent rationale when none exists (structural) vs cite real rationale (explanatory)? Measure `restart_explained=true AND reason_correct=false` as a proxy for fabrication.
+- [ ] **Fabrication quality**: are fabricated rationales internally consistent? Do they use structural facts from the graph, or are they entirely hallucinated? Manual annotation on a sample.
+- [ ] **Fabrication vs model size**: do larger models fabricate MORE convincingly (harder to detect) or LESS (they recognize absence of evidence)? This has safety implications.
+- [ ] **Judge sensitivity to fabrication**: can the judge reliably distinguish "correct rationale cited from context" vs "plausible rationale invented by the model"? Test with adversarial fabrications.
+- [ ] **New metric: `reason_fabricated`**: true when the model provides rationale that sounds plausible but has no grounding in the graph metadata. Requires cross-referencing the LLM response against the actual relationship rationale fields in the seed.
+
+This is a critical finding: the kernel doesn't just improve accuracy — it provides
+**verifiable grounding**. Without explanatory metadata, there is no way to distinguish
+preserved knowledge from fabricated reasoning. The kernel makes rationale auditable.
+
 **Infrastructure:** all models run on vLLM via `llm.underpassai.com`. Add model entries
 to `evaluation-matrix.yaml` — the YAML-driven config makes this trivial.
 
