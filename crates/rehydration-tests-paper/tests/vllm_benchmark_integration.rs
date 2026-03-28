@@ -116,6 +116,9 @@ struct BenchmarkResult {
     tier_l0_tokens: u32,
     tier_l1_tokens: u32,
     tier_l2_tokens: u32,
+    /// Sum of tier tokens. May differ from rendered_token_count because flat
+    /// rendering and tiered rendering are independent pipelines over the same bundle.
+    tier_total_tokens: u32,
     // Kernel domain: query timing breakdown
     graph_load_ms: f64,
     detail_load_ms: f64,
@@ -525,6 +528,7 @@ async fn vllm_benchmark_across_scales_domains_and_variants()
                                 tier_l0_tokens,
                                 tier_l1_tokens,
                                 tier_l2_tokens,
+                                tier_total_tokens: tier_l0_tokens + tier_l1_tokens + tier_l2_tokens,
                                 graph_load_ms,
                                 detail_load_ms,
                                 bundle_assembly_ms,
