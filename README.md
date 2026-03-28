@@ -31,6 +31,26 @@ into LLM-ready text. It is built around four concepts:
 - Not a vector database — relationships have semantic classes and rationale, not embeddings
 - Not tied to any model — works with GPT, Claude, Llama, Qwen, or any LLM
 
+## Why This Matters
+
+The kernel solves two problems at once:
+
+**1. Small models become capable.** A 8B-parameter model with the right rehydrated
+context — causal chains, rationale metadata, semantic classes — can perform bounded
+graph tasks that would otherwise require a frontier model. Without the kernel, the
+same model fails because it lacks the structure to reason about *why* things are
+connected, not just *what* is connected.
+
+**2. Reasoning becomes auditable.** When an LLM responds based on kernel context,
+you can verify whether it preserved rationale from the graph or fabricated it.
+The kernel knows what rationale exists (`causal_density > 0`) and what doesn't.
+If the model claims to cite graph metadata but none exists, that's detectable
+fabrication — not just a wrong answer, but a dishonest one.
+
+Without structured context, there is no way to distinguish preserved knowledge
+from plausible-sounding invention. The kernel makes this distinction possible
+because the graph is the ground truth.
+
 ```mermaid
 graph LR
     A[Agent / LLM app] -- gRPC --> K[Rehydration Kernel]
