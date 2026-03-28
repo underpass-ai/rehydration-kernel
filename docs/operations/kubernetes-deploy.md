@@ -344,6 +344,30 @@ kubectl port-forward svc/<release>-grafana 3000:3000 -n <namespace>
 See [observability.md](../observability.md) for metric definitions, LogQL/PromQL examples,
 and architecture details.
 
+### Full mTLS Deployment
+
+For a deployment with mutual TLS on all boundaries:
+
+```bash
+helm upgrade --install rehydration-kernel charts/rehydration-kernel \
+  -n underpass-runtime \
+  -f charts/rehydration-kernel/values.underpass-runtime.mtls.example.yaml \
+  --set image.tag=<your-tag>
+```
+
+This configures:
+- gRPC inbound mTLS (client cert validation)
+- NATS mTLS (kernel ↔ NATS)
+- Valkey mTLS (kernel ↔ Valkey)
+- Neo4j TLS with CA trust (mTLS pending neo4rs driver upgrade)
+- OTel Collector mTLS (receiver + Loki exporter)
+- Kernel → OTel Collector mTLS (via `OTEL_EXPORTER_OTLP_*_PATH` env vars)
+- Grafana with anonymous access disabled
+
+Requires secrets pre-created in the namespace. See
+[`values.underpass-runtime.mtls.example.yaml`](../../charts/rehydration-kernel/values.underpass-runtime.mtls.example.yaml)
+for the full values file with secret names and cert paths.
+
 ## Notes
 
 - `dry_run=true` uses `helm --dry-run=server`
