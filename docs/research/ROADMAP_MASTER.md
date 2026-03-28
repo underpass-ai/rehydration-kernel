@@ -132,6 +132,27 @@ evidence rather than definitive validation.
 - [x] Bump `rehydration-tests-kernel` dev-dependency from async-nats 0.39 → 0.46
 - [x] `cargo clippy --workspace --all-targets --all-features -D warnings` passes clean
 
+### P2 — Migrate explanatory_data.rs to dataset generator
+
+`rehydration-tests-shared/src/seed/explanatory_data.rs` (1268 lines, 0% unit coverage)
+is the hand-written predecessor to `dataset_generator.rs`. Still used by 3 tests:
+
+- `relationship_use_case_integration.rs`
+- `tier_resolution_integration.rs`
+- `use_case_harness.rs` (paper metrics)
+
+Migrate these to parameterized seeds from the generator, then delete the file.
+Excluded from SonarCloud coverage gate until migrated.
+
+### P2 — SonarCloud quality gate (from session 2026-03-28)
+
+Quality gate FAILED: reliability C (1 bug), new code coverage 72.4% (target 80%).
+Contract job temporarily removed from CI (proto pruning baseline).
+
+- [ ] Fix bug: `extract-e2e-report.py:772` — conditional returns same value
+- [ ] Reduce cognitive complexity: `llm_judge_prompt_evaluation.rs` (206), `vllm_benchmark_integration.rs` (135), `dataset_generator.rs` (37)
+- [ ] Re-enable contract job once breaking change window closes (restore from commit af4c6a6)
+
 ### Coverage gaps (accepted, documented)
 
 | File | Unit test | IT coverage | Reason |
