@@ -143,6 +143,9 @@ struct BenchmarkResult {
     llm_latency_ms: Option<f64>,
     llm_prompt_tokens: Option<u32>,
     llm_completion_tokens: Option<u32>,
+    llm_reason_source: Option<String>,
+    llm_confidence: Option<String>,
+    llm_reason_fabricated: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     llm_response: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -610,6 +613,9 @@ async fn vllm_benchmark_across_scales_domains_and_variants()
                                 llm_latency_ms: llm_eval.as_ref().map(|e| e.llm_latency_ms),
                                 llm_prompt_tokens: llm_eval.as_ref().map(|e| e.llm_prompt_tokens),
                                 llm_completion_tokens: llm_eval.as_ref().map(|e| e.llm_completion_tokens),
+                                llm_reason_source: llm_eval.as_ref().map(|e| e.llm_reason_source.clone()),
+                                llm_confidence: llm_eval.as_ref().map(|e| e.llm_confidence.clone()),
+                                llm_reason_fabricated: llm_eval.as_ref().map(|e| e.llm_reason_fabricated),
                                 llm_response: llm_eval.as_ref().map(|e| e.llm_response.clone()),
                                 judge_raw: llm_eval.as_ref().and_then(|e| e.llm_judge_raw.clone()),
                                 ground_truth_summary: Some(format!(

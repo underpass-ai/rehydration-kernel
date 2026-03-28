@@ -32,13 +32,20 @@ inference_prompt: |
   When answering:
   - Trace the causal chain from root to leaf, following relationship types
   - Quote or paraphrase rationale text from relationships when available
-  - If no rationale metadata is present, state that explicitly
+  - If no rationale, method, or decision_id metadata is present in ANY
+    relationship, set reason to "NOT_AVAILABLE" and reason_source to "not_available"
+  - If you derive a reason by inference rather than citing metadata, set
+    reason_source to "inferred" — do not claim graph_metadata
+  - Set confidence to "high" only when quoting or closely paraphrasing
+    rationale text from the context
   - Identify the restart point based on causal evidence, not just position
 
   Answer in JSON:
   {"failure_point": "the root cause node or event",
   "restart_node": "the node to restart from, with causal justification",
-  "reason": "the dominant rationale — quote from context if available"}
+  "reason": "the dominant rationale — quote from context, or NOT_AVAILABLE",
+  "reason_source": "graph_metadata | inferred | not_available",
+  "confidence": "high | medium | low"}
 
 # Prompt sent to the judge model (Claude Opus 4, GPT-5.4, etc.)
 judge_prompt: |

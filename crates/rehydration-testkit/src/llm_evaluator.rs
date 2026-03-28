@@ -174,6 +174,13 @@ pub struct LlmEvaluationResult {
     pub llm_reason_correct: bool,
     /// Agent cited rationale from a distractor/noise branch.
     pub llm_reason_distractor: bool,
+    /// Self-declared source: "graph_metadata", "inferred", or "not_available".
+    pub llm_reason_source: String,
+    /// Self-declared confidence: "high", "medium", or "low".
+    pub llm_confidence: String,
+    /// Fabrication detected: model claims `graph_metadata` but ground truth has no rationale.
+    /// Computed deterministically by the evaluator, not by the judge.
+    pub llm_reason_fabricated: bool,
     pub llm_latency_ms: f64,
     pub llm_prompt_tokens: u32,
     pub llm_completion_tokens: u32,
@@ -462,13 +469,25 @@ pub async fn evaluate_with_llm(
         }
     };
 
+    let (reason_source, confidence) = extract_source_fields(&content);
+    let rationale_exists = ground_truth
+        .expected_reason
+        .as_ref()
+        .is_some_and(|r| !r.is_empty() && r != "none");
+    let reason_fabricated = reason_source == "graph_metadata" && !rationale_exists;
+
     Ok(verdict_to_result(
         judge_result,
-        content,
-        latency_ms,
-        prompt_tokens,
-        completion_tokens,
-        judge_raw,
+        EvalContext {
+            response: content,
+            reason_source,
+            confidence,
+            reason_fabricated,
+            latency_ms,
+            prompt_tokens,
+            completion_tokens,
+            judge_raw,
+        },
     ))
 }
 
@@ -566,26 +585,42 @@ pub async fn evaluate_with_config(
         }
     };
 
+    let (reason_source, confidence) = extract_source_fields(&content);
+    let rationale_exists = ground_truth
+        .expected_reason
+        .as_ref()
+        .is_some_and(|r| !r.is_empty() && r != "none");
+    let reason_fabricated = reason_source == "graph_metadata" && !rationale_exists;
+
     Ok(verdict_to_result(
         judge_result,
-        content,
-        latency_ms,
-        prompt_tokens,
-        completion_tokens,
-        judge_raw,
+        EvalContext {
+            response: content,
+            reason_source,
+            confidence,
+            reason_fabricated,
+            latency_ms,
+            prompt_tokens,
+            completion_tokens,
+            judge_raw,
+        },
     ))
 }
 
-fn verdict_to_result(
-    v: JudgeVerdict,
+struct EvalContext {
     response: String,
+    reason_source: String,
+    confidence: String,
+    reason_fabricated: bool,
     latency_ms: f64,
     prompt_tokens: u32,
     completion_tokens: u32,
     judge_raw: Option<String>,
-) -> LlmEvaluationResult {
+}
+
+fn verdict_to_result(v: JudgeVerdict, ctx: EvalContext) -> LlmEvaluationResult {
     LlmEvaluationResult {
-        llm_response: response,
+        llm_response: ctx.response,
         llm_task_success: v.task_correct,
         llm_restart_accuracy: v.restart_correct,
         llm_restart_exact: v.restart_exact,
@@ -595,11 +630,28 @@ fn verdict_to_result(
         llm_reason_preserved: v.reason_correct_main_path,
         llm_reason_correct: v.reason_correct_main_path,
         llm_reason_distractor: v.reason_plausible_but_wrong,
-        llm_latency_ms: latency_ms,
-        llm_prompt_tokens: prompt_tokens,
-        llm_completion_tokens: completion_tokens,
-        llm_judge_raw: judge_raw,
+        llm_reason_source: ctx.reason_source,
+        llm_confidence: ctx.confidence,
+        llm_reason_fabricated: ctx.reason_fabricated,
+        llm_latency_ms: ctx.latency_ms,
+        llm_prompt_tokens: ctx.prompt_tokens,
+        llm_completion_tokens: ctx.completion_tokens,
+        llm_judge_raw: ctx.judge_raw,
     }
+}
+
+/// Extract `reason_source` and `confidence` from the inference response JSON.
+/// Returns defaults ("unknown", "unknown") if parsing fails.
+fn extract_source_fields(response: &str) -> (String, String) {
+    let reason_source = serde_json::from_str::<serde_json::Value>(response)
+        .ok()
+        .and_then(|v| v["reason_source"].as_str().map(String::from))
+        .unwrap_or_else(|| "unknown".to_string());
+    let confidence = serde_json::from_str::<serde_json::Value>(response)
+        .ok()
+        .and_then(|v| v["confidence"].as_str().map(String::from))
+        .unwrap_or_else(|| "unknown".to_string());
+    (reason_source, confidence)
 }
 
 // ── judge ───────────────────────────────────────────────────────────
@@ -888,6 +940,9 @@ mod tests {
             llm_reason_preserved: false,
             llm_reason_correct: false,
             llm_reason_distractor: false,
+            llm_reason_source: "graph_metadata".to_string(),
+            llm_confidence: "high".to_string(),
+            llm_reason_fabricated: false,
             llm_latency_ms: 123.4,
             llm_prompt_tokens: 50,
             llm_completion_tokens: 30,

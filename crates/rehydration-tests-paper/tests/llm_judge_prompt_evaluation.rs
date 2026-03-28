@@ -228,6 +228,9 @@ struct EvalResult {
     timing_batch_size: u32,
     llm_prompt_tokens: Option<u32>,
     llm_completion_tokens: Option<u32>,
+    llm_reason_source: Option<String>,
+    llm_confidence: Option<String>,
+    llm_reason_fabricated: Option<bool>,
     agent_response: String,
     judge_raw: Option<String>,
 }
@@ -1085,6 +1088,9 @@ async fn judge_prompt_evaluation_across_all_use_cases() -> Result<(), Box<dyn Er
                                 timing_batch_size: ctx.timing_batch_size,
                                 llm_prompt_tokens: Some(e.llm_prompt_tokens),
                                 llm_completion_tokens: Some(e.llm_completion_tokens),
+                                llm_reason_source: Some(e.llm_reason_source),
+                                llm_confidence: Some(e.llm_confidence),
+                                llm_reason_fabricated: Some(e.llm_reason_fabricated),
                                 agent_response: e.llm_response,
                                 judge_raw: e.llm_judge_raw,
                             }
@@ -1125,6 +1131,9 @@ async fn judge_prompt_evaluation_across_all_use_cases() -> Result<(), Box<dyn Er
                                 timing_batch_size: ctx.timing_batch_size,
                                 llm_prompt_tokens: None,
                                 llm_completion_tokens: None,
+                                llm_reason_source: None,
+                                llm_confidence: None,
+                                llm_reason_fabricated: None,
                                 agent_response: String::new(),
                                 judge_raw: None,
                             }
