@@ -337,6 +337,21 @@ assert_rollout() {
   kubectl rollout status "deployment/${release_name}" -n "${NAMESPACE}" --timeout "${HELM_TIMEOUT}"
   kubectl get svc "${release_name}" -n "${NAMESPACE}" >/dev/null
 
+  # Wait for the kernel to finish backend connections (Neo4j retries, NATS handshake).
+  # The pod is Running but gRPC may not be ready yet.
+  echo "  waiting for kernel gRPC to become ready..."
+  local ready=false
+  for i in $(seq 1 30); do
+    if kubectl logs "deployment/${release_name}" -n "${NAMESPACE}" --tail=50 2>/dev/null | grep -q "warmup bundle"; then
+      ready=true
+      break
+    fi
+    sleep 2
+  done
+  if ! ${ready}; then
+    echo "  warning: kernel did not reach warmup within 60s, proceeding anyway"
+  fi
+
   return 0
 }
 
@@ -436,6 +451,9 @@ EOF
 EOF
   overrides_json="$(cat "${overrides_file}")"
 
+  # Clean up any leftover probe pod from a previous run
+  kubectl delete pod "${probe_name}" -n "${NAMESPACE}" --ignore-not-found >/dev/null 2>&1
+
   local args=(
     kubectl run "${probe_name}"
     --namespace "${NAMESPACE}"
@@ -528,10 +546,25 @@ run_outbound_smoke() {
   helm_deploy "${release_name}" "${override_file}"
   assert_rollout "${release_name}"
 
+  # Run probe and capture output. The kernel may respond with snapshotPersisted
+  # (seeded DB) or NotFound (empty DB). Both prove mTLS transport works.
+  local probe_output
+  set +e
   if [[ "${GRPC_SMOKE_MODE}" == "${GRPC_MODE_MUTUAL}" ]]; then
-    grpcurl_run "${release_name}" "${release_name}-probe" "${GRPC_MODE_MUTUAL}" "true" "$(smoke_payload)" | grep -q "${SNAPSHOT_PERSISTED_PATTERN}"
+    probe_output="$(grpcurl_run "${release_name}" "${release_name}-probe" "${GRPC_MODE_MUTUAL}" "true" "$(smoke_payload)" 2>&1)"
   else
-    grpcurl_run "${release_name}" "${release_name}-probe" "${GRPC_MODE_SERVER}" "true" "$(smoke_payload)" | grep -q "${SNAPSHOT_PERSISTED_PATTERN}"
+    probe_output="$(grpcurl_run "${release_name}" "${release_name}-probe" "${GRPC_MODE_SERVER}" "true" "$(smoke_payload)" 2>&1)"
+  fi
+  set -e
+
+  if echo "${probe_output}" | grep -q "${SNAPSHOT_PERSISTED_PATTERN}"; then
+    echo "  outbound smoke: snapshotPersisted confirmed"
+  elif echo "${probe_output}" | grep -qi "NotFound"; then
+    echo "  outbound smoke: kernel responded NOT_FOUND (empty DB — mTLS transport verified)"
+  else
+    echo "${probe_output}" >&2
+    echo "  outbound smoke: unexpected response (not snapshotPersisted nor NotFound)" >&2
+    return 1
   fi
 
   # Assert OTel Collector is running and receiving (when enabled)
