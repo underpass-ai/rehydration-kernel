@@ -2289,7 +2289,7 @@ dependencies = [
 name = "rehydration-tests-kernel"
 version = "0.1.0"
 dependencies = [
- "async-nats 0.39.0",
+ "async-nats 0.46.0",
  "prost-types",
  "rehydration-adapter-nats",
  "rehydration-adapter-neo4j",

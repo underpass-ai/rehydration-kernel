@@ -208,7 +208,7 @@ struct PrecheckResult {
     errors: Vec<String>,
 }
 
-fn precheck(resources: &str) -> PrecheckResult {
+fn precheck(resources: &str, matrix_path: &str) -> PrecheckResult {
     let mut ok = Vec::new();
     let mut warnings = Vec::new();
     let mut errors = Vec::new();
@@ -217,7 +217,7 @@ fn precheck(resources: &str) -> PrecheckResult {
     let filter_judges = env_filter("FILTER_JUDGES");
 
     // 1. Matrix YAML
-    let matrix_path = format!("{resources}/evaluation-matrix.yaml");
+    let matrix_path = matrix_path.to_string();
     match std::fs::read_to_string(&matrix_path) {
         Ok(content) => match serde_yaml::from_str::<serde_yaml::Value>(&content) {
             Ok(matrix) => {
@@ -411,9 +411,11 @@ fn precheck(resources: &str) -> PrecheckResult {
 async fn judge_prompt_evaluation_across_all_use_cases()
 -> Result<(), Box<dyn Error + Send + Sync>> {
     let resources = concat!(env!("CARGO_MANIFEST_DIR"), "/../../crates/rehydration-testkit/resources");
+    let matrix_path = std::env::var("EVAL_MATRIX_PATH")
+        .unwrap_or_else(|_| format!("{resources}/evaluation-matrix.yaml"));
 
     // ── Precheck: validate everything before booting containers ──
-    let precheck = precheck(resources);
+    let precheck = precheck(resources, &matrix_path);
     if !precheck.pass {
         eprintln!("\n{}", "=".repeat(70));
         eprintln!("  PRECHECK FAILED — fix the issues below before running");
@@ -440,8 +442,9 @@ async fn judge_prompt_evaluation_across_all_use_cases()
     let boot_start = Instant::now();
 
     let matrix: serde_yaml::Value = serde_yaml::from_str(
-        &std::fs::read_to_string(format!("{resources}/evaluation-matrix.yaml"))?,
+        &std::fs::read_to_string(&matrix_path)?,
     )?;
+    run.log(&format!("[CONFIG] matrix={matrix_path}"));
 
     let filter_models = env_filter("FILTER_MODELS");
     let filter_prompts = env_filter("FILTER_PROMPTS");
@@ -502,11 +505,20 @@ async fn judge_prompt_evaluation_across_all_use_cases()
     // ── Phase 1: Boot + capture ──
 
     type ScaleEntry = (&'static str, fn(Domain) -> GraphSeedConfig);
-    let scales: Vec<ScaleEntry> = vec![
+    let all_scales: Vec<ScaleEntry> = vec![
         ("micro", |d| GraphSeedConfig::micro(d)),
         ("meso", |d| GraphSeedConfig::meso(d)),
         ("stress", |d| GraphSeedConfig::stress(d)),
     ];
+    let yaml_scales: Vec<String> = matrix["scales"]
+        .as_mapping()
+        .map(|m| m.keys().filter_map(|k| k.as_str().map(String::from)).collect())
+        .unwrap_or_default();
+    let scales: Vec<ScaleEntry> = if yaml_scales.is_empty() {
+        all_scales
+    } else {
+        all_scales.into_iter().filter(|(name, _)| yaml_scales.iter().any(|s| s == name)).collect()
+    };
     let domains = [("ops", Domain::Operations), ("debug", Domain::SoftwareDebugging)];
     let mixes = [("explanatory", RelationMix::Explanatory), ("structural", RelationMix::Structural), ("mixed", RelationMix::Mixed)];
     // Noise modes are distributed across mixes rather than fully crossed,
@@ -523,7 +535,8 @@ async fn judge_prompt_evaluation_across_all_use_cases()
     ];
 
     let seeds_per_cell = matrix["seeds_per_cell"].as_u64().unwrap_or(1) as usize;
-    run.log(&format!("[CONFIG] seeds_per_cell={seeds_per_cell}"));
+    let active_scale_names: Vec<&str> = scales.iter().map(|(name, _)| *name).collect();
+    run.log(&format!("[CONFIG] seeds_per_cell={seeds_per_cell}, scales={active_scale_names:?}"));
 
     let mut captured: Vec<CapturedVariant> = Vec::new();
     let mut fixture: Option<TestFixture> = None;

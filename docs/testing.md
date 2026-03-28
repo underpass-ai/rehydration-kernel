@@ -72,13 +72,13 @@ cargo test -p rehydration-tests-kernel \
   -- --nocapture --test-threads=1
 ```
 
-## Benchmark Tests (LLM-as-Judge) — Primary Validation
+## Benchmark Tests (LLM-as-Judge)
 
-> **This is the most important test in the project.** It is the only test
-> that validates the kernel's core value proposition end-to-end: explanatory
-> relationships improve LLM context quality over structural-only edges.
-> All other tests verify structure — this one proves the kernel actually
-> helps agents reason better.
+> **This is the primary empirical validation harness for the kernel.**
+> It is the only test that evaluates the kernel's core value proposition
+> end-to-end: explanatory relationships improve LLM context quality over
+> structural-only edges. Results provide directional evidence — methodology
+> refinement is ongoing (see [ROADMAP_MASTER.md](research/ROADMAP_MASTER.md)).
 
 Each evaluation calls an LLM for inference (agent) and a second LLM for judging.
 The test uses testcontainers to spin up Neo4j + Valkey + NATS + kernel locally,
@@ -96,24 +96,96 @@ Local machine                          External
 │   NATS             │                 └──────────────────┘
 │   kernel (gRPC)    │                 ┌──────────────────┐
 │                    │  judge call     │ OpenAI / Anthropic│
-│ test binary        │ ───────────────>│   GPT-4.1-nano   │
-│   (Rust)           │                 │   Claude Opus 4  │
+│ test binary        │ ───────────────>│   GPT-5.4        │
+│   (Rust)           │                 │   Claude Opus 4.6│
 └────────────────────┘                 └──────────────────┘
 ```
 
+### Execution phases
+
+The test runs 5 phases in order. Expensive API calls only happen in phase 4.
+
+| Phase | What it does | Cost |
+|:------|:-------------|:-----|
+| **0. Precheck** | Validates YAML structure, API key presence, endpoint connectivity. Fails fast before any containers boot. | Free |
+| **1. Calibrate** | Sends known-good and known-bad synthetic responses to each judge. Catches miscalibrated judge/prompt combos before burning real evals. | ~$0.01/judge |
+| **2. Capture** | Boots containers, seeds graphs, renders context for all variant cells. Logs `compression_ratio`, `causal_density` per variant. | Free (local) |
+| **3. Evaluate** | Runs agent inference + judge verdict for each cell in the filtered matrix. | Main cost |
+| **4. Report** | Generates `summary.json` and `report.md` with aggregate tables. | Free |
+
+### Key concepts
+
+**Domains:** Operations and SoftwareDebugging — two independent graph schemas to avoid domain-specific bias.
+
+**Mixes:** `explanatory` (causal/motivational/evidential relations) vs `structural` (only structural edges). This is the independent variable — the kernel's thesis is that explanatory > structural.
+
+**Self-eval exclusion:** When agent and judge are the same model (e.g., opus-4.6 as both), the combo is skipped. 3 agents × 3 judges - 3 self = 6 valid cross-eval combos per prompt/scale/noise cell.
+
 ### Configuration
 
-Matrix config: `crates/rehydration-testkit/resources/evaluation-matrix.yaml`
-Judge prompts: `crates/rehydration-testkit/resources/llm_prompts.yaml`
+The benchmark is driven by two YAML files:
+
+| File | Purpose |
+|:-----|:--------|
+| `crates/rehydration-testkit/resources/evaluation-matrix.yaml` | **Single source of truth**: agents, judges, prompt variants, scales, noise modes, seeds |
+| `crates/rehydration-testkit/resources/llm_prompts.yaml` | Default inference + judge prompt templates (v2, causal-chain-aware) |
+
+Both can be overridden at runtime:
+
+| Variable | Default | Description |
+|:---------|:--------|:------------|
+| `EVAL_MATRIX_PATH` | `resources/evaluation-matrix.yaml` | Path to a custom matrix YAML |
+| `LLM_PROMPTS_PATH` | compiled-in `llm_prompts.yaml` | Path to custom prompt templates |
+
+This means you can create a custom YAML for a specific run without editing the defaults:
+
+```bash
+cp crates/rehydration-testkit/resources/evaluation-matrix.yaml my-run.yaml
+# Edit my-run.yaml: change models, scales, seeds...
+EVAL_MATRIX_PATH=my-run.yaml cargo test -p rehydration-tests-paper \
+  --features container-tests --test llm_judge_prompt_evaluation \
+  -- --nocapture --test-threads=1
+```
+
+The evaluation matrix YAML defines the full combinatorial space:
+
+```yaml
+agents:           # Inference models (qwen3-8b, gpt-5.4, opus-4.6)
+judges:           # Judge models (opus-4.6, gpt-5.4, sonnet-4.6)
+prompts:          # Prompt variants (v1-original, default, citation-agent, strict, lenient)
+scales:           # Graph sizes (micro ~500tok, meso ~1500tok, stress ~4000tok)
+noise:            # Noise modes (clean, competing, conflicting, restart)
+seeds_per_cell: 3 # Distinct graph seeds per variant for variance estimation
+```
+
+Total evaluations = agents × judges × prompts × scales × domains × mixes × noise × seeds.
+Use filters (below) to run subsets without editing the YAML.
 
 ### Tests
 
 | Test | What it validates | Cost |
 |:-----|:------------------|:-----|
-| `llm_judge_prompt_evaluation` | Full matrix: agents x judges x scales x noise | ~$15 full, ~$0.10 diagnostic |
+| `llm_judge_prompt_evaluation` | Full matrix: agents × judges × prompts × scales × noise | ~$15 full, ~$0.10 diagnostic |
 | `vllm_benchmark_integration` | vLLM inference quality under budget pressure | GPU time only |
 
-### Environment variables
+### Filters (subset the matrix)
+
+All filters accept comma-separated values. Names must match keys in `evaluation-matrix.yaml`.
+
+| Variable | Values | Example |
+|:---------|:-------|:--------|
+| `FILTER_MODELS` | Agent names | `qwen3-8b`, `gpt-5.4,opus-4.6` |
+| `FILTER_JUDGES` | Judge names | `sonnet-4.6`, `opus-4.6,gpt-5.4` |
+| `FILTER_PROMPTS` | Prompt variant names | `default`, `strict-judge,lenient-judge` |
+| `FILTER_SCALES` | Graph scales | `micro`, `meso,stress` |
+| `FILTER_NOISE` | Noise modes | `clean`, `competing,conflicting` |
+
+When a filter is empty, all values from the YAML are used.
+
+### Environment variable overrides
+
+The `LLM_*` env vars override the YAML for quick ad-hoc runs. For reproducible
+benchmarks, prefer editing `evaluation-matrix.yaml` directly.
 
 **Agent (inference):**
 
@@ -132,16 +204,9 @@ Judge prompts: `crates/rehydration-testkit/resources/llm_prompts.yaml`
 | Variable | Description |
 |:---------|:------------|
 | `LLM_JUDGE_ENDPOINT` | Judge endpoint (e.g. `https://api.openai.com/v1/chat/completions`) |
-| `LLM_JUDGE_MODEL` | Judge model (e.g. `gpt-4.1-nano`, `claude-opus-4-6`) |
+| `LLM_JUDGE_MODEL` | Judge model (e.g. `claude-sonnet-4-6`, `gpt-5.4`) |
 | `LLM_JUDGE_PROVIDER` | `openai-new`, `anthropic` |
 | `LLM_JUDGE_API_KEY` | API key for the judge endpoint |
-
-**Filters (subset the matrix):**
-
-| Variable | Values |
-|:---------|:-------|
-| `FILTER_SCALES` | `micro`, `meso`, `stress` (comma or space separated) |
-| `FILTER_NOISE` | `clean`, `competing`, `conflicting`, `restart` |
 
 **API keys:**
 
@@ -150,22 +215,32 @@ Judge prompts: `crates/rehydration-testkit/resources/llm_prompts.yaml`
 | `ANTHROPIC_KEY` | `cat /tmp/claude.txt` |
 | `OPENAI_KEY` | `cat /tmp/openai.txt` |
 
-### Run: cheapest possible (micro, clean, nano judge)
+### Understanding evaluation counts
+
+Variants are generated as: scales × domains × mixes × noise_per_mix × seeds.
+Each variant is then evaluated by each agent × judge × prompt combo.
+
+The noise modes are distributed across mixes to keep the budget flat:
+- `explanatory` → clean + competing-causal
+- `structural` → clean + conflicting-path
+- `mixed` → clean + competing-restart
+
+So each mix has exactly 2 noise conditions. With 3 mixes, 2 domains, and
+3 seeds, one scale produces: 3 mixes × 2 noise × 2 domains × 3 seeds = **36 variants**.
+Each variant is evaluated once per agent × judge × prompt combo (minus self-eval).
+
+### Run examples
+
+All examples use the YAML matrix with filters — no env var overrides needed.
+
+**Smoke test** — 1 agent, 1 judge, micro only, clean noise (~$0.01):
 
 ```bash
-export OPENAI_KEY="$(cat /tmp/openai.txt)"
+export ANTHROPIC_KEY="$(cat /tmp/claude.txt)"
 
-LLM_ENDPOINT="https://llm.underpassai.com/v1/chat/completions" \
-LLM_MODEL="Qwen/Qwen3-8B" \
-LLM_PROVIDER="openai" \
-LLM_TLS_CERT_PATH="/tmp/vllm-client.crt" \
-LLM_TLS_KEY_PATH="/tmp/vllm-client.key" \
-LLM_TLS_INSECURE="true" \
-LLM_TEMPERATURE="0.0" \
-LLM_JUDGE_ENDPOINT="https://api.openai.com/v1/chat/completions" \
-LLM_JUDGE_MODEL="gpt-4.1-nano" \
-LLM_JUDGE_PROVIDER="openai-new" \
-LLM_JUDGE_API_KEY="$OPENAI_KEY" \
+FILTER_MODELS="qwen3-8b" \
+FILTER_JUDGES="sonnet-4.6" \
+FILTER_PROMPTS="default" \
 FILTER_SCALES="micro" \
 FILTER_NOISE="clean" \
 bash -c '. scripts/ci/testcontainers-runtime.sh 2>/dev/null && \
@@ -175,9 +250,48 @@ cargo test -p rehydration-tests-paper \
   -- --nocapture --test-threads=1'
 ```
 
-This runs 18 evaluations (2 domains x 3 mixes x 3 seeds) and costs ~$0.01.
+18 evals: 1 scale × 2 domains × 3 mixes × 1 noise (clean) × 3 seeds.
 
-### Run: ground truth diagnostic
+**Demonstrative run** — 1 agent, 1 judge, all noise, micro + meso (~$0.10):
+
+```bash
+export ANTHROPIC_KEY="$(cat /tmp/claude.txt)"
+
+FILTER_MODELS="qwen3-8b" \
+FILTER_JUDGES="sonnet-4.6" \
+FILTER_PROMPTS="default" \
+FILTER_SCALES="micro,meso" \
+bash -c '. scripts/ci/testcontainers-runtime.sh 2>/dev/null && \
+cargo test -p rehydration-tests-paper \
+  --features container-tests \
+  --test llm_judge_prompt_evaluation \
+  -- --nocapture --test-threads=1'
+```
+
+72 evals: 2 scales × 2 domains × 3 mixes × 2 noise × 3 seeds. Enough to
+show the explanatory vs structural gap across noise conditions and graph sizes.
+
+**Cross-provider comparison** — all agents, fixed judge, default prompt (~$2):
+
+```bash
+export ANTHROPIC_KEY="$(cat /tmp/claude.txt)"
+export OPENAI_KEY="$(cat /tmp/openai.txt)"
+
+FILTER_JUDGES="sonnet-4.6" \
+FILTER_PROMPTS="default" \
+FILTER_SCALES="micro,meso" \
+bash -c '. scripts/ci/testcontainers-runtime.sh 2>/dev/null && \
+cargo test -p rehydration-tests-paper \
+  --features container-tests \
+  --test llm_judge_prompt_evaluation \
+  -- --nocapture --test-threads=1'
+```
+
+216 evals: 3 agents × 72 variants. Compares qwen3-8b, gpt-5.4, opus-4.6
+under a fixed judge for balanced agent comparison claims.
+
+**Ground truth diagnostic** — validates that ground truth + judge produce
+consistent scores before a full run:
 
 ```bash
 export ANTHROPIC_KEY="$(cat /tmp/claude.txt)"
@@ -185,10 +299,18 @@ export OPENAI_KEY="$(cat /tmp/openai.txt)"
 bash scripts/ci/e2e-ground-truth-diagnostic.sh
 ```
 
-### Run: full matrix
+**Full matrix** — all agents × all judges × all prompts × all scales × all noise:
 
 ```bash
+export ANTHROPIC_KEY="$(cat /tmp/claude.txt)"
+export OPENAI_KEY="$(cat /tmp/openai.txt)"
 bash scripts/ci/evaluate-prompt-variants.sh
+```
+
+The script also accepts a custom matrix YAML as argument:
+
+```bash
+bash scripts/ci/evaluate-prompt-variants.sh my-run.yaml
 ```
 
 ### Viewing logs
@@ -231,6 +353,17 @@ Each result JSON contains:
 
 These metrics come from the **kernel response** (`rendered.quality` in the
 proto), not computed by the test. Single source of truth.
+
+### Troubleshooting
+
+| Symptom | Cause | Fix |
+|:--------|:------|:----|
+| `[PRECHECK] FAIL: missing ANTHROPIC_KEY` | API key env var not set | `export ANTHROPIC_KEY="$(cat /tmp/claude.txt)"` |
+| `[PRECHECK] FAIL: endpoint unreachable` | vLLM server down or TLS cert expired | Check `kubectl get pods` and cert expiry |
+| `[CALIBRATE] FAIL: known-good scored false` | Judge/prompt combo miscalibrated | Try a different judge or prompt variant |
+| `[EVAL] parse error: invalid JSON` | Judge returned markdown instead of JSON | The test strips fences automatically; if persistent, check `judge_max_tokens` |
+| Container startup timeout | Docker/Podman not running | `bash scripts/ci/testcontainers-runtime.sh` |
+| `two different versions of crate async_nats` | Dependency version conflict | `cargo clean && cargo check --all-features` |
 
 ## Adapter Integration Tests
 
