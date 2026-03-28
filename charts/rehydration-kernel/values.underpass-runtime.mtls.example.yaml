@@ -40,7 +40,7 @@ connections:
 # --- gRPC inbound mTLS ---
 tls:
   mode: mutual
-  existingSecret: grpc-tls
+  existingSecret: rehydration-kernel-grpc-tls
   keys:
     cert: tls.crt
     key: tls.key
@@ -51,12 +51,12 @@ nats:
   enabled: true
   tls:
     enabled: true
-    existingSecret: nats-tls
-    caSecret: nats-ca
+    existingSecret: rehydration-kernel-nats-tls
+    caSecret: rehydration-kernel-nats-ca
 
 natsTls:
   mode: mutual
-  existingSecret: nats-tls
+  existingSecret: rehydration-kernel-nats-tls
   tlsFirst: false
   keys:
     ca: ca.crt
@@ -68,12 +68,12 @@ valkey:
   enabled: true
   tls:
     enabled: true
-    existingSecret: valkey-tls
-    caSecret: valkey-ca
+    existingSecret: rehydration-kernel-valkey-tls
+    caSecret: rehydration-kernel-valkey-ca
 
 valkeyTls:
   enabled: true
-  existingSecret: valkey-tls
+  existingSecret: rehydration-kernel-valkey-tls
   keys:
     ca: ca.crt
     cert: tls.crt
@@ -85,12 +85,12 @@ neo4j:
   auth: "neo4j/underpassai"
   tls:
     enabled: true
-    existingSecret: neo4j-tls
+    existingSecret: rehydration-kernel-neo4j-tls
     caSecret: neo4j-tls
 
 neo4jTls:
   enabled: true
-  existingSecret: neo4j-tls
+  existingSecret: rehydration-kernel-neo4j-tls
   keys:
     ca: ca.crt
     # cert and key pending neo4rs 0.8 driver support
@@ -110,7 +110,7 @@ otelCollector:
   enabled: true
   tls:
     enabled: true
-    existingSecret: otel-tls
+    existingSecret: rehydration-kernel-otel-tls
     keys:
       ca: ca.crt
       cert: tls.crt
