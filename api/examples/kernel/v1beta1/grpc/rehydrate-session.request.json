@@ -4,8 +4,6 @@
     "implementer",
     "reviewer"
   ],
-  "includeTimeline": true,
-  "includeSummaries": true,
   "timelineWindow": 50,
   "persistSnapshot": true,
   "snapshotTtl": "3600s"
