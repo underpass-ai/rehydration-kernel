@@ -2,6 +2,8 @@ pub mod metrics;
 pub mod quality_observers;
 
 use opentelemetry::trace::TracerProvider as _;
+use opentelemetry_otlp::WithTonicConfig;
+use opentelemetry_otlp::tonic_types::transport::{Certificate, ClientTlsConfig, Identity};
 use opentelemetry_sdk::metrics::SdkMeterProvider;
 use opentelemetry_sdk::trace::SdkTracerProvider;
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
@@ -87,10 +89,11 @@ fn init_otel_tracer(service_name: &str) -> Option<SdkTracerProvider> {
         return None;
     }
 
-    let exporter = opentelemetry_otlp::SpanExporter::builder()
-        .with_tonic()
-        .build()
-        .ok()?;
+    let mut builder = opentelemetry_otlp::SpanExporter::builder().with_tonic();
+    if let Some(tls_config) = build_otlp_tls_config() {
+        builder = builder.with_tls_config(tls_config);
+    }
+    let exporter = builder.build().ok()?;
 
     let provider = SdkTracerProvider::builder()
         .with_resource(
@@ -102,6 +105,38 @@ fn init_otel_tracer(service_name: &str) -> Option<SdkTracerProvider> {
         .build();
 
     Some(provider)
+}
+
+/// Build a TLS config for OTLP exporters from environment variables.
+///
+/// - `OTEL_EXPORTER_OTLP_CA_PATH` — CA certificate for server verification
+/// - `OTEL_EXPORTER_OTLP_CERT_PATH` — client certificate for mTLS
+/// - `OTEL_EXPORTER_OTLP_KEY_PATH` — client key for mTLS
+///
+/// Returns `None` if no TLS variables are set (plaintext mode).
+pub(crate) fn build_otlp_tls_config() -> Option<ClientTlsConfig> {
+    let ca_path = std::env::var("OTEL_EXPORTER_OTLP_CA_PATH").ok();
+    let cert_path = std::env::var("OTEL_EXPORTER_OTLP_CERT_PATH").ok();
+    let key_path = std::env::var("OTEL_EXPORTER_OTLP_KEY_PATH").ok();
+
+    if ca_path.is_none() && cert_path.is_none() && key_path.is_none() {
+        return None;
+    }
+
+    let mut tls_config = ClientTlsConfig::new();
+
+    if let Some(ca_path) = ca_path {
+        let ca_pem = std::fs::read(ca_path.trim()).ok()?;
+        tls_config = tls_config.ca_certificate(Certificate::from_pem(ca_pem));
+    }
+
+    if let (Some(cert_path), Some(key_path)) = (cert_path, key_path) {
+        let cert_pem = std::fs::read(cert_path.trim()).ok()?;
+        let key_pem = std::fs::read(key_path.trim()).ok()?;
+        tls_config = tls_config.identity(Identity::from_pem(cert_pem, key_pem));
+    }
+
+    Some(tls_config)
 }
 
 /// Shuts down the OpenTelemetry providers, flushing pending data.

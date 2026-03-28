@@ -1,4 +1,5 @@
 use opentelemetry::metrics::{Counter, Histogram, Meter};
+use opentelemetry_otlp::WithTonicConfig;
 use opentelemetry_sdk::metrics::SdkMeterProvider;
 
 /// Kernel-wide metric instruments.
@@ -58,10 +59,11 @@ pub(crate) fn init_otel_metrics(service_name: &str) -> Option<SdkMeterProvider> 
         return None;
     }
 
-    let exporter = opentelemetry_otlp::MetricExporter::builder()
-        .with_tonic()
-        .build()
-        .ok()?;
+    let mut builder = opentelemetry_otlp::MetricExporter::builder().with_tonic();
+    if let Some(tls_config) = super::build_otlp_tls_config() {
+        builder = builder.with_tls_config(tls_config);
+    }
+    let exporter = builder.build().ok()?;
 
     let reader = opentelemetry_sdk::metrics::PeriodicReader::builder(exporter).build();
 

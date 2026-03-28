@@ -165,7 +165,7 @@ All infrastructure boundaries support TLS. The gRPC transport supports mTLS.
 | Kernel → Neo4j | `bolt+s://` / `neo4j+s://` with CA pinning | URI-embedded credentials via K8s secrets |
 | Kernel → Valkey | `rediss://` with **mTLS** | Client certificate + key from secrets |
 | Kernel → NATS | TLS with CA pinning, `tls_first` | Client certificate or NATS credentials |
-| Kernel → OTel Collector | **Plaintext** gRPC (mTLS in progress) | None — co-locate or network-isolate |
+| Kernel → OTel Collector | gRPC with optional **mTLS** via env vars | `OTEL_EXPORTER_OTLP_CA_PATH`, `_CERT_PATH`, `_KEY_PATH` |
 
 Commands are protected by **idempotency key outcome recording** and **optimistic concurrency**
 (revision + content hash). Credentials are never inlined — always mounted from

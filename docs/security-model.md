@@ -79,7 +79,7 @@ graph LR
 | Replay attacks on commands | Idempotency key outcome recording (returns same result for retries; application layer checks before processing) | **Implemented** |
 | Credential exposure in config | Kubernetes secrets, not inline URIs | **Documented** |
 | Data exfiltration from backends | TLS transport, network isolation | **Available** |
-| Man-in-the-middle on OTLP | None — plaintext gRPC | **In progress** — mTLS support planned |
+| Man-in-the-middle on OTLP | mTLS via `OTEL_EXPORTER_OTLP_{CA,CERT,KEY}_PATH` env vars | **Implemented** |
 | Grafana anonymous access | Helm default: anonymous=false. Dev overlay enables it | Configurable via `grafana.anonymousAccess` |
 
 
@@ -91,7 +91,7 @@ graph LR
 | Neo4j | `neo4jTls.enabled`, `neo4jTls.existingSecret`, `neo4jTls.keys.{ca,cert,key}` | TLS with CA trust + client cert (driver pending) |
 | Valkey | `valkeyTls.enabled`, `valkeyTls.existingSecret` | TLS, mTLS with client cert |
 | NATS | `natsTls.mode`, `natsTls.existingSecret` | TLS, mTLS, tls_first |
-| OTel Collector | `otelCollector.tls.enabled`, `otelCollector.tls.existingSecret` | Plaintext or mTLS (receiver + Loki exporter). Kernel OTLP client TLS pending Rust code change |
+| OTel Collector | `otelCollector.tls.enabled`, `otelCollector.tls.existingSecret` | mTLS (receiver + Loki exporter + kernel OTLP client) |
 
 ## Recommendations for Production
 
@@ -102,7 +102,7 @@ graph LR
 5. Network-isolate the kernel namespace from untrusted workloads.
 6. Set `grafana.adminPassword` to a strong value. Anonymous access is disabled
    by default (`grafana.anonymousAccess=false`); only the dev overlay enables it.
-7. Co-locate or network-isolate the OTel Collector until OTLP mTLS is implemented.
+7. Set `OTEL_EXPORTER_OTLP_CA_PATH`, `_CERT_PATH`, `_KEY_PATH` for OTLP mTLS.
 
 ## What the Kernel Does NOT Do
 

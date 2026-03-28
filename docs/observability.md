@@ -196,6 +196,9 @@ kubectl port-forward svc/<release>-grafana 3000:3000 -n <namespace>
 |:---------|:--------|:------------|
 | `REHYDRATION_LOG_FORMAT` | `compact` | Log format: `json` (for Loki), `pretty`, `compact` |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | — | OTLP gRPC endpoint (auto-set when otelCollector enabled) |
+| `OTEL_EXPORTER_OTLP_CA_PATH` | — | CA certificate for OTLP server verification |
+| `OTEL_EXPORTER_OTLP_CERT_PATH` | — | Client certificate for OTLP mTLS |
+| `OTEL_EXPORTER_OTLP_KEY_PATH` | — | Client key for OTLP mTLS |
 | `OTEL_SERVICE_NAME` | — | Override service name in OTel metadata |
 | `RUST_LOG` | `info` | Log level filter |
 
@@ -206,7 +209,7 @@ kubectl port-forward svc/<release>-grafana 3000:3000 -n <namespace>
   (see [ROADMAP_MASTER.md](research/ROADMAP_MASTER.md)).
 - Quality metrics fan-out is synchronous. Async fan-out is planned to avoid
   latency impact on the gRPC hot path.
-- OTLP export is **plaintext** gRPC. mTLS is in progress.
+- OTLP export supports mTLS via `OTEL_EXPORTER_OTLP_{CA,CERT,KEY}_PATH` env vars. Plaintext by default when no env vars set.
 - `rehydration.bundle.details` and `rehydration.projection.lag` are defined
   but not yet recorded by any handler.
 - `GetContextPath` does not emit `bundle.nodes`, `bundle.relationships`,
