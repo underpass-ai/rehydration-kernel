@@ -528,6 +528,33 @@ Root cause: prompt designed for flat bundles + Opus 4 calibration. See
 - ~~vLLM in the loop tests~~ (done: 18-config benchmark with LLM-as-judge)
 - ~~Dataset Generator~~ (done: micro/meso/stress × 2 domains)
 
+### Level 2 — Small model capability matrix
+
+The kernel's thesis is that **small models + structured rehydrated context** can perform
+bounded graph tasks that normally require frontier models. The benchmark should prove:
+
+1. Small model + kernel (explanatory) ≈ frontier model + raw context
+2. Small model + kernel (explanatory) >> small model + kernel (structural)
+3. The gap closes as kernel context quality improves (planner, tiers, noise pruning)
+
+**Model matrix for vLLM (local GPU inference, zero API cost):**
+
+- [ ] Qwen3-8B (current baseline)
+- [ ] Qwen3-4B (smaller, tests minimum viable model size)
+- [ ] Qwen3-1.7B (stress test: can the kernel compensate for extreme model weakness?)
+- [ ] Phi-4-mini (3.8B, Microsoft — different architecture family)
+- [ ] Gemma-3-4B (Google — different training data/approach)
+- [ ] DeepSeek-R1-Distill-Qwen-7B (reasoning-capable, tests if CoT + kernel compounds)
+
+Each model runs the same `baseline-planner-v1.yaml` config (108 evals, ~15 min per model).
+Compare: Task accuracy, Reason preservation, Restart accuracy across the model size spectrum.
+
+**Key question:** at what model size does the kernel stop compensating? Is there a floor
+below which structured context cannot help?
+
+**Infrastructure:** all models run on vLLM via `llm.underpassai.com`. Add model entries
+to `evaluation-matrix.yaml` — the YAML-driven config makes this trivial.
+
 ### Level 3 — SOTA push
 - [ ] Public benchmark
 - [ ] External system comparisons (GraphRAG, plain RAG)
