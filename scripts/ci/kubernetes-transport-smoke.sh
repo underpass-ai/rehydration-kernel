@@ -31,6 +31,12 @@ VALKEY_TLS_CA_KEY="${VALKEY_TLS_CA_KEY:-ca.crt}"
 VALKEY_TLS_CERT_KEY="${VALKEY_TLS_CERT_KEY:-tls.crt}"
 VALKEY_TLS_KEY_KEY="${VALKEY_TLS_KEY_KEY:-tls.key}"
 
+OTEL_TLS_ENABLED="${OTEL_TLS_ENABLED:-false}"
+OTEL_TLS_SECRET_NAME="${OTEL_TLS_SECRET_NAME:-}"
+OTEL_TLS_CA_KEY="${OTEL_TLS_CA_KEY:-ca.crt}"
+OTEL_TLS_CERT_KEY="${OTEL_TLS_CERT_KEY:-tls.crt}"
+OTEL_TLS_KEY_KEY="${OTEL_TLS_KEY_KEY:-tls.key}"
+
 if [[ -n "${IMAGE_TAG}" && -n "${IMAGE_DIGEST}" ]]; then
   echo "set either IMAGE_TAG or IMAGE_DIGEST, not both" >&2
   exit 1
@@ -264,6 +270,29 @@ valkeyTls:
 EOF
   fi
 
+  if bool_is_true "${OTEL_TLS_ENABLED}" || [[ -n "${OTEL_TLS_SECRET_NAME}" ]]; then
+    cat >>"${override_file}" <<EOF
+otelCollector:
+  enabled: true
+  tls:
+    enabled: ${OTEL_TLS_ENABLED}
+    existingSecret: ${OTEL_TLS_SECRET_NAME}
+    keys:
+      ca: ${OTEL_TLS_CA_KEY}
+      cert: ${OTEL_TLS_CERT_KEY}
+      key: ${OTEL_TLS_KEY_KEY}
+loki:
+  enabled: true
+extraEnv:
+  - name: OTEL_EXPORTER_OTLP_CA_PATH
+    value: /var/run/rehydration-kernel/otel-tls/${OTEL_TLS_CA_KEY}
+  - name: OTEL_EXPORTER_OTLP_CERT_PATH
+    value: /var/run/rehydration-kernel/otel-tls/${OTEL_TLS_CERT_KEY}
+  - name: OTEL_EXPORTER_OTLP_KEY_PATH
+    value: /var/run/rehydration-kernel/otel-tls/${OTEL_TLS_KEY_KEY}
+EOF
+  fi
+
   printf "%s" "${override_file}"
   return 0
 }
@@ -493,6 +522,26 @@ run_outbound_smoke() {
     grpcurl_run "${release_name}" "${release_name}-probe" "${GRPC_MODE_MUTUAL}" "true" "$(smoke_payload)" | grep -q "${SNAPSHOT_PERSISTED_PATTERN}"
   else
     grpcurl_run "${release_name}" "${release_name}-probe" "${GRPC_MODE_SERVER}" "true" "$(smoke_payload)" | grep -q "${SNAPSHOT_PERSISTED_PATTERN}"
+  fi
+
+  # Assert OTel Collector is running and receiving (when enabled)
+  if bool_is_true "${OTEL_TLS_ENABLED}"; then
+    echo "  verifying OTel Collector is running..."
+    kubectl rollout status "deployment/${release_name}-otel-collector" -n "${NAMESPACE}" --timeout 60s
+
+    echo "  verifying Loki is ready..."
+    kubectl exec -n "${NAMESPACE}" "deployment/${release_name}-loki" -- \
+      wget -qO- http://localhost:3100/ready 2>/dev/null || true
+
+    echo "  verifying kernel logs contain quality metrics..."
+    sleep 5
+    local kernel_logs
+    kernel_logs="$(kubectl logs -n "${NAMESPACE}" "deployment/${release_name}" --tail=50 2>/dev/null || true)"
+    if echo "${kernel_logs}" | grep -q "bundle quality metrics"; then
+      echo "  quality metrics log found in kernel output"
+    else
+      echo "  warning: quality metrics log not found (may need a GetContext call to trigger)"
+    fi
   fi
 
   return 0

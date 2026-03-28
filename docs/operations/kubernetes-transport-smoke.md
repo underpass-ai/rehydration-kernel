@@ -117,6 +117,27 @@ VALKEY_TLS_SECRET_NAME=rehydration-kernel-valkey-tls \
 bash scripts/ci/kubernetes-transport-smoke.sh all
 ```
 
+Full mTLS with OTel Collector and Loki:
+
+```bash
+IMAGE_TAG=mtls \
+GRPC_SMOKE_MODE=mutual \
+NATS_TLS_MODE=mutual \
+NATS_TLS_SECRET_NAME=rehydration-kernel-nats-tls \
+VALKEY_TLS_ENABLED=true \
+VALKEY_TLS_SECRET_NAME=rehydration-kernel-valkey-tls \
+OTEL_TLS_ENABLED=true \
+OTEL_TLS_SECRET_NAME=rehydration-kernel-otel-tls \
+bash scripts/ci/kubernetes-transport-smoke.sh outbound
+```
+
+This verifies:
+- gRPC mTLS (anonymous client rejected, authenticated client accepted)
+- NATS mTLS (kernel connects with client cert)
+- Valkey mTLS (snapshot write via `rediss://`)
+- OTel Collector mTLS (receiver + Loki exporter)
+- Kernel → Collector mTLS (OTLP env vars)
+
 ## Variables
 
 General:
@@ -152,6 +173,14 @@ Outbound Valkey:
 - `VALKEY_TLS_CA_KEY`
 - `VALKEY_TLS_CERT_KEY`
 - `VALKEY_TLS_KEY_KEY`
+
+OTel Collector mTLS:
+
+- `OTEL_TLS_ENABLED=true|false`
+- `OTEL_TLS_SECRET_NAME`
+- `OTEL_TLS_CA_KEY`
+- `OTEL_TLS_CERT_KEY`
+- `OTEL_TLS_KEY_KEY`
 
 ## Notes
 

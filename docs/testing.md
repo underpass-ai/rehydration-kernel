@@ -133,7 +133,7 @@ cargo test -p rehydration-adapter-valkey --features container-tests --test valke
 | `scripts/ci/contract-gate.sh` | Protobuf lint + breaking change detection |
 | `scripts/ci/helm-lint.sh` | Helm chart validation (8 scenarios) |
 | `scripts/ci/rust-coverage.sh` | LLVM coverage report including container tests |
-| `scripts/ci/kubernetes-transport-smoke.sh` | In-cluster TLS smoke test |
+| `scripts/ci/kubernetes-transport-smoke.sh` | In-cluster TLS/mTLS smoke test (gRPC + NATS + Valkey + OTel + Loki) |
 | `scripts/ci/container-image.sh` | Build OCI container image |
 | `scripts/ci/deploy-kubernetes.sh` | Helm deploy wrapper |
 
