@@ -79,19 +79,48 @@ docker run --rm \
 ## Local Build
 
 ```bash
-bash scripts/ci/container-image.sh
+bash scripts/ci/container-image.sh ghcr.io/underpass-ai/rehydration-kernel:dev-$(git rev-parse --short HEAD)
 ```
 
-Override runtime: `CONTAINER_RUNTIME=docker` or `CONTAINER_RUNTIME=podman`.
+The script only builds — it does **not** push. Override runtime: `CONTAINER_RUNTIME=docker` or `CONTAINER_RUNTIME=podman`.
 
-## Publishing
+## Push to GHCR
 
-Handled by [publish-distribution.yml](../../.github/workflows/publish-distribution.yml).
+After building locally, push manually:
+
+```bash
+# Login (once)
+echo "$(cat /tmp/github.txt)" | docker login ghcr.io -u USERNAME --password-stdin
+
+# Push
+docker push ghcr.io/underpass-ai/rehydration-kernel:dev-$(git rev-parse --short HEAD)
+```
+
+## Deploy after push
+
+```bash
+# Via GitHub Actions (recommended)
+gh workflow run deploy-kubernetes.yml \
+  -f image_tag=dev-$(git rev-parse --short HEAD) \
+  -f namespace=underpass-runtime \
+  -f release=rehydration-kernel
+
+# Or locally
+RELEASE_NAME=rehydration-kernel \
+NAMESPACE=underpass-runtime \
+VALUES_FILE=charts/rehydration-kernel/values.underpass-runtime.yaml \
+IMAGE_TAG=dev-$(git rev-parse --short HEAD) \
+bash scripts/ci/deploy-kubernetes.sh
+```
+
+## CI Publishing
+
+Automated by [publish-distribution.yml](../../.github/workflows/publish-distribution.yml).
 
 Triggers:
-- push to `main`
-- push of tags matching `v*`
-- manual workflow dispatch
+- push to `main` → tags: `latest`, `main`, `sha-<short>`
+- push of tags matching `v*` → tags: `v0.1.0`, `sha-<short>`
+- manual `workflow_dispatch`
 
 When `GITHUB_TOKEN` cannot push to GHCR, set repo secrets:
 - `GHCR_USERNAME`

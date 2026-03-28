@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use rehydration_proto::v1beta1::{
-    GetContextRequest, RenderedContext, ResolutionTier,
+    GetContextRequest, RehydrationMode, RenderedContext, ResolutionTier,
 };
 use rehydration_testkit::{
     Domain, EvaluationGroundTruth, GraphSeedConfig, LlmEvaluatorConfig, LlmProvider,
@@ -99,18 +99,32 @@ struct BenchmarkResult {
     relation_mix: String,
     noise: String,
     seed_idx: usize,
+    // Bundle structure
     total_nodes: u32,
     total_relations: u32,
     bundle_nodes: u32,
     bundle_relationships: u32,
+    // Quality metrics (from kernel domain: rendered.quality)
     rendered_token_count: u32,
     raw_equivalent_tokens: u32,
     compression_ratio: f64,
     causal_density: f64,
     noise_ratio: f64,
     detail_coverage: f64,
+    // Kernel domain: resolved mode + tier breakdown
+    resolved_mode: String,
+    tier_l0_tokens: u32,
+    tier_l1_tokens: u32,
+    tier_l2_tokens: u32,
+    // Kernel domain: query timing breakdown
+    graph_load_ms: f64,
+    detail_load_ms: f64,
+    bundle_assembly_ms: f64,
+    timing_batch_size: u32,
+    // Test-side latency
     query_latency_ms: f64,
     total_latency_ms: f64,
+    // LLM evaluation verdicts
     llm_task_success: Option<bool>,
     llm_restart_accuracy: Option<bool>,
     llm_restart_exact: Option<bool>,
@@ -121,6 +135,8 @@ struct BenchmarkResult {
     llm_reason_correct: Option<bool>,
     llm_reason_distractor: Option<bool>,
     llm_latency_ms: Option<f64>,
+    llm_prompt_tokens: Option<u32>,
+    llm_completion_tokens: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     llm_response: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -387,7 +403,7 @@ async fn vllm_benchmark_across_scales_domains_and_variants()
                             let role_bundle = bundle.bundles.first().ok_or("missing role bundle")?;
                             let rendered = response.rendered.ok_or("missing rendered context")?;
 
-                            // Quality metrics from kernel
+                            // Quality metrics from kernel domain (rendered.quality)
                             let quality = rendered.quality.as_ref();
                             let raw_equivalent_tokens = quality.map(|q| q.raw_equivalent_tokens).unwrap_or(0);
                             let compression_ratio = quality.map(|q| q.compression_ratio).unwrap_or(0.0);
@@ -395,8 +411,35 @@ async fn vllm_benchmark_across_scales_domains_and_variants()
                             let noise_ratio = quality.map(|q| q.noise_ratio).unwrap_or(0.0);
                             let detail_coverage = quality.map(|q| q.detail_coverage).unwrap_or(0.0);
 
+                            // Resolved mode from kernel domain (rendered.resolved_mode)
+                            let resolved_mode = match RehydrationMode::try_from(rendered.resolved_mode) {
+                                Ok(RehydrationMode::ResumeFocused) => "resume_focused",
+                                Ok(RehydrationMode::ReasonPreserving) => "reason_preserving",
+                                Ok(RehydrationMode::TemporalDelta) => "temporal_delta",
+                                Ok(RehydrationMode::GlobalSummary) => "global_summary",
+                                _ => "auto",
+                            }.to_string();
+
+                            // Per-tier token counts from kernel domain (rendered.tiers)
+                            let tier_l0_tokens = rendered.tiers.iter()
+                                .find(|t| t.tier == ResolutionTier::L0Summary as i32)
+                                .map(|t| t.token_count).unwrap_or(0);
+                            let tier_l1_tokens = rendered.tiers.iter()
+                                .find(|t| t.tier == ResolutionTier::L1CausalSpine as i32)
+                                .map(|t| t.token_count).unwrap_or(0);
+                            let tier_l2_tokens = rendered.tiers.iter()
+                                .find(|t| t.tier == ResolutionTier::L2EvidencePack as i32)
+                                .map(|t| t.token_count).unwrap_or(0);
+
+                            // Query timing breakdown from kernel domain (response.timing)
+                            let timing = response.timing.as_ref();
+                            let graph_load_ms = timing.map(|t| t.graph_load_seconds * 1000.0).unwrap_or(0.0);
+                            let detail_load_ms = timing.map(|t| t.detail_load_seconds * 1000.0).unwrap_or(0.0);
+                            let bundle_assembly_ms = timing.map(|t| t.bundle_assembly_seconds * 1000.0).unwrap_or(0.0);
+                            let timing_batch_size = timing.map(|t| t.batch_size).unwrap_or(0);
+
                             run.log(&format!(
-                                "[CAPTURE] {variant_id}: {} tok (raw={raw_equivalent_tokens}, compress={compression_ratio:.2}x, causal={:.0}%, noise={:.0}%, detail={:.0}%)",
+                                "[CAPTURE] {variant_id}: {} tok (raw={raw_equivalent_tokens}, compress={compression_ratio:.2}x, causal={:.0}%, noise={:.0}%, detail={:.0}%) mode={resolved_mode} L0={tier_l0_tokens} L1={tier_l1_tokens} L2={tier_l2_tokens} graph={graph_load_ms:.0}ms detail={detail_load_ms:.0}ms assembly={bundle_assembly_ms:.0}ms",
                                 rendered.token_count, causal_density * 100.0, noise_ratio * 100.0, detail_coverage * 100.0,
                             ));
 
@@ -478,6 +521,14 @@ async fn vllm_benchmark_across_scales_domains_and_variants()
                                 causal_density,
                                 noise_ratio,
                                 detail_coverage,
+                                resolved_mode,
+                                tier_l0_tokens,
+                                tier_l1_tokens,
+                                tier_l2_tokens,
+                                graph_load_ms,
+                                detail_load_ms,
+                                bundle_assembly_ms,
+                                timing_batch_size,
                                 query_latency_ms,
                                 total_latency_ms,
                                 llm_task_success: llm_eval.as_ref().map(|e| e.llm_task_success),
@@ -490,6 +541,8 @@ async fn vllm_benchmark_across_scales_domains_and_variants()
                                 llm_reason_correct: llm_eval.as_ref().map(|e| e.llm_reason_correct),
                                 llm_reason_distractor: llm_eval.as_ref().map(|e| e.llm_reason_distractor),
                                 llm_latency_ms: llm_eval.as_ref().map(|e| e.llm_latency_ms),
+                                llm_prompt_tokens: llm_eval.as_ref().map(|e| e.llm_prompt_tokens),
+                                llm_completion_tokens: llm_eval.as_ref().map(|e| e.llm_completion_tokens),
                                 llm_response: llm_eval.as_ref().map(|e| e.llm_response.clone()),
                                 judge_raw: llm_eval.as_ref().and_then(|e| e.llm_judge_raw.clone()),
                                 ground_truth_summary: Some(format!(

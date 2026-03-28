@@ -65,14 +65,37 @@ The workflow delegates to:
 
 - [`scripts/ci/deploy-kubernetes.sh`](../../scripts/ci/deploy-kubernetes.sh)
 
-Example:
+`IMAGE_TAG` refers to a tag on `ghcr.io/underpass-ai/rehydration-kernel`.
+CI publishes `main`, `latest`, `sha-<short>`, and `v*` tags automatically.
+For development, build and push a `dev-<sha>` tag first (see [container-image.md](container-image.md)).
 
 ```bash
+# Deploy the latest CI build
 RELEASE_NAME=rehydration-kernel \
 NAMESPACE=underpass-runtime \
 VALUES_FILE=charts/rehydration-kernel/values.underpass-runtime.yaml \
 IMAGE_TAG=main \
 bash scripts/ci/deploy-kubernetes.sh
+```
+
+Development cycle (local changes):
+
+```bash
+# 1. Build + push
+bash scripts/ci/container-image.sh ghcr.io/underpass-ai/rehydration-kernel:dev-$(git rev-parse --short HEAD)
+docker push ghcr.io/underpass-ai/rehydration-kernel:dev-$(git rev-parse --short HEAD)
+
+# 2. Deploy
+RELEASE_NAME=rehydration-kernel \
+NAMESPACE=underpass-runtime \
+VALUES_FILE=charts/rehydration-kernel/values.underpass-runtime.yaml \
+IMAGE_TAG=dev-$(git rev-parse --short HEAD) \
+bash scripts/ci/deploy-kubernetes.sh
+
+# 3. Run E2E benchmark against the cluster
+EVAL_MATRIX_PATH=smoke-run.yaml FILTER_SCALES=micro \
+cargo test -p rehydration-tests-paper --features container-tests \
+  --test vllm_benchmark_integration -- --nocapture --test-threads=1
 ```
 
 ## Smoke Validation

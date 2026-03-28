@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use rehydration_proto::v1beta1::{
-    GetContextRequest, RenderedContext, ResolutionTier,
+    GetContextRequest, RehydrationMode, RenderedContext, ResolutionTier,
 };
 use rehydration_testkit::{
     Domain, EvaluationGroundTruth, GraphSeedConfig, LlmEvaluatorConfig, LlmProvider,
@@ -153,6 +153,15 @@ struct CapturedVariant {
     causal_density: f64,
     noise_ratio: f64,
     detail_coverage: f64,
+    // Kernel domain observability
+    resolved_mode: String,
+    tier_l0_tokens: u32,
+    tier_l1_tokens: u32,
+    tier_l2_tokens: u32,
+    graph_load_ms: f64,
+    detail_load_ms: f64,
+    bundle_assembly_ms: f64,
+    timing_batch_size: u32,
     question: String,
     ground_truth: EvaluationGroundTruth,
 }
@@ -178,6 +187,17 @@ struct EvalResult {
     causal_density: f64,
     noise_ratio: f64,
     detail_coverage: f64,
+    // Kernel domain observability
+    resolved_mode: String,
+    tier_l0_tokens: u32,
+    tier_l1_tokens: u32,
+    tier_l2_tokens: u32,
+    graph_load_ms: f64,
+    detail_load_ms: f64,
+    bundle_assembly_ms: f64,
+    timing_batch_size: u32,
+    llm_prompt_tokens: Option<u32>,
+    llm_completion_tokens: Option<u32>,
     agent_response: String,
     judge_raw: Option<String>,
 }
@@ -719,6 +739,29 @@ async fn judge_prompt_evaluation_across_all_use_cases()
                     quality.causal_density * 100.0, quality.noise_ratio * 100.0, quality.detail_coverage * 100.0,
                     reason.as_deref().unwrap_or("none"), distractor.as_deref().unwrap_or("none")));
 
+                // Kernel domain observability
+                let resolved_mode = match RehydrationMode::try_from(rendered.resolved_mode) {
+                    Ok(RehydrationMode::ResumeFocused) => "resume_focused",
+                    Ok(RehydrationMode::ReasonPreserving) => "reason_preserving",
+                    Ok(RehydrationMode::TemporalDelta) => "temporal_delta",
+                    Ok(RehydrationMode::GlobalSummary) => "global_summary",
+                    _ => "auto",
+                }.to_string();
+                let tier_l0_tokens = rendered.tiers.iter()
+                    .find(|t| t.tier == ResolutionTier::L0Summary as i32)
+                    .map(|t| t.token_count).unwrap_or(0);
+                let tier_l1_tokens = rendered.tiers.iter()
+                    .find(|t| t.tier == ResolutionTier::L1CausalSpine as i32)
+                    .map(|t| t.token_count).unwrap_or(0);
+                let tier_l2_tokens = rendered.tiers.iter()
+                    .find(|t| t.tier == ResolutionTier::L2EvidencePack as i32)
+                    .map(|t| t.token_count).unwrap_or(0);
+                let timing = response.timing.as_ref();
+                let graph_load_ms = timing.map(|t| t.graph_load_seconds * 1000.0).unwrap_or(0.0);
+                let detail_load_ms = timing.map(|t| t.detail_load_seconds * 1000.0).unwrap_or(0.0);
+                let bundle_assembly_ms = timing.map(|t| t.bundle_assembly_seconds * 1000.0).unwrap_or(0.0);
+                let timing_batch_size = timing.map(|t| t.batch_size).unwrap_or(0);
+
                 captured.push(CapturedVariant {
                     run_id: variant_id,
                     rendered_content: eval_content,
@@ -728,6 +771,14 @@ async fn judge_prompt_evaluation_across_all_use_cases()
                     causal_density: quality.causal_density,
                     noise_ratio: quality.noise_ratio,
                     detail_coverage: quality.detail_coverage,
+                    resolved_mode,
+                    tier_l0_tokens,
+                    tier_l1_tokens,
+                    tier_l2_tokens,
+                    graph_load_ms,
+                    detail_load_ms,
+                    bundle_assembly_ms,
+                    timing_batch_size,
                     question,
                     ground_truth: EvaluationGroundTruth {
                         expected_failure_point: Some(failure_desc),
@@ -821,6 +872,16 @@ async fn judge_prompt_evaluation_across_all_use_cases()
                                 causal_density: ctx.causal_density,
                                 noise_ratio: ctx.noise_ratio,
                                 detail_coverage: ctx.detail_coverage,
+                                resolved_mode: ctx.resolved_mode.clone(),
+                                tier_l0_tokens: ctx.tier_l0_tokens,
+                                tier_l1_tokens: ctx.tier_l1_tokens,
+                                tier_l2_tokens: ctx.tier_l2_tokens,
+                                graph_load_ms: ctx.graph_load_ms,
+                                detail_load_ms: ctx.detail_load_ms,
+                                bundle_assembly_ms: ctx.bundle_assembly_ms,
+                                timing_batch_size: ctx.timing_batch_size,
+                                llm_prompt_tokens: Some(e.llm_prompt_tokens),
+                                llm_completion_tokens: Some(e.llm_completion_tokens),
                                 agent_response: e.llm_response,
                                 judge_raw: e.llm_judge_raw,
                             }
@@ -843,6 +904,16 @@ async fn judge_prompt_evaluation_across_all_use_cases()
                                 causal_density: ctx.causal_density,
                                 noise_ratio: ctx.noise_ratio,
                                 detail_coverage: ctx.detail_coverage,
+                                resolved_mode: ctx.resolved_mode.clone(),
+                                tier_l0_tokens: ctx.tier_l0_tokens,
+                                tier_l1_tokens: ctx.tier_l1_tokens,
+                                tier_l2_tokens: ctx.tier_l2_tokens,
+                                graph_load_ms: ctx.graph_load_ms,
+                                detail_load_ms: ctx.detail_load_ms,
+                                bundle_assembly_ms: ctx.bundle_assembly_ms,
+                                timing_batch_size: ctx.timing_batch_size,
+                                llm_prompt_tokens: None,
+                                llm_completion_tokens: None,
                                 agent_response: String::new(),
                                 judge_raw: None,
                             }
