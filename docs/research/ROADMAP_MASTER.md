@@ -176,10 +176,11 @@ See [`docs/adr/README.md`](../adr/README.md) for the list and source PRs.
 aligned (bugs 1-3), but they can drift silently. `compression_ratio`
 depends on both producing identical output.
 
-- [ ] Convert `GeneratedSeed` → `RehydrationBundle` in testkit (seed already has all fields)
-- [ ] Use `BundleQualityMetrics::compute(bundle, 0, estimator).raw_equivalent_tokens()` for raw token count
-- [ ] Delete `render_raw_dump()` — single source of truth in domain
-- [ ] Verify raw dump token counts match before/after
+- [x] Convert `GeneratedSeed` → `RehydrationBundle` in testkit (`seed_to_bundle()` mapper)
+- [x] Use `BundleQualityMetrics::compute(bundle, 0, estimator).raw_equivalent_tokens()` via `seed_raw_equivalent_tokens()`
+- [x] Verify raw dump token counts match before/after (test: `quality_metrics_match_between_domain_and_old_raw_dump`)
+- [ ] Migrate callers of `render_raw_dump()` to use `seed_to_bundle()` + domain VO
+- [ ] Delete `render_raw_dump()` once all callers migrated
 
 ### P1 — Quality metrics in RehydrateSession
 

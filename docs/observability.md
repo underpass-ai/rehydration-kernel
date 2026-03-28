@@ -19,9 +19,9 @@ A domain value object computed on every render. Invariant-validated at construct
 | `detail_coverage` | f64 | [0.0, 1.0] | Fraction of nodes with extended detail |
 
 Computed by `BundleQualityMetrics::compute(bundle, rendered_tokens, estimator)` in the
-domain layer. The testkit has a parallel `render_raw_dump()` that was manually aligned
-but is not yet consuming the domain VO directly — planned to consolidate into a single
-source of truth (see [ROADMAP_MASTER.md](research/ROADMAP_MASTER.md)).
+domain layer. The testkit provides `seed_to_bundle()` to convert generated seeds into
+domain bundles, and `seed_raw_equivalent_tokens()` to compute raw tokens through the
+same code path as the kernel. Token count parity is verified by test.
 
 ## Observer Port
 
