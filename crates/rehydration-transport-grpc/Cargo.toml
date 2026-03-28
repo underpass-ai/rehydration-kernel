@@ -8,7 +8,7 @@ rust-version.workspace = true
 workspace = true
 
 [dependencies]
-async-nats = "0.39.0"
+async-nats = "0.46.0"
 rehydration-application.workspace = true
 rehydration-config.workspace = true
 rehydration-domain.workspace = true
