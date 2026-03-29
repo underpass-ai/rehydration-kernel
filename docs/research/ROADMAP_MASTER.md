@@ -759,3 +759,126 @@ to `evaluation-matrix.yaml` — the YAML-driven config makes this trivial.
 - [ ] External system comparisons (GraphRAG, plain RAG)
 - [ ] Human/expert evaluation
 - [ ] Multi-agent handoff benchmarks
+
+## SonarCloud Quality Gate — Target: 0 issues, 85-90% coverage
+
+**Baseline (2026-03-29):**
+
+| Metric | Current | Target | Gap |
+|--------|:-------:|:------:|:---:|
+| Coverage | 72.5% | 85-90% | +2061 lines to cover |
+| Bugs | 1 | 0 | -1 |
+| Vulnerabilities | 0 | 0 | — |
+| Code Smells | 53 | 0 | -53 |
+| Duplicated Lines | 2.6% | <3% | — |
+| Reliability Rating | C | A | fix 1 bug |
+| Security Rating | A | A | — |
+| Maintainability Rating | A | A | — |
+
+### Issues by severity (54 total)
+
+| Severity | Count | Primary rule |
+|----------|:-----:|-------------|
+| CRITICAL | 15 | `S3776` Cognitive Complexity (Rust 5, Python 5, string dup 5) |
+| MAJOR | 26 | `S3358` nested ternary (10), `S3457` empty f-string (7), `S1192` dup literals (6) |
+| MINOR | 13 | `S7494` set comprehension (9), `S1481` unused var (2), other (2) |
+
+### Issues by file — fix plan
+
+**Tier 1 — Python scripts (47 issues, 87% of all issues):**
+
+Two files account for almost everything:
+
+| File | Issues | Action |
+|------|:------:|--------|
+| `scripts/ci/extract-e2e-report.py` | 33 | Refactor: extract functions from 195-CC main, constants for dup literals, comprehensions, fix f-strings |
+| `scripts/ci/extract-e2e-figures.py` | 14 | Refactor: extract functions from 40-CC/17-CC blocks, comprehensions, remove unused param |
+
+These are reporting scripts, not production kernel code. High issue count
+but mechanical fixes — no architectural risk.
+
+**Tier 2 — Rust cognitive complexity (5 issues):**
+
+| File | CC | Limit | Action |
+|------|:--:|:-----:|--------|
+| `llm_judge_prompt_evaluation.rs:503` | 206 | 15 | Extract precheck phases into separate functions |
+| `llm_judge_prompt_evaluation.rs:265` | 187 | 15 | Extract calibration, capture, eval loops |
+| `vllm_benchmark_integration.rs:243` | 135 | 15 | Extract benchmark phases |
+| `dataset_generator.rs:164` | 37 | 15 | Extract node/relationship builders |
+| `tier_section_classifier.rs:37` | 16 | 15 | Minor: extract one branch |
+
+The top 3 are test orchestrators with deeply nested loops (scale × domain ×
+mix × noise × seed × agent × judge). Refactoring into phase functions is safe
+— no production code involved.
+
+**Tier 3 — Shell (2 issues):**
+
+| File | Issue | Action |
+|------|-------|--------|
+| `e2e-ground-truth-diagnostic.sh:52` | Dup literal (separator line) | Extract to variable |
+| `rust-coverage.sh:19` | Missing explicit return | Add `return 0` |
+
+### Coverage — path to 85%
+
+Current: 72.5% (8836/12821 lines covered). Need: 10897 covered (+2061).
+
+**Strategy 1 — Exclude test infrastructure from coverage (high impact, no code):**
+
+Files at 0% that are test seed data, test fixtures, or reference binaries —
+not production code, already behind `container-tests` feature flag:
+
+| File | Uncovered | Justification |
+|------|:---------:|---------------|
+| `seed/kernel_data.rs` | 104 | Test seed data (like explanatory_data.rs already excluded) |
+| `metrics/paper_metrics.rs` | 51 | Test-only metrics writer |
+| `empty_ports.rs` | 37 | Test utility for port allocation |
+| `bin/runtime_reference_client/main.rs` | 23 | Reference binary, not library |
+| **Total** | **215** | |
+
+Add to `sonar.coverage.exclusions`. This alone bumps coverage ~1.5pp.
+
+**Strategy 2 — Cover high-value production code (medium effort, real value):**
+
+Files with partial coverage that are actual kernel production code:
+
+| File | Current | Uncovered | Path to 85%+ |
+|------|:-------:|:---------:|-------------|
+| `valkey/adapter/io.rs` | 82.2% | 95 | Error paths + batch edge cases |
+| `get_node_detail.rs` | 79.3% | 50 | Tier rendering branches |
+| `projection_application_service.rs` | 80.7% | 21 | Event processing edge cases |
+| `context_event_store.rs` (valkey) | 54.7% | 58 | CAS conflict + Lua error paths |
+| `context_event_store.rs` (domain) | 60.5% | 15 | Port trait coverage |
+| `grpc_server.rs` | 82.5% | 24 | TLS config branches |
+| `query_grpc_service_v1beta1.rs` | 70.8% | 7 | Error responses |
+| `snapshot_store.rs` | 68.2% | 7 | Store/load edge cases |
+| `node_detail_reader.rs` | 75.0% | 6 | Missing key handling |
+| `node_detail_serialization.rs` | 74.2% | 8 | Serde edge cases |
+| **Total** | | **291** | |
+
+**Strategy 3 — Cover test infrastructure selectively (low priority):**
+
+| File | Current | Uncovered | Notes |
+|------|:-------:|:---------:|-------|
+| `llm_evaluator.rs` | 13.5% | 481 | Needs live LLM — cover parsers/helpers only |
+| `container_runtime.rs` | 19.1% | 114 | Testcontainer bootstrap — exclude or unit test |
+| `fixtures/fixture.rs` | 68.4% | 36 | Builder pattern — partial coverage OK |
+| `containers/*.rs` | 70-84% | 37 | Container lifecycle — exclude |
+| **Total** | | **668** | |
+
+**Projected impact:**
+
+| Strategy | Lines recovered | Projected coverage |
+|----------|:--------------:|:-----------------:|
+| Baseline | — | 72.5% |
+| + Strategy 1 (exclusions) | ~215 excluded | ~74.5% |
+| + Strategy 2 (production tests) | ~200 covered | ~79% |
+| + Strategy 3 (evaluator parsers) | ~150 covered | ~82% |
+| + Additional exclusions (containers, fixtures) | ~300 excluded | **85-87%** |
+
+### Execution order
+
+1. **Quick wins (0 issues, +2pp coverage):** Strategy 1 exclusions + Tier 3 shell fixes
+2. **Python cleanup (−47 issues):** Refactor the 2 reporting scripts
+3. **Rust CC (−5 issues):** Extract functions from test orchestrators
+4. **Production coverage (−1 bug, +7pp):** Strategy 2 tests
+5. **Final tuning:** Strategy 3 selective coverage to reach 85-90%
