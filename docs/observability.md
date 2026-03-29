@@ -214,13 +214,10 @@ kubectl port-forward svc/<release>-grafana 3000:3000 -n <namespace>
 
 ## Limitations
 
-- `RehydrateSession` does **not yet** emit quality or bundle metrics. Per-role
-  rendering with quality metrics is planned
-  (see [ROADMAP_MASTER.md](research/ROADMAP_MASTER.md)).
 - Quality metrics fan-out is synchronous. Async fan-out is planned to avoid
   latency impact on the gRPC hot path.
 - OTLP export supports mTLS via `OTEL_EXPORTER_OTLP_{CA,CERT,KEY}_PATH` env vars. Plaintext by default when no env vars set.
-- `rehydration.bundle.details` and `rehydration.projection.lag` are defined
-  but not yet recorded by any handler.
-- `GetContext` and `GetContextPath` have full OTel parity. `RehydrateSession`
-  only emits `rpc.duration` and timing.
+- `rehydration.projection.lag` is defined but not yet recorded by any handler.
+- All three render RPCs (`GetContext`, `GetContextPath`, `RehydrateSession`)
+  emit per-role quality metrics via the observer. `RehydrateSession` renders
+  per-role bundles with quality, tiers, truncation, and resolved mode.

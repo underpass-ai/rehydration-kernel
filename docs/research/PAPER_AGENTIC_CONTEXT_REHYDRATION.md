@@ -700,11 +700,11 @@ decision linkage. We evaluate the system across five use cases — failure
 diagnosis, implementation justification, interrupted handoff, constraint
 retrieval under token pressure, and fabrication detection — using LLM-as-judge
 evaluation with 432 evaluations across two independent judges (GPT-5.4 and
-Claude Sonnet 4.6), three graph scales, four noise conditions, and three
+Claude Sonnet 4.6), three graph scales, two noise modes per mix, and three
 random seeds. The kernel's explanatory context enables 72% task accuracy and
 75% recovery accuracy on a local 8B-parameter model, versus 3% task and 0%
-recovery with structural-only context — a +69pp gap consistent across both
-judges. Mixed structural+explanatory context achieves 91% task accuracy,
+recovery with structural-only context — a gap of +69pp (GPT-5.4) and +67pp
+(Sonnet 4.6), both significant at 95% confidence. Mixed structural+explanatory context achieves 91% task accuracy,
 demonstrating that the two signal types compound. The kernel also provides
 domain-level observability: its `causal_density` metric serves as ground truth
 that makes LLM fabrication deterministically detectable without a judge model.
