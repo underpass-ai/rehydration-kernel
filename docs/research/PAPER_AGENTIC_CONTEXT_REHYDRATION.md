@@ -598,6 +598,54 @@ deterministically detectable — without a judge model and without
 probabilistic thresholds. Chain-of-thought converts fabrication from
 undetectable to preventable.
 
+### Statistical Analysis
+
+**Null hypothesis (H0):** There is no difference in task accuracy between
+explanatory and structural context variants.
+
+**Alternative (H1):** Explanatory context produces higher task accuracy.
+
+**Test:** Bootstrap 95% CI on the gap (10,000 resamples, seed=42).
+Wilson score intervals for individual proportions.
+
+| Judge | Explanatory Task | Structural Task | Gap | Gap 95% CI | H0 |
+|-------|:----------------:|:---------------:|:---:|:----------:|:--:|
+| Sonnet 4.6 | 67% [50%, 80%] | 0% [0%, 10%] | +67pp | [+50pp, +81pp] | **Rejected** |
+| GPT-5.4 | 72% [56%, 84%] | 3% [0%, 14%] | +69pp | [+53pp, +83pp] | **Rejected** |
+
+H0 is rejected at 95% confidence for both judges. The lower bound of the
+gap CI (+50pp Sonnet, +53pp GPT) is well above zero.
+
+**Per-metric 95% CI (GPT-5.4 judge, Wilson score):**
+
+| Mix | Task | Restart | Reason |
+|-----|:----:|:-------:|:------:|
+| Explanatory | 72% [56%, 84%] | 75% [59%, 86%] | 72% [56%, 84%] |
+| Structural | 3% [0%, 14%] | 0% [0%, 10%] | 0% [0%, 10%] |
+| Mixed | 92% [78%, 97%] | 81% [65%, 90%] | 89% [75%, 96%] |
+
+**Fabrication 95% CI (Wilson):** 0% [0%, 10%] — both judges, both thinking runs.
+Upper bound 10% is the statistical ceiling given N=36 structural evals.
+
+**Inter-seed variance (GPT-5.4, explanatory, 12 evals per seed):**
+
+| Seed | Task | 95% CI |
+|:----:|:----:|:------:|
+| 0 | 75% | [47%, 91%] |
+| 1 | 83% | [55%, 95%] |
+| 2 | 58% | [32%, 81%] |
+
+Seed CIs overlap — no seed produces a significantly different result.
+The variance (~25pp range) reflects LLM sampling noise (temp=0.6) and
+graph topology differences (kind rotation per seed).
+
+**Threats to validity:**
+- N=36 per mix limits statistical power; CIs are wide (±14-16pp)
+- LLM temperature 0.6 introduces sampling variance
+- Single model (Qwen3-8B); generalization to other models untested
+- Synthetic graphs; real operational graphs may behave differently
+- Judge agreement does not guarantee ground truth correctness
+
 ## Primary Metrics
 
 The paper should use a small set of defensible metrics:
