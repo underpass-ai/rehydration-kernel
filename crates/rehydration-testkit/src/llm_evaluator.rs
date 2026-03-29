@@ -242,9 +242,14 @@ async fn call_openai(
         "temperature": temperature,
     });
 
-    // vLLM-specific: disable thinking mode for local models only.
+    // vLLM-specific: enable/disable thinking mode for local models.
+    // Set LLM_ENABLE_THINKING=true to activate Qwen3 chain-of-thought.
     if provider == LlmProvider::OpenAI {
-        body["chat_template_kwargs"] = serde_json::json!({"enable_thinking": false});
+        let enable_thinking = std::env::var("LLM_ENABLE_THINKING")
+            .map(|v| v == "true" || v == "1")
+            .unwrap_or(false);
+        body["chat_template_kwargs"] =
+            serde_json::json!({"enable_thinking": enable_thinking});
     }
 
     // GPT-5.x / o3 / o4 require `max_completion_tokens` instead of `max_tokens`.
@@ -761,24 +766,40 @@ async fn judge_response_with_prompts(
 /// This normalizes the response to plain text before parsing or passing
 /// to the judge.
 /// Strips `<think>...</think>` blocks from reasoning model output.
-/// Handles both complete tags and unclosed `<think>` at the start.
+/// If the result is empty after stripping, extracts JSON from inside the thinking block.
 fn strip_thinking_tags(s: &str) -> String {
-    let mut result = s.to_string();
-    // Remove complete <think>...</think> blocks (greedy)
-    while let Some(start) = result.find("<think>") {
-        if let Some(end) = result.find("</think>") {
-            result = format!(
-                "{}{}",
-                &result[..start],
-                &result[end + "</think>".len()..]
-            );
-        } else {
-            // Unclosed <think> — remove from tag to end
-            result = result[..start].to_string();
-            break;
+    let input = s.to_string();
+
+    // Try to extract content AFTER </think>
+    if let Some(end_idx) = input.find("</think>") {
+        let after = input[end_idx + "</think>".len()..].trim();
+        if !after.is_empty() {
+            return after.to_string();
         }
     }
-    result.trim().to_string()
+
+    // No content after </think> — look for JSON inside the thinking block
+    if let Some(start) = input.find("<think>") {
+        let inside = if let Some(end) = input.find("</think>") {
+            &input[start + "<think>".len()..end]
+        } else {
+            &input[start + "<think>".len()..]
+        };
+        // Find first { ... last } inside thinking
+        if let Some(json_start) = inside.find('{') {
+            if let Some(json_end) = inside.rfind('}') {
+                return inside[json_start..=json_end].to_string();
+            }
+        }
+    }
+
+    // No thinking tags — pass through. If input still has <think>, return empty.
+    let trimmed = input.trim();
+    if trimmed.contains("<think>") {
+        String::new()
+    } else {
+        trimmed.to_string()
+    }
 }
 
 fn strip_markdown_fences(s: &str) -> String {
@@ -1003,7 +1024,20 @@ The failure point is the root incident.
 I'm still thinking about this...
 "#;
         let result = strip_thinking_tags(input);
-        assert!(result.is_empty() || !result.contains("<think>"));
+        assert!(!result.contains("<think>"));
+    }
+
+    #[test]
+    fn strip_thinking_extracts_json_from_inside_thinking() {
+        let input = r#"<think>
+Let me analyze the graph structure carefully.
+The root node is an incident...
+
+{"failure_point": "root", "restart_node": "chain-0", "reason": "test", "reason_source": "graph_metadata", "confidence": "high"}
+</think>"#;
+        let result = strip_thinking_tags(input);
+        assert!(result.starts_with('{'), "got: {result}");
+        assert!(result.contains("failure_point"));
     }
 
     #[test]
