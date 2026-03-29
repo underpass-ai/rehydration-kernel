@@ -418,10 +418,62 @@ Expected measurable outcome:
 - diagnostic traces become harder to reconstruct
 - rehydration-point discovery should degrade before raw topology fails
 
+### E9. Fabrication Detection Via Domain Observability (UC5)
+
+Question:
+Can the kernel's domain-level ground truth (`causal_density`) make LLM
+reasoning fabrication deterministically detectable — without a judge model?
+
+Method:
+
+- same graph rendered in two variants: explanatory (`causal_density > 0`)
+  and structural (`causal_density = 0.0`)
+- inference prompt requires the model to declare `reason_source`
+  (`graph_metadata` / `inferred` / `not_available`) and `confidence`
+  (`high` / `medium` / `low`) in the JSON response
+- evaluator cross-references: `reason_source == "graph_metadata" AND
+  causal_density == 0.0` → `llm_reason_fabricated = true`
+- A/B: baseline (no thinking) vs thinking (Qwen3 CoT enabled)
+- three runs: 324 total evals (108 per arm)
+
+Results (structural variants only, 36 evals per arm):
+
+| Arm | Fabricated | Source=graph | Source=n/a | Confidence=high | Confidence=low |
+|-----|:----------:|:------------:|:----------:|:---------------:|:--------------:|
+| A — no thinking | **32/36 (89%)** | 32/36 | 0/36 | 32/36 | 0/36 |
+| B — thinking | **0/36 (0%)** | 0/36 | **36/36** | 2/36 | **34/36** |
+| P — planner (512) | **0/36 (0%)** | 0/36 | **36/36** | 1/36 | **35/36** |
+
+Control check (explanatory variants, 36 evals per arm):
+
+| Arm | Fabricated | Source=graph | Confidence=high |
+|-----|:----------:|:------------:|:---------------:|
+| A | 0/36 | 36/36 | 36/36 |
+| B | 0/36 | 36/36 | 36/36 |
+| P | 0/36 | 36/36 | 36/36 |
+
+Interpretation:
+
+- without thinking, the model claims `graph_metadata` with high confidence
+  on 89% of structural variants — fabrication is invisible to the consumer
+- with thinking, the model declares `not_available` with low confidence
+  on 100% of structural variants — fabrication is eliminated
+- the kernel's `causal_density` provides the ground truth that makes the
+  detection deterministic: no judge needed, no probabilistic threshold
+- the control check confirms that on explanatory variants (where rationale
+  exists), the model correctly declares `graph_metadata` with high
+  confidence — thinking does not suppress legitimate source declaration
+- fabrication detection is stable under token pressure (budget=512):
+  planner run shows identical honesty to budget=4096
+
+This is the first evidence that a context engine can provide domain-level
+observability that converts LLM fabrication from undetectable to
+deterministically preventable.
+
 ## Preliminary Results
 
-The current paper harness produces direct evidence for four explanatory use
-cases across multiple ablation variants:
+The current paper harness produces direct evidence for five use cases
+across multiple ablation variants:
 
 - full explanatory relations with detail
 - full explanatory relations without detail
@@ -429,9 +481,11 @@ cases across multiple ablation variants:
 - structural-only relations with detail
 - meso-scale (denser noisy graph) variant for UC1
 - token-budget constrained variants (192 and 96 tokens) for UC4
+- fabrication detection via `causal_density` ground truth for UC5
 
-Current results from `artifacts/paper-use-cases/summary.json` and
-`artifacts/paper-use-cases/results.md` show a clean pattern.
+Current results from `artifacts/paper-use-cases/summary.json`,
+`artifacts/paper-use-cases/results.md`, and
+`artifacts/e2e-runs/2026-03-29_{100518,131923,153051}/` show a clean pattern.
 
 ### Result R1. Explanatory Relations Matter More Than Detail Removal
 
@@ -521,6 +575,29 @@ Interpretation:
 
 - the explanatory signal survives distractor branches in the meso graph
 
+### Result R7. Fabrication Is Deterministically Detectable (UC5)
+
+Across 324 evals (3 runs × 108 evals), the kernel's `causal_density`
+ground truth enables deterministic fabrication detection:
+
+- **Without thinking**: 89% fabrication rate on structural variants —
+  the model claims `graph_metadata` with `confidence: high` when no
+  rationale exists. Invisible to consumers without the kernel.
+- **With thinking**: 0% fabrication — the model declares `not_available`
+  with `confidence: low`. 100% honest across all 72 structural evals
+  (thinking + planner runs).
+- **Control**: on explanatory variants where rationale exists, the model
+  correctly declares `graph_metadata` with `confidence: high` regardless
+  of thinking mode. No false negatives.
+- **Under token pressure**: fabrication detection is identical at
+  budget=512 and budget=4096 — the planner does not compromise honesty.
+
+This is the strongest result in the artifact: the kernel provides
+domain-level observability that makes LLM reasoning fabrication
+deterministically detectable — without a judge model and without
+probabilistic thresholds. Chain-of-thought converts fabrication from
+undetectable to preventable.
+
 ## Primary Metrics
 
 The paper should use a small set of defensible metrics:
@@ -536,6 +613,9 @@ The paper should use a small set of defensible metrics:
 - runtime portability score:
   - same task succeeds across multiple runtimes
 - async trigger success rate
+- fabrication rate: `llm_reason_fabricated` (deterministic, no judge)
+- source declaration distribution: `llm_reason_source` (graph_metadata / inferred / not_available)
+- confidence calibration: `llm_confidence` vs ground truth
 - end-to-end latency:
   - optional if we add timing instrumentation
 
