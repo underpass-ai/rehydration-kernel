@@ -112,23 +112,66 @@ evidence rather than definitive validation.
 
 ### P2 — Planner enrichment
 
-`mode_heuristic.rs` now uses token pressure + causal density (planner v2, commit 6d99eb4).
+#### Planner v2 (commit 6d99eb4): token pressure + causal density
 
 - [x] Causal density: `>= 0.5` keeps ReasonPreserving even under budget pressure
-- [ ] Endpoint type (GetContext vs RehydrateSession may warrant different mode defaults)
-- [ ] Focus/path presence (if focus node exists, ResumeFocused may be better even with budget room)
-- [ ] Relation distribution (structural-heavy graphs may benefit from pruning even at generous budgets)
-- [ ] **Truncation algorithm upgrade**: current greedy packing drops sections that don't fit.
-  Evaluate: tiered budget allocation (L0 guaranteed, L1 prioritized, L2 sacrificed),
-  knapsack optimization, and `rationale_summary` field on relationships for graceful
-  degradation without LLM-in-the-loop. Sliding window + summary ruled out (requires
-  LLM call inside kernel, breaks determinism, introduces fabrication risk).
-- [ ] Benchmark with `BENCHMARK_TOKEN_BUDGET=512` to exercise planner under real pressure (4096/49=83 tok/node doesn't trigger the heuristic)
 
-Planner v2 A/B results (36 evals, budget=4096, no pressure activated):
+v2 A/B results (36 evals, budget=4096, no pressure activated):
 - micro: explanatory 5/6 reason vs structural 0/6 (gap holds)
 - stress: explanatory 3/6 reason vs structural 0/6 (gap holds, degrades with chain depth)
 - All modes: reason_preserving (budget too generous to trigger switch)
+
+#### Planner v3 (commit 123f900): + focus + endpoint + relation distribution
+
+Three new signals. `resolve_mode` now takes 5 parameters:
+`(explicit_mode, bundle, token_budget, focus_node_id, endpoint_hint)`.
+
+- [x] **Focus/path presence**: when `focus_node_id` is set (e.g. GetContextPath),
+  threshold doubles from 30 to 60 tok/node. Scoped paths benefit from pruning
+  even at moderate budgets because distractors around the focused path are noise.
+
+- [x] **Endpoint type**: `EndpointHint` enum (`Neighborhood`, `FocusedPath`,
+  `SessionSnapshot`) adjusts the tokens-per-node threshold per RPC:
+  - `Neighborhood` (GetContext): 30 tok/node (default, unchanged)
+  - `FocusedPath` (GetContextPath): 60 tok/node (same as focus presence)
+  - `SessionSnapshot` (RehydrateSession): 15 tok/node (sessions need richer
+    context for multi-role consumers)
+  `RehydrateSession` now uses `render_graph_bundle_with_options()` with
+  `EndpointHint::SessionSnapshot` instead of default rendering.
+
+- [x] **Relation distribution**: when budget is generous BUT `causal_density < 0.2`,
+  switch to ResumeFocused — structural-heavy graphs have nothing worth preserving.
+  No-budget case stays ReasonPreserving (unlimited = no reason to prune).
+
+Combined `auto_detect` logic:
+
+```
+effective_threshold = match endpoint_hint {
+    SessionSnapshot → 15
+    _ if focus_node_id.is_some() → 60
+    _ → 30
+}
+
+tokens_per_node >= effective_threshold:
+    causal_density < 0.2 → ResumeFocused   (structural override)
+    else → ReasonPreserving
+
+tokens_per_node < effective_threshold:
+    causal_density >= 0.5 → ReasonPreserving (preserve rationale)
+    else → ResumeFocused
+```
+
+15 unit tests (6 v2 updated + 9 new for v3 signals).
+
+#### Pending — Planner v4
+
+- [ ] **Truncation algorithm upgrade**: current greedy packing drops sections that don't fit.
+  Upgrade to tier-aware allocation: tag each flat section with its `ResolutionTier`,
+  enforce per-tier budgets (L0 guaranteed, L1 prioritized, L2 sacrificed).
+  When an L2 section doesn't fit, continue instead of breaking — later L1 sections
+  can still be included. Sliding window + summary ruled out (requires LLM call
+  inside kernel, breaks determinism, introduces fabrication risk).
+- [ ] Benchmark with `BENCHMARK_TOKEN_BUDGET=512` to exercise planner under real pressure (4096/49=83 tok/node doesn't trigger the heuristic)
 
 ## Pending — Architecture (low priority, all test-only)
 
