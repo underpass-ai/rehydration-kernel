@@ -64,7 +64,7 @@ impl ContextEventStore for ValkeyContextEventStore {
             local current = redis.call('GET', KEYS[1])
             if current == false then current = '0' end
             if current ~= ARGV[1] then
-                return redis.error('CONFLICT: expected ' .. ARGV[1] .. ' got ' .. current)
+                return redis.error_reply('CONFLICT: expected ' .. ARGV[1] .. ' got ' .. current)
             end
             redis.call('SET', KEYS[1], ARGV[2])
             redis.call('SET', KEYS[2], ARGV[3])

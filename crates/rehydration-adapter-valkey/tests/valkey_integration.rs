@@ -383,3 +383,112 @@ async fn read_response(
         other => Err(format!("unsupported RESP prefix `{other}`").into()),
     }
 }
+
+// ── Event store CAS tests ──────────────────────────────────────────────
+
+use rehydration_adapter_valkey::ValkeyContextEventStore;
+use rehydration_domain::{ContextEventChange, ContextEventStore, ContextUpdatedEvent};
+use std::sync::Arc;
+use std::time::SystemTime;
+
+fn sample_cmd_event(
+    root: &str,
+    role: &str,
+    revision: u64,
+) -> ContextUpdatedEvent {
+    ContextUpdatedEvent {
+        root_node_id: root.to_string(),
+        role: role.to_string(),
+        revision,
+        content_hash: format!("hash-{revision}"),
+        changes: vec![ContextEventChange {
+            operation: "UPDATE".to_string(),
+            entity_kind: "node".to_string(),
+            entity_id: "node-1".to_string(),
+            payload_json: "{}".to_string(),
+        }],
+        idempotency_key: None,
+        requested_by: Some("test".to_string()),
+        occurred_at: SystemTime::now(),
+    }
+}
+
+#[tokio::test]
+async fn valkey_event_store_append_and_read() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let container = start_valkey_container().await?;
+    let port = container.get_host_port_ipv4(VALKEY_INTERNAL_PORT.tcp()).await?;
+    let uri = format!("redis://127.0.0.1:{port}");
+
+    let store = ValkeyContextEventStore::new(&uri)?;
+
+    assert_eq!(store.current_revision("n1", "dev").await?, 0);
+
+    let rev = store.append(sample_cmd_event("n1", "dev", 1), 0).await?;
+    assert_eq!(rev, 1);
+    assert_eq!(store.current_revision("n1", "dev").await?, 1);
+
+    let rev2 = store.append(sample_cmd_event("n1", "dev", 2), 1).await?;
+    assert_eq!(rev2, 2);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn valkey_event_store_rejects_wrong_revision() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let container = start_valkey_container().await?;
+    let port = container.get_host_port_ipv4(VALKEY_INTERNAL_PORT.tcp()).await?;
+    let uri = format!("redis://127.0.0.1:{port}");
+
+    let store = ValkeyContextEventStore::new(&uri)?;
+
+    let err = store
+        .append(sample_cmd_event("n1", "dev", 1), 99)
+        .await
+        .expect_err("wrong revision should fail");
+
+    assert!(
+        matches!(err, rehydration_ports::PortError::Conflict(_)),
+        "should be Conflict, got: {err}"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn valkey_concurrent_appends_one_wins_one_conflicts() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let container = start_valkey_container().await?;
+    let port = container.get_host_port_ipv4(VALKEY_INTERNAL_PORT.tcp()).await?;
+    let uri = format!("redis://127.0.0.1:{port}");
+
+    let store_a = Arc::new(ValkeyContextEventStore::new(&uri)?);
+    let store_b = Arc::new(ValkeyContextEventStore::new(&uri)?);
+
+    let sa = Arc::clone(&store_a);
+    let sb = Arc::clone(&store_b);
+
+    let task_a = tokio::spawn(async move {
+        sa.append(sample_cmd_event("race", "dev", 1), 0).await
+    });
+    let task_b = tokio::spawn(async move {
+        sb.append(sample_cmd_event("race", "dev", 1), 0).await
+    });
+
+    let (result_a, result_b) = tokio::join!(task_a, task_b);
+    let result_a = result_a.expect("task a should not panic");
+    let result_b = result_b.expect("task b should not panic");
+
+    let (winner, loser) = match (&result_a, &result_b) {
+        (Ok(_), Err(_)) => (result_a, result_b),
+        (Err(_), Ok(_)) => (result_b, result_a),
+        (Ok(_), Ok(_)) => panic!("both appends succeeded — CAS is broken"),
+        (Err(a), Err(b)) => panic!("both failed: a={a}, b={b}"),
+    };
+
+    assert_eq!(winner.expect("winner"), 1);
+    assert!(
+        matches!(loser.expect_err("loser"), rehydration_ports::PortError::Conflict(_)),
+        "loser should get Conflict"
+    );
+
+    assert_eq!(store_a.current_revision("race", "dev").await?, 1);
+    Ok(())
+}
