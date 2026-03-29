@@ -549,7 +549,7 @@ Full validation pending: 108-eval baseline + multi-model matrix.
 
 ### Level 2 — Strong paper
 - [x] Token efficiency baseline: BundleQualityMetrics in kernel render pipeline — raw_equivalent_tokens, compression_ratio, causal_density, noise_ratio, detail_coverage. Proto + OTel + E2E report. Kernel-native, not benchmark-computed.
-- [ ] vLLM reasoning model: replace Qwen3-8B with a reasoning-capable model (e.g. Qwen3-8B with thinking enabled, or DeepSeek-R1-Distill) to evaluate whether chain-of-thought improves causal tracing over the rehydrated graph.
+- [ ] vLLM reasoning model: Qwen3-8B with `--reasoning-parser=qwen3` + `enable_thinking: true` per request. vLLM separates thinking into `reasoning_content` field — no stripping needed. `LLM_ENABLE_THINKING=true` env var activates per-request. 4x token budget for thinking overhead. Infrastructure ready, pending A/B comparison.
 - [ ] Closed-loop recovery with corrected outcome
 - ~~Three graph scales: micro, meso, stress~~ (done: dataset generator)
 - [x] Noise controls: CompetingCausal mode — distractors with causal semantic classes and plausible rationale. Explanatory 100% unaffected, structural drops to 28%

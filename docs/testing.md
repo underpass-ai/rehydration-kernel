@@ -197,6 +197,7 @@ benchmarks, prefer editing `evaluation-matrix.yaml` directly.
 | `LLM_TEMPERATURE` | Sampling temperature (recommend `0.0` for reproducibility) |
 | `LLM_TLS_CERT_PATH` | Client cert for mTLS endpoints (vLLM) |
 | `LLM_TLS_KEY_PATH` | Client key for mTLS endpoints |
+| `LLM_ENABLE_THINKING` | `true` to activate Qwen3 chain-of-thought (requires `--reasoning-parser=qwen3` on vLLM server). Auto-multiplies max_tokens ×4 for thinking overhead. |
 | `LLM_TLS_INSECURE` | Skip server cert verification (`true` for self-signed) |
 
 **Judge:**
