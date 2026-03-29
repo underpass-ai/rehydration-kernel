@@ -2,9 +2,11 @@
 
 mod support;
 
+use std::sync::Arc;
+use std::time::SystemTime;
+
 use rehydration_adapter_nats::NatsContextEventStore;
 use rehydration_domain::{ContextEventChange, ContextEventStore, ContextUpdatedEvent, PortError};
-use std::time::SystemTime;
 use support::nats_container::{NATS_INTERNAL_PORT, connect_with_retry, start_nats_container};
 use testcontainers::core::IntoContainerPort;
 
@@ -177,4 +179,67 @@ async fn content_hash_tracks_latest_event() {
         .await
         .expect("should read");
     assert_eq!(hash2.as_deref(), Some("hash-2"));
+}
+
+#[tokio::test]
+async fn concurrent_appends_one_wins_one_conflicts() {
+    let container = start_nats_container().await.expect("nats should start");
+    let host_port = container
+        .get_host_port_ipv4(NATS_INTERNAL_PORT.tcp())
+        .await
+        .expect("port should be mapped");
+    let url = format!("nats://127.0.0.1:{host_port}");
+
+    // Two independent store instances sharing the same JetStream stream
+    let client_a = connect_with_retry(&url).await.expect("connect a");
+    let store_a = Arc::new(
+        NatsContextEventStore::new(client_a, "race")
+            .await
+            .expect("store a"),
+    );
+
+    let client_b = connect_with_retry(&url).await.expect("connect b");
+    let store_b = Arc::new(
+        NatsContextEventStore::new(client_b, "race")
+            .await
+            .expect("store b"),
+    );
+
+    // Both read revision 0 and try to write revision 1 concurrently
+    let sa = Arc::clone(&store_a);
+    let sb = Arc::clone(&store_b);
+
+    let task_a = tokio::spawn(async move {
+        sa.append(sample_event("race-node", "dev", 1, None), 0).await
+    });
+    let task_b = tokio::spawn(async move {
+        sb.append(sample_event("race-node", "dev", 1, None), 0).await
+    });
+
+    let (result_a, result_b) = tokio::join!(task_a, task_b);
+    let result_a = result_a.expect("task a should not panic");
+    let result_b = result_b.expect("task b should not panic");
+
+    // Exactly one should succeed, the other should get Conflict
+    let (winner, loser) = match (&result_a, &result_b) {
+        (Ok(_), Err(_)) => (result_a, result_b),
+        (Err(_), Ok(_)) => (result_b, result_a),
+        (Ok(_), Ok(_)) => panic!("both appends succeeded — CAS is broken"),
+        (Err(a), Err(b)) => panic!("both failed: a={a}, b={b}"),
+    };
+
+    assert_eq!(winner.expect("winner should be Ok"), 1);
+    assert!(
+        matches!(loser.expect_err("loser should be Err"), PortError::Conflict(_)),
+        "loser should get Conflict"
+    );
+
+    // Final revision should be 1 (only one write succeeded)
+    assert_eq!(
+        store_a
+            .current_revision("race-node", "dev")
+            .await
+            .expect("should read"),
+        1
+    );
 }
