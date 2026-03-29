@@ -83,7 +83,7 @@ metrics. `RehydrateSession` renders per-role bundles and emits quality via the o
 
 **Not implemented in v1beta1:**
 
-- **No authorization backend** — `ValidateScope` is a pure set-comparison utility, not an access control gate. `GetContext` does not invoke scope validation at all
+- **No authorization backend (deliberate)** — `ValidateScope` is a pure set-comparison utility, not an access control gate. `GetContext` does not invoke scope validation. This is a conscious design decision for v1beta1: the kernel delegates access control to the transport layer (mTLS client certificates) and the integrating product. Scope enforcement is not planned for the kernel itself — consumers are expected to validate scopes at their own boundary
 - **No timeline filtering** — `RehydrateSession` echoes `timeline_window` but does not filter events by time range
 - **`context.bundle.generated` not emitted** — defined in AsyncAPI contract but the kernel runtime does not publish this event. Test fixtures simulate it for downstream integration tests
 - **Single token estimator** — `cl100k_base` BPE via `tiktoken-rs` for all counting. No model-specific estimator selection
