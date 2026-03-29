@@ -246,9 +246,31 @@ agents:
     tls: true               # mTLS — uses tls.cert and tls.key paths
 ```
 
-Server: `k8s/vllm-server-current.yaml` — 1× RTX 3090, `--reasoning-parser=qwen3`.
-Thinking: set `LLM_ENABLE_THINKING=true` to activate CoT. `thinking_budget` (512)
-and `max_tokens` are independent budgets — no token overhead on the content side.
+Two mutually exclusive server modes — both deploy the same `vllm-server` pod:
+
+| Mode | Manifest | `--reasoning-parser` | `LLM_ENABLE_THINKING` |
+|------|----------|:--------------------:|:---------------------:|
+| Baseline | `k8s/vllm-no-thinking.yaml` | absent | must be `false` |
+| Thinking | `k8s/vllm-thinking.yaml` | `qwen3` | `true` to activate CoT |
+
+Switching between modes:
+
+```bash
+# Switch to thinking mode
+kubectl apply -f k8s/vllm-thinking.yaml
+kubectl rollout status deployment/vllm-server -n underpass-runtime --timeout=180s
+
+# Switch back to baseline
+kubectl apply -f k8s/vllm-no-thinking.yaml
+kubectl rollout status deployment/vllm-server -n underpass-runtime --timeout=180s
+
+# Verify endpoint is healthy
+curl --cert /tmp/vllm-client.crt --key /tmp/vllm-client.key -k \
+  https://llm.underpassai.com/v1/models
+```
+
+With the reasoning parser, `thinking_budget` (512) and `max_tokens` are
+independent budgets — no token overhead on the content side.
 
 **GPT-5.4 (OpenAI API):**
 

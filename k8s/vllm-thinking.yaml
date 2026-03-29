@@ -1,22 +1,27 @@
-# vLLM Qwen3-8B WITHOUT --reasoning-parser.
-# Thinking tokens come mixed in `content` with <think>...</think> tags.
-# Use for A/B comparison against vllm-server-current.yaml (with reasoning-parser).
+# vLLM Qwen3-8B — WITH thinking mode.
+#
+# --reasoning-parser=qwen3 separates thinking into `reasoning_content` field.
+# thinking_budget (512) and max_tokens are INDEPENDENT budgets.
+# LLM_ENABLE_THINKING=true activates CoT per-request.
+#
+# Apply: kubectl apply -f k8s/vllm-thinking.yaml
+# Switch to no-thinking: kubectl apply -f k8s/vllm-no-thinking.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: vllm-no-reasoning
+  name: vllm-server
   namespace: underpass-runtime
   labels:
-    app: vllm-no-reasoning
+    app: vllm
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: vllm-no-reasoning
+      app: vllm
   template:
     metadata:
       labels:
-        app: vllm-no-reasoning
+        app: vllm
     spec:
       containers:
         - name: vllm
@@ -28,6 +33,7 @@ spec:
             - "--gpu-memory-utilization=0.85"
             - "--trust-remote-code"
             - "--host=0.0.0.0"
+            - "--reasoning-parser=qwen3"
           env:
             - name: HF_HOME
               value: /tmp/hf-cache
@@ -60,16 +66,3 @@ spec:
           emptyDir:
             medium: Memory
             sizeLimit: 2Gi
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: vllm-no-reasoning
-  namespace: underpass-runtime
-spec:
-  selector:
-    app: vllm-no-reasoning
-  ports:
-    - port: 8000
-      targetPort: 8000
-      protocol: TCP

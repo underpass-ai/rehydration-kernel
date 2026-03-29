@@ -588,8 +588,8 @@ Two deployment modes for A/B comparison:
 
 | Mode | K8s manifest | `--reasoning-parser` | Thinking output | Token budget |
 |------|-------------|---------------------|----------------|-------------|
-| **With parser** | `k8s/vllm-server-current.yaml` | `qwen3` | `reasoning_content` field (separate) | `thinking_budget` + `max_tokens` independent |
-| **Without parser** | `k8s/vllm-no-reasoning.yaml` | absent | mixed in `content` with `<think>` tags | `strip_thinking_tags()` fallback needed |
+| **With parser** | `k8s/vllm-thinking.yaml` | `qwen3` | `reasoning_content` field (separate) | `thinking_budget` + `max_tokens` independent |
+| **Without parser** | `k8s/vllm-no-thinking.yaml` | absent | mixed in `content` with `<think>` tags | `strip_thinking_tags()` fallback needed |
 
 Client-side: `LLM_ENABLE_THINKING=true` env var injects
 `chat_template_kwargs: {enable_thinking: true, thinking_budget: 512}` into the
@@ -605,8 +605,8 @@ the accuracy/latency tradeoff.
 
 | Arm | `LLM_ENABLE_THINKING` | vLLM manifest | Expected behavior |
 |-----|:---------------------:|---------------|-------------------|
-| A — baseline | `false` | `vllm-server-current.yaml` | Fast, fabricates on structural |
-| B — thinking | `true` | `vllm-server-current.yaml` | Slower, honest on structural |
+| A — baseline | `false` | `vllm-no-thinking.yaml` | Fast, fabricates on structural |
+| B — thinking | `true` | `vllm-thinking.yaml` | Slower, honest on structural |
 
 **Metrics to compare:**
 
@@ -659,7 +659,7 @@ bounded graph tasks that normally require frontier models. The benchmark should 
 
 **Model matrix for vLLM (local GPU inference, zero API cost):**
 
-Infrastructure: 4x RTX 3090 (96GB VRAM). vLLM tensor parallelism.
+Infrastructure: local GPU cluster. vLLM tensor parallelism.
 
 Small (1 GPU, fp16):
 - [ ] Qwen3-1.7B — stress test: minimum viable model size

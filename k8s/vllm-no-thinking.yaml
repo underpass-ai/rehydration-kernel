@@ -1,0 +1,66 @@
+# vLLM Qwen3-8B — NO thinking mode.
+#
+# WITHOUT --reasoning-parser: thinking tokens are NOT separated.
+# LLM_ENABLE_THINKING must be FALSE or max_tokens will be consumed by <think> tags.
+#
+# Apply: kubectl apply -f k8s/vllm-no-thinking.yaml
+# Switch to thinking: kubectl apply -f k8s/vllm-thinking.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-server
+  namespace: underpass-runtime
+  labels:
+    app: vllm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vllm
+  template:
+    metadata:
+      labels:
+        app: vllm
+    spec:
+      containers:
+        - name: vllm
+          image: docker.io/vllm/vllm-openai:v0.15.0-cu130
+          args:
+            - "--model=Qwen/Qwen3-8B"
+            - "--tensor-parallel-size=1"
+            - "--max-model-len=8192"
+            - "--gpu-memory-utilization=0.85"
+            - "--trust-remote-code"
+            - "--host=0.0.0.0"
+          env:
+            - name: HF_HOME
+              value: /tmp/hf-cache
+            - name: LD_LIBRARY_PATH
+              value: /usr/lib
+            - name: VLLM_ATTENTION_BACKEND
+              value: FLASHINFER
+          ports:
+            - containerPort: 8000
+              protocol: TCP
+          resources:
+            requests:
+              cpu: "2"
+              memory: "16Gi"
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "4"
+              memory: "24Gi"
+              nvidia.com/gpu: "1"
+          volumeMounts:
+            - mountPath: /tmp/hf-cache
+              name: hf-cache
+            - mountPath: /dev/shm
+              name: shm
+      volumes:
+        - name: hf-cache
+          emptyDir:
+            sizeLimit: 20Gi
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 2Gi
