@@ -607,63 +607,59 @@ Two dimensions:
    declared `reason_source` against the kernel's ground truth to detect fabrication
    deterministically — no judge needed.
 
-### A/B results (108 evals per arm, 2026-03-29)
+### A/B results: controlled thinking comparison (108 evals per arm, 2026-03-29)
 
-**Setup:**
-- Arm A: `LLM_ENABLE_THINKING=false`, vLLM v0.15.0, `max_tokens=200`, `temp=0.0`
-- Arm B: thinking default (Qwen3 native), vLLM v0.18.0-cu130, `max_tokens=4096`, `temp=0.6`
-- Both: `--reasoning-parser=qwen3`, judge=sonnet-4.6, 3 scales × 2 domains × 3 mixes × 2 noise × 3 seeds = 108 evals
-- Artifacts: `artifacts/e2e-runs/2026-03-29_100518` (Arm A), `artifacts/e2e-runs/2026-03-29_131923` (Arm B)
+**Setup (single variable: thinking ON/OFF):**
+- Both arms: vLLM v0.18.0-cu130, `--reasoning-parser=qwen3`, `max_tokens=4096`, `temp=0.6`
+- Baseline: `LLM_ENABLE_THINKING=false` (sends `chat_template_kwargs: {enable_thinking: false}`)
+- Thinking: default (Qwen3 native thinking, no `chat_template_kwargs` sent)
+- Judge: sonnet-4.6, 3 scales × 2 domains × 3 mixes × 2 noise × 3 seeds = 108 evals
+- Config: `baseline-v18-no-thinking.yaml` (baseline), `evaluation-matrix.yaml` (thinking)
+- Artifacts: `artifacts/e2e-runs/2026-03-29_210656` (baseline), `artifacts/e2e-runs/2026-03-29_131923` (thinking)
 
 **By mix (36 evals each):**
 
 | Mix | Arm | Task | Restart | Reason | Latency |
 |-----|:---:|:----:|:-------:|:------:|--------:|
-| Explanatory | A | 19/36 (52%) | 7/36 (19%) | 25/36 (69%) | 2.4s |
-|             | B | **24/36 (66%)** | **19/36 (52%)** | **29/36 (80%)** | 44s |
-| Structural  | A | 12/36 (33%) | 0/36 (0%) | 0/36 (0%) | 2.0s |
-|             | B | 0/36 (0%) | 0/36 (0%) | 0/36 (0%) | 28s |
-| Mixed       | A | 24/36 (66%) | 9/36 (25%) | 29/36 (80%) | 2.2s |
-|             | B | 24/36 (66%) | **15/36 (41%)** | **30/36 (83%)** | 40s |
+| Explanatory | base | 24/36 (66%) | 11/36 (30%) | 27/36 (75%) | 2.4s |
+|             | think | 24/36 (66%) | **19/36 (52%)** | 29/36 (80%) | 44s |
+| Structural  | base | 11/36 (30%) | 0/36 (0%) | 0/36 (0%) | 2.0s |
+|             | think | 0/36 (0%) | 0/36 (0%) | 0/36 (0%) | 28s |
+| Mixed       | base | 26/36 (72%) | 10/36 (27%) | 30/36 (83%) | 2.2s |
+|             | think | 24/36 (66%) | **15/36 (41%)** | 30/36 (83%) | 40s |
 
 **Fabrication (structural variants only):**
 
 | Arm | Fabricated | Honest (`not_available`) |
 |:---:|:----------:|:-----------------------:|
-| A | **32/36 (89%)** | 0/36 (0%) |
-| B | **0/36 (0%)** | **36/36 (100%)** |
+| Baseline | **35/36 (97%)** | 0/36 (0%) |
+| Thinking | **0/36 (0%)** | **36/36 (100%)** |
 
 **By scale (36 evals each):**
 
-| Scale | Arm A Task | Arm B Task | Latency ratio |
-|-------|:----------:|:----------:|:-------------:|
-| Micro | 31/36 (86%) | 21/36 (58%) | 15.9x |
-| Meso | 18/36 (50%) | 16/36 (44%) | 18.1x |
-| Stress | 6/36 (16%) | **11/36 (30%)** | 17.1x |
+### Findings (controlled single-variable, 108 evals per arm)
 
-### Findings (validated at 108-eval scale)
+**1. Thinking = honesty (strongest signal).** 97% fabrication without thinking
+→ 0% with thinking (36 structural evals per arm). The model declares
+`reason_source: "not_available"` on 100% of structural variants when CoT is
+enabled. Deterministically detectable via `causal_density` ground truth.
 
-**1. Thinking = honesty.** The same 8B model with thinking enabled declares
-`reason_source: "not_available"` on 100% of structural variants (vs 89%
-fabrication without thinking). This is deterministically detectable via the
-kernel's `causal_density` ground truth — no judge needed.
+**2. Thinking does NOT improve Task accuracy on explanatory.** Task stays at
+66% with or without thinking. The improvement seen in the earlier uncontrolled
+A/B (+14pp) was confounded by vLLM version and temperature changes. Controlled
+comparison isolates: thinking does not help the model identify failure points.
 
-**2. Thinking improves accuracy on explanatory context.** Task +14pp (52→66%),
-Restart +33pp (19→52%), Reason +11pp (69→80%). The model reasons about the
-causal chain instead of pattern-matching surface tokens.
+**3. Thinking DOES improve Restart accuracy.** Explanatory +22pp (30→52%),
+mixed +14pp (27→41%). CoT helps the model reason about which node is the
+correct recovery point — a multi-hop inference that benefits from explicit
+reasoning steps.
 
-**3. Thinking scales better on complex graphs.** At stress scale (49 nodes),
-thinking improves from 16% to 30% Task — the model handles deeper causal chains
-better with CoT. At micro scale, baseline is already 86% and thinking drops to
-58% (over-thinking on simple graphs).
+**4. Structural accuracy drops from 30% to 0% with thinking.** The 30%
+baseline accuracy was fabrication-based — the model "got lucky" but for wrong
+reasons. Thinking converts these to honest `NOT_AVAILABLE` declarations.
 
-**4. Structural accuracy drops to 0% with thinking.** Expected: without
-rationale metadata, the honest model declares `NOT_AVAILABLE` instead of
-fabricating an answer. The 33% Task accuracy in Arm A was based on fabricated
-reasoning — it "got lucky" but for wrong reasons.
-
-**5. Latency: 17x.** 2.2s → 37s average. The model generates ~1800 thinking
-tokens per eval. Acceptable for batch evaluation, not for real-time serving.
+**5. Latency: 18x.** 2.4s → 44s average. Acceptable for batch evaluation,
+not for real-time serving.
 
 **6. The kernel makes this observable.** Without `causal_density` as ground
 truth, there is no way to distinguish Arm A's 33% structural "accuracy"

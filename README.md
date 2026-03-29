@@ -40,7 +40,7 @@ The kernel provides the *why*, not just the *what*.
 **Auditable reasoning.** The kernel knows what rationale exists in the graph
 (`causal_density > 0`). Consumers can cross-reference the LLM's response against
 this ground truth to detect when reasoning is fabricated rather than preserved.
-Without chain-of-thought, 89% of structural responses are fabricated with high
+Without chain-of-thought, 97% of structural responses are fabricated with high
 confidence. With CoT enabled, 0% — the kernel's ground truth makes fabrication
 deterministically detectable without a second model
 (see [Core Thesis](./docs/research/ROADMAP_MASTER.md#core-thesis-directional-evidence-2026-03-28)).

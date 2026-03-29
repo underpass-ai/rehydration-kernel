@@ -708,7 +708,7 @@ recovery with structural-only context — a gap of +69pp (GPT-5.4) and +67pp
 demonstrating that the two signal types compound. The kernel also provides
 domain-level observability: its `causal_density` metric serves as ground truth
 that makes LLM fabrication deterministically detectable without a judge model.
-Without chain-of-thought, 89% of structural responses are fabricated; with
+Without chain-of-thought, 97% of structural responses are fabricated; with
 thinking enabled, 0% — converting fabrication from undetectable to preventable.
 Under 8x token budget reduction (4096→512), the tier-aware planner preserves
 task accuracy (-3pp) and improves recovery (+17pp) by sacrificing low-value
