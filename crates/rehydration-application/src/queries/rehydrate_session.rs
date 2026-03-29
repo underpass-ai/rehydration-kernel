@@ -9,9 +9,10 @@ use rehydration_domain::{
 use crate::ApplicationError;
 use crate::queries::{
     NodeCentricProjectionReader, QueryApplicationService, QueryTimingBreakdown,
-    render_graph_bundle::render_graph_bundle,
+    context_render_options::EndpointHint,
+    render_graph_bundle::{render_graph_bundle_with_options, RenderedContext},
+    ContextRenderOptions,
 };
-use super::render_graph_bundle::RenderedContext;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RehydrateSessionQuery {
@@ -154,8 +155,14 @@ where
             }
         };
 
-        let rendered_contexts: Vec<RenderedContext> =
-            bundles.iter().map(render_graph_bundle).collect();
+        let session_options = ContextRenderOptions {
+            endpoint_hint: EndpointHint::SessionSnapshot,
+            ..Default::default()
+        };
+        let rendered_contexts: Vec<RenderedContext> = bundles
+            .iter()
+            .map(|b| render_graph_bundle_with_options(b, &session_options))
+            .collect();
 
         if query.persist_snapshot {
             for bundle in &bundles {

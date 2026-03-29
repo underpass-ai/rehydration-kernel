@@ -19,7 +19,7 @@ pub mod timing_breakdown;
 pub mod validate_scope;
 
 pub use bundle_assembler::BundleAssembler;
-pub use context_render_options::ContextRenderOptions;
+pub use context_render_options::{ContextRenderOptions, EndpointHint};
 pub use get_context::{GetContextQuery, GetContextResult, GetContextUseCase};
 pub use get_context_path::{GetContextPathQuery, GetContextPathResult, GetContextPathUseCase};
 pub use get_node_detail::{

@@ -1,34 +1,55 @@
 use rehydration_domain::{RehydrationBundle, RehydrationMode, RelationSemanticClass};
 
-/// Resolves `Auto` mode into a concrete mode based on token pressure and
-/// causal density.
+use crate::queries::EndpointHint;
+
+/// Resolves `Auto` mode into a concrete mode based on token pressure,
+/// causal density, focus presence, and endpoint type.
 ///
 /// When mode is explicit (not Auto), it passes through unchanged.
 /// When Auto, the heuristic considers:
 /// 1. Token pressure (budget / nodes) — tight budgets favor ResumeFocused
-/// 2. Causal density — high explanatory ratio overrides pressure to preserve rationale
+/// 2. Causal density — high explanatory ratio preserves rationale; very low density prunes even at generous budgets
+/// 3. Focus presence — scoped paths tolerate more pruning (threshold 30 → 60)
+/// 4. Endpoint type — sessions need richer context (threshold → 15)
 pub(crate) fn resolve_mode(
     explicit_mode: RehydrationMode,
     bundle: &RehydrationBundle,
     token_budget: Option<u32>,
+    focus_node_id: Option<&str>,
+    endpoint_hint: EndpointHint,
 ) -> RehydrationMode {
     match explicit_mode {
-        RehydrationMode::Auto => auto_detect(bundle, token_budget),
+        RehydrationMode::Auto => {
+            auto_detect(bundle, token_budget, focus_node_id, endpoint_hint)
+        }
         concrete => concrete,
     }
 }
 
-/// Tokens-per-node threshold below which we switch to ResumeFocused.
-///
-/// Derived from the stress benchmark: 512 tokens / 49 nodes = ~10 tokens/node
-/// is deeply in the "tight" regime. Meso at 4096/21 = ~195 is comfortable.
+/// Default tokens-per-node threshold (GetContext without focus).
 const TOKENS_PER_NODE_THRESHOLD: u32 = 30;
 
+/// When a focus path is set, scoped context benefits from pruning even at
+/// moderate budgets. Double the threshold.
+const FOCUSED_TOKENS_PER_NODE_THRESHOLD: u32 = 60;
+
+/// Sessions serve multi-role snapshots and need richer context. Lower threshold
+/// means we stay in ReasonPreserving longer.
+const SESSION_TOKENS_PER_NODE_THRESHOLD: u32 = 15;
+
 /// Causal density above which we keep ReasonPreserving even under token pressure.
-/// At >50% explanatory relations, the rationale metadata is worth preserving.
 const CAUSAL_DENSITY_PRESERVE_THRESHOLD: f64 = 0.5;
 
-fn auto_detect(bundle: &RehydrationBundle, token_budget: Option<u32>) -> RehydrationMode {
+/// Causal density below which we switch to ResumeFocused even at generous budgets.
+/// Structural-heavy graphs have nothing worth preserving in ReasonPreserving mode.
+const STRUCTURAL_OVERRIDE_DENSITY: f64 = 0.2;
+
+fn auto_detect(
+    bundle: &RehydrationBundle,
+    token_budget: Option<u32>,
+    focus_node_id: Option<&str>,
+    endpoint_hint: EndpointHint,
+) -> RehydrationMode {
     let Some(budget) = token_budget else {
         return RehydrationMode::ReasonPreserving;
     };
@@ -39,13 +60,24 @@ fn auto_detect(bundle: &RehydrationBundle, token_budget: Option<u32>) -> Rehydra
     }
 
     let tokens_per_node = budget / total_nodes;
-    if tokens_per_node >= TOKENS_PER_NODE_THRESHOLD {
+    let causal_density = bundle_causal_density(bundle);
+
+    let effective_threshold = match endpoint_hint {
+        EndpointHint::SessionSnapshot => SESSION_TOKENS_PER_NODE_THRESHOLD,
+        _ if focus_node_id.is_some() => FOCUSED_TOKENS_PER_NODE_THRESHOLD,
+        _ => TOKENS_PER_NODE_THRESHOLD,
+    };
+
+    if tokens_per_node >= effective_threshold {
+        // Budget is generous relative to endpoint type.
+        // Structural-heavy graphs still benefit from pruning.
+        if causal_density < STRUCTURAL_OVERRIDE_DENSITY {
+            return RehydrationMode::ResumeFocused;
+        }
         return RehydrationMode::ReasonPreserving;
     }
 
-    // Budget is tight — check if the graph has enough causal content to justify
-    // keeping ReasonPreserving despite the pressure.
-    let causal_density = bundle_causal_density(bundle);
+    // Budget is tight — preserve rationale only if density justifies it.
     if causal_density >= CAUSAL_DENSITY_PRESERVE_THRESHOLD {
         RehydrationMode::ReasonPreserving
     } else {
@@ -84,6 +116,7 @@ mod tests {
     };
 
     use super::resolve_mode;
+    use crate::queries::EndpointHint;
 
     fn bundle_with_nodes(count: usize) -> RehydrationBundle {
         let root = BundleNode::new(
@@ -145,55 +178,130 @@ mod tests {
         .expect("valid")
     }
 
+    // ── v2 tests (updated with new params, same assertions) ──
+
     #[test]
     fn auto_selects_resume_focused_when_budget_tight_and_structural() {
-        // 49 nodes, 0 causal relations → structural graph under pressure
         let bundle = bundle_with_nodes(49);
-        let mode = resolve_mode(RehydrationMode::Auto, &bundle, Some(512));
+        let mode = resolve_mode(RehydrationMode::Auto, &bundle, Some(512), None, EndpointHint::Neighborhood);
         assert_eq!(mode, RehydrationMode::ResumeFocused);
     }
 
     #[test]
     fn auto_keeps_reason_preserving_when_budget_tight_but_high_causal_density() {
-        // 49 nodes, 40 causal / 48 total = 83% causal density → preserve rationale
         let bundle = bundle_with_causal_relations(49, 40);
-        let mode = resolve_mode(RehydrationMode::Auto, &bundle, Some(512));
+        let mode = resolve_mode(RehydrationMode::Auto, &bundle, Some(512), None, EndpointHint::Neighborhood);
         assert_eq!(mode, RehydrationMode::ReasonPreserving);
     }
 
     #[test]
     fn auto_selects_resume_focused_when_budget_tight_and_low_causal_density() {
-        // 49 nodes, 5 causal / 48 total = 10% causal density → not worth preserving
         let bundle = bundle_with_causal_relations(49, 5);
-        let mode = resolve_mode(RehydrationMode::Auto, &bundle, Some(512));
+        let mode = resolve_mode(RehydrationMode::Auto, &bundle, Some(512), None, EndpointHint::Neighborhood);
         assert_eq!(mode, RehydrationMode::ResumeFocused);
-    }
-
-    #[test]
-    fn auto_selects_reason_preserving_when_budget_generous() {
-        let bundle = bundle_with_nodes(21);
-        let mode = resolve_mode(RehydrationMode::Auto, &bundle, Some(4096));
-        assert_eq!(mode, RehydrationMode::ReasonPreserving);
     }
 
     #[test]
     fn auto_selects_reason_preserving_when_no_budget() {
         let bundle = bundle_with_nodes(49);
-        let mode = resolve_mode(RehydrationMode::Auto, &bundle, None);
+        let mode = resolve_mode(RehydrationMode::Auto, &bundle, None, None, EndpointHint::Neighborhood);
         assert_eq!(mode, RehydrationMode::ReasonPreserving);
     }
 
     #[test]
     fn explicit_mode_passes_through() {
         let bundle = bundle_with_nodes(49);
-        let mode = resolve_mode(RehydrationMode::ResumeFocused, &bundle, Some(4096));
+        let mode = resolve_mode(RehydrationMode::ResumeFocused, &bundle, Some(4096), None, EndpointHint::Neighborhood);
         assert_eq!(mode, RehydrationMode::ResumeFocused);
     }
 
     #[test]
     fn auto_selects_resume_focused_for_single_node_tight_budget() {
         let bundle = bundle_with_nodes(1);
-        let mode = resolve_mode(RehydrationMode::Auto, &bundle, Some(10));
+        let mode = resolve_mode(RehydrationMode::Auto, &bundle, Some(10), None, EndpointHint::Neighborhood);
         assert_eq!(mode, RehydrationMode::ResumeFocused);
+    }
+
+    // ── Enrichment 1: focus presence ──
+
+    #[test]
+    fn focus_biases_toward_resume_focused_at_moderate_budget() {
+        // 21 nodes, 1000 tokens → 47 tok/node. Without focus: >= 30 → ReasonPreserving.
+        // With focus: < 60 → falls through to density check → 0 density → ResumeFocused.
+        let bundle = bundle_with_nodes(21);
+        let mode = resolve_mode(RehydrationMode::Auto, &bundle, Some(1000), Some("n1"), EndpointHint::Neighborhood);
+        assert_eq!(mode, RehydrationMode::ResumeFocused);
+    }
+
+    #[test]
+    fn focus_keeps_reason_preserving_at_generous_budget() {
+        // 10 nodes, 1000 tokens → 100 tok/node. Even with focus (threshold 60), 100 >= 60.
+        // But 0 causal density → structural override → ResumeFocused.
+        // Need causal relations to stay ReasonPreserving.
+        let bundle = bundle_with_causal_relations(10, 5); // 55% causal
+        let mode = resolve_mode(RehydrationMode::Auto, &bundle, Some(1000), Some("n1"), EndpointHint::Neighborhood);
+        assert_eq!(mode, RehydrationMode::ReasonPreserving);
+    }
+
+    #[test]
+    fn focus_does_not_affect_no_budget_case() {
+        let bundle = bundle_with_nodes(49);
+        let mode = resolve_mode(RehydrationMode::Auto, &bundle, None, Some("n1"), EndpointHint::Neighborhood);
+        assert_eq!(mode, RehydrationMode::ReasonPreserving);
+    }
+
+    // ── Enrichment 2: endpoint type ──
+
+    #[test]
+    fn session_snapshot_keeps_reason_preserving_at_moderate_pressure() {
+        // 49 nodes, 1000 tokens → 20 tok/node. Normal threshold (30): tight → density check.
+        // Session threshold (15): 20 >= 15 → generous. With causal relations → ReasonPreserving.
+        let bundle = bundle_with_causal_relations(49, 30); // 62% causal
+        let mode = resolve_mode(RehydrationMode::Auto, &bundle, Some(1000), None, EndpointHint::SessionSnapshot);
+        assert_eq!(mode, RehydrationMode::ReasonPreserving);
+    }
+
+    #[test]
+    fn session_snapshot_falls_to_resume_focused_at_extreme_pressure() {
+        // 49 nodes, 200 tokens → 4 tok/node. Even session threshold (15): 4 < 15 → tight.
+        // Low density → ResumeFocused.
+        let bundle = bundle_with_nodes(49);
+        let mode = resolve_mode(RehydrationMode::Auto, &bundle, Some(200), None, EndpointHint::SessionSnapshot);
+        assert_eq!(mode, RehydrationMode::ResumeFocused);
+    }
+
+    #[test]
+    fn focused_path_hint_activates_focus_threshold() {
+        // 21 nodes, 1000 tokens → 47 tok/node. FocusedPath uses threshold 60.
+        // 47 < 60 → tight → 0 density → ResumeFocused.
+        let bundle = bundle_with_nodes(21);
+        let mode = resolve_mode(RehydrationMode::Auto, &bundle, Some(1000), None, EndpointHint::FocusedPath);
+        assert_eq!(mode, RehydrationMode::ResumeFocused);
+    }
+
+    // ── Enrichment 3: relation distribution ──
+
+    #[test]
+    fn generous_budget_structural_graph_switches_to_resume_focused() {
+        // 21 nodes, 4096 tokens → 195 tok/node. Very generous.
+        // But 0 relations → density 0 < 0.2 → structural override → ResumeFocused.
+        let bundle = bundle_with_nodes(21);
+        let mode = resolve_mode(RehydrationMode::Auto, &bundle, Some(4096), None, EndpointHint::Neighborhood);
+        assert_eq!(mode, RehydrationMode::ResumeFocused);
+    }
+
+    #[test]
+    fn generous_budget_causal_graph_stays_reason_preserving() {
+        // 21 nodes, 4096 tokens → 195 tok/node. 50% causal density → above 0.2 → ReasonPreserving.
+        let bundle = bundle_with_causal_relations(21, 10); // 50% causal
+        let mode = resolve_mode(RehydrationMode::Auto, &bundle, Some(4096), None, EndpointHint::Neighborhood);
+        assert_eq!(mode, RehydrationMode::ReasonPreserving);
+    }
+
+    #[test]
+    fn no_budget_stays_reason_preserving_even_when_all_structural() {
+        let bundle = bundle_with_nodes(49);
+        let mode = resolve_mode(RehydrationMode::Auto, &bundle, None, None, EndpointHint::Neighborhood);
+        assert_eq!(mode, RehydrationMode::ReasonPreserving);
     }
 }

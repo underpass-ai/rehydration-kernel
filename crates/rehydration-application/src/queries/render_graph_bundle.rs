@@ -98,7 +98,13 @@ pub fn render_graph_bundle_with_estimator(
         .collect();
 
     // ── Tiered rendering ────────────────────────────────────────────
-    let resolved_mode = resolve_mode(options.rehydration_mode, bundle, options.token_budget);
+    let resolved_mode = resolve_mode(
+        options.rehydration_mode,
+        bundle,
+        options.token_budget,
+        options.focus_node_id.as_deref(),
+        options.endpoint_hint,
+    );
     let tiered_sections = classify_into_tiers(bundle, &detail_by_node_id, options, resolved_mode);
     let tier_budget = options
         .token_budget

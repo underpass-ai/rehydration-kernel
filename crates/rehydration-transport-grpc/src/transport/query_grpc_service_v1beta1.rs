@@ -3,7 +3,7 @@ use std::time::Instant;
 
 use opentelemetry::KeyValue;
 use rehydration_application::{
-    ContextRenderOptions, GetContextPathQuery, GetContextQuery, GetNodeDetailQuery,
+    ContextRenderOptions, EndpointHint, GetContextPathQuery, GetContextQuery, GetNodeDetailQuery,
     QueryApplicationService, RehydrateSessionQuery, ValidateScopeQuery,
 };
 use rehydration_domain::{
@@ -77,6 +77,7 @@ where
                     token_budget: (request.token_budget > 0).then_some(request.token_budget),
                     max_tier: map_proto_resolution_tier(request.max_tier),
                     rehydration_mode: requested_mode,
+                    endpoint_hint: EndpointHint::Neighborhood,
                 },
                 requested_scopes: request.requested_scopes,
             })
@@ -185,6 +186,7 @@ where
                     token_budget: (request.token_budget > 0).then_some(request.token_budget),
                     max_tier: None,
                     rehydration_mode: rehydration_domain::RehydrationMode::default(),
+                    endpoint_hint: EndpointHint::FocusedPath,
                 },
             })
             .await
