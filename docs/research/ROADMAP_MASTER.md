@@ -163,14 +163,16 @@ tokens_per_node < effective_threshold:
 
 15 unit tests (6 v2 updated + 9 new for v3 signals).
 
-#### Pending — Planner v4
+#### Planner v4 (commit c4da51f): tier-aware flat truncation
 
-- [ ] **Truncation algorithm upgrade**: current greedy packing drops sections that don't fit.
-  Upgrade to tier-aware allocation: tag each flat section with its `ResolutionTier`,
-  enforce per-tier budgets (L0 guaranteed, L1 prioritized, L2 sacrificed).
-  When an L2 section doesn't fit, continue instead of breaking — later L1 sections
-  can still be included. Sliding window + summary ruled out (requires LLM call
-  inside kernel, breaks determinism, introduces fabrication risk).
+- [x] **Truncation algorithm upgrade**: greedy sequential packing replaced with
+  tier-aware allocation. Each flat section tagged with `ResolutionTier` (L0/L1/L2).
+  Per-tier budgets enforced (L0 guaranteed, L1 prioritized, L2 sacrificed).
+  When an L2 section exceeds its budget, truncator continues — later L1 sections
+  still included. Uses domain `TierBudget` for allocation.
+
+#### Pending — Planner benchmarking
+
 - [ ] Benchmark with `BENCHMARK_TOKEN_BUDGET=512` to exercise planner under real pressure (4096/49=83 tok/node doesn't trigger the heuristic)
 
 ## Pending — Architecture (low priority, all test-only)
