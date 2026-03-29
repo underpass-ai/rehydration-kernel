@@ -41,7 +41,7 @@ agents:
 
   gpt-5.4:
     endpoint: https://api.openai.com/v1/chat/completions
-    model: gpt-5.4-20250327
+    model: gpt-5.4
     provider: openai-new
     api_key_env: OPENAI_KEY
 
@@ -60,7 +60,7 @@ judges:
 
   gpt-5.4:
     endpoint: https://api.openai.com/v1/chat/completions
-    model: gpt-5.4-20250327
+    model: gpt-5.4
     provider: openai-new
     api_key_env: OPENAI_KEY
 

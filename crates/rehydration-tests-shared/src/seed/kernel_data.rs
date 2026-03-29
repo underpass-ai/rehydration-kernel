@@ -127,7 +127,8 @@ fn graph_mutations() -> Vec<ProjectionMutation> {
             source_node_id: ROOT_NODE_ID.to_string(),
             target_node_id: DECISION_ID.to_string(),
             relation_type: RECORDS_RELATION.to_string(),
-            explanation: RelationExplanation::new(RelationSemanticClass::Structural)
+            explanation: RelationExplanation::new(RelationSemanticClass::Causal)
+                .with_rationale("incident recorded decision")
                 .with_sequence(1),
         }),
         ProjectionMutation::UpsertNodeRelation(NodeRelationProjection {
