@@ -598,6 +598,31 @@ deterministically detectable — without a judge model and without
 probabilistic thresholds. Chain-of-thought converts fabrication from
 undetectable to preventable.
 
+### Key Finding: Kernel and Thinking Are Independent Contributions
+
+A controlled A/B comparison (same vLLM v0.18.0, same temperature 0.6,
+same max_tokens, only thinking ON/OFF differs) separates the two effects:
+
+| Signal | Metric | Without | With | Delta | Source |
+|--------|--------|:-------:|:----:|:-----:|--------|
+| **Kernel** (explanatory vs structural) | Task | 30% | 66% | **+36pp** | Context quality |
+| **Thinking** (CoT ON vs OFF) | Task | 66% | 66% | **0pp** | Reasoning mode |
+| **Thinking** | Restart | 30% | 52% | **+22pp** | Recovery reasoning |
+| **Thinking** | Fabrication | 97% | 0% | **-97pp** | Honesty |
+
+The kernel improves task accuracy by providing causal chains and rationale
+metadata — information the model cannot infer from structural edges alone.
+This is a **context quality** effect, not a reasoning mode effect.
+
+Thinking improves recovery accuracy and eliminates fabrication — it helps
+the model reason about multi-hop recovery paths and declare when rationale
+is absent. This is a **reasoning mode** effect that compounds with the
+kernel's context but does not substitute for it.
+
+A small model (8B parameters) with kernel context and no thinking achieves
+66% task accuracy. The same model without kernel context achieves 30%
+regardless of thinking mode. **The kernel compensates for model capacity.**
+
 ### Statistical Analysis
 
 **Null hypothesis (H0):** There is no difference in task accuracy between
