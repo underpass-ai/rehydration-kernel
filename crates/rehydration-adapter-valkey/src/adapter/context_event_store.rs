@@ -1,7 +1,7 @@
 use rehydration_ports::{ContextEventStore, ContextUpdatedEvent, IdempotentOutcome, PortError};
 
 use crate::adapter::endpoint::ValkeyEndpoint;
-use crate::adapter::io::{execute_get_command, execute_set_command};
+use crate::adapter::io::{execute_eval_command, execute_get_command, execute_set_command};
 
 const DEFAULT_KEY_PREFIX: &str = "rehydration:cmd";
 
@@ -49,30 +49,39 @@ impl ContextEventStore for ValkeyContextEventStore {
         event: ContextUpdatedEvent,
         expected_revision: u64,
     ) -> Result<u64, PortError> {
-        let current = self
-            .current_revision(&event.root_node_id, &event.role)
-            .await?;
-        if current != expected_revision {
-            return Err(PortError::Conflict(format!(
-                "expected revision {expected_revision}, current is {current}"
-            )));
-        }
-
-        let new_revision = current + 1;
-
-        // Persist the full event as JSON
+        let new_revision = expected_revision + 1;
+        let rev_key = self.revision_key(&event.root_node_id, &event.role);
+        let hash_key = self.hash_key(&event.root_node_id, &event.role);
         let event_key = self.event_key(&event.root_node_id, &event.role, new_revision);
+
         let event_json = serde_json::to_string(&event).map_err(|error| {
             PortError::InvalidState(format!("failed to serialize context event: {error}"))
         })?;
-        execute_set_command(&self.endpoint, &event_key, &event_json, None).await?;
 
-        // Update revision and hash indexes
-        let rev_key = self.revision_key(&event.root_node_id, &event.role);
-        execute_set_command(&self.endpoint, &rev_key, &new_revision.to_string(), None).await?;
+        // Atomic CAS via Lua: compare current revision, then set event + revision + hash.
+        // If revision doesn't match, returns CONFLICT error.
+        const CAS_SCRIPT: &str = r#"
+            local current = redis.call('GET', KEYS[1])
+            if current == false then current = '0' end
+            if current ~= ARGV[1] then
+                return redis.error('CONFLICT: expected ' .. ARGV[1] .. ' got ' .. current)
+            end
+            redis.call('SET', KEYS[1], ARGV[2])
+            redis.call('SET', KEYS[2], ARGV[3])
+            redis.call('SET', KEYS[3], ARGV[4])
+            return 'OK'
+        "#;
 
-        let hash_key = self.hash_key(&event.root_node_id, &event.role);
-        execute_set_command(&self.endpoint, &hash_key, &event.content_hash, None).await?;
+        let expected_str = expected_revision.to_string();
+        let new_str = new_revision.to_string();
+
+        execute_eval_command(
+            &self.endpoint,
+            CAS_SCRIPT,
+            &[&rev_key, &hash_key, &event_key],
+            &[&expected_str, &new_str, &event.content_hash, &event_json],
+        )
+        .await?;
 
         if let Some(ref idem_key) = event.idempotency_key {
             let key = self.idempotency_key(idem_key);

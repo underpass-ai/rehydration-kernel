@@ -18,6 +18,45 @@ use crate::adapter::resp::{
     read_response,
 };
 
+/// Executes a Lua script via EVAL. Returns the script result as a string.
+pub(crate) async fn execute_eval_command(
+    endpoint: &ValkeyEndpoint,
+    script: &str,
+    keys: &[&str],
+    args: &[&str],
+) -> Result<String, PortError> {
+    let mut stream = connect_stream(endpoint).await?;
+
+    let num_keys = keys.len().to_string();
+    let mut cmd_args: Vec<&str> = vec!["EVAL", script, &num_keys];
+    cmd_args.extend(keys);
+    cmd_args.extend(args);
+
+    let frame = encode_command(&cmd_args);
+    stream.write_all(&frame).await.map_err(|error| {
+        PortError::Unavailable(format!("failed to write valkey eval: {error}"))
+    })?;
+    stream.flush().await.map_err(|error| {
+        PortError::Unavailable(format!("failed to flush valkey eval: {error}"))
+    })?;
+
+    let mut reader = BufReader::new(stream);
+    match read_response(&mut reader).await? {
+        RespValue::SimpleString(s) => Ok(s),
+        RespValue::BulkString(Some(s)) => Ok(s),
+        RespValue::Error(message) => {
+            if message.contains("CONFLICT") {
+                Err(PortError::Conflict(message))
+            } else {
+                Err(PortError::Unavailable(format!("valkey eval error: {message}")))
+            }
+        }
+        other => Err(PortError::Unavailable(format!(
+            "unexpected valkey eval response: {other:?}"
+        ))),
+    }
+}
+
 trait ValkeyIo: AsyncRead + AsyncWrite + Unpin + Send {}
 
 impl<T> ValkeyIo for T where T: AsyncRead + AsyncWrite + Unpin + Send {}
