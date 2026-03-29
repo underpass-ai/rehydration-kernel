@@ -244,21 +244,31 @@ async fn call_openai(
 
     // vLLM-specific: enable/disable thinking mode for local models.
     // Set LLM_ENABLE_THINKING=true to activate Qwen3 chain-of-thought.
-    if provider == LlmProvider::OpenAI {
-        let enable_thinking = std::env::var("LLM_ENABLE_THINKING")
+    let enable_thinking = if provider == LlmProvider::OpenAI {
+        let enabled = std::env::var("LLM_ENABLE_THINKING")
             .map(|v| v == "true" || v == "1")
             .unwrap_or(false);
         body["chat_template_kwargs"] =
-            serde_json::json!({"enable_thinking": enable_thinking});
-    }
+            serde_json::json!({"enable_thinking": enabled});
+        enabled
+    } else {
+        false
+    };
+
+    // Thinking models need more tokens for CoT reasoning before the JSON answer.
+    let effective_max_tokens = if enable_thinking {
+        max_tokens * 4
+    } else {
+        max_tokens
+    };
 
     // GPT-5.x / o3 / o4 require `max_completion_tokens` instead of `max_tokens`.
     match provider {
         LlmProvider::OpenAINew => {
-            body["max_completion_tokens"] = serde_json::json!(max_tokens);
+            body["max_completion_tokens"] = serde_json::json!(effective_max_tokens);
         }
         _ => {
-            body["max_tokens"] = serde_json::json!(max_tokens);
+            body["max_tokens"] = serde_json::json!(effective_max_tokens);
         }
     }
 
@@ -786,10 +796,8 @@ fn strip_thinking_tags(s: &str) -> String {
             &input[start + "<think>".len()..]
         };
         // Find first { ... last } inside thinking
-        if let Some(json_start) = inside.find('{') {
-            if let Some(json_end) = inside.rfind('}') {
-                return inside[json_start..=json_end].to_string();
-            }
+        if let (Some(json_start), Some(json_end)) = (inside.find('{'), inside.rfind('}')) {
+            return inside[json_start..=json_end].to_string();
         }
     }
 
