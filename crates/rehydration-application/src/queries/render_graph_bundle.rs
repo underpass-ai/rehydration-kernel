@@ -7,7 +7,7 @@ use rehydration_domain::{
 
 use crate::queries::ContextRenderOptions;
 use crate::queries::bundle_section_renderer::ordered_sections;
-use crate::queries::bundle_truncator::{TruncationMetadata, limit_sections_by_token_budget};
+use crate::queries::bundle_truncator::{TruncationMetadata, limit_sections_by_tier_budget};
 use crate::queries::cl100k_estimator::Cl100kEstimator;
 use crate::queries::mode_heuristic::resolve_mode;
 use crate::queries::tier_section_classifier::classify_into_tiers;
@@ -71,12 +71,20 @@ pub fn render_graph_bundle_with_estimator(
         .map(|detail| (detail.node_id(), detail))
         .collect::<BTreeMap<_, _>>();
 
-    // ── Flat rendering (backward compatible) ────────────────────────
+    // ── Resolve mode first (needed by both flat and tiered paths) ──
+    let resolved_mode = resolve_mode(
+        options.rehydration_mode,
+        bundle,
+        options.token_budget,
+        options.focus_node_id.as_deref(),
+        options.endpoint_hint,
+    );
+
+    // ── Flat rendering (tier-aware truncation) ─────────────────────
     let all_sections = ordered_sections(bundle, &detail_by_node_id, options);
-    let total_sections = all_sections.len() as u32;
 
     let (section_pairs, truncation) =
-        limit_sections_by_token_budget(all_sections, options, estimator, total_sections);
+        limit_sections_by_tier_budget(all_sections, options.token_budget, resolved_mode, estimator);
 
     let content = section_pairs
         .iter()
@@ -98,13 +106,6 @@ pub fn render_graph_bundle_with_estimator(
         .collect();
 
     // ── Tiered rendering ────────────────────────────────────────────
-    let resolved_mode = resolve_mode(
-        options.rehydration_mode,
-        bundle,
-        options.token_budget,
-        options.focus_node_id.as_deref(),
-        options.endpoint_hint,
-    );
     let tiered_sections = classify_into_tiers(bundle, &detail_by_node_id, options, resolved_mode);
     let tier_budget = options
         .token_budget
@@ -446,7 +447,9 @@ mod tests {
 
     #[test]
     fn render_with_budget_reports_truncation_metadata() {
-        let bundle = sample_bundle();
+        // Use a causal bundle so the planner stays ReasonPreserving at generous budget
+        // (structural bundles now trigger ResumeFocused which drops L2).
+        let bundle = quality_bundle();
         let rendered = render_graph_bundle_with_options(
             &bundle,
             &ContextRenderOptions {

@@ -1,25 +1,37 @@
 use std::collections::BTreeMap;
 
-use rehydration_domain::{BundleNode, BundleNodeDetail, BundleRelationship, RehydrationBundle};
+use rehydration_domain::{
+    BundleNode, BundleNodeDetail, BundleRelationship, RehydrationBundle, RelationSemanticClass,
+    ResolutionTier,
+};
 
 use crate::queries::ContextRenderOptions;
+
+/// A flat section tagged with its resolution tier for tier-aware truncation.
+pub(crate) struct TaggedSection {
+    pub content: String,
+    pub source_id: String,
+    pub tier: ResolutionTier,
+}
 
 /// Builds ordered sections from a bundle with salience-based prioritization.
 ///
 /// Section order: root > focus node > explanatory relations > neighbor nodes > details.
-/// This ensures that under token pressure, explanatory relationships survive
-/// before neighbor nodes and details.
-/// Returns `(content, source_id)` pairs in salience order.
+/// Each section is tagged with its resolution tier:
+/// - L0: root node (anchor of the summary)
+/// - L1: focus node + explanatory relationships (causal spine)
+/// - L2: structural relationships + remaining neighbors + details (evidence)
 pub(crate) fn ordered_sections(
     bundle: &RehydrationBundle,
     detail_by_node_id: &BTreeMap<&str, &BundleNodeDetail>,
     options: &ContextRenderOptions,
-) -> Vec<(String, String)> {
+) -> Vec<TaggedSection> {
     let mut sections = Vec::new();
-    sections.push((
-        render_node(bundle.root_node()),
-        format!("node:{}", bundle.root_node().node_id()),
-    ));
+    sections.push(TaggedSection {
+        content: render_node(bundle.root_node()),
+        source_id: format!("node:{}", bundle.root_node().node_id()),
+        tier: ResolutionTier::L0Summary,
+    });
 
     let focus_node_id = focus_node_id(bundle, options);
 
@@ -30,34 +42,59 @@ pub(crate) fn ordered_sections(
             .iter()
             .find(|node| node.node_id() == focus_node_id)
     {
-        sections.push((render_node(node), format!("node:{}", node.node_id())));
+        sections.push(TaggedSection {
+            content: render_node(node),
+            source_id: format!("node:{}", node.node_id()),
+            tier: ResolutionTier::L1CausalSpine,
+        });
     }
 
     for relationship in prioritized_relationships(bundle, focus_node_id) {
-        sections.push((
-            render_relationship(relationship),
-            format!(
+        let tier = if is_explanatory(relationship.explanation().semantic_class()) {
+            ResolutionTier::L1CausalSpine
+        } else {
+            ResolutionTier::L2EvidencePack
+        };
+        sections.push(TaggedSection {
+            content: render_relationship(relationship),
+            source_id: format!(
                 "rel:{}→{}",
                 relationship.source_node_id(),
                 relationship.target_node_id()
             ),
-        ));
+            tier,
+        });
     }
 
     for node in bundle.neighbor_nodes() {
         if Some(node.node_id()) != focus_node_id {
-            sections.push((render_node(node), format!("node:{}", node.node_id())));
+            sections.push(TaggedSection {
+                content: render_node(node),
+                source_id: format!("node:{}", node.node_id()),
+                tier: ResolutionTier::L2EvidencePack,
+            });
         }
     }
 
     for detail in prioritized_details(bundle, focus_node_id) {
-        sections.push((
-            render_detail(detail, detail_by_node_id),
-            format!("detail:{}", detail.node_id()),
-        ));
+        sections.push(TaggedSection {
+            content: render_detail(detail, detail_by_node_id),
+            source_id: format!("detail:{}", detail.node_id()),
+            tier: ResolutionTier::L2EvidencePack,
+        });
     }
 
     sections
+}
+
+fn is_explanatory(class: &RelationSemanticClass) -> bool {
+    matches!(
+        class,
+        RelationSemanticClass::Causal
+            | RelationSemanticClass::Motivational
+            | RelationSemanticClass::Evidential
+            | RelationSemanticClass::Constraint
+    )
 }
 
 fn focus_node_id<'a>(
