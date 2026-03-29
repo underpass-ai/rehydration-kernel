@@ -40,8 +40,9 @@ The kernel provides the *why*, not just the *what*.
 **Auditable reasoning.** The kernel knows what rationale exists in the graph
 (`causal_density > 0`). Consumers can cross-reference the LLM's response against
 this ground truth to detect when reasoning is fabricated rather than preserved.
-Early benchmarks show this distinction is real — investigation ongoing
-(see [ROADMAP](./docs/research/ROADMAP_MASTER.md#core-thesis-validated-2026-03-28)).
+Early benchmarks show that enabling chain-of-thought makes models honest about
+fabrication — investigation ongoing
+(see [ROADMAP](./docs/research/ROADMAP_MASTER.md#core-thesis-directional-evidence-2026-03-28)).
 
 ```mermaid
 graph LR

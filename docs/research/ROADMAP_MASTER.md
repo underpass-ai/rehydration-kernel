@@ -529,11 +529,26 @@ Two dimensions:
    declared `reason_source` against the kernel's ground truth to detect fabrication
    deterministically — no judge needed.
 
-Early signal (smoke test, 6 evals, Qwen3-8B, not yet statistically robust):
-- Explanatory preserves rationale; structural does not
-- Fabrication detection fires correctly on structural variants
-- Qwen3-8B declares `confidence: high` on fabricated rationale — model honesty
-  varies by size (under investigation in model matrix)
+Evidence (smoke tests, 6 evals each, not yet statistically robust):
+
+| Config | Explanatory Reason | Structural Source | Fabricated | Latency |
+|--------|:--:|:--:|:--:|:--:|
+| Qwen3-8B (no thinking) | OK | graph_metadata (lies) | **Yes** | 2s |
+| Qwen3-8B (thinking) | OK | **not_available** (honest) | No | 20s |
+| Qwen3-14B (reasoning, 2 GPU) | OK | **not_available** (honest) | No | 5s |
+
+**Key finding: thinking = honesty.** The same 8B model becomes honest about
+fabrication when chain-of-thought is enabled. Without thinking, it claims
+`graph_metadata` with high confidence on structural variants that have zero
+rationale. With thinking, it recognizes the absence and declares `not_available`.
+
+This is not a model size effect — it's a reasoning mode effect. The kernel
+makes this detectable because it provides the ground truth (`causal_density`).
+
+3. **Thinking as honesty mechanism**: CoT forces the model to reason about
+   whether rationale metadata exists before declaring a source. This converts
+   fabrication from undetectable (without kernel) to preventable (with kernel +
+   thinking). Trade-off: 10x latency.
 
 Full validation pending: 108-eval baseline + multi-model matrix.
 
