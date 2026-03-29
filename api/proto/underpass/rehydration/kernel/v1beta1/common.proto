@@ -209,6 +209,7 @@ message GraphRelationship {
   string target_node_id = 2;
   string relationship_type = 3;
   GraphRelationshipExplanation explanation = 4;
+  Provenance provenance = 5;
 }
 
 message GraphRelationshipExplanation {

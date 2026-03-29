@@ -62,6 +62,7 @@ pub(crate) fn proto_bundle_relationship_v1beta1(
         explanation: Some(proto_graph_relationship_explanation_v1beta1(
             relationship.explanation(),
         )),
+        provenance: relationship.provenance().map(proto_provenance_v1beta1),
     }
 }
 

@@ -278,6 +278,7 @@ fn expected_relationships() -> Vec<GraphRelationship> {
                 confidence: String::new(),
                 sequence: 1,
             }),
+            provenance: None,
         },
         GraphRelationship {
             source_node_id: ROOT_NODE_ID.to_string(),
@@ -294,6 +295,7 @@ fn expected_relationships() -> Vec<GraphRelationship> {
                 confidence: String::new(),
                 sequence: 2,
             }),
+            provenance: None,
         },
     ]
 }

@@ -46,6 +46,7 @@ fn v1beta1_graph_relationship_fields_are_stable() {
             "target_node_id",
             "relationship_type",
             "explanation",
+            "provenance",
         ]
     );
     assert_eq!(

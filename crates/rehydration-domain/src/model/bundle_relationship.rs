@@ -1,3 +1,4 @@
+use crate::value_objects::Provenance;
 use crate::{NodeRelationProjection, RelationExplanation};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -6,6 +7,7 @@ pub struct BundleRelationship {
     target_node_id: String,
     relationship_type: String,
     explanation: RelationExplanation,
+    provenance: Option<Provenance>,
 }
 
 impl BundleRelationship {
@@ -20,7 +22,13 @@ impl BundleRelationship {
             target_node_id: target_node_id.into(),
             relationship_type: relationship_type.into(),
             explanation,
+            provenance: None,
         }
+    }
+
+    pub fn with_provenance(mut self, provenance: Provenance) -> Self {
+        self.provenance = Some(provenance);
+        self
     }
 
     pub fn from_projection(relationship: &NodeRelationProjection) -> Self {
@@ -29,6 +37,7 @@ impl BundleRelationship {
             target_node_id: relationship.target_node_id.clone(),
             relationship_type: relationship.relation_type.clone(),
             explanation: relationship.explanation.clone(),
+            provenance: None,
         }
     }
 
@@ -46,5 +55,9 @@ impl BundleRelationship {
 
     pub fn explanation(&self) -> &RelationExplanation {
         &self.explanation
+    }
+
+    pub fn provenance(&self) -> Option<&Provenance> {
+        self.provenance.as_ref()
     }
 }
