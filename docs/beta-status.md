@@ -85,8 +85,16 @@ metrics. `RehydrateSession` renders per-role bundles and emits quality via the o
 
 - **No authorization backend** — `ValidateScope` is a pure set-comparison utility, not an access control gate. `GetContext` does not invoke scope validation at all
 - **No timeline filtering** — `RehydrateSession` echoes `timeline_window` but does not filter events by time range
-- **No summary filtering** — `include_summaries` was removed in proto pruning
 - **`context.bundle.generated` not emitted** — defined in AsyncAPI contract but the kernel runtime does not publish this event. Test fixtures simulate it for downstream integration tests
 - **Single token estimator** — `cl100k_base` BPE via `tiktoken-rs` for all counting. No model-specific estimator selection
-- **Event store concurrency** — optimistic concurrency uses check-then-act (not atomic CAS). Under high concurrent writes to the same `(root_node_id, role)`, the second writer can silently overwrite the first. CAS via JetStream `expected_last_subject_sequence` is planned
 - **Idempotency outcome** — outcome publish is fire-and-forget. If it fails, retries are treated as new requests
+
+**Implemented in this version:**
+
+- **Event store atomic CAS** — NATS uses `expected_last_subject_sequence` header; Valkey uses a Lua EVAL script. Both reject concurrent writes with `PortError::Conflict`. Validated with container integration tests.
+- **Async quality observer** — `CompositeQualityObserver` spawns observer calls via `tokio::spawn` (fire-and-forget). Observer I/O no longer blocks the gRPC handler hot path.
+- **TruncationMetadata in proto** — `RenderedContext.truncation` (field 8) carries budget_requested, budget_used, sections_kept, sections_dropped, token_estimator when a budget is applied.
+- **Render content hash** — `RenderedContext.content_hash` (field 9) is a deterministic hash of the flat rendered content for audit verification.
+- **Provenance on relationships** — `GraphRelationship.provenance` (field 5) carries source_kind, source_agent, observed_at — same as nodes.
+- **Per-role quality in RehydrateSession** — `GraphRoleBundle.rendered` (field 6) carries per-role RenderedContext with quality metrics, tiers, truncation, and resolved mode.
+- **Planner v2** — `mode_heuristic.rs` uses causal density alongside token pressure. High causal density (>50%) keeps ReasonPreserving even under budget pressure.

@@ -239,14 +239,34 @@ sequenceDiagram
 
 The kernel enforces a token budget using the `cl100k_base` BPE tokenizer.
 Content is ordered by salience and truncated when the budget is exceeded.
-Every response includes quality metrics:
 
-| Metric | What it tells you |
-|:-------|:------------------|
+The planner automatically selects a rehydration mode based on budget pressure
+and graph content:
+- **ReasonPreserving** (default): all tiers populated, full rationale
+- **ResumeFocused**: under tight budgets, prunes L2 evidence to preserve L1 causal spine
+- When `causal_density >= 50%`, the planner keeps ReasonPreserving even under pressure
+
+Every response includes quality metrics and auditability data:
+
+| Field | What it tells you |
+|:------|:------------------|
 | `compressionRatio` | How much the kernel compressed vs a flat dump (>1.0 = savings) |
 | `causalDensity` | Fraction of explanatory relationships (higher = richer signal) |
 | `detailCoverage` | Fraction of nodes with extended detail loaded |
 | `noiseRatio` | Fraction of noise/distractor nodes (0.0 for clean graphs) |
+| `resolvedMode` | Which rehydration mode the planner selected |
+| `contentHash` | Deterministic hash of rendered content — verify the LLM received what the kernel produced |
+| `truncation` | Budget requested vs used, sections kept vs dropped (when budget applied) |
+
+### Provenance
+
+Both nodes and relationships carry optional provenance metadata:
+- `source_kind`: HUMAN, AGENT, PROJECTION, DERIVED
+- `source_agent`: identifier of the agent that wrote the data
+- `observed_at`: ISO-8601 timestamp
+
+This enables auditability: if an LLM cites rationale from a relationship,
+the consumer can verify who originally wrote that rationale.
 
 ## Event Store and Projection Runtime
 
@@ -283,7 +303,7 @@ The kernel supports two event store backends for `UpdateContext`:
 | **NATS JetStream** | `REHYDRATION_EVENT_STORE_BACKEND=nats` | Events stored in `CONTEXT_EVENTS` stream, file-backed |
 
 Both implement the same `ContextEventStore` port with:
-- **Optimistic concurrency** — `expected_revision` checked before append; returns `ABORTED` on conflict
+- **Atomic CAS** — NATS uses `Nats-Expected-Last-Subject-Sequence` header; Valkey uses a Lua EVAL script. Concurrent writes to the same `(root_node_id, role)` are rejected with `ABORTED`
 - **Idempotency** — outcome recording by key; same key returns same result on retry
 - **Revision tracking** — monotonic per `(root_node_id, role)` pair
 

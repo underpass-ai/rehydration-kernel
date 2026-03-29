@@ -1,8 +1,9 @@
 # Observability
 
 The kernel emits quality metrics through a hexagonal observer port with pluggable
-backends. Every successful `GetContext` and `GetContextPath` render produces metrics
-that flow through both OTel (Prometheus/Grafana) and structured logs (Loki/Grafana).
+backends. Every successful render (`GetContext`, `GetContextPath`, `RehydrateSession`)
+produces metrics that flow through both OTel (Prometheus/Grafana) and structured logs
+(Loki/Grafana).
 
 Architecture reference: [ADR-007](adr/ADR-007-quality-metrics-observability.md)
 
@@ -34,7 +35,8 @@ QualityMetricsObserver (domain port)
 ```
 
 The composition root creates `CompositeQualityObserver(OTel + Tracing)` by default.
-Both backends are always active.
+Both backends are always active. The composite observer spawns adapter calls via
+`tokio::spawn` (fire-and-forget) — observer I/O does not block the gRPC handler.
 
 ## OTel Metrics
 
@@ -71,12 +73,16 @@ Both backends are always active.
 | Metric | Type | Description |
 |:-------|:-----|:------------|
 | `rehydration.rpc.duration` | f64 histogram (s) | RPC latency |
+| `rehydration.bundle.nodes` | u64 histogram | Per-role node count (label: `role`) |
+| `rehydration.bundle.relationships` | u64 histogram | Per-role relationship count |
+| `rehydration.bundle.details` | u64 histogram | Per-role detail count |
+| `rehydration.rendered.tokens` | u64 histogram | Per-role rendered token count |
+| `rehydration.truncation.total` | u64 counter | Per-role truncation events |
+| `rehydration.mode.selected` | u64 counter | Per-role resolved mode |
+| `rehydration.quality.*` | via observer | Per-role quality metrics (5 histograms) |
 | `rehydration.session.*` | f64/u64 histograms | Timing breakdown |
 
-> `RehydrateSession` does **not yet** emit quality or bundle metrics.
-> Per-role rendering is planned.
-
-### Quality Metrics (via observer, `GetContext` + `GetContextPath`)
+### Quality Metrics (via observer, all three RPCs)
 
 | Metric | Type | Label |
 |:-------|:-----|:------|
@@ -96,13 +102,11 @@ Both backends are always active.
 | `rehydration.session.batch_size` | u64 histogram | — |
 | `rehydration.session.role_count` | u64 histogram | — |
 
-### Defined but Not Yet Emitted
+### Projection Runtime
 
-These instruments exist in `KernelMetrics` but are not recorded by any RPC handler:
-
-| Metric | Status |
-|:-------|:-------|
-| `rehydration.projection.lag` | Defined, never recorded (projection runtime does not emit) |
+| Metric | Type | Description |
+|:-------|:-----|:------------|
+| `rehydration.projection.lag` | f64 histogram (s) | Event processing time per message (label: `subject`) |
 
 ## Structured Logs (Loki)
 

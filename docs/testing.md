@@ -346,13 +346,32 @@ artifacts/e2e-runs/<timestamp>/
 ```
 
 Each result JSON contains:
-- `rendered_tokens`, `raw_equivalent_tokens`, `compression_ratio`
-- `causal_density`, `noise_ratio`, `detail_coverage`
-- `agent_response`, `judge_raw`
-- `task_correct`, `restart_exact`, `reason_correct`
+- **Quality** (from kernel domain): `rendered_tokens`, `raw_equivalent_tokens`, `compression_ratio`, `causal_density`, `noise_ratio`, `detail_coverage`
+- **Planner**: `resolved_mode` (reason_preserving or resume_focused)
+- **Tiers**: `tier_l0_tokens`, `tier_l1_tokens`, `tier_l2_tokens`, `tier_total_tokens`
+- **Timing**: `graph_load_ms`, `detail_load_ms`, `bundle_assembly_ms`, `timing_batch_size`
+- **Truncation**: `truncation_budget`, `truncation_used`, `truncation_sections_dropped`
+- **LLM verdicts**: `task_correct`, `restart_exact`, `reason_correct`
+- **Anti-fabrication**: `llm_reason_source` (graph_metadata/inferred/not_available), `llm_confidence` (high/medium/low), `llm_reason_fabricated` (deterministic detection)
+- **Token cost**: `llm_prompt_tokens`, `llm_completion_tokens`
+- **Raw responses**: `agent_response`, `judge_raw`
 
 These metrics come from the **kernel response** (`rendered.quality` in the
 proto), not computed by the test. Single source of truth.
+
+### Budget pressure testing
+
+Use `BENCHMARK_TOKEN_BUDGET` to exercise the planner under token pressure:
+
+```bash
+BENCHMARK_TOKEN_BUDGET=512 EVAL_MATRIX_PATH=pressure-test.yaml \
+cargo test -p rehydration-tests-paper --features container-tests \
+  --test vllm_benchmark_integration -- --nocapture --test-threads=1
+```
+
+At 512 tokens with stress-scale graphs (49 nodes), the planner activates:
+- `causal_density >= 50%` → keeps ReasonPreserving (rationale preserved)
+- `causal_density < 50%` → switches to ResumeFocused (L2 pruned, 7-12x compression)
 
 ### Troubleshooting
 

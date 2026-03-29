@@ -75,7 +75,7 @@ graph LR
 | Man-in-the-middle on Valkey | TLS with mTLS | **Implemented** |
 | Man-in-the-middle on NATS | TLS with CA pinning | **Implemented** |
 | Unauthorized context reads | mTLS restricts callers; no fine-grained RBAC | Partial |
-| Unauthorized context writes | mTLS + optimistic concurrency | Partial |
+| Unauthorized context writes | mTLS + atomic CAS (JetStream sequence / Valkey Lua) | Yes |
 | Replay attacks on commands | Idempotency key outcome recording (returns same result for retries; application layer checks before processing) | **Implemented** |
 | Credential exposure in config | Kubernetes secrets, not inline URIs | **Documented** |
 | Data exfiltration from backends | TLS transport, network isolation | **Available** |
