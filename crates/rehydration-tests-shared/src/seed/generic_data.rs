@@ -94,7 +94,7 @@ fn root_node_event() -> GraphNodeMaterializedEvent {
                     node_id: FOCUS_NODE_ID.to_string(),
                     relation_type: CONTAINS_RELATION.to_string(),
                     explanation: RelatedNodeExplanationData {
-                        semantic_class: RelationSemanticClass::Structural,
+                        semantic_class: RelationSemanticClass::Causal,
                         rationale: Some(
                             "the retry handler is the primary work item inside this workspace"
                                 .to_string(),
