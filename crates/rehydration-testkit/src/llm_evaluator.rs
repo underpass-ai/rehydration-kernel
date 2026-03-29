@@ -249,15 +249,16 @@ async fn call_openai(
             .map(|v| v == "true" || v == "1")
             .unwrap_or(false);
         body["chat_template_kwargs"] =
-            serde_json::json!({"enable_thinking": enabled});
+            serde_json::json!({"enable_thinking": enabled, "thinking_budget": 512});
         enabled
     } else {
         false
     };
 
     // Thinking models need more tokens for CoT reasoning before the JSON answer.
+    // thinking_budget=512 + response ~200 = ~712 minimum. Use 8x for safety.
     let effective_max_tokens = if enable_thinking {
-        max_tokens * 4
+        max_tokens * 8
     } else {
         max_tokens
     };
