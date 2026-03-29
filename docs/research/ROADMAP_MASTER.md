@@ -586,15 +586,21 @@ deterministically detectable — no judge needed:
 
 Two deployment modes for A/B comparison:
 
-| Mode | K8s manifest | `--reasoning-parser` | Thinking output | Token budget |
-|------|-------------|---------------------|----------------|-------------|
-| **With parser** | `k8s/vllm-thinking.yaml` | `qwen3` | `reasoning_content` field (separate) | `thinking_budget` + `max_tokens` independent |
-| **Without parser** | `k8s/vllm-no-thinking.yaml` | absent | mixed in `content` with `<think>` tags | `strip_thinking_tags()` fallback needed |
+One yaml per model — all include `--reasoning-parser=qwen3`:
 
-Client-side: `LLM_ENABLE_THINKING=true` env var injects
-`chat_template_kwargs: {enable_thinking: true, thinking_budget: 512}` into the
-vLLM request. The reasoning parser on the server decides where thinking tokens
-land.
+| Model | K8s manifest | GPUs |
+|-------|-------------|:----:|
+| Qwen3-8B | `k8s/vllm-qwen3-8b.yaml` | 1 |
+| Qwen3-14B | `k8s/vllm-qwen3-14b.yaml` | 2 |
+
+Qwen3 thinks by default. The reasoning parser separates `<think>` tags into
+`reasoning_content` and returns clean `content`. Thinking is controlled
+**client-side** via `LLM_ENABLE_THINKING` env var:
+- unset or `true` → Qwen3 thinks (no `chat_template_kwargs` sent)
+- `false` → sends `chat_template_kwargs: {enable_thinking: false}`
+
+`max_tokens` must be large enough for thinking + answer. Configured per
+agent in `evaluation-matrix.yaml`.
 
 ### A/B comparison protocol: thinking vs no-thinking
 
@@ -605,8 +611,8 @@ the accuracy/latency tradeoff.
 
 | Arm | `LLM_ENABLE_THINKING` | vLLM manifest | Expected behavior |
 |-----|:---------------------:|---------------|-------------------|
-| A — baseline | `false` | `vllm-no-thinking.yaml` | Fast, fabricates on structural |
-| B — thinking | `true` | `vllm-thinking.yaml` | Slower, honest on structural |
+| A — baseline | `false` | `vllm-qwen3-8b.yaml` | Fast, fabricates on structural |
+| B — thinking | unset (default) | `vllm-qwen3-8b.yaml` | Slower, honest on structural |
 
 **Metrics to compare:**
 

@@ -242,32 +242,47 @@ async fn call_openai(
         "temperature": temperature,
     });
 
-    // vLLM-specific: enable/disable thinking mode for local models.
-    // Set LLM_ENABLE_THINKING=true to activate Qwen3 chain-of-thought.
-    // With --reasoning-parser=qwen3, thinking goes to `reasoning_content` field.
-    // However, vLLM v0.15.0 `max_tokens` still controls the TOTAL output budget
-    // (thinking + content). We must add thinking_budget to max_tokens so the
-    // model has room for both CoT reasoning AND the JSON answer.
-    let thinking_budget: u32 = 512;
-    let mut effective_max_tokens = max_tokens;
+    // vLLM + Qwen3 thinking mode.
+    //
+    // Refs:
+    //   - vLLM:  github.com/vllm-project/vllm docs/features/reasoning_outputs.md
+    //   - Qwen3: huggingface.co/Qwen/Qwen3-8B
+    //
+    // Server requires: --reasoning-parser=qwen3 --reasoning-config '{"think_start_str":"<think>","think_end_str":"</think>"}'
+    // See k8s/vllm-thinking.yaml.
+    //
+    // With --reasoning-config, thinking_token_budget is a hard cap enforced by
+    // the server, independent of max_tokens. Without it, max_tokens controls
+    // the total output and thinking consumes the entire budget.
+    //
+    // IMPORTANT: do NOT send chat_template_kwargs: {enable_thinking: true}.
+    // That overrides the chat template and breaks the reasoning parser.
+    //
+    // LLM_ENABLE_THINKING env var:
+    //   "false"/"0" → explicitly disables thinking (sends enable_thinking: false)
+    //   any other value or unset → Qwen3 thinks by default (no override sent)
     if provider == LlmProvider::OpenAI {
-        let enabled = std::env::var("LLM_ENABLE_THINKING")
-            .map(|v| v == "true" || v == "1")
+        let disable_thinking = std::env::var("LLM_ENABLE_THINKING")
+            .map(|v| v == "false" || v == "0")
             .unwrap_or(false);
-        body["chat_template_kwargs"] =
-            serde_json::json!({"enable_thinking": enabled, "thinking_budget": thinking_budget});
-        if enabled {
-            effective_max_tokens = max_tokens + thinking_budget;
+        if disable_thinking {
+            body["chat_template_kwargs"] =
+                serde_json::json!({"enable_thinking": false});
+        } else {
+            // Limit reasoning tokens so the model has room for the JSON answer.
+            // Requires --reasoning-config on the server (k8s/vllm-qwen3-8b.yaml).
+            // vLLM forces </think> when the budget is exhausted.
+            body["thinking_token_budget"] = serde_json::json!(512);
         }
     }
 
     // GPT-5.x / o3 / o4 require `max_completion_tokens` instead of `max_tokens`.
     match provider {
         LlmProvider::OpenAINew => {
-            body["max_completion_tokens"] = serde_json::json!(effective_max_tokens);
+            body["max_completion_tokens"] = serde_json::json!(max_tokens);
         }
         _ => {
-            body["max_tokens"] = serde_json::json!(effective_max_tokens);
+            body["max_tokens"] = serde_json::json!(max_tokens);
         }
     }
 
@@ -294,10 +309,13 @@ async fn call_openai(
     }
 
     let chat: OpenAiChatResponse = response.json().await?;
-    let content = chat
-        .choices
-        .first()
-        .map(|c| c.message.content.clone())
+    let msg = chat.choices.first().map(|c| &c.message);
+    // When reasoning-parser is active, content has the clean answer and
+    // reasoning/reasoning_content has the CoT. Use content directly.
+    // When parser is not active, content may contain <think> tags —
+    // strip_thinking_tags handles that downstream.
+    let content = msg
+        .and_then(|m| m.content.clone())
         .unwrap_or_default();
     let usage = chat.usage.unwrap_or(OpenAiUsage {
         prompt_tokens: 0,
@@ -319,7 +337,13 @@ struct OpenAiChoice {
 
 #[derive(Deserialize)]
 struct OpenAiMessage {
-    content: String,
+    content: Option<String>,
+    /// vLLM reasoning parser: CoT thinking separated from answer.
+    /// Renamed from `reasoning_content` to `reasoning` in newer vLLM versions.
+    #[allow(dead_code)]
+    reasoning_content: Option<String>,
+    #[allow(dead_code)]
+    reasoning: Option<String>,
 }
 
 #[derive(Deserialize)]

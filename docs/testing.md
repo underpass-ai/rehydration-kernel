@@ -246,31 +246,36 @@ agents:
     tls: true               # mTLS — uses tls.cert and tls.key paths
 ```
 
-Two mutually exclusive server modes — both deploy the same `vllm-server` pod:
+One yaml per model — all include `--reasoning-parser=qwen3`:
 
-| Mode | Manifest | `--reasoning-parser` | `LLM_ENABLE_THINKING` |
-|------|----------|:--------------------:|:---------------------:|
-| Baseline | `k8s/vllm-no-thinking.yaml` | absent | must be `false` |
-| Thinking | `k8s/vllm-thinking.yaml` | `qwen3` | `true` to activate CoT |
+| Model | Manifest | GPUs |
+|-------|----------|:----:|
+| Qwen3-8B | `k8s/vllm-qwen3-8b.yaml` | 1 |
+| Qwen3-14B | `k8s/vllm-qwen3-14b.yaml` | 2 |
 
-Switching between modes:
+Qwen3 thinks by default. The reasoning parser separates `<think>` tags into
+the `reasoning_content` response field and returns clean content.
+Thinking/no-thinking is controlled **client-side** via `LLM_ENABLE_THINKING`:
+
+| `LLM_ENABLE_THINKING` | Behavior |
+|:----------------------:|----------|
+| unset or `true` | Qwen3 thinks (default). No `chat_template_kwargs` sent. |
+| `false` | Thinking disabled. Sends `chat_template_kwargs: {enable_thinking: false}`. |
+
+Deploying a model:
 
 ```bash
-# Switch to thinking mode
-kubectl apply -f k8s/vllm-thinking.yaml
+kubectl apply -f k8s/vllm-qwen3-8b.yaml
 kubectl rollout status deployment/vllm-server -n underpass-runtime --timeout=180s
 
-# Switch back to baseline
-kubectl apply -f k8s/vllm-no-thinking.yaml
-kubectl rollout status deployment/vllm-server -n underpass-runtime --timeout=180s
-
-# Verify endpoint is healthy
+# Verify
 curl --cert /tmp/vllm-client.crt --key /tmp/vllm-client.key -k \
   https://llm.underpassai.com/v1/models
 ```
 
-With the reasoning parser, `thinking_budget` (512) and `max_tokens` are
-independent budgets — no token overhead on the content side.
+`max_tokens` must be large enough for thinking + JSON answer (configured
+per agent in `evaluation-matrix.yaml`). Qwen3 model card recommends
+`temperature: 0.6` for thinking mode (DO NOT use greedy/0.0).
 
 **GPT-5.4 (OpenAI API):**
 

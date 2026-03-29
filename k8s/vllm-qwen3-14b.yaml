@@ -1,10 +1,13 @@
-# vLLM Qwen3-8B — NO thinking mode.
+# vLLM — Qwen3-14B (2 GPU, tensor parallel)
 #
-# WITHOUT --reasoning-parser: thinking tokens are NOT separated.
-# LLM_ENABLE_THINKING must be FALSE or max_tokens will be consumed by <think> tags.
+# Qwen3 thinks by default. --reasoning-parser=qwen3 separates <think> tags
+# into the `reasoning_content` response field.
 #
-# Apply: kubectl apply -f k8s/vllm-no-thinking.yaml
-# Switch to thinking: kubectl apply -f k8s/vllm-thinking.yaml
+# Client-side control (chat_template_kwargs):
+#   Thinking ON:  omit chat_template_kwargs (default)
+#   Thinking OFF: {"enable_thinking": false}
+#
+# Apply: kubectl apply -f k8s/vllm-qwen3-14b.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -26,12 +29,13 @@ spec:
         - name: vllm
           image: docker.io/vllm/vllm-openai:v0.15.0-cu130
           args:
-            - "--model=Qwen/Qwen3-8B"
-            - "--tensor-parallel-size=1"
+            - "--model=Qwen/Qwen3-14B"
+            - "--tensor-parallel-size=2"
             - "--max-model-len=8192"
-            - "--gpu-memory-utilization=0.85"
+            - "--gpu-memory-utilization=0.90"
             - "--trust-remote-code"
             - "--host=0.0.0.0"
+            - "--reasoning-parser=qwen3"
           env:
             - name: HF_HOME
               value: /tmp/hf-cache
@@ -45,12 +49,12 @@ spec:
           resources:
             requests:
               cpu: "2"
-              memory: "16Gi"
-              nvidia.com/gpu: "1"
+              memory: "32Gi"
+              nvidia.com/gpu: "2"
             limits:
               cpu: "4"
-              memory: "24Gi"
-              nvidia.com/gpu: "1"
+              memory: "48Gi"
+              nvidia.com/gpu: "2"
           volumeMounts:
             - mountPath: /tmp/hf-cache
               name: hf-cache
@@ -59,8 +63,8 @@ spec:
       volumes:
         - name: hf-cache
           emptyDir:
-            sizeLimit: 20Gi
+            sizeLimit: 30Gi
         - name: shm
           emptyDir:
             medium: Memory
-            sizeLimit: 2Gi
+            sizeLimit: 4Gi

@@ -1,11 +1,19 @@
-# vLLM Qwen3-8B — WITH thinking mode.
+# vLLM — Qwen3-8B (1 GPU)
 #
-# --reasoning-parser=qwen3 separates thinking into `reasoning_content` field.
-# thinking_budget (512) and max_tokens are INDEPENDENT budgets.
-# LLM_ENABLE_THINKING=true activates CoT per-request.
+# Qwen3 thinks by default. --reasoning-parser + --reasoning-config separate
+# <think> tags into the `reasoning_content` response field.
+# --reasoning-config enables thinking_token_budget enforcement per request.
 #
-# Apply: kubectl apply -f k8s/vllm-thinking.yaml
-# Switch to no-thinking: kubectl apply -f k8s/vllm-no-thinking.yaml
+# Client-side control:
+#   Thinking ON:  omit chat_template_kwargs (default)
+#   Thinking OFF: chat_template_kwargs: {"enable_thinking": false}
+#   Budget:       thinking_token_budget: N in request body
+#
+# Qwen3 model card sampling:
+#   Thinking:    temp=0.6, top_p=0.95 (DO NOT use greedy)
+#   No-thinking: temp=0.7, top_p=0.8
+#
+# Apply: kubectl apply -f k8s/vllm-qwen3-8b.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -25,7 +33,7 @@ spec:
     spec:
       containers:
         - name: vllm
-          image: docker.io/vllm/vllm-openai:v0.15.0-cu130
+          image: docker.io/vllm/vllm-openai:v0.18.0-cu130
           args:
             - "--model=Qwen/Qwen3-8B"
             - "--tensor-parallel-size=1"

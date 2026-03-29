@@ -952,8 +952,8 @@ async fn judge_prompt_evaluation_across_all_use_cases() -> Result<(), Box<dyn Er
             api_key: agent_cfg["api_key_env"]
                 .as_str()
                 .and_then(|e| std::env::var(e).ok()),
-            max_tokens: 200,
-            temperature: 0.0,
+            max_tokens: agent_cfg["max_tokens"].as_u64().unwrap_or(200) as u32,
+            temperature: agent_cfg["temperature"].as_f64().unwrap_or(0.0),
             tls_cert_path: if tls { Some(yaml_str(tls_section, "cert", "tls")) } else { None },
             tls_key_path: if tls { Some(yaml_str(tls_section, "key", "tls")) } else { None },
             tls_insecure: tls,
@@ -1554,8 +1554,8 @@ fn build_llm_config(
         api_key: agent_cfg["api_key_env"]
             .as_str()
             .and_then(|e| std::env::var(e).ok()),
-        max_tokens: 200,
-        temperature: 0.0,
+        max_tokens: agent_cfg["max_tokens"].as_u64().unwrap_or(200) as u32,
+        temperature: agent_cfg["temperature"].as_f64().unwrap_or(0.0),
         tls_cert_path: tls_cert,
         tls_key_path: tls_key,
         tls_insecure: tls,
