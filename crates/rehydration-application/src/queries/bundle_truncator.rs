@@ -16,12 +16,16 @@ pub struct TruncationMetadata {
 ///
 /// Returns the surviving sections and truncation metadata when a budget is set.
 /// When no budget is configured, returns all sections with no metadata.
+/// Limits sections to fit within a token budget.
+///
+/// Each section is a `(content, source_id)` pair. Returns surviving pairs
+/// and truncation metadata when a budget is set.
 pub(crate) fn limit_sections_by_token_budget(
-    sections: Vec<String>,
+    sections: Vec<(String, String)>,
     options: &ContextRenderOptions,
     estimator: &dyn TokenEstimator,
     total_sections: u32,
-) -> (Vec<String>, Option<TruncationMetadata>) {
+) -> (Vec<(String, String)>, Option<TruncationMetadata>) {
     let Some(token_budget) = options.token_budget else {
         return (sections, None);
     };
@@ -30,11 +34,11 @@ pub(crate) fn limit_sections_by_token_budget(
     let mut token_count = 0u32;
     let total_before = sections
         .iter()
-        .map(|s| estimator.estimate_tokens(s))
+        .map(|(s, _)| estimator.estimate_tokens(s))
         .sum::<u32>();
 
     for section in sections {
-        let section_tokens = estimator.estimate_tokens(&section);
+        let section_tokens = estimator.estimate_tokens(&section.0);
         if limited.is_empty() || token_count + section_tokens <= token_budget {
             token_count += section_tokens;
             limited.push(section);

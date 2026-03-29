@@ -27,8 +27,8 @@ pub(crate) fn proto_rendered_context_v1beta1(
             .iter()
             .enumerate()
             .map(|(index, section)| BundleSection {
-                key: format!("section_{index}"),
-                title: format!("Section {}", index + 1),
+                key: section.source_id.clone(),
+                title: format!("Section {} ({})", index + 1, section.source_id),
                 content: section.content.clone(),
                 token_count: section.token_count,
                 scopes: scopes.to_vec(),
@@ -42,6 +42,7 @@ pub(crate) fn proto_rendered_context_v1beta1(
         resolved_mode: proto_rehydration_mode(rendered.resolved_mode) as i32,
         quality: Some(proto_quality_metrics(&rendered.quality)),
         truncation: rendered.truncation.as_ref().map(proto_truncation_metadata),
+        content_hash: rendered.content_hash.clone(),
     }
 }
 

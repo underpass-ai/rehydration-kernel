@@ -118,6 +118,8 @@ message RenderedContext {
   BundleQualityMetrics quality = 7;
   // Truncation metadata. Present when a token budget was applied.
   TruncationMetadata truncation = 8;
+  // Deterministic hash of the flat rendered content for audit verification.
+  string content_hash = 9;
 }
 
 // Truncation metadata when a token budget constrains the render.

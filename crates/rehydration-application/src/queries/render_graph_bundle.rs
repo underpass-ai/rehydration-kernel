@@ -16,6 +16,8 @@ use crate::queries::tier_section_classifier::classify_into_tiers;
 pub struct RenderedSection {
     pub content: String,
     pub token_count: u32,
+    /// Source node or relationship ID that originated this section.
+    pub source_id: String,
 }
 
 /// A rendered tier with its sections and token count.
@@ -30,6 +32,8 @@ pub struct RenderedTier {
 #[derive(Debug, Clone, PartialEq)]
 pub struct RenderedContext {
     pub content: String,
+    /// SHA-256 hash of `content` — verifies the LLM received exactly what the kernel rendered.
+    pub content_hash: String,
     pub token_count: u32,
     pub sections: Vec<RenderedSection>,
     pub truncation: Option<TruncationMetadata>,
@@ -71,19 +75,24 @@ pub fn render_graph_bundle_with_estimator(
     let all_sections = ordered_sections(bundle, &detail_by_node_id, options);
     let total_sections = all_sections.len() as u32;
 
-    let (section_strings, truncation) =
+    let (section_pairs, truncation) =
         limit_sections_by_token_budget(all_sections, options, estimator, total_sections);
 
-    let content = section_strings.join("\n\n");
+    let content = section_pairs
+        .iter()
+        .map(|(s, _)| s.as_str())
+        .collect::<Vec<_>>()
+        .join("\n\n");
     let token_count = estimator.estimate_tokens(&content);
 
-    let sections = section_strings
+    let sections = section_pairs
         .into_iter()
-        .map(|s| {
+        .map(|(s, source_id)| {
             let tc = estimator.estimate_tokens(&s);
             RenderedSection {
                 content: s,
                 token_count: tc,
+                source_id,
             }
         })
         .collect();
@@ -101,8 +110,11 @@ pub fn render_graph_bundle_with_estimator(
     // ── Quality metrics (domain value object) ────────────────────────
     let quality = BundleQualityMetrics::compute(bundle, token_count, estimator);
 
+    let content_hash = render_content_hash(&content);
+
     RenderedContext {
         content,
+        content_hash,
         token_count,
         sections,
         truncation,
@@ -144,6 +156,7 @@ fn build_rendered_tiers(
             tier_sections.push(RenderedSection {
                 content: ts.content.clone(),
                 token_count: section_tokens,
+                source_id: format!("tier:{}", ts.tier.as_str()),
             });
         }
 
@@ -165,6 +178,14 @@ fn build_rendered_tiers(
     }
 
     tiers
+}
+
+/// Deterministic hash of rendered content for audit trail.
+fn render_content_hash(content: &str) -> String {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    content.hash(&mut hasher);
+    format!("render:{:016x}", hasher.finish())
 }
 
 #[cfg(test)]

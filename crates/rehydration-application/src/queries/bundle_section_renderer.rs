@@ -9,13 +9,17 @@ use crate::queries::ContextRenderOptions;
 /// Section order: root > focus node > explanatory relations > neighbor nodes > details.
 /// This ensures that under token pressure, explanatory relationships survive
 /// before neighbor nodes and details.
+/// Returns `(content, source_id)` pairs in salience order.
 pub(crate) fn ordered_sections(
     bundle: &RehydrationBundle,
     detail_by_node_id: &BTreeMap<&str, &BundleNodeDetail>,
     options: &ContextRenderOptions,
-) -> Vec<String> {
+) -> Vec<(String, String)> {
     let mut sections = Vec::new();
-    sections.push(render_node(bundle.root_node()));
+    sections.push((
+        render_node(bundle.root_node()),
+        format!("node:{}", bundle.root_node().node_id()),
+    ));
 
     let focus_node_id = focus_node_id(bundle, options);
 
@@ -26,21 +30,31 @@ pub(crate) fn ordered_sections(
             .iter()
             .find(|node| node.node_id() == focus_node_id)
     {
-        sections.push(render_node(node));
+        sections.push((render_node(node), format!("node:{}", node.node_id())));
     }
 
     for relationship in prioritized_relationships(bundle, focus_node_id) {
-        sections.push(render_relationship(relationship));
+        sections.push((
+            render_relationship(relationship),
+            format!(
+                "rel:{}→{}",
+                relationship.source_node_id(),
+                relationship.target_node_id()
+            ),
+        ));
     }
 
     for node in bundle.neighbor_nodes() {
         if Some(node.node_id()) != focus_node_id {
-            sections.push(render_node(node));
+            sections.push((render_node(node), format!("node:{}", node.node_id())));
         }
     }
 
     for detail in prioritized_details(bundle, focus_node_id) {
-        sections.push(render_detail(detail, detail_by_node_id));
+        sections.push((
+            render_detail(detail, detail_by_node_id),
+            format!("detail:{}", detail.node_id()),
+        ));
     }
 
     sections
