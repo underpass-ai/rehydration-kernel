@@ -648,27 +648,30 @@ bounded operational context from projection state and serves it through
 generic query and async contracts. The kernel models context as nodes with
 optional detail plus typed relationship explanations that preserve why
 downstream nodes exist, including rationale, motivation, method, and
-decision linkage. We evaluate the system with container-backed end-to-end
-workflows across pull-driven and event-driven runtimes and four explanatory
-use cases: failure diagnosis with rehydration-point recovery, reconstruction
-of why a task was implemented in a particular way, interrupted handoff with
-resumable execution, and constraint-preserving retrieval under token pressure.
-Across these use cases, full explanatory context achieves `1.0` explanation
-roundtrip fidelity and `1.0` causal reconstruction in the full-detail setting,
-while retaining `1.0` causal reconstruction under a `192`-token budget in the
-constraint-preserving case. Removing node detail preserves explanation fidelity
-but reduces causal reconstruction to `0.857`, while replacing explanatory
-relations with structural edges reduces causal reconstruction to `0.143`,
-eliminates rehydration-point recovery, and fails to preserve the dominant
-reason under budget pressure. These results indicate that explanatory
-relationships carry the dominant signal for restartable and auditable agent
-workflows, while node detail primarily improves completeness.
+decision linkage. We evaluate the system across five use cases — failure
+diagnosis, implementation justification, interrupted handoff, constraint
+retrieval under token pressure, and fabrication detection — using LLM-as-judge
+evaluation with 432 evaluations across two independent judges (GPT-5.4 and
+Claude Sonnet 4.6), three graph scales, four noise conditions, and three
+random seeds. The kernel's explanatory context enables 72% task accuracy and
+75% recovery accuracy on a local 8B-parameter model, versus 3% task and 0%
+recovery with structural-only context — a +69pp gap consistent across both
+judges. Mixed structural+explanatory context achieves 91% task accuracy,
+demonstrating that the two signal types compound. The kernel also provides
+domain-level observability: its `causal_density` metric serves as ground truth
+that makes LLM fabrication deterministically detectable without a judge model.
+Without chain-of-thought, 89% of structural responses are fabricated; with
+thinking enabled, 0% — converting fabrication from undetectable to preventable.
+Under 8x token budget reduction (4096→512), the tier-aware planner preserves
+task accuracy (-3pp) and improves recovery (+17pp) by sacrificing low-value
+evidence while preserving the causal spine. These results indicate that
+explanatory relationships carry the dominant signal for restartable and
+auditable agent workflows, and that the kernel adds value both as a context
+engine (accuracy) and as an observability layer (auditability).
 
 ## Results Summary
 
-The strongest result in the current artifact is not just that the kernel can
-round-trip relationship explanations, but that those explanations dominate
-task-relevant context quality.
+### Phase 1: Rule-based evaluation (UC1-UC4)
 
 Across all four explanatory use cases, `full_explanatory_with_detail` reaches
 perfect `explanation_roundtrip_fidelity = 1.0` and
@@ -678,49 +681,106 @@ explanatory relations are replaced by structural edges while detail is kept,
 causal reconstruction collapses to `0.143`. The net effect is an absolute
 drop of `0.857` from losing explanation, versus `0.143` from losing detail.
 
-This pattern also appears in recovery behavior. In UC1 and UC3, both
-explanatory variants recover the correct rehydration or continuation point,
-while structural-only and detail-only variants lose recovery entirely. The
-closed-loop retry signal is even sharper: explanatory variants reach
-`retry_success_rate = 1.0` while structural-only and detail-only stay at
-`0.0`. That means the decisive recovery signal is carried by relationship
-explanation fields such as `decision_id` and `caused_by_node_id`, not by
-node detail alone.
+Artifacts: `artifacts/paper-use-cases/`
 
-UC4 provides the strongest bounded-retrieval result. The full explanatory
-context rendered at `192` tokens still reaches `1.0` causal reconstruction
-and preserves the dominant reason, while the structural-only variant at `96`
-tokens drops to `0.125`.
+### Phase 2: LLM-as-judge evaluation (108-432 evals, 2026-03-29)
 
-The token results reinforce the same conclusion. Structural-only context is
-shorter, but the reduction comes with a severe quality collapse: UC1 falls
-from `282` to `200` rendered tokens, UC2 from `285` to `203`, and UC3 from
-`575` to `374`, while causal reconstruction drops from `1.0` to `0.143` in
-all cases. Removing detail gives a smaller token reduction alongside a much
-smaller quality drop. The generated report and figures are written to:
+LLM inference (Qwen3-8B with thinking) evaluated by independent judges
+(Sonnet 4.6 and GPT-5.4). The kernel serves the context; the LLM must
+identify failure points, recovery nodes, and rationale from that context.
 
-- `artifacts/paper-use-cases/results.md`
-- `artifacts/paper-use-cases/results.csv`
-- `artifacts/paper-use-cases/results-figures.md`
+**Cross-judge consistency (108 evals each, same agent, same data):**
 
-These artifacts are sufficient to support the current paper claim: preserving
-typed explanatory relationships is more important than preserving extended
-node detail when the task is to diagnose, justify, or restart agent work.
+| Judge | Explanatory Task | Structural Task | Gap |
+|-------|:----------------:|:---------------:|:---:|
+| Sonnet 4.6 | 66% | 0% | +66pp |
+| GPT-5.4 | 72% | 3% | +69pp |
+
+Both judges converge: the kernel advantage is robust to evaluator choice.
+
+**GPT-5.4 judge results (108 evals, primary paper reference):**
+
+| Mix | Task | Restart | Reason |
+|-----|:----:|:-------:|:------:|
+| Explanatory | **26/36 (72%)** | **27/36 (75%)** | **26/36 (72%)** |
+| Structural | 1/36 (3%) | 0/36 (0%) | 0/36 (0%) |
+| Mixed | **33/36 (91%)** | **29/36 (80%)** | **32/36 (88%)** |
+
+Key findings:
+
+1. **The kernel adds +69pp accuracy.** Without explanatory metadata, the
+   model scores 3% Task. With it, 72%. The kernel provides the information
+   the LLM needs to reason about the causal chain.
+
+2. **Mixed > Explanatory.** Structural topology (91% Task) combined with
+   explanatory rationale outperforms explanatory alone (72%). The kernel
+   serves both signals, and they compound.
+
+3. **Recovery improves +75pp.** Restart accuracy jumps from 0% (structural)
+   to 75% (explanatory). The model can identify the correct recovery node
+   only when the kernel provides `caused_by_node_id` and `decision_id`.
+
+4. **Cross-scale robustness.** The gap holds across micro (66% Task),
+   meso (58%), and stress (41%). The kernel value persists as graphs grow.
+
+**Per-seed variance (explanatory, 12 evals each):**
+
+| Seed | Task | Reason |
+|:----:|:----:|:------:|
+| 0 | 75% | 75% |
+| 1 | 83% | 83% |
+| 2 | 58% | 58% |
+
+Variance of ~25pp across seeds reflects LLM sampling noise (temp=0.6) and
+graph topology differences (kind rotation). The direction is consistent:
+all seeds show explanatory >> structural.
+
+**Fabrication detection (UC5, 36 structural evals per arm, 324 total):**
+
+| Arm | Fabricated | Honest |
+|-----|:----------:|:------:|
+| A — no thinking | 32/36 (89%) | 0/36 |
+| B — thinking | 0/36 (0%) | 36/36 (100%) |
+| P — planner (512) | 0/36 (0%) | 36/36 (100%) |
+| Paper (GPT-5.4) | 0/36 (0%) | 36/36 (100%) |
+
+Deterministic detection: `reason_source == "graph_metadata" AND
+causal_density == 0.0` → fabricated. No judge needed. Thinking converts
+fabrication from undetectable to preventable.
+
+**Planner under pressure (budget=512, 108 evals):**
+
+| Mix | Task (4096) | Task (512) | Delta |
+|-----|:-----------:|:----------:|:-----:|
+| Explanatory | 66% | 63% | -3pp |
+| Restart | 52% | 69% | **+17pp** |
+
+Tier-aware truncation (L0 guaranteed, L1 prioritized, L2 sacrificed)
+preserves the causal spine under 8x budget reduction. Restart improves
+because the model receives a cleaner signal with structural noise removed.
+
+Artifacts: `artifacts/e2e-runs/2026-03-29_{100518,131923,153051,170351}/`
+Reproducible config: `paper-recalc-gpt54.yaml`
 
 ## Conclusion
 
-The current repository now supports a concrete and defensible systems claim:
-context rehydration can be isolated into a reusable kernel, and explanatory
-relations materially improve the usefulness of that context for agent
-diagnosis and recovery. The experimental evidence spans four use cases with
-multiple ablation variants. Across all use cases, explanatory relations
-preserve the causal trace needed to explain why a task happened, identify
-which relationships were suspect, select a correct rehydration point, and
-preserve the dominant reason under token pressure. Detail remains useful, but
-it behaves as a completeness amplifier rather than the primary carrier of
-intent.
+The repository supports three defensible claims:
 
-That gives the paper a sharper contribution than generic GraphRAG positioning.
+1. **Accuracy**: explanatory context from the kernel enables LLMs to perform
+   bounded graph tasks (72% Task, 75% Restart) that structural-only context
+   cannot support (3% Task, 0% Restart). The +69pp gap is consistent across
+   two independent judges, three graph scales, and three random seeds.
+
+2. **Auditability**: the kernel provides domain-level ground truth
+   (`causal_density`) that makes LLM fabrication deterministically detectable.
+   Without thinking, 89% of structural responses are fabricated. With thinking,
+   0%. The detection requires no judge model and no probabilistic threshold.
+
+3. **Bounded retrieval**: the planner preserves accuracy under 8x token
+   budget reduction (-3pp Task) and improves recovery (+17pp Restart) by
+   sacrificing low-value evidence while preserving the causal spine.
+
+This gives the paper a sharper contribution than generic GraphRAG positioning.
 The kernel is not only retrieving nearby nodes; it is preserving an
 application-supplied explanation of transition between nodes and making that
 explanation available through event, storage, query, and rendered-context
