@@ -3,8 +3,12 @@ mod queries;
 pub use rehydration_domain::{
     BundleMetadata, BundleNode, BundleNodeDetail, BundleRelationship, CaseId, ContextEventChange,
     ContextEventStore, ContextPathNeighborhood, ContextUpdatedEvent, DomainError,
-    GraphNeighborhoodReader, IdempotentOutcome, NodeDetailProjection, NodeDetailReader,
-    NodeNeighborhood, NodeProjection, NodeRelationProjection, PortError, ProcessedEventStore,
-    ProjectionCheckpoint, ProjectionCheckpointStore, ProjectionMutation, ProjectionWriter,
-    RehydrationBundle, RehydrationStats, Role, SnapshotSaveOptions, SnapshotStore, TokenEstimator,
+    GraphNeighborhoodReader, GraphNodeMaterializedData, GraphNodeMaterializedEvent,
+    IdempotentOutcome, NodeDetailMaterializedData, NodeDetailMaterializedEvent,
+    NodeDetailProjection, NodeDetailReader, NodeNeighborhood, NodeProjection,
+    NodeRelationProjection, PortError, ProcessedEventStore, ProjectionCheckpoint,
+    ProjectionCheckpointStore, ProjectionEnvelope, ProjectionEvent, ProjectionEventHandler,
+    ProjectionHandlingRequest, ProjectionHandlingResult, ProjectionMutation, ProjectionWriter,
+    RehydrationBundle, RehydrationStats, RelatedNodeExplanationData, RelatedNodeReference, Role,
+    SnapshotSaveOptions, SnapshotStore, TokenEstimator,
 };

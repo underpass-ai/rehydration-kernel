@@ -9,8 +9,11 @@ pub use model::{
     BundleNode, BundleNodeDetail, BundleRelationship, RehydrationBundle, RehydrationStats,
 };
 pub use projection::{
-    ContextPathNeighborhood, NodeDetailProjection, NodeNeighborhood, NodeProjection,
-    NodeRelationProjection, ProjectionCheckpoint, ProjectionMutation,
+    ContextPathNeighborhood, GraphNodeMaterializedData, GraphNodeMaterializedEvent,
+    NodeDetailMaterializedData, NodeDetailMaterializedEvent, NodeDetailProjection, NodeNeighborhood,
+    NodeProjection, NodeRelationProjection, ProjectionCheckpoint, ProjectionEnvelope,
+    ProjectionEvent, ProjectionEventHandler, ProjectionHandlingRequest, ProjectionHandlingResult,
+    ProjectionMutation, RelatedNodeExplanationData, RelatedNodeReference,
 };
 pub use repositories::{
     ContextEventChange, ContextEventStore, ContextUpdatedEvent, GraphNeighborhoodReader,

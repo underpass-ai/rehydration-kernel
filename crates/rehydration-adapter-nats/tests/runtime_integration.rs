@@ -3,8 +3,8 @@
 use std::time::Duration;
 
 use rehydration_adapter_nats::{NatsClientTlsConfig, NatsProjectionRuntime, NatsRuntimeError};
-use rehydration_application::{
-    ApplicationError, ProjectionEventHandler, ProjectionHandlingRequest, ProjectionHandlingResult,
+use rehydration_domain::{
+    PortError, ProjectionEventHandler, ProjectionHandlingRequest, ProjectionHandlingResult,
 };
 use serde_json::{Value, json};
 use testcontainers::core::IntoContainerPort;
@@ -31,10 +31,10 @@ impl ProjectionEventHandler for RecordingProjectionHandler {
     async fn handle_projection_event(
         &self,
         request: ProjectionHandlingRequest,
-    ) -> Result<ProjectionHandlingResult, ApplicationError> {
+    ) -> Result<ProjectionHandlingResult, PortError> {
         self.requests.lock().await.push(request.clone());
         if self.fail {
-            return Err(ApplicationError::Validation(
+            return Err(PortError::InvalidState(
                 "projection failed intentionally".to_string(),
             ));
         }

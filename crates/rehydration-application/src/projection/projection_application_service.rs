@@ -1,11 +1,7 @@
 use rehydration_domain::{
     NodeDetailProjection, NodeProjection, NodeRelationProjection, PortError, ProcessedEventStore,
-    ProjectionCheckpoint, ProjectionCheckpointStore, ProjectionMutation, ProjectionWriter,
-};
-
-use crate::ApplicationError;
-use crate::projection::{
-    ProjectionEvent, ProjectionEventHandler, ProjectionHandlingRequest, ProjectionHandlingResult,
+    ProjectionCheckpoint, ProjectionCheckpointStore, ProjectionEvent, ProjectionEventHandler,
+    ProjectionHandlingRequest, ProjectionHandlingResult, ProjectionMutation, ProjectionWriter,
 };
 
 #[derive(Debug)]
@@ -103,7 +99,7 @@ where
     async fn handle_projection_event(
         &self,
         request: ProjectionHandlingRequest,
-    ) -> Result<ProjectionHandlingResult, ApplicationError> {
+    ) -> Result<ProjectionHandlingResult, PortError> {
         let event_id = request.event.event_id().to_string();
         if self
             .processed_event_store

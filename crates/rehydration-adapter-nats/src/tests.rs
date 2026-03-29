@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use rehydration_application::{
-    ApplicationError, ProjectionEvent, ProjectionEventHandler, ProjectionHandlingRequest,
+use rehydration_domain::{
+    PortError, ProjectionEvent, ProjectionEventHandler, ProjectionHandlingRequest,
     ProjectionHandlingResult,
 };
 use serde_json::json;
@@ -24,7 +24,7 @@ impl ProjectionEventHandler for RecordingHandler {
     async fn handle_projection_event(
         &self,
         request: ProjectionHandlingRequest,
-    ) -> Result<ProjectionHandlingResult, ApplicationError> {
+    ) -> Result<ProjectionHandlingResult, PortError> {
         self.requests.lock().await.push(request.clone());
         Ok(ProjectionHandlingResult {
             event_id: request.event.event_id().to_string(),

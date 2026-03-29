@@ -4,7 +4,7 @@ use async_nats::jetstream;
 use async_nats::jetstream::message::AckKind;
 use tokio_stream::StreamExt;
 
-use rehydration_application::ProjectionEventHandler;
+use rehydration_domain::ProjectionEventHandler;
 
 use crate::consumer::NatsProjectionConsumer;
 use crate::runtime::connect_options::{NatsClientTlsConfig, connect_nats_client};

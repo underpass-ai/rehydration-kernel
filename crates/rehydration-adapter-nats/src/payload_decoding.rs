@@ -1,4 +1,4 @@
-use rehydration_application::{
+use rehydration_domain::{
     GraphNodeMaterializedEvent, NodeDetailMaterializedEvent, ProjectionEvent,
 };
 

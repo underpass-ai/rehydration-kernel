@@ -1,7 +1,7 @@
 use std::error::Error;
 use std::fmt;
 
-use rehydration_application::ApplicationError;
+use rehydration_domain::PortError;
 
 #[derive(Debug)]
 pub enum NatsConsumerError {
@@ -11,7 +11,7 @@ pub enum NatsConsumerError {
     InvalidRequest(String),
     Publish(String),
     MessageDisposition(String),
-    Application(ApplicationError),
+    Application(PortError),
 }
 
 impl fmt::Display for NatsConsumerError {
@@ -32,7 +32,7 @@ impl Error for NatsConsumerError {}
 
 #[cfg(test)]
 mod tests {
-    use rehydration_application::ApplicationError;
+    use rehydration_domain::PortError;
 
     use super::NatsConsumerError;
 
@@ -55,8 +55,7 @@ mod tests {
             "message disposition error: ack failed"
         );
         assert_eq!(
-            NatsConsumerError::Application(ApplicationError::Validation("bad".to_string()))
-                .to_string(),
+            NatsConsumerError::Application(PortError::InvalidState("bad".to_string())).to_string(),
             "bad"
         );
     }
