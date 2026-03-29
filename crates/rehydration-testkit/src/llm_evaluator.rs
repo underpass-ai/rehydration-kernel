@@ -413,7 +413,7 @@ pub async fn evaluate_with_llm(
     )
     .await?;
     let latency_ms = start.elapsed().as_secs_f64() * 1000.0;
-    let content = strip_markdown_fences(&content);
+    let content = strip_markdown_fences(&strip_thinking_tags(&content));
 
     // LLM-as-judge: use separate judge endpoint if configured
     let judge_client = if config.judge_endpoint.is_some() {
@@ -529,7 +529,7 @@ pub async fn evaluate_with_config(
     )
     .await?;
     let latency_ms = start.elapsed().as_secs_f64() * 1000.0;
-    let content = strip_markdown_fences(&content);
+    let content = strip_markdown_fences(&strip_thinking_tags(&content));
 
     let judge_client = if config.judge_endpoint.is_some() {
         build_http_client(config)?
@@ -760,6 +760,27 @@ async fn judge_response_with_prompts(
 /// Many models (especially Claude) wrap JSON in ` ```json ... ``` `.
 /// This normalizes the response to plain text before parsing or passing
 /// to the judge.
+/// Strips `<think>...</think>` blocks from reasoning model output.
+/// Handles both complete tags and unclosed `<think>` at the start.
+fn strip_thinking_tags(s: &str) -> String {
+    let mut result = s.to_string();
+    // Remove complete <think>...</think> blocks (greedy)
+    while let Some(start) = result.find("<think>") {
+        if let Some(end) = result.find("</think>") {
+            result = format!(
+                "{}{}",
+                &result[..start],
+                &result[end + "</think>".len()..]
+            );
+        } else {
+            // Unclosed <think> — remove from tag to end
+            result = result[..start].to_string();
+            break;
+        }
+    }
+    result.trim().to_string()
+}
+
 fn strip_markdown_fences(s: &str) -> String {
     let trimmed = s.trim();
     if trimmed.starts_with("```") {
@@ -954,5 +975,47 @@ mod tests {
         assert!(json.contains("llm_reason_correct"));
         assert!(json.contains("llm_restart_exact"));
         assert!(json.contains("llm_restart_explained"));
+    }
+
+    #[test]
+    fn strip_thinking_tags_removes_complete_block() {
+        let input = r#"<think>
+Let me analyze this carefully...
+The failure point is the root incident.
+</think>
+{"failure_point": "root", "restart_node": "chain-0", "reason": "test"}"#;
+        let result = strip_thinking_tags(input);
+        assert!(result.starts_with('{'));
+        assert!(!result.contains("<think>"));
+        assert!(result.contains("failure_point"));
+    }
+
+    #[test]
+    fn strip_thinking_tags_handles_no_thinking() {
+        let input = r#"{"failure_point": "root", "restart_node": "chain-0", "reason": "test"}"#;
+        let result = strip_thinking_tags(input);
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn strip_thinking_tags_handles_unclosed_tag() {
+        let input = r#"<think>
+I'm still thinking about this...
+"#;
+        let result = strip_thinking_tags(input);
+        assert!(result.is_empty() || !result.contains("<think>"));
+    }
+
+    #[test]
+    fn strip_thinking_then_fences_works() {
+        let input = r#"<think>
+Reasoning about the graph...
+</think>
+```json
+{"failure_point": "root", "reason": "test", "restart_node": "n1"}
+```"#;
+        let result = strip_markdown_fences(&strip_thinking_tags(input));
+        assert!(result.starts_with('{'), "got: {result}");
+        assert!(result.contains("failure_point"));
     }
 }
