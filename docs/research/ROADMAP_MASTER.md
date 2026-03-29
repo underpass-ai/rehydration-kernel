@@ -529,33 +529,68 @@ Two dimensions:
    declared `reason_source` against the kernel's ground truth to detect fabrication
    deterministically — no judge needed.
 
-Evidence (smoke tests, 6 evals each, not yet statistically robust):
+### A/B results (108 evals per arm, 2026-03-29)
 
-| Config | Task | Restart | Reason | Structural Source | Fabricated | Latency† |
-|--------|:--:|:--:|:--:|:--:|:--:|:--:|
-| Qwen3-8B (no thinking) | 3/6 | 3/6 | 3/6 | graph_metadata (lies) | **Yes** | 2s |
-| Qwen3-8B (thinking) | — | — | — | **not_available** (honest) | No | 20s† |
-| Qwen3-14B (reasoning, 2 GPU) | 1/6 | 1/6 | 1/6 | **not_available** (honest) | No | 5s |
+**Setup:**
+- Arm A: `LLM_ENABLE_THINKING=false`, vLLM v0.15.0, `max_tokens=200`, `temp=0.0`
+- Arm B: thinking default (Qwen3 native), vLLM v0.18.0-cu130, `max_tokens=4096`, `temp=0.6`
+- Both: `--reasoning-parser=qwen3`, judge=sonnet-4.6, 3 scales × 2 domains × 3 mixes × 2 noise × 3 seeds = 108 evals
+- Artifacts: `artifacts/e2e-runs/2026-03-29_100518` (Arm A), `artifacts/e2e-runs/2026-03-29_131923` (Arm B)
 
-> †Latency measured **without** `--reasoning-parser=qwen3` — thinking tokens
-> counted against `max_tokens`, inflating the budget ×8. With the reasoning
-> parser, `thinking_budget` (512) and `max_tokens` are independent; latency
-> for 8B with thinking is expected to drop significantly. Pending re-measurement.
+**By mix (36 evals each):**
 
-> Task/Restart/Reason for Qwen3-8B with thinking not yet measured — the smoke
-> test focused on fabrication detection. The A/B comparison will fill this gap.
+| Mix | Arm | Task | Restart | Reason | Latency |
+|-----|:---:|:----:|:-------:|:------:|--------:|
+| Explanatory | A | 19/36 (52%) | 7/36 (19%) | 25/36 (69%) | 2.4s |
+|             | B | **24/36 (66%)** | **19/36 (52%)** | **29/36 (80%)** | 44s |
+| Structural  | A | 12/36 (33%) | 0/36 (0%) | 0/36 (0%) | 2.0s |
+|             | B | 0/36 (0%) | 0/36 (0%) | 0/36 (0%) | 28s |
+| Mixed       | A | 24/36 (66%) | 9/36 (25%) | 29/36 (80%) | 2.2s |
+|             | B | 24/36 (66%) | **15/36 (41%)** | **30/36 (83%)** | 40s |
 
-> Explanatory variants (where rationale exists) not yet tested with thinking.
-> A/B protocol includes this: does thinking change behavior when `causal_density > 0`?
+**Fabrication (structural variants only):**
 
-**Directional finding (smoke-test-level, pending 108-eval validation):
-thinking = honesty.** The same 8B model becomes honest about fabrication when
-chain-of-thought is enabled. Without thinking, it claims `graph_metadata` with
-high confidence on structural variants that have zero rationale. With thinking,
-it recognizes the absence and declares `not_available`.
+| Arm | Fabricated | Honest (`not_available`) |
+|:---:|:----------:|:-----------------------:|
+| A | **32/36 (89%)** | 0/36 (0%) |
+| B | **0/36 (0%)** | **36/36 (100%)** |
 
-This is not a model size effect — it's a reasoning mode effect. The kernel
-makes this detectable because it provides the ground truth (`causal_density`).
+**By scale (36 evals each):**
+
+| Scale | Arm A Task | Arm B Task | Latency ratio |
+|-------|:----------:|:----------:|:-------------:|
+| Micro | 31/36 (86%) | 21/36 (58%) | 15.9x |
+| Meso | 18/36 (50%) | 16/36 (44%) | 18.1x |
+| Stress | 6/36 (16%) | **11/36 (30%)** | 17.1x |
+
+### Findings (validated at 108-eval scale)
+
+**1. Thinking = honesty.** The same 8B model with thinking enabled declares
+`reason_source: "not_available"` on 100% of structural variants (vs 89%
+fabrication without thinking). This is deterministically detectable via the
+kernel's `causal_density` ground truth — no judge needed.
+
+**2. Thinking improves accuracy on explanatory context.** Task +14pp (52→66%),
+Restart +33pp (19→52%), Reason +11pp (69→80%). The model reasons about the
+causal chain instead of pattern-matching surface tokens.
+
+**3. Thinking scales better on complex graphs.** At stress scale (49 nodes),
+thinking improves from 16% to 30% Task — the model handles deeper causal chains
+better with CoT. At micro scale, baseline is already 86% and thinking drops to
+58% (over-thinking on simple graphs).
+
+**4. Structural accuracy drops to 0% with thinking.** Expected: without
+rationale metadata, the honest model declares `NOT_AVAILABLE` instead of
+fabricating an answer. The 33% Task accuracy in Arm A was based on fabricated
+reasoning — it "got lucky" but for wrong reasons.
+
+**5. Latency: 17x.** 2.2s → 37s average. The model generates ~1800 thinking
+tokens per eval. Acceptable for batch evaluation, not for real-time serving.
+
+**6. The kernel makes this observable.** Without `causal_density` as ground
+truth, there is no way to distinguish Arm A's 33% structural "accuracy"
+(fabricated) from genuine accuracy. The kernel provides the verifiable grounding
+that makes the A/B comparison meaningful.
 
 ### Observability pipeline (how fabrication detection works)
 
@@ -644,7 +679,7 @@ the accuracy/latency tradeoff.
 
 ### Level 2 — Strong paper
 - [x] Token efficiency baseline: BundleQualityMetrics in kernel render pipeline — raw_equivalent_tokens, compression_ratio, causal_density, noise_ratio, detail_coverage. Proto + OTel + E2E report. Kernel-native, not benchmark-computed.
-- [ ] vLLM reasoning model: Qwen3-8B with `--reasoning-parser=qwen3` + `enable_thinking: true` per request. vLLM separates thinking into `reasoning_content` field — `thinking_budget` (512) and `max_tokens` are independent budgets, no token overhead on the content side. `strip_thinking_tags()` remains as fallback for vLLM servers without the parser. `LLM_ENABLE_THINKING=true` env var activates per-request. Infrastructure ready, pending A/B comparison.
+- [x] vLLM reasoning model: A/B validated (108 evals per arm). Thinking +14pp Task, +33pp Restart on explanatory. 0% fabrication on structural (vs 89%). vLLM v0.18.0-cu130, `--reasoning-parser=qwen3`, `max_tokens=4096`, `temp=0.6`. See "A/B results" section above.
 - [ ] Closed-loop recovery with corrected outcome
 - ~~Three graph scales: micro, meso, stress~~ (done: dataset generator)
 - [x] Noise controls: CompetingCausal mode — distractors with causal semantic classes and plausible rationale. Explanatory 100% unaffected, structural drops to 28%
