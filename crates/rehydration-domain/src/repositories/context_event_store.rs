@@ -26,6 +26,12 @@ pub struct ContextEventChange {
     pub entity_kind: String,
     pub entity_id: String,
     pub payload_json: String,
+    /// Why this change was made. Preserved for audit trail.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    /// Authorization scopes under which this change was made.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub scopes: Vec<String>,
 }
 
 /// Outcome previously accepted for a given idempotency key.

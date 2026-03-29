@@ -133,6 +133,12 @@ where
                     entity_kind: c.entity_kind.clone(),
                     entity_id: c.entity_id.clone(),
                     payload_json: c.payload_json.clone(),
+                    reason: if c.reason.is_empty() {
+                        None
+                    } else {
+                        Some(c.reason.clone())
+                    },
+                    scopes: c.scopes.clone(),
                 })
                 .collect(),
             idempotency_key: command.idempotency_key.clone(),
