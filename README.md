@@ -1,68 +1,49 @@
 # Rehydration Kernel
 
-**Graph-native context engine for AI agents.** Turns knowledge graphs into
-LLM-ready text — with the *why*, not just the *what*.
+Node-centric context rehydration for agentic systems.
 
-```
-Agent asks: "What failed and where should I restart?"
+**New here?** Start with the [Usage Guide](./docs/usage-guide.md) — 3 steps
+to give your AI agent graph-aware context with sequence diagrams and examples.
 
-Without kernel:  3% accuracy — the model guesses.
-With kernel:    72% accuracy — the model reasons from causal chains.
-```
+## What This Repo Is
 
-## The Problem
+`rehydration-kernel` is a generic context engine that turns knowledge graphs
+into LLM-ready text. It is built around four concepts:
 
-AI agents need context to reason. Most systems dump raw documents or vector
-search results into the prompt. The agent gets *what exists* but not *why it
-exists*, *what caused it*, or *where to recover from*.
+- **Nodes** — entities in the graph (incidents, decisions, tasks, artifacts). Each
+  carries kind, status, summary, and optional provenance (who said it, when)
+- **Relationships** — the core signal. Each edge carries a **semantic class**
+  (causal, motivational, evidential, constraint, procedural, structural) plus
+  **rationale** (why it exists), **method** (how), **decision_id**, **caused_by_node_id**,
+  and **sequence** (step order). This explanatory metadata is what lets the LLM
+  reason about *why things happened*, not just *what is connected to what*
+- **Extended node detail** — rich per-node content (logs, configs, error traces)
+  persisted in Valkey, loaded in batch (MGET). Separated from the graph to keep
+  Neo4j lean and detail updates fast without graph writes
+- **Salience ordering** — relationships are ranked by explanatory weight
+  (causal > motivational > evidential > constraint > procedural > structural).
+  Under token pressure, the kernel preserves causal chains and drops structural noise
 
-When an LLM lacks causal metadata, it fabricates plausible-sounding rationale.
-Without ground truth, consumers cannot tell the difference.
+**What the kernel is NOT:**
 
-## The Solution
+- Not an LLM — it does not generate text, only structures and renders context
+- Not a RAG system — it does not do similarity search; it traverses a typed graph
+- Not a vector database — relationships have semantic classes and rationale, not embeddings
+- Not tied to any model — works with GPT, Claude, Llama, Qwen, or any LLM
 
-`rehydration-kernel` serves structured graph context with **explanatory
-relationships** — each edge carries semantic class (causal, motivational,
-evidential), rationale, method, decision linkage, and causal ordering.
+## Why This Matters
 
-The kernel provides three things no RAG system does:
+**Structured context for small models.** A small model with causal chains and
+rationale metadata can perform bounded graph tasks that it fails without structure.
+The kernel provides the *why*, not just the *what*.
 
-1. **Causal chains** — not just neighbors, but *why* each node exists
-2. **Token-budgeted rendering** — multi-resolution tiers (L0 summary → L1
-   causal spine → L2 evidence) with a planner that preserves the important
-   signal under pressure
-3. **Domain-level observability** — the kernel knows what rationale exists
-   in the graph (`causal_density`), making LLM fabrication deterministically
-   detectable without a second model
-
-## Evidence
-
-432 evaluations across two independent judges (GPT-5.4 and Claude Sonnet 4.6),
-three graph scales, four noise conditions, and three random seeds.
-Null hypothesis (no difference) rejected at 95% confidence.
-
-| Context type | Task accuracy | Recovery accuracy | Reason preserved |
-|:-------------|:------------:|:-----------------:|:----------------:|
-| **Explanatory** (kernel) | **72%** [56%, 84%] | **75%** [59%, 86%] | **72%** [56%, 84%] |
-| Structural (edges only) | 3% [0%, 14%] | 0% [0%, 10%] | 0% [0%, 10%] |
-| **Mixed** (both) | **92%** [78%, 97%] | **81%** [65%, 90%] | **89%** [75%, 96%] |
-
-> Agent: Qwen3-8B (local, 8B params). Judge: GPT-5.4. 95% Wilson CI in brackets.
-> Gap: **+69pp** [+53pp, +83pp]. Full methodology: [docs/research/](./docs/research/)
-
-**Key findings:**
-
-- **+69pp accuracy gap** — the kernel provides the information the model needs
-  to reason about failure chains. Without it, the model scores 3%.
-- **Mixed > Explanatory** — structural topology + causal rationale compound
-  (92% vs 72%). The kernel serves both signals.
-- **0% fabrication with thinking** — without chain-of-thought, 89% of structural
-  responses are fabricated with high confidence. With CoT enabled, 0%.
-  The kernel's `causal_density` makes this deterministically detectable.
-- **Robust under 8x token compression** — the planner preserves task accuracy
-  (-3pp) and improves recovery (+17pp) at budget=512 vs 4096.
-
-## Architecture
+**Auditable reasoning.** The kernel knows what rationale exists in the graph
+(`causal_density > 0`). Consumers can cross-reference the LLM's response against
+this ground truth to detect when reasoning is fabricated rather than preserved.
+Without chain-of-thought, 89% of structural responses are fabricated with high
+confidence. With CoT enabled, 0% — the kernel's ground truth makes fabrication
+deterministically detectable without a second model
+(see [Core Thesis](./docs/research/ROADMAP_MASTER.md#core-thesis-directional-evidence-2026-03-28)).
 
 ```mermaid
 graph LR
@@ -74,106 +55,189 @@ graph LR
     K --> NT[(NATS)]
 
     K -. metrics .-> G[Grafana]
+    K -. logs .-> G
 ```
 
-**CQRS + Event Sourcing.** Commands append to NATS JetStream. Projections
-materialize into Neo4j (graph) and Valkey (detail). Queries render
-token-budgeted text from the read model.
+The kernel does not own product-specific nouns. Integrating products are
+expected to map their own domain language to this graph model at the edge.
+The kernel also assumes its own infrastructure dependencies are present:
+Neo4j, Valkey, and NATS are required runtime components, not optional features.
 
-**DDD, hexagonal architecture.** Domain has zero infrastructure dependencies.
-Ports in domain, adapters implement them. One concept per file, one use case
-per file. 270 unit tests + 9 container-backed integration tests.
+## Current Status
 
-**Infrastructure:** Neo4j, Valkey, NATS JetStream, gRPC with TLS/mTLS,
-cl100k_base tokenization, OpenTelemetry + Loki. Helm chart with optional
-sidecars.
+v1beta1 — production-ready RPCs, known limitations documented in
+[`docs/beta-status.md`](./docs/beta-status.md).
 
-## Multi-Resolution Rendering
+What is in place:
 
-Every render produces three tiers. Consumers pick what they need:
+- Hexagonal domain/application/adapter/transport layers
+- gRPC + async (NATS) contracts with CI protection (`buf breaking`, AsyncAPI checks)
+- TLS/mTLS on all infrastructure boundaries
+- 270 unit tests + 9 container-backed integration tests + [LLM-as-judge E2E benchmark](./docs/testing.md#benchmark-tests-llm-as-judge) (primary empirical validation harness — methodology refinement ongoing)
+- Multi-resolution rendering (L0/L1/L2) with auto mode selection
+- Quality metrics with OTel + Loki observability
+- Helm chart with optional infrastructure sidecars
 
-```
-  L0 Summary          ~100 tokens    objective, status, blocker, next action
-  L1 Causal Spine     ~500 tokens    root → focus → causal chain with rationale
-  L2 Evidence Pack    remaining      structural relations, neighbors, details
-```
+What is out of scope:
 
-The **planner** auto-selects strategy based on token pressure, endpoint type,
-focus path, and causal density:
-
-- **ReasonPreserving** — all tiers, full signal
-- **ResumeFocused** — prunes distractors, keeps only the causal spine.
-  Under 8x budget reduction: -3pp task accuracy, +17pp recovery
+- Product-specific domain nouns (the kernel is generic)
+- Product-side integration adapters, shadow mode, or rollout logic
+- Authorization backend (scope validation is set-comparison only)
 
 ## Quickstart
 
 ```bash
+# Toolchain: Rust 1.90.0 (pinned in rust-toolchain.toml)
 cargo test --workspace               # 270 unit tests, no infra needed
+bash scripts/ci/quality-gate.sh      # format + clippy + contract + tests
+```
+
+```bash
 docker pull ghcr.io/underpass-ai/rehydration-kernel:latest
 ```
 
 Full guides: [usage](./docs/usage-guide.md) | [testing](./docs/testing.md) |
-[Helm deploy](./docs/operations/kubernetes-deploy.md) |
-[security](./docs/security-model.md)
+[container image](./docs/operations/container-image.md) |
+[Helm deploy](./docs/operations/kubernetes-deploy.md)
 
-## Current Status
+## Architecture
 
-**v1beta1** — production-ready RPCs, known limitations documented in
-[`docs/beta-status.md`](./docs/beta-status.md).
+The kernel uses **CQRS with Event Sourcing**:
 
-| What's in | What's not |
-|-----------|-----------|
-| Hexagonal domain/application/adapter/transport | Product-specific domain nouns |
-| gRPC + NATS contracts with CI protection | Authorization backend |
-| TLS/mTLS on all boundaries | Product-side integration adapters |
-| Multi-resolution rendering with auto mode | Vector search or embeddings |
-| Quality metrics + OTel + Loki observability | |
-| Helm chart with optional sidecars | |
+- **Command side**: `UpdateContext` validates, appends events to an append-only
+  store (NATS JetStream or Valkey), with optimistic concurrency (revision check)
+  and idempotency key outcome recording
+- **Projection**: NATS JetStream durable consumers materialize events into the
+  read model (Neo4j for graph, Valkey for detail). Explicit ack, at-least-once delivery
+- **Query side**: `GetContext`, `GetContextPath`, `RehydrateSession` read from
+  the materialized projections and render token-budgeted text
+
+```mermaid
+graph LR
+    subgraph Command
+        UC[UpdateContext] --> ES[(Event Store<br/>NATS JetStream)]
+    end
+
+    subgraph Projection
+        ES -. durable consumers .-> PR[Projection Runtime]
+        PR --> N4[(Neo4j<br/>graph)]
+        PR --> VK[(Valkey<br/>detail)]
+    end
+
+    subgraph Query
+        GC[GetContext] --> N4
+        GC --> VK
+        GC -. rendered context .-> A[Agent]
+    end
+```
+
+> All connections TLS. gRPC and Valkey support mTLS. OTLP is plaintext (mTLS in progress).
+
+DDD, hexagonal boundaries, one concept per file, one use case per file.
+
+**Infrastructure:**
+
+- **Neo4j** — graph read model (nodes, relationships, traversal)
+- **Valkey** — node detail, snapshots, projection state (dedup + checkpoints)
+- **NATS JetStream** — event store (append-only, file-backed) + projection event bus
+- **gRPC + TLS/mTLS** — supports plaintext, server TLS, mutual TLS (default: plaintext)
+- **cl100k_base** — BPE tokenization (tiktoken-rs) for accurate token budgets
+- **OpenTelemetry + Loki** — 17 active instruments + structured JSON logs. See [observability](./docs/observability.md)
+- **Helm chart** — optional Neo4j/NATS/Valkey/Loki/Grafana/OTel Collector sidecars
+
+## Multi-Resolution Rendering
+
+Every render produces three tiers simultaneously. Consumers pick the level
+they need — no separate API calls, no re-rendering.
+
+```
+  L0 Summary          ~100 tokens    objective, status, blocker, next action
+  L1 Causal Spine     ~500 tokens    root → focus → causal/motivational/evidential chain
+  L2 Evidence Pack    remaining      structural relations, neighbors, extended details
+```
+
+| Use case | Tier | Why |
+|:---------|:----:|:----|
+| Status check / quick triage | L0 | Fits in a system prompt alongside other tools |
+| Failure diagnosis / handoff resume | L0 + L1 | Causal chain is the dominant signal |
+| Deep analysis / full audit | L0 + L1 + L2 | Everything the graph knows, salience-ordered |
+
+**RehydrationMode** auto-selects strategy based on token pressure, endpoint
+type, focus path, and causal density:
+
+- **ReasonPreserving** (default) — all tiers populated, full signal
+- **ResumeFocused** — prunes distractor branches, keeps only the causal spine.
+  Under 8x budget reduction (4096 → 512): -3pp task accuracy, +17pp recovery
+
+Control via `max_tier` on the request or let the kernel decide with `rehydration_mode = AUTO`.
 
 ## Security
 
-All infrastructure boundaries support TLS. gRPC and Valkey support mTLS.
+All infrastructure boundaries support TLS. The gRPC transport supports mTLS.
 
-| Boundary | Transport | Auth |
-|:---------|:----------|:-----|
-| Callers → Kernel | gRPC + **mTLS** | Client certificate |
-| Kernel → Neo4j | `bolt+s://` with CA pinning | K8s secrets |
-| Kernel → Valkey | `rediss://` + **mTLS** | Client cert + key |
-| Kernel → NATS | TLS + `tls_first` | Client certificate |
+| Boundary | Transport | Authentication |
+|:---------|:----------|:---------------|
+| Callers → Kernel | gRPC with server TLS or **mTLS** | Client certificate validation against trusted CA |
+| Kernel → Neo4j | `bolt+s://` / `neo4j+s://` with CA pinning | URI-embedded credentials via K8s secrets |
+| Kernel → Valkey | `rediss://` with **mTLS** | Client certificate + key from secrets |
+| Kernel → NATS | TLS with CA pinning, `tls_first` | Client certificate or NATS credentials |
+| Kernel → OTel Collector | gRPC with optional **mTLS** via env vars | `OTEL_EXPORTER_OTLP_CA_PATH`, `_CERT_PATH`, `_KEY_PATH` |
 
-Commands protected by idempotency keys + optimistic concurrency (revision +
-SHA-256 content hash). Full threat model: [security-model.md](./docs/security-model.md)
+Commands are protected by **idempotency key outcome recording** and **optimistic concurrency**
+(revision + content hash). Credentials are never inlined — always mounted from
+Kubernetes secrets.
+
+Full threat model and Helm TLS configuration: [security-model.md](./docs/security-model.md)
 
 ## Contracts
 
 - [gRPC proto](./api/proto/underpass/rehydration/kernel/v1beta1) |
   [AsyncAPI](./api/asyncapi/context-projection.v1beta1.yaml) |
   [examples](./api/examples/README.md)
-- [Integration contract](./docs/migration/kernel-node-centric-integration-contract.md)
-- [Beta status](./docs/beta-status.md)
+- [Integration contract](./docs/migration/kernel-node-centric-integration-contract.md) — what consumers can depend on
+- [Beta status](./docs/beta-status.md) — maturity, limitations, path to v1
 
 ## Repo Layout
 
 ```
 api/proto/          gRPC contracts (v1beta1)
 api/asyncapi/       async contracts (NATS JetStream)
+api/examples/       request, response, and event fixtures
 crates/
-  rehydration-domain/       domain model, value objects, ports
-  rehydration-application/  use cases, rendering pipeline, planner
+  rehydration-domain/       domain model, value objects, invariants
+  rehydration-application/  use cases, rendering pipeline
   rehydration-adapter-*/    Neo4j, Valkey, NATS adapters
   rehydration-transport-*/  gRPC server, proto mapping
+  rehydration-observability/ OTel + Loki quality observers
   rehydration-server/       composition root
-  rehydration-testkit/      dataset generator, LLM evaluation harness
+  rehydration-testkit/      dataset generator, evaluation harness
+  rehydration-tests-*/      integration + benchmark tests
 charts/             Helm chart (kernel + optional sidecars)
-docs/               guides, operations, security, research
+docs/               guides, operations, security, observability, testing
+scripts/ci/         quality gates, integration runners, coverage
 ```
+
+## Benchmark
+
+432 LLM-as-judge evaluations across two independent judges (GPT-5.4 and
+Claude Sonnet 4.6), three graph scales, four noise conditions, and three
+random seeds. Null hypothesis rejected at 95% confidence.
+
+| Context type | Task | Recovery | Reason | Gap vs structural |
+|:-------------|:----:|:--------:|:------:|:-----------------:|
+| **Explanatory** (kernel) | **72%** [56%, 84%] | **75%** [59%, 86%] | **72%** [56%, 84%] | **+69pp** |
+| Structural (edges only) | 3% [0%, 14%] | 0% [0%, 10%] | 0% [0%, 10%] | baseline |
+| **Mixed** (both) | **92%** [78%, 97%] | **81%** [65%, 90%] | **89%** [75%, 96%] | **+89pp** |
+
+> Agent: Qwen3-8B with chain-of-thought (local). Judge: GPT-5.4. Wilson 95% CI in brackets.
+> Cross-judge validated: Sonnet 4.6 produces the same gap (+67pp).
+> Synthetic graphs, not production workloads.
+> Full results, methodology, and statistical analysis: [docs/research/](./docs/research/)
 
 ## Research
 
-The repository includes a research paper draft with 432-eval LLM-as-judge
-evidence across five use cases (failure diagnosis, implementation
-justification, interrupted handoff, token pressure, fabrication detection):
-[docs/research/](./docs/research/)
+The repository includes a paper draft on explanatory graph context
+rehydration: [docs/research/](./docs/research/)
 
 ## License
 
