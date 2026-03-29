@@ -1149,7 +1149,10 @@ async fn judge_prompt_evaluation_across_all_use_cases() -> Result<(), Box<dyn Er
                             .get_context(GetContextRequest {
                                 root_node_id: root_id.clone(),
                                 role: BENCHMARK_ROLE.to_string(),
-                                token_budget: 4096,
+                                token_budget: std::env::var("BENCHMARK_TOKEN_BUDGET")
+                                    .ok()
+                                    .and_then(|v| v.parse().ok())
+                                    .unwrap_or(4096),
                                 requested_scopes: vec![],
                                 depth: config.chain_length as u32,
                                 max_tier: 0,

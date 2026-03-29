@@ -156,19 +156,21 @@ impl GraphNeighborhoodReader for SeededGraphNeighborhoodReader {
                         NodeRelationProjection {
                             source_node_id: "node-123".to_string(),
                             target_node_id: "node-456".to_string(),
-                            relation_type: "HAS_TASK".to_string(),
+                            relation_type: "TRIGGERS".to_string(),
                             explanation: RelationExplanation::new(
-                                RelationSemanticClass::Structural,
+                                RelationSemanticClass::Causal,
                             )
+                            .with_rationale("recovery triggered")
                             .with_sequence(1),
                         },
                         NodeRelationProjection {
                             source_node_id: "node-456".to_string(),
                             target_node_id: "node-789".to_string(),
-                            relation_type: "HAS_TASK".to_string(),
+                            relation_type: "PRODUCES".to_string(),
                             explanation: RelationExplanation::new(
-                                RelationSemanticClass::Structural,
+                                RelationSemanticClass::Causal,
                             )
+                            .with_rationale("task produces artifact")
                             .with_sequence(2),
                         },
                     ],
