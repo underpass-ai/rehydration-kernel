@@ -187,12 +187,12 @@ fn build_rendered_tiers(
     tiers
 }
 
-/// Deterministic hash of rendered content for audit trail.
+/// Deterministic SHA-256 hash of rendered content for audit trail.
+/// Stable across process restarts, machines, and Rust versions.
 fn render_content_hash(content: &str) -> String {
-    use std::hash::{Hash, Hasher};
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    content.hash(&mut hasher);
-    format!("render:{:016x}", hasher.finish())
+    use sha2::{Digest, Sha256};
+    let hash = Sha256::digest(content.as_bytes());
+    format!("render:{:064x}", hash)
 }
 
 #[cfg(test)]

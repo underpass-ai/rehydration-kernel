@@ -1,5 +1,3 @@
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::time::SystemTime;
 
@@ -156,15 +154,18 @@ where
     }
 }
 
+/// Deterministic SHA-256 hash of context changes for optimistic concurrency.
+/// Stable across process restarts and machines.
 fn compute_content_hash(changes: &[UpdateContextChange]) -> String {
-    let mut hasher = DefaultHasher::new();
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
     for change in changes {
-        change.operation.hash(&mut hasher);
-        change.entity_kind.hash(&mut hasher);
-        change.entity_id.hash(&mut hasher);
-        change.payload_json.hash(&mut hasher);
+        hasher.update(change.operation.as_bytes());
+        hasher.update(change.entity_kind.as_bytes());
+        hasher.update(change.entity_id.as_bytes());
+        hasher.update(change.payload_json.as_bytes());
     }
-    format!("{:016x}", hasher.finish())
+    format!("{:064x}", hasher.finalize())
 }
 
 #[cfg(test)]
