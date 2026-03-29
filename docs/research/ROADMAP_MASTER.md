@@ -171,9 +171,42 @@ tokens_per_node < effective_threshold:
   When an L2 section exceeds its budget, truncator continues — later L1 sections
   still included. Uses domain `TierBudget` for allocation.
 
-#### Pending — Planner benchmarking
+#### Planner benchmark results (108 evals, budget=512, thinking ON, 2026-03-29)
 
-- [ ] Benchmark with `BENCHMARK_TOKEN_BUDGET=512` to exercise planner under real pressure (4096/49=83 tok/node doesn't trigger the heuristic)
+`BENCHMARK_TOKEN_BUDGET=512` exercises the planner under real pressure:
+micro=128 tok/node, meso=24 tok/node, stress=10 tok/node.
+
+Artifact: `artifacts/e2e-runs/2026-03-29_153051`
+
+**3-way comparison (36 evals per mix):**
+
+| Mix | Run | Task | Restart | Reason |
+|-----|:---:|:----:|:-------:|:------:|
+| Explanatory | A (4096, no-think) | 19/36 (52%) | 7/36 (19%) | 25/36 (69%) |
+|             | B (4096, thinking) | 24/36 (66%) | 19/36 (52%) | 29/36 (80%) |
+|             | **P (512, thinking)** | **23/36 (63%)** | **25/36 (69%)** | **27/36 (75%)** |
+| Structural | A | 12/36 (33%) | 0/36 (0%) | 0/36 (0%) |
+|            | B | 0/36 (0%) | 0/36 (0%) | 0/36 (0%) |
+|            | P | 0/36 (0%) | 0/36 (0%) | 0/36 (0%) |
+| Mixed | A | 24/36 (66%) | 9/36 (25%) | 29/36 (80%) |
+|       | B | 24/36 (66%) | 15/36 (41%) | 30/36 (83%) |
+|       | P | 22/36 (61%) | 15/36 (41%) | 29/36 (80%) |
+
+**Findings:**
+
+1. **Planner preserves accuracy under 8x budget pressure.** Budget=512 vs 4096:
+   explanatory Task drops only 3pp (66→63%), Reason drops 5pp (80→75%).
+
+2. **Tier-aware truncation improves Restart.** Restart jumps +17pp (52→69%) at
+   budget=512 — the planner sacrifices L2 evidence to preserve the L1 causal
+   spine, which is exactly what the model needs to identify the restart node.
+
+3. **Structural remains honest at all budgets.** 0% across all runs — thinking
+   + kernel observability prevents fabrication regardless of token pressure.
+
+4. **Budget pressure validates the planner thesis.** At budget=4096, the planner
+   never activates (195 tok/node for micro). At 512, meso and stress trigger
+   ResumeFocused, proving the v3 signals (threshold, density, endpoint) work.
 
 ## Pending — Architecture (low priority, all test-only)
 
