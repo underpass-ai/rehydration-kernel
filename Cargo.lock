@@ -2193,6 +2193,7 @@ dependencies = [
  "rehydration-domain",
  "serde",
  "serde_json",
+ "tokio",
  "tonic 0.12.3",
  "tracing",
  "tracing-opentelemetry",

@@ -4,6 +4,8 @@
 //! - [`TracingQualityObserver`]: Structured tracing logs (Loki/Grafana via Promtail)
 //! - [`CompositeQualityObserver`]: Fan-out to multiple observers
 
+use std::sync::Arc;
+
 use opentelemetry::metrics::{Histogram, Meter};
 use rehydration_domain::{BundleQualityMetrics, QualityMetricsObserver, QualityObservationContext};
 
@@ -104,21 +106,32 @@ impl QualityMetricsObserver for TracingQualityObserver {
 ///     Box::new(TracingQualityObserver),
 /// ]);
 /// ```
+/// Fan-out observer that spawns each adapter on a background task.
+///
+/// Individual adapters run fire-and-forget via `tokio::spawn`, keeping
+/// the gRPC handler hot path free from observer I/O latency.
 pub struct CompositeQualityObserver {
-    observers: Vec<Box<dyn QualityMetricsObserver>>,
+    observers: Arc<Vec<Box<dyn QualityMetricsObserver>>>,
 }
 
 impl CompositeQualityObserver {
     pub fn new(observers: Vec<Box<dyn QualityMetricsObserver>>) -> Self {
-        Self { observers }
+        Self {
+            observers: Arc::new(observers),
+        }
     }
 }
 
 impl QualityMetricsObserver for CompositeQualityObserver {
     fn observe(&self, metrics: &BundleQualityMetrics, context: &QualityObservationContext) {
-        for observer in &self.observers {
-            observer.observe(metrics, context);
-        }
+        let observers = Arc::clone(&self.observers);
+        let metrics = metrics.clone();
+        let context = context.clone();
+        tokio::spawn(async move {
+            for observer in observers.iter() {
+                observer.observe(&metrics, &context);
+            }
+        });
     }
 }
 
@@ -189,8 +202,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn composite_fans_out_to_all_observers() {
+    #[tokio::test]
+    async fn composite_fans_out_to_all_observers() {
         let count = Arc::new(Mutex::new(0u32));
         let observer = CompositeQualityObserver::new(vec![
             Box::new(SpyObserver::new(Arc::clone(&count))),
@@ -198,6 +211,8 @@ mod tests {
             Box::new(SpyObserver::new(Arc::clone(&count))),
         ]);
         observer.observe(&sample_metrics(), &sample_context());
+        // Yield to let the spawned task run
+        tokio::task::yield_now().await;
         assert_eq!(*count.lock().expect("mutex not poisoned"), 3);
     }
 }
