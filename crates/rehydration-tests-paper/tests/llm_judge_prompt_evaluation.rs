@@ -10,7 +10,8 @@ use rehydration_proto::v1beta1::{
 };
 use rehydration_testkit::{
     Domain, EvaluationGroundTruth, GeneratedNode, GeneratedSeed, GraphSeedConfig,
-    LlmEvaluatorConfig, LlmProvider, NoiseMode, PromptConfig, RelationMix, calibrate_judge,
+    LlmEvaluatorConfig, LlmProvider, NoiseMode, PromptConfig, RelationMix, calibrate_agent,
+    calibrate_judge,
     evaluate_with_config, generate_seed,
     seed_publisher::seed_to_projection_events,
 };
@@ -926,6 +927,65 @@ async fn judge_prompt_evaluation_across_all_use_cases() -> Result<(), Box<dyn Er
         }
         run.log(&format!(
             "[CALIBRATION] Judge '{judge_name}' passed ({} cases)\n",
+            cases.len()
+        ));
+    }
+
+    // ── Phase 0b: Agent calibration ──
+    // Verify each agent returns non-empty JSON with required fields.
+    // Catches misconfigured thinking mode, empty responses from missing
+    // --reasoning-parser, and malformed output before wasting eval budget.
+
+    let agents_map = matrix["agents"].as_mapping().expect("agents mapping");
+    for (agent_key, agent_cfg) in agents_map {
+        let agent_name = agent_key.as_str().expect("agent key");
+        if !filter_models.is_empty() && !filter_models.contains(&agent_name.to_string()) {
+            continue;
+        }
+
+        let tls = agent_cfg["tls"].as_bool().unwrap_or(false);
+        let tls_section = &matrix["tls"];
+        let agent_cal_config = LlmEvaluatorConfig {
+            endpoint: yaml_str(agent_cfg, "endpoint", "agent"),
+            model: yaml_str(agent_cfg, "model", "agent"),
+            provider: parse_provider(&yaml_str(agent_cfg, "provider", "agent")),
+            api_key: agent_cfg["api_key_env"]
+                .as_str()
+                .and_then(|e| std::env::var(e).ok()),
+            max_tokens: 200,
+            temperature: 0.0,
+            tls_cert_path: if tls { Some(yaml_str(tls_section, "cert", "tls")) } else { None },
+            tls_key_path: if tls { Some(yaml_str(tls_section, "key", "tls")) } else { None },
+            tls_insecure: tls,
+            judge_endpoint: None,
+            judge_model: None,
+            judge_provider: None,
+            judge_api_key: None,
+        };
+        run.log(&format!(
+            "\n[CALIBRATION] Testing agent '{agent_name}' inference..."
+        ));
+        let cases = calibrate_agent(&agent_cal_config).await?;
+        let mut cal_failed = false;
+        for case in &cases {
+            let icon = if case.passed { "\u{2714}" } else { "\u{2718}" };
+            run.log(&format!(
+                "  {icon} {}: expected={}, got={}",
+                case.name, case.expected, case.got
+            ));
+            if !case.passed {
+                cal_failed = true;
+            }
+        }
+        if cal_failed {
+            run.log(&format!("[CALIBRATION] FAILED for agent '{agent_name}' — aborting to avoid wasting eval budget"));
+            panic!(
+                "agent calibration failed for '{agent_name}': model returns empty or malformed responses. \
+                 Check LLM_ENABLE_THINKING vs --reasoning-parser on the vLLM server."
+            );
+        }
+        run.log(&format!(
+            "[CALIBRATION] Agent '{agent_name}' passed ({} cases)\n",
             cases.len()
         ));
     }

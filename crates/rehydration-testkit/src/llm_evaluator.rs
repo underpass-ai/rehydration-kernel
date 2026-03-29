@@ -244,18 +244,22 @@ async fn call_openai(
 
     // vLLM-specific: enable/disable thinking mode for local models.
     // Set LLM_ENABLE_THINKING=true to activate Qwen3 chain-of-thought.
-    // With --reasoning-parser=qwen3 on the vLLM server, thinking tokens go to
-    // a separate `reasoning_content` field. `thinking_budget` and `max_tokens`
-    // are independent budgets — they do NOT sum. No multiplier needed.
+    // With --reasoning-parser=qwen3, thinking goes to `reasoning_content` field.
+    // However, vLLM v0.15.0 `max_tokens` still controls the TOTAL output budget
+    // (thinking + content). We must add thinking_budget to max_tokens so the
+    // model has room for both CoT reasoning AND the JSON answer.
+    let thinking_budget: u32 = 512;
+    let mut effective_max_tokens = max_tokens;
     if provider == LlmProvider::OpenAI {
         let enabled = std::env::var("LLM_ENABLE_THINKING")
             .map(|v| v == "true" || v == "1")
             .unwrap_or(false);
         body["chat_template_kwargs"] =
-            serde_json::json!({"enable_thinking": enabled, "thinking_budget": 512});
+            serde_json::json!({"enable_thinking": enabled, "thinking_budget": thinking_budget});
+        if enabled {
+            effective_max_tokens = max_tokens + thinking_budget;
+        }
     }
-
-    let effective_max_tokens = max_tokens;
 
     // GPT-5.x / o3 / o4 require `max_completion_tokens` instead of `max_tokens`.
     match provider {
@@ -924,6 +928,115 @@ pub async fn calibrate_judge(
                 name: "known-bad: judge call",
                 passed: false,
                 expected: "success",
+                got: format!("ERROR: {e}"),
+            });
+        }
+    }
+
+    Ok(cases)
+}
+
+/// Calibrate the inference agent before running the full benchmark.
+///
+/// Sends a minimal prompt and checks that the agent returns non-empty JSON
+/// containing the required fields (failure_point, restart_node, reason,
+/// reason_source, confidence). Catches misconfigured thinking mode, empty
+/// responses, and malformed JSON before wasting eval budget.
+pub async fn calibrate_agent(
+    config: &LlmEvaluatorConfig,
+) -> Result<Vec<CalibrationCase>, Box<dyn Error + Send + Sync>> {
+    let client = build_http_client(config)?;
+
+    let prompt = "Given this rehydrated context from an ops graph:\n\
+        Objective: Incident Alpha — System outage\n\
+        [node] root: incident \"Incident Alpha\" (ACTIVE)\n\
+        [node] chain-0: decision \"Decision 0\" (ACTIVE)\n\
+        [causal] root → chain-0: TRIGGERS (rationale: failure triggered recovery)\n\n\
+        1. What is the deepest failure point in the causal chain?\n\
+        2. Which node should the system restart from to recover?\n\
+        3. What rationale connects the nodes in the causal chain?\n\n\
+        Respond with JSON: {\"failure_point\": \"...\", \"restart_node\": \"...\", \
+        \"reason\": \"...\", \"reason_source\": \"graph_metadata|inferred|not_available\", \
+        \"confidence\": \"high|medium|low\"}";
+
+    let mut cases = Vec::new();
+
+    match call_llm(
+        &client,
+        &config.endpoint,
+        &config.model,
+        config.provider,
+        config.api_key.as_deref(),
+        prompt,
+        config.max_tokens,
+        config.temperature,
+    )
+    .await
+    {
+        Ok((raw_content, _prompt_tokens, completion_tokens)) => {
+            let content = strip_markdown_fences(&strip_thinking_tags(&raw_content));
+
+            // Check 1: non-empty response
+            let non_empty = !content.trim().is_empty();
+            cases.push(CalibrationCase {
+                name: "agent: non-empty response",
+                passed: non_empty,
+                expected: "non-empty content after strip_thinking_tags",
+                got: if non_empty {
+                    format!("{} chars, {} completion tokens", content.len(), completion_tokens)
+                } else {
+                    format!(
+                        "EMPTY (raw={} chars, {} completion tokens — thinking may have consumed all tokens)",
+                        raw_content.len(),
+                        completion_tokens
+                    )
+                },
+            });
+
+            if non_empty {
+                // Check 2: valid JSON
+                let parsed: Result<serde_json::Value, _> = serde_json::from_str(&content);
+                let json_ok = parsed.is_ok();
+                cases.push(CalibrationCase {
+                    name: "agent: valid JSON",
+                    passed: json_ok,
+                    expected: "parseable JSON object",
+                    got: if json_ok {
+                        "OK".to_string()
+                    } else {
+                        format!("PARSE ERROR: {}", content.chars().take(100).collect::<String>())
+                    },
+                });
+
+                // Check 3: required fields present
+                if let Ok(ref obj) = parsed {
+                    for field in &[
+                        "failure_point",
+                        "restart_node",
+                        "reason",
+                        "reason_source",
+                        "confidence",
+                    ] {
+                        let present = obj.get(field).is_some_and(|v| !v.is_null());
+                        cases.push(CalibrationCase {
+                            name: Box::leak(format!("agent: field '{field}'").into_boxed_str()),
+                            passed: present,
+                            expected: "present and non-null",
+                            got: if present {
+                                obj[field].as_str().unwrap_or("(non-string)").to_string()
+                            } else {
+                                "MISSING".to_string()
+                            },
+                        });
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            cases.push(CalibrationCase {
+                name: "agent: inference call",
+                passed: false,
+                expected: "successful HTTP response",
                 got: format!("ERROR: {e}"),
             });
         }
