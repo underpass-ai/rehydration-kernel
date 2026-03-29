@@ -76,8 +76,8 @@ Delivered through the `QualityMetricsObserver` hexagonal port with two active ad
 - **OTel**: 5 histograms via OTLP (see [observability.md](observability.md))
 - **Tracing**: structured JSON logs for Loki/Grafana
 
-**In progress**: `RehydrateSession` does not yet emit quality metrics — per-role
-rendering is planned (see [ROADMAP_MASTER.md](research/ROADMAP_MASTER.md)).
+All three render RPCs (`GetContext`, `GetContextPath`, `RehydrateSession`) emit quality
+metrics. `RehydrateSession` renders per-role bundles and emits quality via the observer.
 
 ## Known Limitations
 
@@ -85,8 +85,7 @@ rendering is planned (see [ROADMAP_MASTER.md](research/ROADMAP_MASTER.md)).
 
 - **No authorization backend** — `ValidateScope` is a pure set-comparison utility, not an access control gate. `GetContext` does not invoke scope validation at all
 - **No timeline filtering** — `RehydrateSession` echoes `timeline_window` but does not filter events by time range
-- **No summary filtering** — `include_summaries` is a no-op
-- **`RehydrateSession` quality metrics** — not yet emitted; per-role rendering planned
+- **No summary filtering** — `include_summaries` was removed in proto pruning
 - **`context.bundle.generated` not emitted** — defined in AsyncAPI contract but the kernel runtime does not publish this event. Test fixtures simulate it for downstream integration tests
 - **Single token estimator** — `cl100k_base` BPE via `tiktoken-rs` for all counting. No model-specific estimator selection
 - **Event store concurrency** — optimistic concurrency uses check-then-act (not atomic CAS). Under high concurrent writes to the same `(root_node_id, role)`, the second writer can silently overwrite the first. CAS via JetStream `expected_last_subject_sequence` is planned

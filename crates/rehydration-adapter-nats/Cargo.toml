@@ -13,6 +13,7 @@ container-tests = []
 
 [dependencies]
 async-nats = "0.46.0"
+opentelemetry.workspace = true
 rehydration-application.workspace = true
 rehydration-domain.workspace = true
 serde.workspace = true

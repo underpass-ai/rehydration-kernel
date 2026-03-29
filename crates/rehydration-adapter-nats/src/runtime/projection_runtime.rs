@@ -86,11 +86,20 @@ where
     while let Some(message) = messages.next().await {
         let message = message.map_err(|error| NatsRuntimeError::Message(error.to_string()))?;
 
+        let receive_time = std::time::Instant::now();
         match consumer
             .consume(handler.as_ref(), subject, message.payload.as_ref())
             .await
         {
             Ok(_) => {
+                let processing_secs = receive_time.elapsed().as_secs_f64();
+                opentelemetry::global::meter("rehydration-kernel")
+                    .f64_histogram("rehydration.projection.lag")
+                    .build()
+                    .record(
+                        processing_secs,
+                        &[opentelemetry::KeyValue::new("subject", subject.to_string())],
+                    );
                 message
                     .ack()
                     .await

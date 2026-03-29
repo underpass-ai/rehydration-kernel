@@ -127,6 +127,12 @@ struct BenchmarkResult {
     detail_load_ms: f64,
     bundle_assembly_ms: f64,
     timing_batch_size: u32,
+    // Kernel domain: truncation (when budget applied)
+    truncation_budget: Option<u32>,
+    truncation_used: Option<u32>,
+    truncation_sections_dropped: Option<u32>,
+    // Kernel domain: served_at
+    served_at: Option<String>,
     // Test-side latency
     query_latency_ms: f64,
     total_latency_ms: f64,
@@ -500,6 +506,17 @@ async fn vllm_benchmark_across_scales_domains_and_variants()
                                 .find(|t| t.tier == ResolutionTier::L2EvidencePack as i32)
                                 .map(|t| t.token_count).unwrap_or(0);
 
+                            // Truncation from kernel domain (rendered.truncation)
+                            let truncation = rendered.truncation.as_ref();
+                            let truncation_budget = truncation.map(|t| t.budget_requested);
+                            let truncation_used = truncation.map(|t| t.budget_used);
+                            let truncation_sections_dropped = truncation.map(|t| t.sections_dropped);
+
+                            // served_at from kernel domain
+                            let served_at = response.served_at.as_ref().map(|t| {
+                                format!("{}s", t.seconds)
+                            });
+
                             // Query timing breakdown from kernel domain (response.timing)
                             let timing = response.timing.as_ref();
                             let graph_load_ms = timing.map(|t| t.graph_load_seconds * 1000.0).unwrap_or(0.0);
@@ -599,6 +616,10 @@ async fn vllm_benchmark_across_scales_domains_and_variants()
                                 detail_load_ms,
                                 bundle_assembly_ms,
                                 timing_batch_size,
+                                truncation_budget,
+                                truncation_used,
+                                truncation_sections_dropped,
+                                served_at,
                                 query_latency_ms,
                                 total_latency_ms,
                                 llm_task_success: llm_eval.as_ref().map(|e| e.llm_task_success),

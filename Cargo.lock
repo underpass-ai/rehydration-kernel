@@ -2118,6 +2118,7 @@ name = "rehydration-adapter-nats"
 version = "0.1.0"
 dependencies = [
  "async-nats",
+ "opentelemetry",
  "rehydration-application",
  "rehydration-domain",
  "rehydration-testkit",
