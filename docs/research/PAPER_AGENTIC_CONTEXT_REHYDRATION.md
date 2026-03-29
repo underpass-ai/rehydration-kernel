@@ -97,6 +97,8 @@ Our angle is different from standard RAG papers:
 3. Does bounded graph rehydration preserve enough information for successful
    downstream runtime action?
 4. What is lost when relationships remain non-causal and non-qualified?
+5. Can the kernel provide domain-level ground truth that makes LLM reasoning
+   fabrication deterministically detectable?
 
 ## Proposed Contributions
 
@@ -108,6 +110,13 @@ Our angle is different from standard RAG papers:
    agent execution.
 4. A roadmap from simple binary relations to causal or hyper-relational context
    edges for stronger agent reasoning.
+5. A domain-level observability mechanism: the kernel reports `causal_density`
+   as ground truth, the inference prompt forces `reason_source` declaration,
+   and the evaluator cross-references both to detect fabrication
+   deterministically — without a judge model and without probabilistic
+   thresholds. Early evidence shows that enabling chain-of-thought converts
+   fabrication from undetectable to preventable
+   (see [Core Thesis](./ROADMAP_MASTER.md#core-thesis-directional-evidence-2026-03-28)).
 
 ## Experimental Artifact In This Repo
 
@@ -215,6 +224,29 @@ Why this matters:
 - it makes decisions and tasks auditable after the fact
 - it is the smallest defendable example of explanatory context rehydration
 
+### UC5. Fabrication Detection Via Domain Observability
+
+Operational question:
+Given a graph with no rationale metadata (structural-only), can the system
+detect when the LLM fabricates a plausible-sounding justification instead of
+declaring the absence?
+
+What the kernel must provide:
+
+- `causal_density` in `BundleQualityMetrics` reporting whether rationale exists
+- rendered context that contains structural edges but no explanatory metadata
+- ground truth that the evaluator can cross-reference against the LLM response
+
+Why this matters:
+
+- without the kernel, fabricated rationale is indistinguishable from preserved
+  rationale — the model sounds equally confident in both cases
+- the kernel's `causal_density` provides the ground truth that enables
+  deterministic detection: `reason_source == "graph_metadata" AND
+  causal_density == 0.0` → fabrication
+- this tests whether the kernel adds value beyond accuracy — it makes LLM
+  reasoning auditable
+
 ### Use Cases To Tests Mapping
 
 The E2E suite should be presented as evidence for these use cases:
@@ -222,6 +254,9 @@ The E2E suite should be presented as evidence for these use cases:
 - UC1 maps to failure diagnosis, suspect-relationship isolation, and
   rehydration-point discovery tests
 - UC2 maps to explanation reconstruction and rendered-context fidelity tests
+- UC5 maps to `llm_reason_fabricated` detection on structural variants via
+  `causal_density` ground truth. A/B with thinking enabled tests whether CoT
+  converts fabrication to honest `not_available` declarations
 - ablations then test whether explanatory relations outperform structural-only
   edges on the same use cases
 

@@ -417,12 +417,15 @@ The full matrix produces:
 
 Each evaluation measures:
 
-| Metric | What it measures |
-|--------|-----------------|
-| `task` (TaskOK) | Did the LLM correctly identify the failure point? |
-| `restart` (RestartOK) | Did the LLM identify the correct restart node with causal justification? |
-| `reason` (ReasonOK) | Was the rationale preserved from context (not inferred)? |
-| `latency_ms` | Combined inference + judge latency |
+| Metric | Source | What it measures |
+|--------|--------|-----------------|
+| `task` (TaskOK) | Judge | Did the LLM correctly identify the failure point? |
+| `restart` (RestartOK) | Judge | Did the LLM identify the correct restart node with causal justification? |
+| `reason` (ReasonOK) | Judge | Was the rationale preserved from context (not inferred)? |
+| `latency_ms` | Timer | Combined inference + judge latency |
+| `llm_reason_source` | Evaluator (deterministic) | What source did the model declare? (`graph_metadata` / `inferred` / `not_available`) |
+| `llm_confidence` | Evaluator (deterministic) | Self-reported confidence (`high` / `medium` / `low`) |
+| `llm_reason_fabricated` | Evaluator (deterministic) | `true` when `reason_source == "graph_metadata"` but `causal_density == 0.0` — the model claims rationale from the graph when none exists. No judge involved. |
 
 ## Single-config benchmarks (paper use cases)
 

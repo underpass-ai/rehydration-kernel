@@ -1,31 +1,33 @@
+# vLLM Qwen3-8B WITHOUT --reasoning-parser.
+# Thinking tokens come mixed in `content` with <think>...</think> tags.
+# Use for A/B comparison against vllm-server-current.yaml (with reasoning-parser).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: vllm-reasoning
+  name: vllm-no-reasoning
   namespace: underpass-runtime
   labels:
-    app: vllm-reasoning
+    app: vllm-no-reasoning
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: vllm-reasoning
+      app: vllm-no-reasoning
   template:
     metadata:
       labels:
-        app: vllm-reasoning
+        app: vllm-no-reasoning
     spec:
       containers:
         - name: vllm
           image: docker.io/vllm/vllm-openai:v0.15.0-cu130
           args:
-            - "--model=Qwen/Qwen3-14B"
-            - "--tensor-parallel-size=2"
+            - "--model=Qwen/Qwen3-8B"
+            - "--tensor-parallel-size=1"
             - "--max-model-len=8192"
-            - "--gpu-memory-utilization=0.90"
+            - "--gpu-memory-utilization=0.85"
             - "--trust-remote-code"
             - "--host=0.0.0.0"
-            - "--reasoning-parser=qwen3"
           env:
             - name: HF_HOME
               value: /tmp/hf-cache
@@ -39,12 +41,12 @@ spec:
           resources:
             requests:
               cpu: "2"
-              memory: "32Gi"
-              nvidia.com/gpu: "2"
+              memory: "16Gi"
+              nvidia.com/gpu: "1"
             limits:
               cpu: "4"
-              memory: "48Gi"
-              nvidia.com/gpu: "2"
+              memory: "24Gi"
+              nvidia.com/gpu: "1"
           volumeMounts:
             - mountPath: /tmp/hf-cache
               name: hf-cache
@@ -53,20 +55,20 @@ spec:
       volumes:
         - name: hf-cache
           emptyDir:
-            sizeLimit: 30Gi
+            sizeLimit: 20Gi
         - name: shm
           emptyDir:
             medium: Memory
-            sizeLimit: 4Gi
+            sizeLimit: 2Gi
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: vllm-reasoning
+  name: vllm-no-reasoning
   namespace: underpass-runtime
 spec:
   selector:
-    app: vllm-reasoning
+    app: vllm-no-reasoning
   ports:
     - port: 8000
       targetPort: 8000

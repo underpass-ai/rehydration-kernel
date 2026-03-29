@@ -40,6 +40,7 @@ spec:
         - --gpu-memory-utilization=0.85
         - --trust-remote-code
         - --host=0.0.0.0
+        - --reasoning-parser=qwen3
         env:
         - name: HF_HOME
           value: /tmp/hf-cache

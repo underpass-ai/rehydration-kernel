@@ -197,7 +197,7 @@ benchmarks, prefer editing `evaluation-matrix.yaml` directly.
 | `LLM_TEMPERATURE` | Sampling temperature (recommend `0.0` for reproducibility) |
 | `LLM_TLS_CERT_PATH` | Client cert for mTLS endpoints (vLLM) |
 | `LLM_TLS_KEY_PATH` | Client key for mTLS endpoints |
-| `LLM_ENABLE_THINKING` | `true` to activate Qwen3 chain-of-thought (requires `--reasoning-parser=qwen3` on vLLM server). Auto-multiplies max_tokens ×4 for thinking overhead. |
+| `LLM_ENABLE_THINKING` | `true` to activate Qwen3 chain-of-thought. Requires `--reasoning-parser=qwen3` on vLLM server. With the reasoning parser, thinking tokens go to a separate `reasoning_content` field and `thinking_budget` (512) is independent of `max_tokens` — no token overhead on the content budget. `strip_thinking_tags()` remains as fallback for vLLM servers without the parser. |
 | `LLM_TLS_INSECURE` | Skip server cert verification (`true` for self-signed) |
 
 **Judge:**
@@ -229,6 +229,76 @@ The noise modes are distributed across mixes to keep the budget flat:
 So each mix has exactly 2 noise conditions. With 3 mixes, 2 domains, and
 3 seeds, one scale produces: 3 mixes × 2 noise × 2 domains × 3 seeds = **36 variants**.
 Each variant is evaluated once per agent × judge × prompt combo (minus self-eval).
+
+### Model configuration examples
+
+The three models we use in benchmarks, with their exact configuration:
+
+**Qwen3-8B (local vLLM, zero API cost):**
+
+```yaml
+# evaluation-matrix.yaml
+agents:
+  qwen3-8b:
+    endpoint: https://llm.underpassai.com/v1/chat/completions
+    model: Qwen/Qwen3-8B
+    provider: openai        # vLLM serves an OpenAI-compatible API
+    tls: true               # mTLS — uses tls.cert and tls.key paths
+```
+
+Server: `k8s/vllm-server-current.yaml` — 1× RTX 3090, `--reasoning-parser=qwen3`.
+Thinking: set `LLM_ENABLE_THINKING=true` to activate CoT. `thinking_budget` (512)
+and `max_tokens` are independent budgets — no token overhead on the content side.
+
+**GPT-5.4 (OpenAI API):**
+
+```yaml
+agents:
+  gpt-5.4:
+    endpoint: https://api.openai.com/v1/chat/completions
+    model: gpt-5.4-20250327
+    provider: openai-new    # uses max_completion_tokens instead of max_tokens
+    api_key_env: OPENAI_KEY
+```
+
+No TLS certs needed — auth is via bearer token from `OPENAI_KEY` env var.
+
+**Claude Opus 4.6 (Anthropic API):**
+
+```yaml
+agents:
+  opus-4.6:
+    endpoint: https://api.anthropic.com/v1/messages
+    model: claude-opus-4-6-20250514
+    provider: anthropic     # uses Anthropic message format, not OpenAI
+    api_key_env: ANTHROPIC_KEY
+```
+
+**Judges** follow the same schema. Any model can be agent or judge:
+
+```yaml
+judges:
+  sonnet-4.6:
+    endpoint: https://api.anthropic.com/v1/messages
+    model: claude-sonnet-4-6
+    provider: anthropic
+    api_key_env: ANTHROPIC_KEY
+```
+
+**Adding a new vLLM model** (e.g. Qwen3-4B):
+
+```yaml
+agents:
+  qwen3-4b:
+    endpoint: https://llm.underpassai.com/v1/chat/completions
+    model: Qwen/Qwen3-4B   # must match the --model arg in the k8s manifest
+    provider: openai
+    tls: true
+```
+
+Deploy the model with `--reasoning-parser=qwen3` for clean thinking separation.
+The precheck validates that the endpoint is reachable and the model responds
+before any container starts or any API dollar is spent.
 
 ### Run examples
 

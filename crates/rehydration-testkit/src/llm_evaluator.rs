@@ -244,24 +244,18 @@ async fn call_openai(
 
     // vLLM-specific: enable/disable thinking mode for local models.
     // Set LLM_ENABLE_THINKING=true to activate Qwen3 chain-of-thought.
-    let enable_thinking = if provider == LlmProvider::OpenAI {
+    // With --reasoning-parser=qwen3 on the vLLM server, thinking tokens go to
+    // a separate `reasoning_content` field. `thinking_budget` and `max_tokens`
+    // are independent budgets — they do NOT sum. No multiplier needed.
+    if provider == LlmProvider::OpenAI {
         let enabled = std::env::var("LLM_ENABLE_THINKING")
             .map(|v| v == "true" || v == "1")
             .unwrap_or(false);
         body["chat_template_kwargs"] =
             serde_json::json!({"enable_thinking": enabled, "thinking_budget": 512});
-        enabled
-    } else {
-        false
-    };
+    }
 
-    // Thinking models need more tokens for CoT reasoning before the JSON answer.
-    // thinking_budget=512 + response ~200 = ~712 minimum. Use 8x for safety.
-    let effective_max_tokens = if enable_thinking {
-        max_tokens * 8
-    } else {
-        max_tokens
-    };
+    let effective_max_tokens = max_tokens;
 
     // GPT-5.x / o3 / o4 require `max_completion_tokens` instead of `max_tokens`.
     match provider {
