@@ -402,6 +402,8 @@ fn sample_cmd_event(root: &str, role: &str, revision: u64) -> ContextUpdatedEven
             entity_kind: "node".to_string(),
             entity_id: "node-1".to_string(),
             payload_json: "{}".to_string(),
+            reason: None,
+            scopes: vec![],
         }],
         idempotency_key: None,
         requested_by: Some("test".to_string()),
