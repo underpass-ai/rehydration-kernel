@@ -9,8 +9,9 @@ use rehydration_proto::v1beta1::{
     GetContextRequest, RehydrationMode, RenderedContext, ResolutionTier,
 };
 use rehydration_testkit::{
-    Domain, EvaluationGroundTruth, GraphSeedConfig, LlmEvaluatorConfig, LlmProvider, NoiseMode,
-    PromptConfig, RelationMix, calibrate_judge, evaluate_with_config, generate_seed,
+    Domain, EvaluationGroundTruth, GeneratedNode, GeneratedSeed, GraphSeedConfig,
+    LlmEvaluatorConfig, LlmProvider, NoiseMode, PromptConfig, RelationMix, calibrate_judge,
+    evaluate_with_config, generate_seed,
     seed_publisher::seed_to_projection_events,
 };
 use rehydration_tests_shared::containers::connect_nats_with_retry;
@@ -265,6 +266,258 @@ struct PrecheckResult {
     errors: Vec<String>,
 }
 
+fn precheck_tls(
+    matrix: &serde_yaml::Value,
+    ok: &mut Vec<String>,
+    errors: &mut Vec<String>,
+) {
+    let any_tls_agent = matrix["agents"]
+        .as_mapping()
+        .map(|a| a.values().any(|c| c["tls"].as_bool().unwrap_or(false)))
+        .unwrap_or(false);
+    if any_tls_agent {
+        match (
+            matrix["tls"]["cert"].as_str(),
+            matrix["tls"]["key"].as_str(),
+        ) {
+            (Some(c), Some(k)) => {
+                ok.push(format!("tls section: cert={c}, key={k}"));
+            }
+            _ => {
+                errors.push(
+                    "tls.cert and tls.key required in YAML when any agent has tls: true"
+                        .to_string(),
+                );
+            }
+        }
+    }
+}
+
+fn precheck_agents(
+    matrix: &serde_yaml::Value,
+    filter_models: &[String],
+    valid_providers: &[&str],
+    ok: &mut Vec<String>,
+    errors: &mut Vec<String>,
+) {
+    if let Some(agents) = matrix["agents"].as_mapping() {
+        ok.push(format!("{} agents configured", agents.len()));
+        for (key, cfg) in agents {
+            let name = key.as_str().unwrap_or("?");
+            if !filter_models.is_empty() && !filter_models.contains(&name.to_string()) {
+                ok.push(format!("agent '{name}': skipped (filtered)"));
+                continue;
+            }
+            if cfg["endpoint"].as_str().unwrap_or("").is_empty() {
+                errors.push(format!("agent '{name}': missing endpoint"));
+            }
+            if cfg["model"].as_str().unwrap_or("").is_empty() {
+                errors.push(format!("agent '{name}': missing model"));
+            }
+            match cfg["provider"].as_str() {
+                None => errors.push(format!("agent '{name}': missing provider")),
+                Some(p) if !valid_providers.contains(&p) => {
+                    errors.push(format!(
+                        "agent '{name}': unknown provider '{p}' — expected: {}",
+                        valid_providers.join(", ")
+                    ));
+                }
+                Some(_) => {}
+            }
+            precheck_agent_api_key(name, cfg, ok, errors);
+            precheck_agent_tls(name, cfg, matrix, ok, errors);
+        }
+    } else {
+        errors.push("matrix: no agents defined".to_string());
+    }
+}
+
+fn precheck_agent_api_key(
+    name: &str,
+    cfg: &serde_yaml::Value,
+    ok: &mut Vec<String>,
+    errors: &mut Vec<String>,
+) {
+    if let Some(env_name) = cfg["api_key_env"].as_str() {
+        if std::env::var(env_name).is_err() {
+            errors.push(format!("agent '{name}': env var {env_name} not set"));
+        } else {
+            ok.push(format!("agent '{name}': {env_name} set"));
+            if let Some(endpoint) = cfg["endpoint"].as_str() {
+                let api_key = std::env::var(env_name).unwrap_or_default();
+                let reachable = check_api_endpoint(endpoint, Some(&api_key), None, None);
+                if reachable {
+                    ok.push(format!("agent '{name}': endpoint reachable"));
+                } else {
+                    errors.push(format!(
+                        "agent '{name}': endpoint unreachable ({endpoint})"
+                    ));
+                }
+            }
+        }
+    }
+}
+
+fn precheck_agent_tls(
+    name: &str,
+    cfg: &serde_yaml::Value,
+    matrix: &serde_yaml::Value,
+    ok: &mut Vec<String>,
+    errors: &mut Vec<String>,
+) {
+    if !cfg["tls"].as_bool().unwrap_or(false) {
+        return;
+    }
+    let cert_path = matrix["tls"]["cert"].as_str();
+    let key_path_val = matrix["tls"]["key"].as_str();
+
+    match (cert_path, key_path_val) {
+        (None, _) => {
+            errors.push(format!("agent '{name}': tls.cert not set in YAML"))
+        }
+        (_, None) => {
+            errors.push(format!("agent '{name}': tls.key not set in YAML"))
+        }
+        (Some(cert), Some(key)) => {
+            if !std::path::Path::new(cert).exists() {
+                errors.push(format!(
+                    "agent '{name}': TLS cert not found at {cert} (tls.cert in YAML)"
+                ));
+            } else if !std::path::Path::new(key).exists() {
+                errors.push(format!(
+                    "agent '{name}': TLS key not found at {key} (tls.key in YAML)"
+                ));
+            } else {
+                ok.push(format!(
+                    "agent '{name}': TLS certs present ({cert}, {key})"
+                ));
+                if let Some(endpoint) = cfg["endpoint"].as_str() {
+                    let reachable =
+                        check_api_endpoint(endpoint, None, Some(cert), Some(key));
+                    if reachable {
+                        ok.push(format!(
+                            "agent '{name}': TLS endpoint reachable"
+                        ));
+                    } else {
+                        errors.push(format!(
+                            "agent '{name}': TLS endpoint unreachable ({endpoint})"
+                        ));
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn precheck_judges(
+    matrix: &serde_yaml::Value,
+    filter_judges: &[String],
+    valid_providers: &[&str],
+    ok: &mut Vec<String>,
+    errors: &mut Vec<String>,
+) {
+    if let Some(judges) = matrix["judges"].as_mapping() {
+        ok.push(format!("{} judges configured", judges.len()));
+        for (key, cfg) in judges {
+            let name = key.as_str().unwrap_or("?");
+            if !filter_judges.is_empty() && !filter_judges.contains(&name.to_string()) {
+                ok.push(format!("judge '{name}': skipped (filtered)"));
+                continue;
+            }
+            if cfg["endpoint"].as_str().unwrap_or("").is_empty() {
+                errors.push(format!("judge '{name}': missing endpoint"));
+            }
+            if cfg["model"].as_str().unwrap_or("").is_empty() {
+                errors.push(format!("judge '{name}': missing model"));
+            }
+            match cfg["provider"].as_str() {
+                None => errors.push(format!("judge '{name}': missing provider")),
+                Some(p) if !valid_providers.contains(&p) => {
+                    errors.push(format!("judge '{name}': unknown provider '{p}'"));
+                }
+                Some(_) => {}
+            }
+            if let Some(env_name) = cfg["api_key_env"].as_str() {
+                if std::env::var(env_name).is_err() {
+                    errors.push(format!("judge '{name}': env var {env_name} not set"));
+                } else {
+                    ok.push(format!("judge '{name}': {env_name} set"));
+                    if let Some(endpoint) = cfg["endpoint"].as_str() {
+                        let api_key = std::env::var(env_name).unwrap_or_default();
+                        let reachable =
+                            check_api_endpoint(endpoint, Some(&api_key), None, None);
+                        if reachable {
+                            ok.push(format!("judge '{name}': endpoint reachable"));
+                        } else {
+                            errors.push(format!(
+                                "judge '{name}': endpoint unreachable ({endpoint})"
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    } else {
+        errors.push("matrix: no judges defined".to_string());
+    }
+}
+
+fn precheck_prompts(
+    matrix: &serde_yaml::Value,
+    resources: &str,
+    ok: &mut Vec<String>,
+    errors: &mut Vec<String>,
+) {
+    if let Some(prompts) = matrix["prompts"].as_mapping() {
+        for (key, val) in prompts {
+            let name = key.as_str().unwrap_or("?");
+            if let Some(path) = val.as_str() {
+                let full_path = format!("{resources}/{path}");
+                if std::path::Path::new(&full_path).exists() {
+                    ok.push(format!("prompt '{name}': {path}"));
+                } else {
+                    errors.push(format!(
+                        "prompt '{name}': file not found at {full_path}"
+                    ));
+                }
+            }
+            // null means compiled-in default — always ok
+        }
+    }
+}
+
+fn precheck_container_runtime(ok: &mut Vec<String>, errors: &mut Vec<String>) {
+    let has_docker = std::process::Command::new("docker")
+        .arg("info")
+        .output()
+        .is_ok_and(|o| o.status.success());
+    let has_podman = std::process::Command::new("podman")
+        .arg("info")
+        .output()
+        .is_ok_and(|o| o.status.success());
+    if has_docker {
+        ok.push("container runtime: docker".to_string());
+    } else if has_podman {
+        ok.push("container runtime: podman".to_string());
+    } else {
+        errors.push("no container runtime: install docker or podman".to_string());
+    }
+}
+
+fn precheck_filters(warnings: &mut Vec<String>) {
+    for filter in &[
+        "FILTER_MODELS",
+        "FILTER_PROMPTS",
+        "FILTER_SCALES",
+        "FILTER_NOISE",
+        "FILTER_JUDGES",
+    ] {
+        if let Ok(val) = std::env::var(filter) {
+            warnings.push(format!("{filter}={val} (subset mode)"));
+        }
+    }
+}
+
 fn precheck(resources: &str, matrix_path: &str) -> PrecheckResult {
     let mut ok = Vec::new();
     let mut warnings = Vec::new();
@@ -281,179 +534,10 @@ fn precheck(resources: &str, matrix_path: &str) -> PrecheckResult {
                 ok.push(format!("evaluation-matrix.yaml loaded ({matrix_path})"));
                 let valid_providers = ["openai", "openai-new", "anthropic"];
 
-                // Validate TLS section
-                let any_tls_agent = matrix["agents"]
-                    .as_mapping()
-                    .map(|a| a.values().any(|c| c["tls"].as_bool().unwrap_or(false)))
-                    .unwrap_or(false);
-                if any_tls_agent {
-                    match (
-                        matrix["tls"]["cert"].as_str(),
-                        matrix["tls"]["key"].as_str(),
-                    ) {
-                        (Some(c), Some(k)) => {
-                            ok.push(format!("tls section: cert={c}, key={k}"));
-                        }
-                        _ => {
-                            errors.push("tls.cert and tls.key required in YAML when any agent has tls: true".to_string());
-                        }
-                    }
-                }
-
-                // Validate agents
-                if let Some(agents) = matrix["agents"].as_mapping() {
-                    ok.push(format!("{} agents configured", agents.len()));
-                    for (key, cfg) in agents {
-                        let name = key.as_str().unwrap_or("?");
-                        if !filter_models.is_empty() && !filter_models.contains(&name.to_string()) {
-                            ok.push(format!("agent '{name}': skipped (filtered)"));
-                            continue;
-                        }
-                        if cfg["endpoint"].as_str().unwrap_or("").is_empty() {
-                            errors.push(format!("agent '{name}': missing endpoint"));
-                        }
-                        if cfg["model"].as_str().unwrap_or("").is_empty() {
-                            errors.push(format!("agent '{name}': missing model"));
-                        }
-                        match cfg["provider"].as_str() {
-                            None => errors.push(format!("agent '{name}': missing provider")),
-                            Some(p) if !valid_providers.contains(&p) => {
-                                errors.push(format!(
-                                    "agent '{name}': unknown provider '{p}' — expected: {}",
-                                    valid_providers.join(", ")
-                                ));
-                            }
-                            Some(_) => {}
-                        }
-                        // Check API key env var if specified
-                        if let Some(env_name) = cfg["api_key_env"].as_str() {
-                            if std::env::var(env_name).is_err() {
-                                errors.push(format!("agent '{name}': env var {env_name} not set"));
-                            } else {
-                                ok.push(format!("agent '{name}': {env_name} set"));
-                                // Connectivity check
-                                if let Some(endpoint) = cfg["endpoint"].as_str() {
-                                    let api_key = std::env::var(env_name).unwrap_or_default();
-                                    let reachable =
-                                        check_api_endpoint(endpoint, Some(&api_key), None, None);
-                                    if reachable {
-                                        ok.push(format!("agent '{name}': endpoint reachable"));
-                                    } else {
-                                        errors.push(format!(
-                                            "agent '{name}': endpoint unreachable ({endpoint})"
-                                        ));
-                                    }
-                                }
-                            }
-                        }
-                        // Check TLS certs and endpoint connectivity if tls: true
-                        if cfg["tls"].as_bool().unwrap_or(false) {
-                            let cert_path = matrix["tls"]["cert"].as_str();
-                            let key_path_val = matrix["tls"]["key"].as_str();
-
-                            match (cert_path, key_path_val) {
-                                (None, _) => {
-                                    errors.push(format!("agent '{name}': tls.cert not set in YAML"))
-                                }
-                                (_, None) => {
-                                    errors.push(format!("agent '{name}': tls.key not set in YAML"))
-                                }
-                                (Some(cert), Some(key)) => {
-                                    if !std::path::Path::new(cert).exists() {
-                                        errors.push(format!("agent '{name}': TLS cert not found at {cert} (tls.cert in YAML)"));
-                                    } else if !std::path::Path::new(key).exists() {
-                                        errors.push(format!("agent '{name}': TLS key not found at {key} (tls.key in YAML)"));
-                                    } else {
-                                        ok.push(format!(
-                                            "agent '{name}': TLS certs present ({cert}, {key})"
-                                        ));
-                                        if let Some(endpoint) = cfg["endpoint"].as_str() {
-                                            let reachable = check_api_endpoint(
-                                                endpoint,
-                                                None,
-                                                Some(cert),
-                                                Some(key),
-                                            );
-                                            if reachable {
-                                                ok.push(format!(
-                                                    "agent '{name}': TLS endpoint reachable"
-                                                ));
-                                            } else {
-                                                errors.push(format!("agent '{name}': TLS endpoint unreachable ({endpoint})"));
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    errors.push("matrix: no agents defined".to_string());
-                }
-
-                // Validate judges
-                if let Some(judges) = matrix["judges"].as_mapping() {
-                    ok.push(format!("{} judges configured", judges.len()));
-                    for (key, cfg) in judges {
-                        let name = key.as_str().unwrap_or("?");
-                        if !filter_judges.is_empty() && !filter_judges.contains(&name.to_string()) {
-                            ok.push(format!("judge '{name}': skipped (filtered)"));
-                            continue;
-                        }
-                        if cfg["endpoint"].as_str().unwrap_or("").is_empty() {
-                            errors.push(format!("judge '{name}': missing endpoint"));
-                        }
-                        if cfg["model"].as_str().unwrap_or("").is_empty() {
-                            errors.push(format!("judge '{name}': missing model"));
-                        }
-                        match cfg["provider"].as_str() {
-                            None => errors.push(format!("judge '{name}': missing provider")),
-                            Some(p) if !valid_providers.contains(&p) => {
-                                errors.push(format!("judge '{name}': unknown provider '{p}'"));
-                            }
-                            Some(_) => {}
-                        }
-                        if let Some(env_name) = cfg["api_key_env"].as_str() {
-                            if std::env::var(env_name).is_err() {
-                                errors.push(format!("judge '{name}': env var {env_name} not set"));
-                            } else {
-                                ok.push(format!("judge '{name}': {env_name} set"));
-                                if let Some(endpoint) = cfg["endpoint"].as_str() {
-                                    let api_key = std::env::var(env_name).unwrap_or_default();
-                                    let reachable =
-                                        check_api_endpoint(endpoint, Some(&api_key), None, None);
-                                    if reachable {
-                                        ok.push(format!("judge '{name}': endpoint reachable"));
-                                    } else {
-                                        errors.push(format!(
-                                            "judge '{name}': endpoint unreachable ({endpoint})"
-                                        ));
-                                    }
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    errors.push("matrix: no judges defined".to_string());
-                }
-
-                // Validate prompt files
-                if let Some(prompts) = matrix["prompts"].as_mapping() {
-                    for (key, val) in prompts {
-                        let name = key.as_str().unwrap_or("?");
-                        if let Some(path) = val.as_str() {
-                            let full_path = format!("{resources}/{path}");
-                            if std::path::Path::new(&full_path).exists() {
-                                ok.push(format!("prompt '{name}': {path}"));
-                            } else {
-                                errors.push(format!(
-                                    "prompt '{name}': file not found at {full_path}"
-                                ));
-                            }
-                        }
-                        // null means compiled-in default — always ok
-                    }
-                }
+                precheck_tls(&matrix, &mut ok, &mut errors);
+                precheck_agents(&matrix, &filter_models, &valid_providers, &mut ok, &mut errors);
+                precheck_judges(&matrix, &filter_judges, &valid_providers, &mut ok, &mut errors);
+                precheck_prompts(&matrix, resources, &mut ok, &mut errors);
             }
             Err(e) => errors.push(format!("evaluation-matrix.yaml parse error: {e}")),
         },
@@ -461,40 +545,274 @@ fn precheck(resources: &str, matrix_path: &str) -> PrecheckResult {
     }
 
     // 3. Container runtime
-    let has_docker = std::process::Command::new("docker")
-        .arg("info")
-        .output()
-        .is_ok_and(|o| o.status.success());
-    let has_podman = std::process::Command::new("podman")
-        .arg("info")
-        .output()
-        .is_ok_and(|o| o.status.success());
-    if has_docker {
-        ok.push("container runtime: docker".to_string());
-    } else if has_podman {
-        ok.push("container runtime: podman".to_string());
-    } else {
-        errors.push("no container runtime: install docker or podman".to_string());
-    }
+    precheck_container_runtime(&mut ok, &mut errors);
 
     // 4. Filters (informational)
-    for filter in &[
-        "FILTER_MODELS",
-        "FILTER_PROMPTS",
-        "FILTER_SCALES",
-        "FILTER_NOISE",
-        "FILTER_JUDGES",
-    ] {
-        if let Ok(val) = std::env::var(filter) {
-            warnings.push(format!("{filter}={val} (subset mode)"));
-        }
-    }
+    precheck_filters(&mut warnings);
 
     PrecheckResult {
         pass: errors.is_empty(),
         ok,
         warnings,
         errors,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 1 helpers: ground truth + kernel observability extraction
+// ---------------------------------------------------------------------------
+
+fn build_ground_truth_for_seed(
+    seed: &GeneratedSeed,
+    domain_name: &str,
+) -> (String, EvaluationGroundTruth) {
+    let chain_nodes: Vec<&GeneratedNode> = seed
+        .nodes
+        .iter()
+        .filter(|n| !n.node_id.contains("noise") && !n.node_id.contains("distractor"))
+        .collect();
+
+    let question = format!(
+        "Given this rehydrated context from a {domain_name} graph:\n\
+         1. What is the deepest failure point in the causal chain?\n\
+         2. Which node should the system restart from to recover?\n\
+         3. What rationale connects the nodes in the causal chain?"
+    );
+
+    let failure_desc = if let Some(leaf) = chain_nodes.last() {
+        format!(
+            "{} ({}) \u{2014} {}. Causal chain: {} \u{2192} {}",
+            leaf.title,
+            leaf.node_id,
+            leaf.summary,
+            seed.root.title,
+            chain_nodes
+                .iter()
+                .map(|n| n.title.as_str())
+                .collect::<Vec<_>>()
+                .join(" \u{2192} ")
+        )
+    } else {
+        format!(
+            "{} \u{2014} {} (single node, no chain)",
+            seed.root.node_kind, seed.root.summary
+        )
+    };
+
+    let restart_desc = if chain_nodes.len() >= 2 {
+        let predecessor = &chain_nodes[chain_nodes.len() - 2];
+        format!(
+            "{} ({}) \u{2014} causal predecessor of the failure leaf",
+            predecessor.title, predecessor.node_id
+        )
+    } else if let Some(first) = chain_nodes.first() {
+        format!(
+            "{} ({}) \u{2014} first node after root",
+            first.title, first.node_id
+        )
+    } else {
+        format!("{} (root, only node)", seed.root.node_kind)
+    };
+
+    let chain_rationales: Vec<String> = seed
+        .relations
+        .iter()
+        .filter(|r| !r.source_node_id.contains("noise"))
+        .filter_map(|r| r.rationale.clone())
+        .collect();
+    let reason = if chain_rationales.is_empty() {
+        None
+    } else {
+        Some(chain_rationales.join("; "))
+    };
+
+    let distractor_rationales: Vec<String> = seed
+        .relations
+        .iter()
+        .filter(|r| {
+            r.source_node_id.contains("noise") || r.target_node_id.contains("noise")
+        })
+        .filter_map(|r| r.rationale.clone())
+        .collect();
+    let distractor = if distractor_rationales.is_empty() {
+        None
+    } else {
+        Some(distractor_rationales.join("; "))
+    };
+
+    let ground_truth = EvaluationGroundTruth {
+        expected_failure_point: Some(failure_desc),
+        expected_restart_node: Some(restart_desc),
+        expected_reason: reason,
+        distractor_rationale: distractor,
+        domain_context: Some(domain_name.to_string()),
+    };
+
+    (question, ground_truth)
+}
+
+struct KernelObservability {
+    resolved_mode: String,
+    tier_l0_tokens: u32,
+    tier_l1_tokens: u32,
+    tier_l2_tokens: u32,
+    tier_total_tokens: u32,
+    graph_load_ms: f64,
+    detail_load_ms: f64,
+    bundle_assembly_ms: f64,
+    timing_batch_size: u32,
+}
+
+fn extract_kernel_observability(
+    rendered: &RenderedContext,
+    graph_load_ms: f64,
+    detail_load_ms: f64,
+    bundle_assembly_ms: f64,
+    timing_batch_size: u32,
+) -> KernelObservability {
+    let resolved_mode = match RehydrationMode::try_from(rendered.resolved_mode) {
+        Ok(RehydrationMode::ResumeFocused) => "resume_focused",
+        Ok(RehydrationMode::ReasonPreserving) => "reason_preserving",
+        Ok(RehydrationMode::TemporalDelta) => "temporal_delta",
+        Ok(RehydrationMode::GlobalSummary) => "global_summary",
+        _ => "auto",
+    }
+    .to_string();
+    let tier_l0_tokens = rendered
+        .tiers
+        .iter()
+        .find(|t| t.tier == ResolutionTier::L0Summary as i32)
+        .map(|t| t.token_count)
+        .unwrap_or(0);
+    let tier_l1_tokens = rendered
+        .tiers
+        .iter()
+        .find(|t| t.tier == ResolutionTier::L1CausalSpine as i32)
+        .map(|t| t.token_count)
+        .unwrap_or(0);
+    let tier_l2_tokens = rendered
+        .tiers
+        .iter()
+        .find(|t| t.tier == ResolutionTier::L2EvidencePack as i32)
+        .map(|t| t.token_count)
+        .unwrap_or(0);
+
+    KernelObservability {
+        resolved_mode,
+        tier_l0_tokens,
+        tier_l1_tokens,
+        tier_l2_tokens,
+        tier_total_tokens: tier_l0_tokens + tier_l1_tokens + tier_l2_tokens,
+        graph_load_ms,
+        detail_load_ms,
+        bundle_assembly_ms,
+        timing_batch_size,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2 helpers: evaluation result construction
+// ---------------------------------------------------------------------------
+
+fn build_eval_result_from_ctx(ctx: &CapturedVariant, model: String, prompt_name: &str) -> EvalResult {
+    EvalResult {
+        model,
+        prompt: prompt_name.to_string(),
+        variant: ctx.run_id.clone(),
+        task: None,
+        restart: None,
+        restart_exact: None,
+        restart_off_by_one: None,
+        restart_on_competing: None,
+        restart_explained: None,
+        reason: None,
+        reason_correct: None,
+        reason_distractor: None,
+        latency_ms: 0.0,
+        rendered_tokens: ctx.rendered_tokens,
+        raw_equivalent_tokens: ctx.raw_equivalent_tokens,
+        compression_ratio: ctx.compression_ratio,
+        causal_density: ctx.causal_density,
+        noise_ratio: ctx.noise_ratio,
+        detail_coverage: ctx.detail_coverage,
+        resolved_mode: ctx.resolved_mode.clone(),
+        tier_l0_tokens: ctx.tier_l0_tokens,
+        tier_l1_tokens: ctx.tier_l1_tokens,
+        tier_l2_tokens: ctx.tier_l2_tokens,
+        tier_total_tokens: ctx.tier_total_tokens,
+        graph_load_ms: ctx.graph_load_ms,
+        detail_load_ms: ctx.detail_load_ms,
+        bundle_assembly_ms: ctx.bundle_assembly_ms,
+        timing_batch_size: ctx.timing_batch_size,
+        llm_prompt_tokens: None,
+        llm_completion_tokens: None,
+        llm_reason_source: None,
+        llm_confidence: None,
+        llm_reason_fabricated: None,
+        agent_response: String::new(),
+        judge_raw: None,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3 helpers: report generation
+// ---------------------------------------------------------------------------
+
+fn format_verdict(v: Option<bool>) -> &'static str {
+    match v {
+        Some(true) => "OK",
+        Some(false) => "FAIL",
+        None => "ERR",
+    }
+}
+
+fn write_report(
+    run: &mut RunDir,
+    results: &[EvalResult],
+    captured: &[CapturedVariant],
+    boot_ms: f64,
+    total_ms: f64,
+) {
+    run.log(&format!(
+        "\n\n{}",
+        "=".repeat(120)
+    ));
+    run.log(&format!(
+        "EVALUATION MATRIX \u{2014} {} variants captured, {} evals, boot {boot_ms:.0}ms, total {total_ms:.0}ms",
+        captured.len(),
+        results.len()
+    ));
+    run.log(&format!("{}\n", "=".repeat(120)));
+
+    for r in results {
+        let ctx = captured.iter().find(|c| c.run_id == r.variant);
+        let question = ctx.map(|c| c.question.as_str()).unwrap_or("?");
+        let expected = ctx
+            .and_then(|c| c.ground_truth.expected_reason.as_deref())
+            .unwrap_or("none");
+        let tokens = ctx.map(|c| c.rendered_tokens).unwrap_or(0);
+
+        let t = format_verdict(r.task);
+        let re = format_verdict(r.restart);
+        let p = format_verdict(r.reason);
+
+        run.log(&format!(
+            "\u{250c}\u{2500}\u{2500} {:<14} \u{00d7} {:<14} / {} ({tokens} tok) \u{2500}\u{2500}",
+            r.model, r.prompt, r.variant
+        ));
+        run.log(&format!("\u{2502} 1. Question:        {question}"));
+        run.log(&format!("\u{2502} 2. Expected reason: {expected}"));
+        let resp = r.agent_response.replace('\n', " ");
+        run.log(&format!("\u{2502} 3. Agent response:  {resp}"));
+        run.log(&format!(
+            "\u{2502} 4. Judge response:  {}",
+            r.judge_raw.as_deref().unwrap_or("(none)")
+        ));
+        run.log(&format!(
+            "\u{2502} 5. Result:          Task={t}  Restart={re}  Reason={p}  ({:.0}ms)",
+            r.latency_ms
+        ));
+        run.log("\u{2514}\u{2500}\u{2500}\n");
     }
 }
 
@@ -788,152 +1106,33 @@ async fn judge_prompt_evaluation_across_all_use_cases() -> Result<(), Box<dyn Er
                             .ok_or("missing quality metrics in rendered context")?;
 
                         // Build ground truth that rewards multi-layer graph reasoning.
-                        //
-                        // The graph has layers:
-                        //   L0 (summary): root node kind + summary — surface info
-                        //   L1 (causal spine): chain-0 → chain-1 → ... → chain-N with rationales
-                        //   L2 (evidence): details, structural relations
-                        //
-                        // The chain is: root → chain-0 → chain-1 → ... → chain-N
-                        //
-                        // Ground truth rewards DEPTH of reasoning:
-                        //   - Failure point = leaf node (deepest chain node). A model that
-                        //     says "root" only read L0. A model that says "chain-N" traced L1.
-                        //   - Restart node = predecessor of the leaf. Shows the model
-                        //     understood the causal direction.
-                        //   - Reason = ALL chain rationales. Shows the model read L1 metadata,
-                        //     not just structural connections.
-                        let chain_nodes: Vec<&rehydration_testkit::GeneratedNode> = seed
+                        let (question, ground_truth) =
+                            build_ground_truth_for_seed(&seed, domain_name);
+
+                        let chain_kinds: String = seed
                             .nodes
                             .iter()
                             .filter(|n| {
                                 !n.node_id.contains("noise") && !n.node_id.contains("distractor")
                             })
-                            .collect();
-
-                        let question = format!(
-                            "Given this rehydrated context from a {domain_name} graph:\n\
-                     1. What is the deepest failure point in the causal chain?\n\
-                     2. Which node should the system restart from to recover?\n\
-                     3. What rationale connects the nodes in the causal chain?"
-                        );
-
-                        // Failure point: the leaf of the causal chain — proves L1 tracing.
-                        // The judge prompt already accepts causally connected nodes (line 62-64
-                        // of llm_prompts.yaml), so intermediate nodes are also valid.
-                        let failure_desc = if let Some(leaf) = chain_nodes.last() {
-                            format!(
-                                "{} ({}) \u{2014} {}. Causal chain: {} \u{2192} {}",
-                                leaf.title,
-                                leaf.node_id,
-                                leaf.summary,
-                                seed.root.title,
-                                chain_nodes
-                                    .iter()
-                                    .map(|n| n.title.as_str())
-                                    .collect::<Vec<_>>()
-                                    .join(" \u{2192} ")
-                            )
-                        } else {
-                            format!(
-                                "{} \u{2014} {} (single node, no chain)",
-                                seed.root.node_kind, seed.root.summary
-                            )
-                        };
-
-                        // Restart node: predecessor of the leaf — proves causal direction.
-                        let restart_desc = if chain_nodes.len() >= 2 {
-                            let predecessor = &chain_nodes[chain_nodes.len() - 2];
-                            format!(
-                                "{} ({}) \u{2014} causal predecessor of the failure leaf",
-                                predecessor.title, predecessor.node_id
-                            )
-                        } else if let Some(first) = chain_nodes.first() {
-                            format!(
-                                "{} ({}) \u{2014} first node after root",
-                                first.title, first.node_id
-                            )
-                        } else {
-                            format!("{} (root, only node)", seed.root.node_kind)
-                        };
-
-                        // Reason: ALL chain rationales — proves L1 metadata was read.
-                        let chain_rationales: Vec<String> = seed
-                            .relations
-                            .iter()
-                            .filter(|r| !r.source_node_id.contains("noise"))
-                            .filter_map(|r| r.rationale.clone())
-                            .collect();
-                        let reason = if chain_rationales.is_empty() {
-                            None
-                        } else {
-                            Some(chain_rationales.join("; "))
-                        };
-
-                        // Distractor rationale from noise/competing branches.
-                        let distractor_rationales: Vec<String> = seed
-                            .relations
-                            .iter()
-                            .filter(|r| {
-                                r.source_node_id.contains("noise")
-                                    || r.target_node_id.contains("noise")
-                            })
-                            .filter_map(|r| r.rationale.clone())
-                            .collect();
-                        let distractor = if distractor_rationales.is_empty() {
-                            None
-                        } else {
-                            Some(distractor_rationales.join("; "))
-                        };
-
-                        let chain_kinds: String = chain_nodes
-                            .iter()
                             .map(|n| n.node_kind.as_str())
                             .collect::<Vec<_>>()
-                            .join("→");
+                            .join("\u{2192}");
                         run.log(&format!("[CAPTURE] {variant_id}: {tokens} tok (raw={}, compress={:.2}x, causal={:.0}%, noise={:.0}%, detail={:.0}%), chain=[{chain_kinds}], reason={}, distractor={}",
                     quality.raw_equivalent_tokens, quality.compression_ratio,
                     quality.causal_density * 100.0, quality.noise_ratio * 100.0, quality.detail_coverage * 100.0,
-                    reason.as_deref().unwrap_or("none"), distractor.as_deref().unwrap_or("none")));
+                    ground_truth.expected_reason.as_deref().unwrap_or("none"),
+                    ground_truth.distractor_rationale.as_deref().unwrap_or("none")));
 
                         // Kernel domain observability
-                        let resolved_mode = match RehydrationMode::try_from(rendered.resolved_mode)
-                        {
-                            Ok(RehydrationMode::ResumeFocused) => "resume_focused",
-                            Ok(RehydrationMode::ReasonPreserving) => "reason_preserving",
-                            Ok(RehydrationMode::TemporalDelta) => "temporal_delta",
-                            Ok(RehydrationMode::GlobalSummary) => "global_summary",
-                            _ => "auto",
-                        }
-                        .to_string();
-                        let tier_l0_tokens = rendered
-                            .tiers
-                            .iter()
-                            .find(|t| t.tier == ResolutionTier::L0Summary as i32)
-                            .map(|t| t.token_count)
-                            .unwrap_or(0);
-                        let tier_l1_tokens = rendered
-                            .tiers
-                            .iter()
-                            .find(|t| t.tier == ResolutionTier::L1CausalSpine as i32)
-                            .map(|t| t.token_count)
-                            .unwrap_or(0);
-                        let tier_l2_tokens = rendered
-                            .tiers
-                            .iter()
-                            .find(|t| t.tier == ResolutionTier::L2EvidencePack as i32)
-                            .map(|t| t.token_count)
-                            .unwrap_or(0);
                         let timing = response.timing.as_ref();
-                        let graph_load_ms =
-                            timing.map(|t| t.graph_load_seconds * 1000.0).unwrap_or(0.0);
-                        let detail_load_ms = timing
-                            .map(|t| t.detail_load_seconds * 1000.0)
-                            .unwrap_or(0.0);
-                        let bundle_assembly_ms = timing
-                            .map(|t| t.bundle_assembly_seconds * 1000.0)
-                            .unwrap_or(0.0);
-                        let timing_batch_size = timing.map(|t| t.batch_size).unwrap_or(0);
+                        let obs = extract_kernel_observability(
+                            &rendered,
+                            timing.map(|t| t.graph_load_seconds * 1000.0).unwrap_or(0.0),
+                            timing.map(|t| t.detail_load_seconds * 1000.0).unwrap_or(0.0),
+                            timing.map(|t| t.bundle_assembly_seconds * 1000.0).unwrap_or(0.0),
+                            timing.map(|t| t.batch_size).unwrap_or(0),
+                        );
 
                         captured.push(CapturedVariant {
                             run_id: variant_id,
@@ -944,23 +1143,17 @@ async fn judge_prompt_evaluation_across_all_use_cases() -> Result<(), Box<dyn Er
                             causal_density: quality.causal_density,
                             noise_ratio: quality.noise_ratio,
                             detail_coverage: quality.detail_coverage,
-                            resolved_mode,
-                            tier_l0_tokens,
-                            tier_l1_tokens,
-                            tier_l2_tokens,
-                            tier_total_tokens: tier_l0_tokens + tier_l1_tokens + tier_l2_tokens,
-                            graph_load_ms,
-                            detail_load_ms,
-                            bundle_assembly_ms,
-                            timing_batch_size,
+                            resolved_mode: obs.resolved_mode,
+                            tier_l0_tokens: obs.tier_l0_tokens,
+                            tier_l1_tokens: obs.tier_l1_tokens,
+                            tier_l2_tokens: obs.tier_l2_tokens,
+                            tier_total_tokens: obs.tier_total_tokens,
+                            graph_load_ms: obs.graph_load_ms,
+                            detail_load_ms: obs.detail_load_ms,
+                            bundle_assembly_ms: obs.bundle_assembly_ms,
+                            timing_batch_size: obs.timing_batch_size,
                             question,
-                            ground_truth: EvaluationGroundTruth {
-                                expected_failure_point: Some(failure_desc),
-                                expected_restart_node: Some(restart_desc),
-                                expected_reason: reason,
-                                distractor_rationale: distractor,
-                                domain_context: Some(domain_name.to_string()),
-                            },
+                            ground_truth,
                         });
                     } // seed_idx
                 }
@@ -1100,43 +1293,7 @@ async fn judge_prompt_evaluation_across_all_use_cases() -> Result<(), Box<dyn Er
                                 "  [{cell_id}/{prompt_name}] {}: ERROR {err}",
                                 ctx.run_id
                             ));
-                            EvalResult {
-                                model: cell_id,
-                                prompt: prompt_name.to_string(),
-                                variant: ctx.run_id.clone(),
-                                task: None,
-                                restart: None,
-                                restart_exact: None,
-                                restart_off_by_one: None,
-                                restart_on_competing: None,
-                                restart_explained: None,
-                                reason: None,
-                                reason_correct: None,
-                                reason_distractor: None,
-                                latency_ms: 0.0,
-                                rendered_tokens: ctx.rendered_tokens,
-                                raw_equivalent_tokens: ctx.raw_equivalent_tokens,
-                                compression_ratio: ctx.compression_ratio,
-                                causal_density: ctx.causal_density,
-                                noise_ratio: ctx.noise_ratio,
-                                detail_coverage: ctx.detail_coverage,
-                                resolved_mode: ctx.resolved_mode.clone(),
-                                tier_l0_tokens: ctx.tier_l0_tokens,
-                                tier_l1_tokens: ctx.tier_l1_tokens,
-                                tier_l2_tokens: ctx.tier_l2_tokens,
-                                tier_total_tokens: ctx.tier_total_tokens,
-                                graph_load_ms: ctx.graph_load_ms,
-                                detail_load_ms: ctx.detail_load_ms,
-                                bundle_assembly_ms: ctx.bundle_assembly_ms,
-                                timing_batch_size: ctx.timing_batch_size,
-                                llm_prompt_tokens: None,
-                                llm_completion_tokens: None,
-                                llm_reason_source: None,
-                                llm_confidence: None,
-                                llm_reason_fabricated: None,
-                                agent_response: String::new(),
-                                judge_raw: None,
-                            }
+                            build_eval_result_from_ctx(ctx, cell_id, prompt_name)
                         }
                     };
 
@@ -1155,54 +1312,7 @@ async fn judge_prompt_evaluation_across_all_use_cases() -> Result<(), Box<dyn Er
 
     // ── Phase 3: Report ──
 
-    run.log(&format!("\n\n{}", "=".repeat(120)));
-    run.log(&format!("EVALUATION MATRIX \u{2014} {} variants captured, {} evals, boot {boot_ms:.0}ms, total {total_ms:.0}ms",
-        captured.len(), results.len()));
-    run.log(&format!("{}\n", "=".repeat(120)));
-
-    for r in &results {
-        let ctx = captured.iter().find(|c| c.run_id == r.variant);
-        let question = ctx.map(|c| c.question.as_str()).unwrap_or("?");
-        let expected = ctx
-            .and_then(|c| c.ground_truth.expected_reason.as_deref())
-            .unwrap_or("none");
-        let tokens = ctx.map(|c| c.rendered_tokens).unwrap_or(0);
-
-        let t = match r.task {
-            Some(true) => "OK",
-            Some(false) => "FAIL",
-            None => "ERR",
-        };
-        let re = match r.restart {
-            Some(true) => "OK",
-            Some(false) => "FAIL",
-            None => "ERR",
-        };
-        let p = match r.reason {
-            Some(true) => "OK",
-            Some(false) => "FAIL",
-            None => "ERR",
-        };
-
-        run.log(&format!(
-            "\u{250c}\u{2500}\u{2500} {:<14} \u{00d7} {:<14} / {} ({tokens} tok) \u{2500}\u{2500}",
-            r.model, r.prompt, r.variant
-        ));
-        run.log(&format!("\u{2502} 1. Question:        {question}"));
-        run.log(&format!("\u{2502} 2. Expected reason: {expected}"));
-        let resp = r.agent_response.replace('\n', " ");
-        run.log(&format!("\u{2502} 3. Agent response:  {resp}"));
-        run.log(&format!(
-            "\u{2502} 4. Judge response:  {}",
-            r.judge_raw.as_deref().unwrap_or("(none)")
-        ));
-        run.log(&format!(
-            "\u{2502} 5. Result:          Task={t}  Restart={re}  Reason={p}  ({:.0}ms)",
-            r.latency_ms
-        ));
-        run.log("\u{2514}\u{2500}\u{2500}\n");
-    }
-
+    write_report(&mut run, &results, &captured, boot_ms, total_ms);
     print_summary(&mut run, &results);
     run.write_summary(&results, &captured, boot_ms, total_ms)?;
 

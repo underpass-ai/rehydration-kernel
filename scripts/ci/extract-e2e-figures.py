@@ -22,6 +22,10 @@ import matplotlib.patches as mpatches
 import numpy as np
 
 
+# ── Constants ──
+
+LABEL_TASK_SUCCESS_RATE = "Task Success Rate (%)"
+
 # ── Style ──
 
 COLORS = {
@@ -136,10 +140,10 @@ def fig_relation_mix_bars(results, fig_dir):
             errs_lo.append((r - lo) * 100)
             errs_hi.append((hi - r) * 100)
 
-        bars = ax.bar(x + i * width, rates, width,
-                      yerr=[errs_lo, errs_hi], capsize=4,
-                      label=label, color=[COLORS.get(metric, "#999")] * len(mixes),
-                      alpha=0.85 if i == 0 else 0.6)
+        _bars = ax.bar(x + i * width, rates, width,
+                       yerr=[errs_lo, errs_hi], capsize=4,
+                       label=label, color=[COLORS.get(metric, "#999")] * len(mixes),
+                       alpha=0.85 if i == 0 else 0.6)
 
     ax.set_ylabel("Success Rate (%)")
     ax.set_title("Rehydration Quality by Relation Type")
@@ -174,7 +178,7 @@ def fig_agent_comparison(results, fig_dir):
         ax.bar(x + i * width, rates, width, label=mix.capitalize(),
                color=COLORS.get(mix, "#999"), alpha=0.85)
 
-    ax.set_ylabel("Task Success Rate (%)")
+    ax.set_ylabel(LABEL_TASK_SUCCESS_RATE)
     ax.set_title("Task Identification by Agent and Relation Type")
     ax.set_xticks(x + width)
     ax.set_xticklabels(agents)
@@ -235,7 +239,7 @@ def fig_scale_effect(results, fig_dir):
         ax.plot(scales, rates, marker="o", linewidth=2, markersize=8,
                 label=mix.capitalize(), color=COLORS.get(mix, "#999"))
 
-    ax.set_ylabel("Task Success Rate (%)")
+    ax.set_ylabel(LABEL_TASK_SUCCESS_RATE)
     ax.set_xlabel("Graph Scale")
     ax.set_title("Scale Effect on Task Identification")
     ax.set_ylim(0, 105)
@@ -260,7 +264,7 @@ def fig_prompt_comparison(results, fig_dir):
     bars = ax.barh(y, task_rates, color="#3498db", alpha=0.85)
     ax.set_yticks(y)
     ax.set_yticklabels(prompts)
-    ax.set_xlabel("Task Success Rate (%)")
+    ax.set_xlabel(LABEL_TASK_SUCCESS_RATE)
     ax.set_title("Prompt Variant Effectiveness")
     ax.set_xlim(0, 80)
 
@@ -280,8 +284,8 @@ def fig_judge_bias(results, fig_dir):
         agent, judge = parse_model(r["model"])
         by_agent_judge[(agent, judge)].append(r)
 
-    agents = sorted(set(a for a, _ in by_agent_judge.keys()))
-    judges = sorted(set(j for _, j in by_agent_judge.keys()))
+    agents = sorted({a for a, _ in by_agent_judge.keys()})
+    judges = sorted({j for _, j in by_agent_judge.keys()})
 
     fig, axes = plt.subplots(1, 3, figsize=(14, 4), sharey=True)
 
@@ -331,7 +335,7 @@ def fig_noise_impact(results, fig_dir):
         ax.bar(x + i * width, rates, width, label=noise.capitalize(),
                color=COLORS.get(noise, "#999"), alpha=0.85)
 
-    ax.set_ylabel("Task Success Rate (%)")
+    ax.set_ylabel(LABEL_TASK_SUCCESS_RATE)
     ax.set_title("Noise Impact on Task Identification")
     ax.set_xticks(x + width / 2)
     ax.set_xticklabels([m.capitalize() for m in mixes])
@@ -374,7 +378,7 @@ def fig_convergence_heatmap(results, fig_dir):
         agent, judge = parse_model(r["model"])
         by_cell[(agent, judge, r["prompt"])].append(r)
 
-    pairs = sorted(set((a, j) for (a, j, _) in by_cell.keys()))
+    pairs = sorted({(a, j) for (a, j, _) in by_cell.keys()})
     metrics = ["task", "restart", "reason"]
 
     data = []
@@ -447,7 +451,7 @@ def fig_judge_strictness(results, fig_dir):
 
     # Right: per-agent delta between judges (measures bias)
     ax2 = axes[1]
-    agents = sorted(set(parse_model(r["model"])[0] for r in results))
+    agents = sorted({parse_model(r["model"])[0] for r in results})
 
     x2 = np.arange(len(agents))
     width2 = 0.25
@@ -480,6 +484,29 @@ def fig_judge_strictness(results, fig_dir):
     plt.close(fig)
 
 
+def _parse_capture_line(line):
+    """Parse a single [CAPTURE] log line into (variant, data) or None."""
+    if "[CAPTURE]" not in line:
+        return None
+    # [CAPTURE] micro-ops-explanatory-clean: 370 tokens, reason=...
+    after = line.split("[CAPTURE]", 1)[1].strip()
+    parts = after.split(":", 1)
+    variant = parts[0].strip()
+    rest = parts[1].strip() if len(parts) > 1 else ""
+    tokens = 0
+    has_reason = False
+    if "tokens" in rest:
+        tok_str = rest.split("tokens")[0].strip()
+        try:
+            tokens = int(tok_str)
+        except ValueError:
+            pass
+    if "reason=" in rest:
+        reason = rest.split("reason=", 1)[1].strip()
+        has_reason = reason != "none"
+    return variant, {"tokens": tokens, "has_reason": has_reason}
+
+
 def parse_captures_from_log(run_dir):
     """Parse [CAPTURE] lines from test.log to get kernel metrics per variant."""
     log_path = run_dir / "test.log"
@@ -488,24 +515,10 @@ def parse_captures_from_log(run_dir):
         return captures
     with open(log_path) as f:
         for line in f:
-            if "[CAPTURE]" in line:
-                # [CAPTURE] micro-ops-explanatory-clean: 370 tokens, reason=...
-                after = line.split("[CAPTURE]", 1)[1].strip()
-                parts = after.split(":", 1)
-                variant = parts[0].strip()
-                rest = parts[1].strip() if len(parts) > 1 else ""
-                tokens = 0
-                has_reason = False
-                if "tokens" in rest:
-                    tok_str = rest.split("tokens")[0].strip()
-                    try:
-                        tokens = int(tok_str)
-                    except ValueError:
-                        pass
-                if "reason=" in rest:
-                    reason = rest.split("reason=", 1)[1].strip()
-                    has_reason = reason != "none"
-                captures[variant] = {"tokens": tokens, "has_reason": has_reason}
+            parsed = _parse_capture_line(line)
+            if parsed is not None:
+                variant, data = parsed
+                captures[variant] = data
     return captures
 
 
@@ -637,75 +650,105 @@ def fig_kernel_causal_signal(captures, fig_dir):
     plt.close(fig)
 
 
-def fig_hypothesis_summary(results, captures, fig_dir):
-    """Summary figure: the five hypotheses this benchmark tests."""
-    fig, ax = plt.subplots(figsize=(12, 7))
-    ax.axis("off")
+def _verdict_color(verdict):
+    """Return color hex for a hypothesis verdict."""
+    if verdict == "SUPPORTED":
+        return "#2ecc71"
+    if verdict == "MIXED":
+        return "#f39c12"
+    return "#e74c3c"
 
-    hypotheses = [
+
+def _build_hypotheses(results):
+    """Build the five hypothesis tuples (name, measure, val_a, val_b)."""
+    def _mix_rate(mix, metric):
+        return rate([r for r in results if parse_variant(r["variant"])["mix"] == mix], metric)
+
+    def _qwen_mix_rate(mix):
+        return rate([r for r in results
+                     if parse_model(r["model"])[0] == "qwen3-8b"
+                     and parse_variant(r["variant"])["mix"] == mix], "task")
+
+    return [
         ("H1: Rehydration adds value",
          "Explanatory > Structural",
-         rate([r for r in results if parse_variant(r["variant"])["mix"] == "explanatory"], "task"),
-         rate([r for r in results if parse_variant(r["variant"])["mix"] == "structural"], "task")),
+         _mix_rate("explanatory", "task"),
+         _mix_rate("structural", "task")),
         ("H2: Small models benefit",
          "Qwen3-8B expl. Task rate",
-         rate([r for r in results
-               if parse_model(r["model"])[0] == "qwen3-8b"
-               and parse_variant(r["variant"])["mix"] == "explanatory"], "task"),
-         rate([r for r in results
-               if parse_model(r["model"])[0] == "qwen3-8b"
-               and parse_variant(r["variant"])["mix"] == "structural"], "task")),
+         _qwen_mix_rate("explanatory"),
+         _qwen_mix_rate("structural")),
         ("H3: Judge prompt is reliable",
          "Strict-Lenient delta (avg)",
          None, None),
         ("H4: Causal metadata is the signal",
          "Reason preservation: expl vs struct",
-         rate([r for r in results if parse_variant(r["variant"])["mix"] == "explanatory"], "reason"),
-         rate([r for r in results if parse_variant(r["variant"])["mix"] == "structural"], "reason")),
+         _mix_rate("explanatory", "reason"),
+         _mix_rate("structural", "reason")),
         ("H5: Test infra is consistent",
          "Clean vs Competing noise",
          rate([r for r in results if parse_variant(r["variant"])["noise"] == "clean"], "task"),
          rate([r for r in results if parse_variant(r["variant"])["noise"] == "competing"], "task")),
     ]
 
+
+def _evaluate_hypothesis(results, val_a, val_b):
+    """Return (verdict, color, detail) for a single hypothesis row."""
+    if val_a is not None and val_b is not None:
+        if val_a > val_b + 0.05:
+            verdict = "SUPPORTED"
+        elif abs(val_a - val_b) <= 0.05:
+            verdict = "MIXED"
+        else:
+            verdict = "NOT SUPPORTED"
+        return verdict, _verdict_color(verdict), f"{val_a:.0%} vs {val_b:.0%}"
+
+    # H3: compute avg strict-lenient delta
+    by_cell = defaultdict(list)
+    for r in results:
+        agent, judge = parse_model(r["model"])
+        by_cell[(agent, judge, r["prompt"])].append(r)
+
+    deltas = []
+    for (agent, judge) in {(a, j) for (a, j, _) in by_cell.keys()}:
+        for metric in ["task", "restart", "reason"]:
+            strict = by_cell.get((agent, judge, "strict-judge"), [])
+            lenient = by_cell.get((agent, judge, "lenient-judge"), [])
+            s = sum(1 for r in strict if r.get(metric) is True)
+            l = sum(1 for r in lenient if r.get(metric) is True)
+            deltas.append(abs(s - l))
+    avg_delta = np.mean(deltas) if deltas else 0
+    verdict = "SUPPORTED" if avg_delta < 5 else "MIXED"
+    return verdict, _verdict_color(verdict), f"avg delta = {avg_delta:.1f} evals"
+
+
+def _render_hypothesis_row(ax, y_pos, hyp_name, measure, verdict, color, detail):
+    """Render a single hypothesis row on the summary axes."""
+    ax.text(0.05, y_pos, f"\u25cf {hyp_name}", fontsize=12,
+            fontweight="bold", va="top", transform=ax.transAxes)
+    ax.text(0.55, y_pos, measure, fontsize=11, va="top",
+            transform=ax.transAxes, color="#555")
+    ax.text(0.55, y_pos - 0.04, detail, fontsize=11, va="top",
+            transform=ax.transAxes)
+    ax.text(0.92, y_pos, verdict, fontsize=12, fontweight="bold",
+            va="top", transform=ax.transAxes, color=color,
+            bbox={"boxstyle": "round,pad=0.3", "facecolor": color, "alpha": 0.15})
+
+
+def fig_hypothesis_summary(results, _captures, fig_dir):
+    """Summary figure: the five hypotheses this benchmark tests."""
+    fig, ax = plt.subplots(figsize=(12, 7))
+    ax.axis("off")
+
+    hypotheses = _build_hypotheses(results)
+
     y_pos = 0.92
     ax.text(0.5, 0.98, "Hypothesis Validation Summary", fontsize=16,
             fontweight="bold", ha="center", va="top", transform=ax.transAxes)
 
     for hyp_name, measure, val_a, val_b in hypotheses:
-        if val_a is not None and val_b is not None:
-            verdict = "SUPPORTED" if val_a > val_b + 0.05 else ("MIXED" if abs(val_a - val_b) <= 0.05 else "NOT SUPPORTED")
-            color = "#2ecc71" if verdict == "SUPPORTED" else ("#f39c12" if verdict == "MIXED" else "#e74c3c")
-            detail = f"{val_a:.0%} vs {val_b:.0%}"
-        else:
-            # H3: compute avg strict-lenient delta
-            by_cell = defaultdict(list)
-            for r in results:
-                agent, judge = parse_model(r["model"])
-                by_cell[(agent, judge, r["prompt"])].append(r)
-
-            deltas = []
-            for (agent, judge) in set((a, j) for (a, j, _) in by_cell.keys()):
-                for metric in ["task", "restart", "reason"]:
-                    strict = by_cell.get((agent, judge, "strict-judge"), [])
-                    lenient = by_cell.get((agent, judge, "lenient-judge"), [])
-                    s = sum(1 for r in strict if r.get(metric) is True)
-                    l = sum(1 for r in lenient if r.get(metric) is True)
-                    deltas.append(abs(s - l))
-            avg_delta = np.mean(deltas) if deltas else 0
-            verdict = "SUPPORTED" if avg_delta < 5 else "MIXED"
-            color = "#2ecc71" if verdict == "SUPPORTED" else "#f39c12"
-            detail = f"avg delta = {avg_delta:.1f} evals"
-
-        ax.text(0.05, y_pos, f"\u25cf {hyp_name}", fontsize=12,
-                fontweight="bold", va="top", transform=ax.transAxes)
-        ax.text(0.55, y_pos, measure, fontsize=11, va="top",
-                transform=ax.transAxes, color="#555")
-        ax.text(0.55, y_pos - 0.04, detail, fontsize=11, va="top",
-                transform=ax.transAxes)
-        ax.text(0.92, y_pos, verdict, fontsize=12, fontweight="bold",
-                va="top", transform=ax.transAxes, color=color,
-                bbox=dict(boxstyle="round,pad=0.3", facecolor=color, alpha=0.15))
+        verdict, color, detail = _evaluate_hypothesis(results, val_a, val_b)
+        _render_hypothesis_row(ax, y_pos, hyp_name, measure, verdict, color, detail)
         y_pos -= 0.15
 
     fig.tight_layout()
@@ -750,13 +793,27 @@ def fig_response_parsing(results, fig_dir):
     plt.close(fig)
 
 
+def _extract_max_chain_depth(result):
+    """Extract the deepest chain-N depth from an agent response, or -1."""
+    import re
+    max_depth = -1
+    try:
+        resp = json.loads(result.get("agent_response", "").strip())
+        for field in ["failure_point", "restart_node", "reason"]:
+            val = resp.get(field, "")
+            for m in re.findall(r"chain-(\d+)", val):
+                max_depth = max(max_depth, int(m))
+    except Exception:
+        pass
+    return max_depth
+
+
 def fig_causal_depth_reached(results, fig_dir):
     """How deep into the causal chain does each model trace?
 
     Parses failure_point and restart_node from responses to find the
     deepest chain-N referenced. Higher = model traced further.
     """
-    import re
     by_agent = defaultdict(list)
 
     for r in results:
@@ -764,19 +821,7 @@ def fig_causal_depth_reached(results, fig_dir):
         v = parse_variant(r["variant"])
         if v["mix"] == "structural":
             continue  # no chain metadata, skip
-
-        max_depth = -1
-        try:
-            resp = json.loads(r.get("agent_response", "").strip())
-            for field in ["failure_point", "restart_node", "reason"]:
-                val = resp.get(field, "")
-                matches = re.findall(r"chain-(\d+)", val)
-                for m in matches:
-                    max_depth = max(max_depth, int(m))
-        except Exception:
-            pass
-
-        by_agent[agent].append(max_depth)
+        by_agent[agent].append(_extract_max_chain_depth(r))
 
     agents = sorted(by_agent.keys())
     fig, axes = plt.subplots(1, 2, figsize=(12, 5))
@@ -895,7 +940,7 @@ def fig_chain_depth_vs_task(results, fig_dir):
                 label=mix.capitalize(), color=COLORS.get(mix, "#999"))
 
     ax.set_xlabel("Causal Chain Length (nodes)")
-    ax.set_ylabel("Task Success Rate (%)")
+    ax.set_ylabel(LABEL_TASK_SUCCESS_RATE)
     ax.set_title("Chain Depth vs Task Success\n(Does deeper = harder?)")
     ax.set_xticks(list(scale_depth.values()))
     ax.set_xticklabels([f"{v} ({k})" for k, v in scale_depth.items()])

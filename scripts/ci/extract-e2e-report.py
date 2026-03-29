@@ -17,10 +17,18 @@ Produces:
 
 import json
 import glob
+import math
 import os
 import sys
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 from pathlib import Path
+
+# ── Table separator/header constants (S1192: deduplicate literals) ──
+SEP_CROSS_MIX = "|-------|-------------|------------|-------|"
+HDR_AGENT_MIX = "| Agent | Explanatory | Structural | Mixed |"
+SEP_METRIC_EVALS = "|-------|------|---------|--------|-------|"
+HDR_MIX_CI = "| Mix | N | Rate | 95% CI |"
+SEP_MIX_CI = "|-----|---|------|--------|"
 
 
 def find_latest_run():
@@ -57,7 +65,7 @@ def parse_variant(variant):
 
 
 def parse_model(model):
-    """Parse 'qwen3-8b→opus-4.6' into agent and judge."""
+    """Parse 'qwen3-8b\u2192opus-4.6' into agent and judge."""
     if "\u2192" in model:
         parts = model.split("\u2192", 1)
         return parts[0], parts[1]
@@ -87,17 +95,66 @@ def fig_ref(run_dir, filename, caption=""):
     return ""
 
 
-def generate_report(run_dir, results):
-    md = []
-    md.append(f"# E2E Evaluation Matrix Report")
-    md.append(f"")
-    md.append(f"**Run**: `{run_dir.name}`")
-    md.append(f"**Date**: {run_dir.name[:10]}")
-    md.append(f"**Total evaluations**: {len(results)}")
-    md.append(fig_ref(run_dir, "00_hypothesis_summary.png", "Hypothesis Validation Summary"))
-    md.append(f"")
+def tristate_csv(value):
+    """Convert a True/False/None value to 'true'/'false'/'null' for CSV export."""
+    if value is True:
+        return "true"
+    if value is False:
+        return "false"
+    return "null"
 
-    # ── Overview ──
+
+def tristate_label(value, true_label="OK", false_label="FAIL", none_label="ERR"):
+    """Convert a True/False/None value to display labels."""
+    if value is True:
+        return true_label
+    if value is False:
+        return false_label
+    return none_label
+
+
+def wilson_ci(ok, n):
+    """Wilson score interval for binomial proportion."""
+    if n == 0:
+        return 0.0, 0.0, 0.0
+    z = 1.96
+    p_hat = ok / n
+    denom = 1 + z * z / n
+    center = (p_hat + z * z / (2 * n)) / denom
+    spread = z * math.sqrt((p_hat * (1 - p_hat) + z * z / (4 * n)) / n) / denom
+    lo = max(0.0, center - spread)
+    hi = min(1.0, center + spread)
+    return p_hat, lo, hi
+
+
+def _parse_results(results):
+    """Pre-compute groupings used across multiple report sections."""
+    by_cell = defaultdict(list)
+    by_agent = defaultdict(list)
+    by_judge = defaultdict(list)
+    by_prompt = defaultdict(list)
+    by_mix = defaultdict(list)
+    by_scale = defaultdict(list)
+    by_domain = defaultdict(list)
+    by_noise = defaultdict(list)
+
+    for r in results:
+        agent, judge = parse_model(r["model"])
+        by_cell[(agent, judge, r["prompt"])].append(r)
+        by_agent[agent].append(r)
+        by_judge[judge].append(r)
+        by_prompt[r["prompt"]].append(r)
+        v = parse_variant(r["variant"])
+        by_mix[v["mix"]].append(r)
+        by_scale[v["scale"]].append(r)
+        by_domain[v["domain"]].append(r)
+        by_noise[v["noise"]].append(r)
+
+    return by_cell, by_agent, by_judge, by_prompt, by_mix, by_scale, by_domain, by_noise
+
+
+def _build_overview(md, results):
+    """Append the overview summary table."""
     total = len(results)
     task_ok = sum(1 for r in results if r.get("task") is True)
     task_fail = sum(1 for r in results if r.get("task") is False)
@@ -107,7 +164,7 @@ def generate_report(run_dir, results):
     restart_off1 = sum(1 for r in results if r.get("restart_off_by_one") is True)
     restart_competing = sum(1 for r in results if r.get("restart_on_competing") is True)
     restart_explained = sum(1 for r in results if r.get("restart_explained") is True)
-    reason_ok = sum(1 for r in results if r.get("reason") is True)
+    _reason_ok = sum(1 for r in results if r.get("reason") is True)
     reason_correct_ok = sum(1 for r in results if r.get("reason_correct") is True)
     reason_distractor_ok = sum(1 for r in results if r.get("reason_distractor") is True)
 
@@ -117,24 +174,22 @@ def generate_report(run_dir, results):
     md.append("|--------|----|------|-----|------|")
     md.append(f"| Task | {task_ok} | {task_fail} | {task_err} | {ratio(task_ok, total)} |")
     md.append(f"| Restart | {restart_ok} | {total - restart_ok - task_err} | {task_err} | {ratio(restart_ok, total)} |")
-    md.append(f"| ↳ Exact | {restart_exact} | | | {ratio(restart_exact, total)} |")
-    md.append(f"| ↳ Off-by-one | {restart_off1} | | | {ratio(restart_off1, total)} |")
-    md.append(f"| ↳ Competing branch | {restart_competing} | | | {ratio(restart_competing, total)} |")
-    md.append(f"| ↳ Explained | {restart_explained} | | | {ratio(restart_explained, total)} |")
+    md.append(f"| \u21b3 Exact | {restart_exact} | | | {ratio(restart_exact, total)} |")
+    md.append(f"| \u21b3 Off-by-one | {restart_off1} | | | {ratio(restart_off1, total)} |")
+    md.append(f"| \u21b3 Competing branch | {restart_competing} | | | {ratio(restart_competing, total)} |")
+    md.append(f"| \u21b3 Explained | {restart_explained} | | | {ratio(restart_explained, total)} |")
     md.append(f"| Reason Correct | {reason_correct_ok} | {total - reason_correct_ok - task_err} | {task_err} | {ratio(reason_correct_ok, total)} |")
     md.append(f"| Reason Distractor | {reason_distractor_ok} | | | {ratio(reason_distractor_ok, total)} |")
     md.append("")
 
+
+def _build_summary_tables(md, run_dir, by_cell, by_agent, by_judge, by_prompt):
+    """Append per-agent, per-judge, per-prompt, and agent x judge x prompt tables."""
     # ── By Agent x Judge x Prompt ──
     md.append("## By Agent x Judge x Prompt")
     md.append("")
     md.append("| Agent | Judge | Prompt | Task | Restart | Reason | Avg Latency |")
     md.append("|-------|-------|--------|------|---------|--------|-------------|")
-
-    by_cell = defaultdict(list)
-    for r in results:
-        agent, judge = parse_model(r["model"])
-        by_cell[(agent, judge, r["prompt"])].append(r)
 
     for (agent, judge, prompt), cell in sorted(by_cell.items()):
         n = len(cell)
@@ -150,12 +205,7 @@ def generate_report(run_dir, results):
     md.append("## By Agent (all judges, all prompts)")
     md.append("")
     md.append("| Agent | Task | Restart | Reason | Evals |")
-    md.append("|-------|------|---------|--------|-------|")
-
-    by_agent = defaultdict(list)
-    for r in results:
-        agent, _ = parse_model(r["model"])
-        by_agent[agent].append(r)
+    md.append(SEP_METRIC_EVALS)
 
     for agent, cell in sorted(by_agent.items()):
         n = len(cell)
@@ -170,12 +220,7 @@ def generate_report(run_dir, results):
     md.append("## By Judge (all agents, all prompts)")
     md.append("")
     md.append("| Judge | Task | Restart | Reason | Evals |")
-    md.append("|-------|------|---------|--------|-------|")
-
-    by_judge = defaultdict(list)
-    for r in results:
-        _, judge = parse_model(r["model"])
-        by_judge[judge].append(r)
+    md.append(SEP_METRIC_EVALS)
 
     for judge, cell in sorted(by_judge.items()):
         n = len(cell)
@@ -193,10 +238,6 @@ def generate_report(run_dir, results):
     md.append("| Prompt | Task | Restart | Reason | Evals |")
     md.append("|--------|------|---------|--------|-------|")
 
-    by_prompt = defaultdict(list)
-    for r in results:
-        by_prompt[r["prompt"]].append(r)
-
     for prompt, cell in sorted(by_prompt.items()):
         n = len(cell)
         t = sum(1 for r in cell if r.get("task") is True)
@@ -206,17 +247,15 @@ def generate_report(run_dir, results):
 
     md.append("")
 
+
+def _build_dimension_tables(md, run_dir, by_mix, by_scale, by_domain, by_noise):
+    """Append tables for relation mix, scale, domain, and noise mode."""
     # ── By Relation Mix (THE key signal) ──
     md.append("## By Relation Mix (key signal)")
     md.append(fig_ref(run_dir, "01_relation_mix_bars.png", "Rehydration Quality by Relation Type"))
     md.append("")
     md.append("| Mix | Task | Restart | Reason Correct | Reason Distractor | Evals |")
     md.append("|-----|------|---------|----------------|-------------------|-------|")
-
-    by_mix = defaultdict(list)
-    for r in results:
-        v = parse_variant(r["variant"])
-        by_mix[v["mix"]].append(r)
 
     for mix in ["explanatory", "structural", "mixed"]:
         cell = by_mix.get(mix, [])
@@ -236,12 +275,7 @@ def generate_report(run_dir, results):
     md.append(fig_ref(run_dir, "04_scale_effect.png", "Scale Effect"))
     md.append("")
     md.append("| Scale | Task | Restart | Reason | Evals |")
-    md.append("|-------|------|---------|--------|-------|")
-
-    by_scale = defaultdict(list)
-    for r in results:
-        v = parse_variant(r["variant"])
-        by_scale[v["scale"]].append(r)
+    md.append(SEP_METRIC_EVALS)
 
     for scale in ["micro", "meso", "stress"]:
         cell = by_scale.get(scale, [])
@@ -261,11 +295,6 @@ def generate_report(run_dir, results):
     md.append("| Domain | Task | Restart | Reason | Evals |")
     md.append("|--------|------|---------|--------|-------|")
 
-    by_domain = defaultdict(list)
-    for r in results:
-        v = parse_variant(r["variant"])
-        by_domain[v["domain"]].append(r)
-
     for domain, cell in sorted(by_domain.items()):
         n = len(cell)
         t = sum(1 for r in cell if r.get("task") is True)
@@ -281,11 +310,6 @@ def generate_report(run_dir, results):
     md.append("")
     md.append("| Noise | Task | Restart | Reason Correct | Reason Distractor | Evals |")
     md.append("|-------|------|---------|----------------|-------------------|-------|")
-
-    by_noise = defaultdict(list)
-    for r in results:
-        v = parse_variant(r["variant"])
-        by_noise[v["noise"]].append(r)
 
     for noise in ["clean", "competing", "conflicting", "restart"]:
         cell = by_noise.get(noise, [])
@@ -311,11 +335,14 @@ def generate_report(run_dir, results):
 
     md.append("")
 
+
+def _build_heatmaps(md, run_dir, results, by_agent, by_noise):
+    """Append cross-dimension heatmap tables (noise x mix, agent x mix, scale x mix)."""
     # ── Cross: Noise x Mix ──
     md.append("## Noise x Relation Mix (Task)")
     md.append("")
     md.append("| Noise | Explanatory | Structural | Mixed |")
-    md.append("|-------|-------------|------------|-------|")
+    md.append(SEP_CROSS_MIX)
 
     for noise in ["clean", "competing", "conflicting", "restart"]:
         cell = by_noise.get(noise, [])
@@ -335,8 +362,8 @@ def generate_report(run_dir, results):
     md.append("## Agent x Relation Mix (Task)")
     md.append(fig_ref(run_dir, "02_agent_x_mix_task.png", "Task Identification by Agent and Relation Type"))
     md.append("")
-    md.append("| Agent | Explanatory | Structural | Mixed |")
-    md.append("|-------|-------------|------------|-------|")
+    md.append(HDR_AGENT_MIX)
+    md.append(SEP_CROSS_MIX)
 
     for agent in sorted(by_agent.keys()):
         row = [agent]
@@ -353,8 +380,8 @@ def generate_report(run_dir, results):
     md.append("## Agent x Relation Mix (Reason Correct)")
     md.append(fig_ref(run_dir, "03_agent_x_mix_reason.png", "Rationale Preservation by Agent and Relation Type"))
     md.append("")
-    md.append("| Agent | Explanatory | Structural | Mixed |")
-    md.append("|-------|-------------|------------|-------|")
+    md.append(HDR_AGENT_MIX)
+    md.append(SEP_CROSS_MIX)
 
     for agent in sorted(by_agent.keys()):
         row = [agent]
@@ -370,8 +397,8 @@ def generate_report(run_dir, results):
     # ── Cross: Agent x Mix (Reason Distractor) ──
     md.append("## Agent x Relation Mix (Reason Distractor)")
     md.append("")
-    md.append("| Agent | Explanatory | Structural | Mixed |")
-    md.append("|-------|-------------|------------|-------|")
+    md.append(HDR_AGENT_MIX)
+    md.append(SEP_CROSS_MIX)
 
     for agent in sorted(by_agent.keys()):
         row = [agent]
@@ -384,6 +411,29 @@ def generate_report(run_dir, results):
 
     md.append("")
 
+    # ── Cross: Scale x Mix (Task) ──
+    md.append("## Scale x Relation Mix (Task)")
+    md.append(fig_ref(run_dir, "04_scale_effect.png", "Scale Effect on Task Identification"))
+    md.append("")
+    md.append("| Scale | Explanatory | Structural | Mixed |")
+    md.append(SEP_CROSS_MIX)
+
+    for scale in ["micro", "meso", "stress"]:
+        row = [scale]
+        for mix in ["explanatory", "structural", "mixed"]:
+            cell = [r for r in results
+                    if parse_variant(r["variant"])["scale"] == scale
+                    and parse_variant(r["variant"])["mix"] == mix]
+            n = len(cell)
+            t = sum(1 for r in cell if r.get("task") is True)
+            row.append(ratio(t, n))
+        md.append(f"| {' | '.join(row)} |")
+
+    md.append("")
+
+
+def _build_controlled_comparisons(md, results, by_agent, by_judge):
+    """Append controlled agent-vs-judge comparison tables."""
     # ── Controlled comparison: Agent (fixed judge) ──
     md.append("## Controlled: Agent Comparison (fixed judge)")
     md.append("")
@@ -395,7 +445,7 @@ def generate_report(run_dir, results):
         judge_results = [r for r in results if parse_model(r["model"])[1] == judge]
         if not judge_results:
             continue
-        agents_in_judge = sorted(set(parse_model(r["model"])[0] for r in judge_results))
+        agents_in_judge = sorted({parse_model(r["model"])[0] for r in judge_results})
         md.append(f"### Judge = {judge}")
         md.append("")
         md.append("| Agent | Evals | Task | Restart | Reason Correct | Reason Distractor |")
@@ -420,7 +470,7 @@ def generate_report(run_dir, results):
         agent_results = [r for r in results if parse_model(r["model"])[0] == agent]
         if not agent_results:
             continue
-        judges_in_agent = sorted(set(parse_model(r["model"])[1] for r in agent_results))
+        judges_in_agent = sorted({parse_model(r["model"])[1] for r in agent_results})
         if len(judges_in_agent) < 2:
             continue
         md.append(f"### Agent = {agent}")
@@ -437,34 +487,16 @@ def generate_report(run_dir, results):
             md.append(f"| {judge} | {n} | {ratio(t, n)} | {ratio(re, n)} | {ratio(rc, n)} | {ratio(rd, n)} |")
         md.append("")
 
-    # ── Cross: Scale x Mix (Task) ──
-    md.append("## Scale x Relation Mix (Task)")
-    md.append(fig_ref(run_dir, "04_scale_effect.png", "Scale Effect on Task Identification"))
-    md.append("")
-    md.append("| Scale | Explanatory | Structural | Mixed |")
-    md.append("|-------|-------------|------------|-------|")
 
-    for scale in ["micro", "meso", "stress"]:
-        row = [scale]
-        for mix in ["explanatory", "structural", "mixed"]:
-            cell = [r for r in results
-                    if parse_variant(r["variant"])["scale"] == scale
-                    and parse_variant(r["variant"])["mix"] == mix]
-            n = len(cell)
-            t = sum(1 for r in cell if r.get("task") is True)
-            row.append(ratio(t, n))
-        md.append(f"| {' | '.join(row)} |")
-
-    md.append("")
-
-    # ── Prompt convergence: strict vs lenient ──
+def _build_convergence_table(md, run_dir, by_cell):
+    """Append prompt convergence (strict vs lenient) table."""
     md.append("## Prompt Convergence: Strict vs Lenient")
     md.append(fig_ref(run_dir, "09_convergence_heatmap.png", "Convergence Heatmap"))
     md.append("")
-    md.append("| Agent→Judge | Metric | Strict | Lenient | Default | Delta S-L |")
+    md.append("| Agent\u2192Judge | Metric | Strict | Lenient | Default | Delta S-L |")
     md.append("|-------------|--------|--------|---------|---------|-----------|")
 
-    for (agent, judge) in sorted(set((a, j) for (a, j, _) in by_cell.keys())):
+    for (agent, judge) in sorted({(a, j) for (a, j, _) in by_cell.keys()}):
         for metric_name, metric_key in [("Task", "task"), ("Restart", "restart"), ("Reason", "reason")]:
             vals = {}
             for prompt in ["strict-judge", "lenient-judge", "default"]:
@@ -480,6 +512,9 @@ def generate_report(run_dir, results):
 
     md.append("")
 
+
+def _build_latency_and_cost(md, run_dir, results, by_agent, by_judge):
+    """Append latency and cost estimate tables."""
     # ── Latency by agent ──
     md.append("## Latency by Agent")
     md.append(fig_ref(run_dir, "08_latency_boxplot.png", "Latency Distribution"))
@@ -531,7 +566,9 @@ def generate_report(run_dir, results):
     md.append(f"| **total** | | **{len(results)}** | **${total_cost:.2f}** |")
     md.append("")
 
-    # ── Restart diagnostic by noise mode ──
+
+def _build_restart_diagnostics(md, by_noise):
+    """Append restart diagnostic table by noise mode."""
     md.append("## Restart Diagnostic by Noise Mode")
     md.append("")
     md.append("| Noise | Restart | Exact | Off-by-1 | Competing | Explained | Evals |")
@@ -551,7 +588,9 @@ def generate_report(run_dir, results):
 
     md.append("")
 
-    # ── Statistical summary per dimension ──
+
+def _build_statistical_summary(md, run_dir, by_agent, by_mix):
+    """Append statistical summary with Wilson CIs and latency distributions."""
     md.append("## Statistical Summary")
     md.append(fig_ref(run_dir, "10_judge_strictness.png", "Judge Strictness"))
     md.append(fig_ref(run_dir, "15_inter_rater_agreement.png", "Inter-Rater Agreement"))
@@ -559,24 +598,10 @@ def generate_report(run_dir, results):
     md.append("Success rates with 95% confidence intervals (Wilson score).")
     md.append("")
 
-    def wilson_ci(ok, n):
-        """Wilson score interval for binomial proportion."""
-        if n == 0:
-            return 0.0, 0.0, 0.0
-        import math
-        z = 1.96
-        p_hat = ok / n
-        denom = 1 + z * z / n
-        center = (p_hat + z * z / (2 * n)) / denom
-        spread = z * math.sqrt((p_hat * (1 - p_hat) + z * z / (4 * n)) / n) / denom
-        lo = max(0.0, center - spread)
-        hi = min(1.0, center + spread)
-        return p_hat, lo, hi
-
     md.append("### Task Success Rate by Relation Mix")
     md.append("")
-    md.append("| Mix | N | Rate | 95% CI |")
-    md.append("|-----|---|------|--------|")
+    md.append(HDR_MIX_CI)
+    md.append(SEP_MIX_CI)
     for mix in ["explanatory", "structural", "mixed"]:
         cell = by_mix.get(mix, [])
         n = len(cell)
@@ -587,8 +612,8 @@ def generate_report(run_dir, results):
 
     md.append("### Reason Correct (Main Path) Rate by Relation Mix")
     md.append("")
-    md.append("| Mix | N | Rate | 95% CI |")
-    md.append("|-----|---|------|--------|")
+    md.append(HDR_MIX_CI)
+    md.append(SEP_MIX_CI)
     for mix in ["explanatory", "structural", "mixed"]:
         cell = by_mix.get(mix, [])
         n = len(cell)
@@ -599,8 +624,8 @@ def generate_report(run_dir, results):
 
     md.append("### Reason Distractor Leakage Rate by Relation Mix")
     md.append("")
-    md.append("| Mix | N | Rate | 95% CI |")
-    md.append("|-----|---|------|--------|")
+    md.append(HDR_MIX_CI)
+    md.append(SEP_MIX_CI)
     for mix in ["explanatory", "structural", "mixed"]:
         cell = by_mix.get(mix, [])
         n = len(cell)
@@ -629,7 +654,6 @@ def generate_report(run_dir, results):
         latencies = sorted([r["latency_ms"] for r in by_agent[agent] if r.get("latency_ms", 0) > 0])
         if not latencies:
             continue
-        import math
         n = len(latencies)
         mean = sum(latencies) / n
         std = math.sqrt(sum((x - mean) ** 2 for x in latencies) / n)
@@ -640,22 +664,24 @@ def generate_report(run_dir, results):
         md.append(f"| {agent} | {n} | {mean:.0f} | {std:.0f} | {p25:.0f} | {p50:.0f} | {p75:.0f} | {p95:.0f} |")
     md.append("")
 
-    # ── Export CSV ──
+
+def _export_csv(run_dir, results):
+    """Write per-evaluation CSV file."""
     csv_path = run_dir / "results.csv"
     with open(csv_path, "w") as f:
         f.write("eval_num,agent,judge,prompt,variant,scale,domain,mix,noise,task,restart,restart_exact,restart_off_by_one,restart_on_competing,restart_explained,reason,reason_correct,reason_distractor,latency_ms,failure_point,restart_node\n")
         for i, r in enumerate(results, 1):
             agent, judge = parse_model(r["model"])
             v = parse_variant(r["variant"])
-            t = "true" if r.get("task") else ("false" if r.get("task") is False else "null")
-            re = "true" if r.get("restart") else ("false" if r.get("restart") is False else "null")
-            p = "true" if r.get("reason") else ("false" if r.get("reason") is False else "null")
-            rx = "true" if r.get("restart_exact") else ("false" if r.get("restart_exact") is False else "null")
-            ro = "true" if r.get("restart_off_by_one") else ("false" if r.get("restart_off_by_one") is False else "null")
-            rcb = "true" if r.get("restart_on_competing") else ("false" if r.get("restart_on_competing") is False else "null")
-            rexp = "true" if r.get("restart_explained") else ("false" if r.get("restart_explained") is False else "null")
-            rc = "true" if r.get("reason_correct") else ("false" if r.get("reason_correct") is False else "null")
-            rd = "true" if r.get("reason_distractor") else ("false" if r.get("reason_distractor") is False else "null")
+            t = tristate_csv(r.get("task"))
+            re = tristate_csv(r.get("restart"))
+            p = tristate_csv(r.get("reason"))
+            rx = tristate_csv(r.get("restart_exact"))
+            ro = tristate_csv(r.get("restart_off_by_one"))
+            rcb = tristate_csv(r.get("restart_on_competing"))
+            rexp = tristate_csv(r.get("restart_explained"))
+            rc = tristate_csv(r.get("reason_correct"))
+            rd = tristate_csv(r.get("reason_distractor"))
             lat = f"{r.get('latency_ms', 0):.1f}"
             fp = ""
             rn = ""
@@ -667,69 +693,78 @@ def generate_report(run_dir, results):
                 pass
             f.write(f'{i},"{agent}","{judge}","{r["prompt"]}","{r["variant"]}","{v["scale"]}","{v["domain"]}","{v["mix"]}","{v["noise"]}",{t},{re},{rx},{ro},{rcb},{rexp},{p},{rc},{rd},{lat},"{fp}","{rn}"\n')
 
-    # ── Within-condition variance (when seeds_per_cell > 1) ──
-    seeds_seen = set(parse_variant(r["variant"]).get("seed", "0") for r in results)
-    if len(seeds_seen) > 1:
-        md.append("### Within-Condition Variance (across seeds)")
-        md.append("")
-        md.append("Multiple graph seeds per cell enable variance estimation.")
-        md.append("Each row groups evals by condition (scale×domain×mix×noise), across seeds.")
-        md.append("")
-        md.append("| Condition | Seeds | Task rates | Task variance |")
-        md.append("|-----------|-------|------------|---------------|")
 
-        from collections import OrderedDict
-        conditions = OrderedDict()
-        for r in results:
-            v = parse_variant(r["variant"])
-            cond = f"{v['scale']}-{v['domain']}-{v['mix']}-{v['noise']}"
-            seed = v.get("seed", "0")
-            conditions.setdefault(cond, {}).setdefault(seed, []).append(r)
+def _build_variance_section(md, results):
+    """Append within-condition variance section when multiple seeds exist."""
+    seeds_seen = {parse_variant(r["variant"]).get("seed", "0") for r in results}
+    if len(seeds_seen) <= 1:
+        return
 
-        for cond, seed_map in sorted(conditions.items()):
-            if len(seed_map) < 2:
-                continue
-            seed_rates = []
-            for seed_key, seed_results in sorted(seed_map.items()):
-                n = len(seed_results)
-                ok = sum(1 for r in seed_results if r.get("task") is True)
-                seed_rates.append(ok / n if n > 0 else 0.0)
-            import math
-            mean = sum(seed_rates) / len(seed_rates)
-            var = sum((r - mean) ** 2 for r in seed_rates) / len(seed_rates)
-            rates_str = ", ".join(f"{r:.0%}" for r in seed_rates)
-            md.append(f"| {cond} | {len(seed_map)} | {rates_str} | {var:.4f} |")
+    md.append("### Within-Condition Variance (across seeds)")
+    md.append("")
+    md.append("Multiple graph seeds per cell enable variance estimation.")
+    md.append("Each row groups evals by condition (scale\u00d7domain\u00d7mix\u00d7noise), across seeds.")
+    md.append("")
+    md.append("| Condition | Seeds | Task rates | Task variance |")
+    md.append("|-----------|-------|------------|---------------|")
 
-        md.append("")
+    conditions = OrderedDict()
+    for r in results:
+        v = parse_variant(r["variant"])
+        cond = f"{v['scale']}-{v['domain']}-{v['mix']}-{v['noise']}"
+        seed = v.get("seed", "0")
+        conditions.setdefault(cond, {}).setdefault(seed, []).append(r)
 
-    # ── Token efficiency (from kernel quality metrics) ──
+    for cond, seed_map in sorted(conditions.items()):
+        if len(seed_map) < 2:
+            continue
+        seed_rates = []
+        for seed_key, seed_results in sorted(seed_map.items()):
+            n = len(seed_results)
+            ok = sum(1 for r in seed_results if r.get("task") is True)
+            seed_rates.append(ok / n if n > 0 else 0.0)
+        mean = sum(seed_rates) / len(seed_rates)
+        var = sum((r - mean) ** 2 for r in seed_rates) / len(seed_rates)
+        rates_str = ", ".join(f"{r:.0%}" for r in seed_rates)
+        md.append(f"| {cond} | {len(seed_map)} | {rates_str} | {var:.4f} |")
+
+    md.append("")
+
+
+def _build_token_efficiency(md, results, by_mix):
+    """Append token efficiency section if quality metrics are available."""
     has_quality = any(r.get("compression_ratio", 0) > 0 for r in results)
-    if has_quality:
-        md.append("## Token Efficiency (kernel-reported)")
-        md.append("")
-        md.append("Compression ratio = raw_equivalent_tokens / rendered_tokens. >1.0 means the structured graph uses fewer tokens than a flat text dump of the same data.")
-        md.append("")
-        md.append("| Mix | Avg Rendered | Avg Raw | Avg Compression | Causal Density | Detail Coverage |")
-        md.append("|-----|-------------|---------|-----------------|----------------|-----------------|")
+    if not has_quality:
+        return
 
-        for mix in ["explanatory", "structural", "mixed"]:
-            cell = by_mix.get(mix, [])
-            if not cell:
-                continue
-            rendered = [r["rendered_tokens"] for r in cell if r.get("rendered_tokens", 0) > 0]
-            raw = [r["raw_equivalent_tokens"] for r in cell if r.get("raw_equivalent_tokens", 0) > 0]
-            comp = [r["compression_ratio"] for r in cell if r.get("compression_ratio", 0) > 0]
-            cd = [r["causal_density"] for r in cell if "causal_density" in r]
-            dc = [r["detail_coverage"] for r in cell if "detail_coverage" in r]
-            avg_r = f"{sum(rendered)/len(rendered):.0f}" if rendered else "n/a"
-            avg_raw = f"{sum(raw)/len(raw):.0f}" if raw else "n/a"
-            avg_c = f"{sum(comp)/len(comp):.2f}x" if comp else "n/a"
-            avg_cd = f"{sum(cd)/len(cd):.0%}" if cd else "n/a"
-            avg_dc = f"{sum(dc)/len(dc):.0%}" if dc else "n/a"
-            md.append(f"| **{mix}** | {avg_r} | {avg_raw} | **{avg_c}** | {avg_cd} | {avg_dc} |")
+    md.append("## Token Efficiency (kernel-reported)")
+    md.append("")
+    md.append("Compression ratio = raw_equivalent_tokens / rendered_tokens. >1.0 means the structured graph uses fewer tokens than a flat text dump of the same data.")
+    md.append("")
+    md.append("| Mix | Avg Rendered | Avg Raw | Avg Compression | Causal Density | Detail Coverage |")
+    md.append("|-----|-------------|---------|-----------------|----------------|-----------------|")
 
-        md.append("")
+    for mix in ["explanatory", "structural", "mixed"]:
+        cell = by_mix.get(mix, [])
+        if not cell:
+            continue
+        rendered = [r["rendered_tokens"] for r in cell if r.get("rendered_tokens", 0) > 0]
+        raw = [r["raw_equivalent_tokens"] for r in cell if r.get("raw_equivalent_tokens", 0) > 0]
+        comp = [r["compression_ratio"] for r in cell if r.get("compression_ratio", 0) > 0]
+        cd = [r["causal_density"] for r in cell if "causal_density" in r]
+        dc = [r["detail_coverage"] for r in cell if "detail_coverage" in r]
+        avg_r = f"{sum(rendered)/len(rendered):.0f}" if rendered else "n/a"
+        avg_raw = f"{sum(raw)/len(raw):.0f}" if raw else "n/a"
+        avg_c = f"{sum(comp)/len(comp):.2f}x" if comp else "n/a"
+        avg_cd = f"{sum(cd)/len(cd):.0%}" if cd else "n/a"
+        avg_dc = f"{sum(dc)/len(dc):.0%}" if dc else "n/a"
+        md.append(f"| **{mix}** | {avg_r} | {avg_raw} | **{avg_c}** | {avg_cd} | {avg_dc} |")
 
+    md.append("")
+
+
+def _build_kernel_metrics_and_export(md, run_dir):
+    """Append kernel metrics figure references and data export section."""
     md.append("## Kernel Metrics")
     md.append(fig_ref(run_dir, "11_kernel_token_efficiency.png", "Kernel Token Efficiency"))
     md.append(fig_ref(run_dir, "12_kernel_causal_signal.png", "Causal Signal in Rendered Context"))
@@ -738,12 +773,14 @@ def generate_report(run_dir, results):
     md.append(fig_ref(run_dir, "13_response_parsing.png", "Response Parsing Reliability"))
     md.append(fig_ref(run_dir, "06_judge_bias.png", "Judge Bias"))
     md.append("")
-    md.append(f"## Data Export")
-    md.append(f"")
-    md.append(f"CSV with all 720 evaluations: `results.csv`")
-    md.append(f"")
+    md.append("## Data Export")
+    md.append("")
+    md.append("CSV with all 720 evaluations: `results.csv`")
+    md.append("")
 
-    # ── Every evaluation line-by-line ──
+
+def _build_eval_listing(md, results):
+    """Append the line-by-line evaluation listing."""
     md.append("## All Evaluations (line by line)")
     md.append("")
     md.append("| # | Agent | Judge | Prompt | Variant | Task | Restart | Reason | Rc | Rd | Latency | Failure Point | Restart Node |")
@@ -751,9 +788,9 @@ def generate_report(run_dir, results):
 
     for i, r in enumerate(results, 1):
         agent, judge = parse_model(r["model"])
-        t = "OK" if r.get("task") else ("FAIL" if r.get("task") is False else "ERR")
-        re = "OK" if r.get("restart") else ("FAIL" if r.get("restart") is False else "ERR")
-        p = "OK" if r.get("reason") else ("FAIL" if r.get("reason") is False else "ERR")
+        t = tristate_label(r.get("task"))
+        re = tristate_label(r.get("restart"))
+        p = tristate_label(r.get("reason"))
         lat = f"{r.get('latency_ms', 0):.0f}ms"
 
         # Parse agent response for failure_point and restart_node
@@ -768,9 +805,37 @@ def generate_report(run_dir, results):
             fp = "(parse error)"
             rn = "(parse error)"
 
-        rc = "OK" if r.get("reason_correct") else ("FAIL" if r.get("reason_correct") is False else "-")
-        rd = "LEAK" if r.get("reason_distractor") else ("-" if r.get("reason_distractor") is False else "-")
+        rc = tristate_label(r.get("reason_correct"), "OK", "FAIL", "-")
+        rd = "LEAK" if r.get("reason_distractor") is True else "-"
         md.append(f"| {i} | {agent} | {judge} | {r['prompt']} | {r['variant']} | {t} | {re} | {p} | {rc} | {rd} | {lat} | {fp} | {rn} |")
+
+
+def generate_report(run_dir, results):
+    md = []
+    md.append("# E2E Evaluation Matrix Report")
+    md.append("")
+    md.append(f"**Run**: `{run_dir.name}`")
+    md.append(f"**Date**: {run_dir.name[:10]}")
+    md.append(f"**Total evaluations**: {len(results)}")
+    md.append(fig_ref(run_dir, "00_hypothesis_summary.png", "Hypothesis Validation Summary"))
+    md.append("")
+
+    by_cell, by_agent, by_judge, by_prompt, by_mix, by_scale, by_domain, by_noise = _parse_results(results)
+
+    _build_overview(md, results)
+    _build_summary_tables(md, run_dir, by_cell, by_agent, by_judge, by_prompt)
+    _build_dimension_tables(md, run_dir, by_mix, by_scale, by_domain, by_noise)
+    _build_heatmaps(md, run_dir, results, by_agent, by_noise)
+    _build_controlled_comparisons(md, results, by_agent, by_judge)
+    _build_convergence_table(md, run_dir, by_cell)
+    _build_latency_and_cost(md, run_dir, results, by_agent, by_judge)
+    _build_restart_diagnostics(md, by_noise)
+    _build_statistical_summary(md, run_dir, by_agent, by_mix)
+    _export_csv(run_dir, results)
+    _build_variance_section(md, results)
+    _build_token_efficiency(md, results, by_mix)
+    _build_kernel_metrics_and_export(md, run_dir)
+    _build_eval_listing(md, results)
 
     md.append("")
     md.append(f"---\n\nGenerated from `{run_dir.name}` by `scripts/ci/extract-e2e-report.py`")

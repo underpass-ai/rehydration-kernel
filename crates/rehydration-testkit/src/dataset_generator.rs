@@ -182,11 +182,25 @@ pub fn generate_seed(config: GraphSeedConfig) -> GeneratedSeed {
 
     let mut previous_id = root.node_id.clone();
 
-    // Build the causal chain.
-    // The seed rotates the kind order so different seeds produce different
-    // node-type sequences (e.g. seed=0: decision→task→artifact→evidence,
-    // seed=1: task→artifact→evidence→decision). This creates structurally
-    // distinct graphs from the same config.
+    build_causal_chain(&config, &vocab, &mut nodes, &mut relations, &mut previous_id);
+    build_noise_branches(&config, &vocab, &root, &mut nodes, &mut relations);
+
+    GeneratedSeed {
+        root,
+        nodes,
+        relations,
+        config,
+    }
+}
+
+/// Build the causal chain: rotated node-kind sequences per seed.
+fn build_causal_chain(
+    config: &GraphSeedConfig,
+    vocab: &DomainVocabulary,
+    nodes: &mut Vec<GeneratedNode>,
+    relations: &mut Vec<GeneratedRelation>,
+    previous_id: &mut String,
+) {
     let seed_offset = config.seed;
     for depth in 0..config.chain_length {
         let kind_index = (depth + seed_offset) % vocab.chain_kinds.len();
@@ -195,19 +209,7 @@ pub fn generate_seed(config: GraphSeedConfig) -> GeneratedSeed {
         let has_detail = config.detail_density >= 1.0
             || (depth as f64) < (config.chain_length as f64 * config.detail_density);
 
-        let semantic_class = match config.relation_mix {
-            RelationMix::Structural => RelationSemanticClass::Structural,
-            RelationMix::Explanatory => {
-                vocab.chain_semantic_classes[kind_index % vocab.chain_semantic_classes.len()]
-            }
-            RelationMix::Mixed => {
-                if depth % 2 == 0 {
-                    vocab.chain_semantic_classes[kind_index % vocab.chain_semantic_classes.len()]
-                } else {
-                    RelationSemanticClass::Structural
-                }
-            }
-        };
+        let semantic_class = resolve_chain_semantic_class(config, vocab, kind_index, depth);
 
         let relation = GeneratedRelation {
             source_node_id: previous_id.clone(),
@@ -255,10 +257,39 @@ pub fn generate_seed(config: GraphSeedConfig) -> GeneratedSeed {
 
         relations.push(relation);
         nodes.push(node);
-        previous_id = node_id;
+        *previous_id = node_id;
     }
+}
 
-    // Add noise branches per decision node
+fn resolve_chain_semantic_class(
+    config: &GraphSeedConfig,
+    vocab: &DomainVocabulary,
+    kind_index: usize,
+    depth: usize,
+) -> RelationSemanticClass {
+    match config.relation_mix {
+        RelationMix::Structural => RelationSemanticClass::Structural,
+        RelationMix::Explanatory => {
+            vocab.chain_semantic_classes[kind_index % vocab.chain_semantic_classes.len()]
+        }
+        RelationMix::Mixed => {
+            if depth.is_multiple_of(2) {
+                vocab.chain_semantic_classes[kind_index % vocab.chain_semantic_classes.len()]
+            } else {
+                RelationSemanticClass::Structural
+            }
+        }
+    }
+}
+
+/// Add noise branches per decision node.
+fn build_noise_branches(
+    config: &GraphSeedConfig,
+    vocab: &DomainVocabulary,
+    root: &GeneratedNode,
+    nodes: &mut Vec<GeneratedNode>,
+    relations: &mut Vec<GeneratedRelation>,
+) {
     for branch in 0..config.noise_branches {
         for depth in 0..config.chain_length {
             let noise_id = format!("{}:noise-{}-{}", config.id_prefix, depth, branch);
@@ -276,93 +307,10 @@ pub fn generate_seed(config: GraphSeedConfig) -> GeneratedSeed {
                 noise_kind,
                 noise_title,
                 noise_summary,
-            ) = match config.noise_mode {
-                NoiseMode::Structural => (
-                    RelationSemanticClass::Structural,
-                    "DISTRACTOR".to_string(),
-                    None,
-                    None,
-                    "distractor".to_string(),
-                    format!("noise {branch} at {depth}"),
-                    format!("distractor branch {branch} depth {depth}"),
-                ),
-                NoiseMode::CompetingCausal => {
-                    let kind_index = (depth + branch + 1) % vocab.chain_kinds.len();
-                    (
-                        vocab.chain_semantic_classes
-                            [kind_index % vocab.chain_semantic_classes.len()],
-                        vocab.chain_relation_types[kind_index % vocab.chain_relation_types.len()]
-                            .to_string(),
-                        Some(format!(
-                            "alternative {} path at depth {depth} (competing branch {branch})",
-                            vocab.chain_rationale
-                        )),
-                        Some(
-                            "this path was considered but is not the primary causal chain"
-                                .to_string(),
-                        ),
-                        vocab.chain_kinds[kind_index].to_string(),
-                        format!(
-                            "alternative {} {depth}-{branch}",
-                            vocab.chain_kinds[kind_index]
-                        ),
-                        format!(
-                            "competing {} branch {branch} at depth {depth}",
-                            vocab.chain_summary
-                        ),
-                    )
-                }
-                NoiseMode::ConflictingMainPath => {
-                    let kind_index = (depth + branch + 1) % vocab.chain_kinds.len();
-                    (
-                        RelationSemanticClass::Causal,
-                        vocab.chain_relation_types[kind_index % vocab.chain_relation_types.len()]
-                            .to_string(),
-                        Some(format!(
-                            "no {} was needed at depth {depth} — system was stable, intervention unnecessary (contradicts main chain)",
-                            vocab.chain_rationale
-                        )),
-                        Some(format!(
-                            "analysis shows the {} at depth {depth} was a false alarm",
-                            vocab.chain_summary
-                        )),
-                        vocab.chain_kinds[kind_index].to_string(),
-                        format!(
-                            "conflicting {} {depth}-{branch}",
-                            vocab.chain_kinds[kind_index]
-                        ),
-                        format!(
-                            "contradicting {} branch {branch} at depth {depth}",
-                            vocab.chain_summary
-                        ),
-                    )
-                }
-                NoiseMode::CompetingRestartPoint => {
-                    let kind_index = (depth + branch + 1) % vocab.chain_kinds.len();
-                    (
-                        RelationSemanticClass::Motivational,
-                        "RECOVERY_CANDIDATE".to_string(),
-                        Some(format!(
-                            "restart from this node at depth {depth} — this is a plausible recovery point with {} justification",
-                            vocab.chain_rationale
-                        )),
-                        Some(format!(
-                            "branch {branch} offers an alternative restart at depth {depth} with partial resolution"
-                        )),
-                        vocab.chain_kinds[kind_index].to_string(),
-                        format!("recovery candidate {depth}-{branch}",),
-                        format!(
-                            "alternative restart {} branch {branch} at depth {depth}",
-                            vocab.chain_summary
-                        ),
-                    )
-                }
-            };
+            ) = build_noise_fields(config, vocab, depth, branch);
 
             // When the variant is Structural, ALL branches must be free of
             // causal metadata — rationale, motivation, method, decision_id.
-            // Without this override, CompetingCausal noise leaks rationale
-            // into Structural variants, contaminating the benchmark signal.
             let (noise_rationale, noise_motivation) =
                 if config.relation_mix == RelationMix::Structural {
                     (None, None)
@@ -394,12 +342,102 @@ pub fn generate_seed(config: GraphSeedConfig) -> GeneratedSeed {
             });
         }
     }
+}
 
-    GeneratedSeed {
-        root,
-        nodes,
-        relations,
-        config,
+#[allow(clippy::type_complexity)]
+fn build_noise_fields(
+    config: &GraphSeedConfig,
+    vocab: &DomainVocabulary,
+    depth: usize,
+    branch: usize,
+) -> (
+    RelationSemanticClass,
+    String,
+    Option<String>,
+    Option<String>,
+    String,
+    String,
+    String,
+) {
+    match config.noise_mode {
+        NoiseMode::Structural => (
+            RelationSemanticClass::Structural,
+            "DISTRACTOR".to_string(),
+            None,
+            None,
+            "distractor".to_string(),
+            format!("noise {branch} at {depth}"),
+            format!("distractor branch {branch} depth {depth}"),
+        ),
+        NoiseMode::CompetingCausal => {
+            let kind_index = (depth + branch + 1) % vocab.chain_kinds.len();
+            (
+                vocab.chain_semantic_classes[kind_index % vocab.chain_semantic_classes.len()],
+                vocab.chain_relation_types[kind_index % vocab.chain_relation_types.len()]
+                    .to_string(),
+                Some(format!(
+                    "alternative {} path at depth {depth} (competing branch {branch})",
+                    vocab.chain_rationale
+                )),
+                Some(
+                    "this path was considered but is not the primary causal chain".to_string(),
+                ),
+                vocab.chain_kinds[kind_index].to_string(),
+                format!(
+                    "alternative {} {depth}-{branch}",
+                    vocab.chain_kinds[kind_index]
+                ),
+                format!(
+                    "competing {} branch {branch} at depth {depth}",
+                    vocab.chain_summary
+                ),
+            )
+        }
+        NoiseMode::ConflictingMainPath => {
+            let kind_index = (depth + branch + 1) % vocab.chain_kinds.len();
+            (
+                RelationSemanticClass::Causal,
+                vocab.chain_relation_types[kind_index % vocab.chain_relation_types.len()]
+                    .to_string(),
+                Some(format!(
+                    "no {} was needed at depth {depth} — system was stable, intervention unnecessary (contradicts main chain)",
+                    vocab.chain_rationale
+                )),
+                Some(format!(
+                    "analysis shows the {} at depth {depth} was a false alarm",
+                    vocab.chain_summary
+                )),
+                vocab.chain_kinds[kind_index].to_string(),
+                format!(
+                    "conflicting {} {depth}-{branch}",
+                    vocab.chain_kinds[kind_index]
+                ),
+                format!(
+                    "contradicting {} branch {branch} at depth {depth}",
+                    vocab.chain_summary
+                ),
+            )
+        }
+        NoiseMode::CompetingRestartPoint => {
+            let kind_index = (depth + branch + 1) % vocab.chain_kinds.len();
+            (
+                RelationSemanticClass::Motivational,
+                "RECOVERY_CANDIDATE".to_string(),
+                Some(format!(
+                    "restart from this node at depth {depth} — this is a plausible recovery point with {} justification",
+                    vocab.chain_rationale
+                )),
+                Some(format!(
+                    "branch {branch} offers an alternative restart at depth {depth} with partial resolution"
+                )),
+                vocab.chain_kinds[kind_index].to_string(),
+                format!("recovery candidate {depth}-{branch}",),
+                format!(
+                    "alternative restart {} branch {branch} at depth {depth}",
+                    vocab.chain_summary
+                ),
+            )
+        }
     }
 }
 

@@ -76,18 +76,8 @@ fn classify_default(
     }
 
     // Explanatory relationships (causal, motivational, evidential, constraint)
-    let mut relationships: Vec<_> = bundle.relationships().iter().collect();
-    relationships.sort_by_key(|r| r.explanation().semantic_class().salience_rank());
-
-    for rel in &relationships {
-        let class = rel.explanation().semantic_class();
-        if is_explanatory(class) {
-            sections.push(TieredSection {
-                tier: ResolutionTier::L1CausalSpine,
-                content: render_relationship(rel),
-            });
-        }
-    }
+    let relationships = salience_sorted_relationships(bundle);
+    append_l1_explanatory(&mut sections, &relationships);
 
     if max_tier < ResolutionTier::L2EvidencePack {
         return sections;
@@ -105,6 +95,28 @@ fn classify_default(
     );
 
     sections
+}
+
+fn salience_sorted_relationships(
+    bundle: &RehydrationBundle,
+) -> Vec<&rehydration_domain::BundleRelationship> {
+    let mut relationships: Vec<_> = bundle.relationships().iter().collect();
+    relationships.sort_by_key(|r| r.explanation().semantic_class().salience_rank());
+    relationships
+}
+
+fn append_l1_explanatory(
+    sections: &mut Vec<TieredSection>,
+    relationships: &[&rehydration_domain::BundleRelationship],
+) {
+    for rel in relationships {
+        if is_explanatory(rel.explanation().semantic_class()) {
+            sections.push(TieredSection {
+                tier: ResolutionTier::L1CausalSpine,
+                content: render_relationship(rel),
+            });
+        }
+    }
 }
 
 /// Appends L2 evidence pack sections: non-explanatory relationships,
@@ -209,17 +221,8 @@ fn classify_resume_focused(
     }
 
     // ALL explanatory relationships (sorted by salience)
-    let mut relationships: Vec<_> = bundle.relationships().iter().collect();
-    relationships.sort_by_key(|r| r.explanation().semantic_class().salience_rank());
-
-    for rel in &relationships {
-        if is_explanatory(rel.explanation().semantic_class()) {
-            sections.push(TieredSection {
-                tier: ResolutionTier::L1CausalSpine,
-                content: render_relationship(rel),
-            });
-        }
-    }
+    let relationships = salience_sorted_relationships(bundle);
+    append_l1_explanatory(&mut sections, &relationships);
 
     // NO L2. Distractors, structural relationships, and details are dropped entirely.
     // This trades completeness for causal chain preservation under token pressure.

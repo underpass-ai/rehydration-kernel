@@ -23,12 +23,14 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${ROOT_DIR}"
 
-echo "══════════════════════════════════════════════════════════════"
+SEP="══════════════════════════════════════════════════════════════"
+
+echo "${SEP}"
 echo "  P0 GROUND TRUTH DIAGNOSTIC"
 echo "  micro scale × clean noise × default prompt"
 echo "  3 agents × 2 judges (minus self) = 4 agent-judge pairs"
 echo "  6 variants × 4 pairs = 24 evals (~5 min)"
-echo "══════════════════════════════════════════════════════════════"
+echo "${SEP}"
 echo
 
 export FILTER_SCALES="${FILTER_SCALES:-micro}"
@@ -47,9 +49,9 @@ if [[ -z "${LATEST_RUN}" ]]; then
 fi
 
 echo
-echo "══════════════════════════════════════════════════════════════"
+echo "${SEP}"
 echo "  DIAGNOSTIC ANALYSIS"
-echo "══════════════════════════════════════════════════════════════"
+echo "${SEP}"
 echo
 echo "Run: ${LATEST_RUN}"
 echo
