@@ -391,11 +391,7 @@ use rehydration_domain::{ContextEventChange, ContextEventStore, ContextUpdatedEv
 use std::sync::Arc;
 use std::time::SystemTime;
 
-fn sample_cmd_event(
-    root: &str,
-    role: &str,
-    revision: u64,
-) -> ContextUpdatedEvent {
+fn sample_cmd_event(root: &str, role: &str, revision: u64) -> ContextUpdatedEvent {
     ContextUpdatedEvent {
         root_node_id: root.to_string(),
         role: role.to_string(),
@@ -416,7 +412,9 @@ fn sample_cmd_event(
 #[tokio::test]
 async fn valkey_event_store_append_and_read() -> Result<(), Box<dyn Error + Send + Sync>> {
     let container = start_valkey_container().await?;
-    let port = container.get_host_port_ipv4(VALKEY_INTERNAL_PORT.tcp()).await?;
+    let port = container
+        .get_host_port_ipv4(VALKEY_INTERNAL_PORT.tcp())
+        .await?;
     let uri = format!("redis://127.0.0.1:{port}");
 
     let store = ValkeyContextEventStore::new(&uri)?;
@@ -436,7 +434,9 @@ async fn valkey_event_store_append_and_read() -> Result<(), Box<dyn Error + Send
 #[tokio::test]
 async fn valkey_event_store_rejects_wrong_revision() -> Result<(), Box<dyn Error + Send + Sync>> {
     let container = start_valkey_container().await?;
-    let port = container.get_host_port_ipv4(VALKEY_INTERNAL_PORT.tcp()).await?;
+    let port = container
+        .get_host_port_ipv4(VALKEY_INTERNAL_PORT.tcp())
+        .await?;
     let uri = format!("redis://127.0.0.1:{port}");
 
     let store = ValkeyContextEventStore::new(&uri)?;
@@ -454,9 +454,12 @@ async fn valkey_event_store_rejects_wrong_revision() -> Result<(), Box<dyn Error
 }
 
 #[tokio::test]
-async fn valkey_concurrent_appends_one_wins_one_conflicts() -> Result<(), Box<dyn Error + Send + Sync>> {
+async fn valkey_concurrent_appends_one_wins_one_conflicts()
+-> Result<(), Box<dyn Error + Send + Sync>> {
     let container = start_valkey_container().await?;
-    let port = container.get_host_port_ipv4(VALKEY_INTERNAL_PORT.tcp()).await?;
+    let port = container
+        .get_host_port_ipv4(VALKEY_INTERNAL_PORT.tcp())
+        .await?;
     let uri = format!("redis://127.0.0.1:{port}");
 
     let store_a = Arc::new(ValkeyContextEventStore::new(&uri)?);
@@ -465,12 +468,10 @@ async fn valkey_concurrent_appends_one_wins_one_conflicts() -> Result<(), Box<dy
     let sa = Arc::clone(&store_a);
     let sb = Arc::clone(&store_b);
 
-    let task_a = tokio::spawn(async move {
-        sa.append(sample_cmd_event("race", "dev", 1), 0).await
-    });
-    let task_b = tokio::spawn(async move {
-        sb.append(sample_cmd_event("race", "dev", 1), 0).await
-    });
+    let task_a =
+        tokio::spawn(async move { sa.append(sample_cmd_event("race", "dev", 1), 0).await });
+    let task_b =
+        tokio::spawn(async move { sb.append(sample_cmd_event("race", "dev", 1), 0).await });
 
     let (result_a, result_b) = tokio::join!(task_a, task_b);
     let result_a = result_a.expect("task a should not panic");
@@ -485,7 +486,10 @@ async fn valkey_concurrent_appends_one_wins_one_conflicts() -> Result<(), Box<dy
 
     assert_eq!(winner.expect("winner"), 1);
     assert!(
-        matches!(loser.expect_err("loser"), rehydration_ports::PortError::Conflict(_)),
+        matches!(
+            loser.expect_err("loser"),
+            rehydration_ports::PortError::Conflict(_)
+        ),
         "loser should get Conflict"
     );
 

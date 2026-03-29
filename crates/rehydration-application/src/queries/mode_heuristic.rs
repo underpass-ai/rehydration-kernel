@@ -19,9 +19,7 @@ pub(crate) fn resolve_mode(
     endpoint_hint: EndpointHint,
 ) -> RehydrationMode {
     match explicit_mode {
-        RehydrationMode::Auto => {
-            auto_detect(bundle, token_budget, focus_node_id, endpoint_hint)
-        }
+        RehydrationMode::Auto => auto_detect(bundle, token_budget, focus_node_id, endpoint_hint),
         concrete => concrete,
     }
 }
@@ -111,8 +109,8 @@ mod tests {
     use std::collections::BTreeMap;
 
     use rehydration_domain::{
-        BundleMetadata, BundleNode, BundleRelationship, CaseId, RehydrationBundle,
-        RehydrationMode, RelationExplanation, RelationSemanticClass, Role,
+        BundleMetadata, BundleNode, BundleRelationship, CaseId, RehydrationBundle, RehydrationMode,
+        RelationExplanation, RelationSemanticClass, Role,
     };
 
     use super::resolve_mode;
@@ -120,12 +118,24 @@ mod tests {
 
     fn bundle_with_nodes(count: usize) -> RehydrationBundle {
         let root = BundleNode::new(
-            "case", "case", "Root", "", "ACTIVE", vec![], BTreeMap::new(),
+            "case",
+            "case",
+            "Root",
+            "",
+            "ACTIVE",
+            vec![],
+            BTreeMap::new(),
         );
         let neighbors: Vec<_> = (0..count.saturating_sub(1))
             .map(|i| {
                 BundleNode::new(
-                    format!("n{i}"), "task", format!("N{i}"), "", "ACTIVE", vec![], BTreeMap::new(),
+                    format!("n{i}"),
+                    "task",
+                    format!("N{i}"),
+                    "",
+                    "ACTIVE",
+                    vec![],
+                    BTreeMap::new(),
                 )
             })
             .collect();
@@ -143,12 +153,24 @@ mod tests {
 
     fn bundle_with_causal_relations(node_count: usize, causal_count: usize) -> RehydrationBundle {
         let root = BundleNode::new(
-            "case", "case", "Root", "", "ACTIVE", vec![], BTreeMap::new(),
+            "case",
+            "case",
+            "Root",
+            "",
+            "ACTIVE",
+            vec![],
+            BTreeMap::new(),
         );
         let neighbors: Vec<_> = (0..node_count.saturating_sub(1))
             .map(|i| {
                 BundleNode::new(
-                    format!("n{i}"), "task", format!("N{i}"), "", "ACTIVE", vec![], BTreeMap::new(),
+                    format!("n{i}"),
+                    "task",
+                    format!("N{i}"),
+                    "",
+                    "ACTIVE",
+                    vec![],
+                    BTreeMap::new(),
                 )
             })
             .collect();
@@ -183,42 +205,78 @@ mod tests {
     #[test]
     fn auto_selects_resume_focused_when_budget_tight_and_structural() {
         let bundle = bundle_with_nodes(49);
-        let mode = resolve_mode(RehydrationMode::Auto, &bundle, Some(512), None, EndpointHint::Neighborhood);
+        let mode = resolve_mode(
+            RehydrationMode::Auto,
+            &bundle,
+            Some(512),
+            None,
+            EndpointHint::Neighborhood,
+        );
         assert_eq!(mode, RehydrationMode::ResumeFocused);
     }
 
     #[test]
     fn auto_keeps_reason_preserving_when_budget_tight_but_high_causal_density() {
         let bundle = bundle_with_causal_relations(49, 40);
-        let mode = resolve_mode(RehydrationMode::Auto, &bundle, Some(512), None, EndpointHint::Neighborhood);
+        let mode = resolve_mode(
+            RehydrationMode::Auto,
+            &bundle,
+            Some(512),
+            None,
+            EndpointHint::Neighborhood,
+        );
         assert_eq!(mode, RehydrationMode::ReasonPreserving);
     }
 
     #[test]
     fn auto_selects_resume_focused_when_budget_tight_and_low_causal_density() {
         let bundle = bundle_with_causal_relations(49, 5);
-        let mode = resolve_mode(RehydrationMode::Auto, &bundle, Some(512), None, EndpointHint::Neighborhood);
+        let mode = resolve_mode(
+            RehydrationMode::Auto,
+            &bundle,
+            Some(512),
+            None,
+            EndpointHint::Neighborhood,
+        );
         assert_eq!(mode, RehydrationMode::ResumeFocused);
     }
 
     #[test]
     fn auto_selects_reason_preserving_when_no_budget() {
         let bundle = bundle_with_nodes(49);
-        let mode = resolve_mode(RehydrationMode::Auto, &bundle, None, None, EndpointHint::Neighborhood);
+        let mode = resolve_mode(
+            RehydrationMode::Auto,
+            &bundle,
+            None,
+            None,
+            EndpointHint::Neighborhood,
+        );
         assert_eq!(mode, RehydrationMode::ReasonPreserving);
     }
 
     #[test]
     fn explicit_mode_passes_through() {
         let bundle = bundle_with_nodes(49);
-        let mode = resolve_mode(RehydrationMode::ResumeFocused, &bundle, Some(4096), None, EndpointHint::Neighborhood);
+        let mode = resolve_mode(
+            RehydrationMode::ResumeFocused,
+            &bundle,
+            Some(4096),
+            None,
+            EndpointHint::Neighborhood,
+        );
         assert_eq!(mode, RehydrationMode::ResumeFocused);
     }
 
     #[test]
     fn auto_selects_resume_focused_for_single_node_tight_budget() {
         let bundle = bundle_with_nodes(1);
-        let mode = resolve_mode(RehydrationMode::Auto, &bundle, Some(10), None, EndpointHint::Neighborhood);
+        let mode = resolve_mode(
+            RehydrationMode::Auto,
+            &bundle,
+            Some(10),
+            None,
+            EndpointHint::Neighborhood,
+        );
         assert_eq!(mode, RehydrationMode::ResumeFocused);
     }
 
@@ -229,7 +287,13 @@ mod tests {
         // 21 nodes, 1000 tokens → 47 tok/node. Without focus: >= 30 → ReasonPreserving.
         // With focus: < 60 → falls through to density check → 0 density → ResumeFocused.
         let bundle = bundle_with_nodes(21);
-        let mode = resolve_mode(RehydrationMode::Auto, &bundle, Some(1000), Some("n1"), EndpointHint::Neighborhood);
+        let mode = resolve_mode(
+            RehydrationMode::Auto,
+            &bundle,
+            Some(1000),
+            Some("n1"),
+            EndpointHint::Neighborhood,
+        );
         assert_eq!(mode, RehydrationMode::ResumeFocused);
     }
 
@@ -239,14 +303,26 @@ mod tests {
         // But 0 causal density → structural override → ResumeFocused.
         // Need causal relations to stay ReasonPreserving.
         let bundle = bundle_with_causal_relations(10, 5); // 55% causal
-        let mode = resolve_mode(RehydrationMode::Auto, &bundle, Some(1000), Some("n1"), EndpointHint::Neighborhood);
+        let mode = resolve_mode(
+            RehydrationMode::Auto,
+            &bundle,
+            Some(1000),
+            Some("n1"),
+            EndpointHint::Neighborhood,
+        );
         assert_eq!(mode, RehydrationMode::ReasonPreserving);
     }
 
     #[test]
     fn focus_does_not_affect_no_budget_case() {
         let bundle = bundle_with_nodes(49);
-        let mode = resolve_mode(RehydrationMode::Auto, &bundle, None, Some("n1"), EndpointHint::Neighborhood);
+        let mode = resolve_mode(
+            RehydrationMode::Auto,
+            &bundle,
+            None,
+            Some("n1"),
+            EndpointHint::Neighborhood,
+        );
         assert_eq!(mode, RehydrationMode::ReasonPreserving);
     }
 
@@ -257,7 +333,13 @@ mod tests {
         // 49 nodes, 1000 tokens → 20 tok/node. Normal threshold (30): tight → density check.
         // Session threshold (15): 20 >= 15 → generous. With causal relations → ReasonPreserving.
         let bundle = bundle_with_causal_relations(49, 30); // 62% causal
-        let mode = resolve_mode(RehydrationMode::Auto, &bundle, Some(1000), None, EndpointHint::SessionSnapshot);
+        let mode = resolve_mode(
+            RehydrationMode::Auto,
+            &bundle,
+            Some(1000),
+            None,
+            EndpointHint::SessionSnapshot,
+        );
         assert_eq!(mode, RehydrationMode::ReasonPreserving);
     }
 
@@ -266,7 +348,13 @@ mod tests {
         // 49 nodes, 200 tokens → 4 tok/node. Even session threshold (15): 4 < 15 → tight.
         // Low density → ResumeFocused.
         let bundle = bundle_with_nodes(49);
-        let mode = resolve_mode(RehydrationMode::Auto, &bundle, Some(200), None, EndpointHint::SessionSnapshot);
+        let mode = resolve_mode(
+            RehydrationMode::Auto,
+            &bundle,
+            Some(200),
+            None,
+            EndpointHint::SessionSnapshot,
+        );
         assert_eq!(mode, RehydrationMode::ResumeFocused);
     }
 
@@ -275,7 +363,13 @@ mod tests {
         // 21 nodes, 1000 tokens → 47 tok/node. FocusedPath uses threshold 60.
         // 47 < 60 → tight → 0 density → ResumeFocused.
         let bundle = bundle_with_nodes(21);
-        let mode = resolve_mode(RehydrationMode::Auto, &bundle, Some(1000), None, EndpointHint::FocusedPath);
+        let mode = resolve_mode(
+            RehydrationMode::Auto,
+            &bundle,
+            Some(1000),
+            None,
+            EndpointHint::FocusedPath,
+        );
         assert_eq!(mode, RehydrationMode::ResumeFocused);
     }
 
@@ -286,7 +380,13 @@ mod tests {
         // 21 nodes, 4096 tokens → 195 tok/node. Very generous.
         // But 0 relations → density 0 < 0.2 → structural override → ResumeFocused.
         let bundle = bundle_with_nodes(21);
-        let mode = resolve_mode(RehydrationMode::Auto, &bundle, Some(4096), None, EndpointHint::Neighborhood);
+        let mode = resolve_mode(
+            RehydrationMode::Auto,
+            &bundle,
+            Some(4096),
+            None,
+            EndpointHint::Neighborhood,
+        );
         assert_eq!(mode, RehydrationMode::ResumeFocused);
     }
 
@@ -294,14 +394,26 @@ mod tests {
     fn generous_budget_causal_graph_stays_reason_preserving() {
         // 21 nodes, 4096 tokens → 195 tok/node. 50% causal density → above 0.2 → ReasonPreserving.
         let bundle = bundle_with_causal_relations(21, 10); // 50% causal
-        let mode = resolve_mode(RehydrationMode::Auto, &bundle, Some(4096), None, EndpointHint::Neighborhood);
+        let mode = resolve_mode(
+            RehydrationMode::Auto,
+            &bundle,
+            Some(4096),
+            None,
+            EndpointHint::Neighborhood,
+        );
         assert_eq!(mode, RehydrationMode::ReasonPreserving);
     }
 
     #[test]
     fn no_budget_stays_reason_preserving_even_when_all_structural() {
         let bundle = bundle_with_nodes(49);
-        let mode = resolve_mode(RehydrationMode::Auto, &bundle, None, None, EndpointHint::Neighborhood);
+        let mode = resolve_mode(
+            RehydrationMode::Auto,
+            &bundle,
+            None,
+            None,
+            EndpointHint::Neighborhood,
+        );
         assert_eq!(mode, RehydrationMode::ReasonPreserving);
     }
 }

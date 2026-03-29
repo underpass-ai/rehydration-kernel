@@ -182,7 +182,13 @@ pub fn generate_seed(config: GraphSeedConfig) -> GeneratedSeed {
 
     let mut previous_id = root.node_id.clone();
 
-    build_causal_chain(&config, &vocab, &mut nodes, &mut relations, &mut previous_id);
+    build_causal_chain(
+        &config,
+        &vocab,
+        &mut nodes,
+        &mut relations,
+        &mut previous_id,
+    );
     build_noise_branches(&config, &vocab, &root, &mut nodes, &mut relations);
 
     GeneratedSeed {
@@ -379,9 +385,7 @@ fn build_noise_fields(
                     "alternative {} path at depth {depth} (competing branch {branch})",
                     vocab.chain_rationale
                 )),
-                Some(
-                    "this path was considered but is not the primary causal chain".to_string(),
-                ),
+                Some("this path was considered but is not the primary causal chain".to_string()),
                 vocab.chain_kinds[kind_index].to_string(),
                 format!(
                     "alternative {} {depth}-{branch}",

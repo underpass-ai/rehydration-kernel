@@ -16,7 +16,7 @@ pub use projection::{
     RelatedNodeExplanationData, RelatedNodeReference, RoutingProjectionWriter,
 };
 pub use queries::{
-    BundleAssembler, ContextRenderOptions, EndpointHint, DEFAULT_NATIVE_GRAPH_TRAVERSAL_DEPTH,
+    BundleAssembler, ContextRenderOptions, DEFAULT_NATIVE_GRAPH_TRAVERSAL_DEPTH, EndpointHint,
     GetContextPathQuery, GetContextPathResult, GetContextPathUseCase, GetContextQuery,
     GetContextResult, GetContextUseCase, GetGraphRelationshipsQuery, GetGraphRelationshipsResult,
     GetGraphRelationshipsUseCase, GetNodeDetailQuery, GetNodeDetailResult, GetNodeDetailUseCase,

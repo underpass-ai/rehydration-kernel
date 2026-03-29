@@ -1,6 +1,4 @@
-use rehydration_application::{
-    QueryTimingBreakdown, RehydrateSessionResult, RenderedContext,
-};
+use rehydration_application::{QueryTimingBreakdown, RehydrateSessionResult, RenderedContext};
 use rehydration_domain::RehydrationBundle;
 use rehydration_proto::v1beta1::{
     GraphRoleBundle, QueryTimingBreakdown as ProtoTimingBreakdown, RehydrateSessionResponse,
@@ -24,8 +22,16 @@ pub(crate) fn proto_rehydrate_session_response_v1beta1(
             bundles: result
                 .bundles
                 .iter()
-                .zip(result.rendered_contexts.iter().map(Some).chain(std::iter::repeat(None)))
-                .map(|(bundle, rendered)| proto_graph_role_bundle_with_rendered_v1beta1(bundle, rendered))
+                .zip(
+                    result
+                        .rendered_contexts
+                        .iter()
+                        .map(Some)
+                        .chain(std::iter::repeat(None)),
+                )
+                .map(|(bundle, rendered)| {
+                    proto_graph_role_bundle_with_rendered_v1beta1(bundle, rendered)
+                })
                 .collect(),
             stats: Some(proto_session_stats_v1beta1(result)),
             version: Some(proto_bundle_version_v1beta1(&result.version)),

@@ -11,8 +11,7 @@ use rehydration_proto::v1beta1::{
 use rehydration_testkit::{
     Domain, EvaluationGroundTruth, GeneratedSeed, GraphSeedConfig, LlmEvaluationResult,
     LlmEvaluatorConfig, LlmProvider, NoiseMode, RelationMix, calibrate_judge, evaluate_with_llm,
-    generate_seed,
-    seed_publisher::seed_to_projection_events,
+    generate_seed, seed_publisher::seed_to_projection_events,
 };
 use rehydration_tests_shared::fixtures::TestFixture;
 use rehydration_tests_shared::ports::{ClosureSeed, SeedContext};
@@ -471,10 +470,7 @@ fn print_mix_comparison(
                 .filter(|r| r.llm_task_success == Some(true))
                 .count();
             let exp_n = exp.iter().filter(|r| r.llm_task_success.is_some()).count();
-            let str_n = str_
-                .iter()
-                .filter(|r| r.llm_task_success.is_some())
-                .count();
+            let str_n = str_.iter().filter(|r| r.llm_task_success.is_some()).count();
 
             if exp_n > 0 || str_n > 0 {
                 run.log(&format!(

@@ -382,16 +382,13 @@ where
                     .build()
                     .add(1, role_attrs);
             }
-            meter
-                .u64_counter("rehydration.mode.selected")
-                .build()
-                .add(
-                    1,
-                    &[
-                        KeyValue::new("rpc", "RehydrateSession"),
-                        KeyValue::new("mode", rendered.resolved_mode.as_str().to_string()),
-                    ],
-                );
+            meter.u64_counter("rehydration.mode.selected").build().add(
+                1,
+                &[
+                    KeyValue::new("rpc", "RehydrateSession"),
+                    KeyValue::new("mode", rendered.resolved_mode.as_str().to_string()),
+                ],
+            );
             self.quality_observer.observe(
                 &rendered.quality,
                 &QualityObservationContext {

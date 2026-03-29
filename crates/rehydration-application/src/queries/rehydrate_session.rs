@@ -8,10 +8,10 @@ use rehydration_domain::{
 
 use crate::ApplicationError;
 use crate::queries::{
-    NodeCentricProjectionReader, QueryApplicationService, QueryTimingBreakdown,
+    ContextRenderOptions, NodeCentricProjectionReader, QueryApplicationService,
+    QueryTimingBreakdown,
     context_render_options::EndpointHint,
-    render_graph_bundle::{render_graph_bundle_with_options, RenderedContext},
-    ContextRenderOptions,
+    render_graph_bundle::{RenderedContext, render_graph_bundle_with_options},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]

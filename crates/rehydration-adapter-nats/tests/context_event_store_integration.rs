@@ -210,10 +210,12 @@ async fn concurrent_appends_one_wins_one_conflicts() {
     let sb = Arc::clone(&store_b);
 
     let task_a = tokio::spawn(async move {
-        sa.append(sample_event("race-node", "dev", 1, None), 0).await
+        sa.append(sample_event("race-node", "dev", 1, None), 0)
+            .await
     });
     let task_b = tokio::spawn(async move {
-        sb.append(sample_event("race-node", "dev", 1, None), 0).await
+        sb.append(sample_event("race-node", "dev", 1, None), 0)
+            .await
     });
 
     let (result_a, result_b) = tokio::join!(task_a, task_b);
@@ -230,7 +232,10 @@ async fn concurrent_appends_one_wins_one_conflicts() {
 
     assert_eq!(winner.expect("winner should be Ok"), 1);
     assert!(
-        matches!(loser.expect_err("loser should be Err"), PortError::Conflict(_)),
+        matches!(
+            loser.expect_err("loser should be Err"),
+            PortError::Conflict(_)
+        ),
         "loser should get Conflict"
     );
 

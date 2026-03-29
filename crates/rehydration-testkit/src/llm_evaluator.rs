@@ -266,8 +266,7 @@ async fn call_openai(
             .map(|v| v == "false" || v == "0")
             .unwrap_or(false);
         if disable_thinking {
-            body["chat_template_kwargs"] =
-                serde_json::json!({"enable_thinking": false});
+            body["chat_template_kwargs"] = serde_json::json!({"enable_thinking": false});
         } else {
             // Limit reasoning tokens so the model has room for the JSON answer.
             // Requires --reasoning-config on the server (k8s/vllm-qwen3-8b.yaml).
@@ -314,9 +313,7 @@ async fn call_openai(
     // reasoning/reasoning_content has the CoT. Use content directly.
     // When parser is not active, content may contain <think> tags —
     // strip_thinking_tags handles that downstream.
-    let content = msg
-        .and_then(|m| m.content.clone())
-        .unwrap_or_default();
+    let content = msg.and_then(|m| m.content.clone()).unwrap_or_default();
     let usage = chat.usage.unwrap_or(OpenAiUsage {
         prompt_tokens: 0,
         completion_tokens: 0,
@@ -1028,7 +1025,10 @@ pub async fn calibrate_agent(
                     got: if json_ok {
                         "OK".to_string()
                     } else {
-                        format!("PARSE ERROR: {}", content.chars().take(100).collect::<String>())
+                        format!(
+                            "PARSE ERROR: {}",
+                            content.chars().take(100).collect::<String>()
+                        )
                     },
                 });
 

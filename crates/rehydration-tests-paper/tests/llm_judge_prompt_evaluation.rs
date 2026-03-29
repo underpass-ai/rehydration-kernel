@@ -11,8 +11,7 @@ use rehydration_proto::v1beta1::{
 use rehydration_testkit::{
     Domain, EvaluationGroundTruth, GeneratedNode, GeneratedSeed, GraphSeedConfig,
     LlmEvaluatorConfig, LlmProvider, NoiseMode, PromptConfig, RelationMix, calibrate_agent,
-    calibrate_judge,
-    evaluate_with_config, generate_seed,
+    calibrate_judge, evaluate_with_config, generate_seed,
     seed_publisher::seed_to_projection_events,
 };
 use rehydration_tests_shared::containers::connect_nats_with_retry;
@@ -267,11 +266,7 @@ struct PrecheckResult {
     errors: Vec<String>,
 }
 
-fn precheck_tls(
-    matrix: &serde_yaml::Value,
-    ok: &mut Vec<String>,
-    errors: &mut Vec<String>,
-) {
+fn precheck_tls(matrix: &serde_yaml::Value, ok: &mut Vec<String>, errors: &mut Vec<String>) {
     let any_tls_agent = matrix["agents"]
         .as_mapping()
         .map(|a| a.values().any(|c| c["tls"].as_bool().unwrap_or(false)))
@@ -350,9 +345,7 @@ fn precheck_agent_api_key(
                 if reachable {
                     ok.push(format!("agent '{name}': endpoint reachable"));
                 } else {
-                    errors.push(format!(
-                        "agent '{name}': endpoint unreachable ({endpoint})"
-                    ));
+                    errors.push(format!("agent '{name}': endpoint unreachable ({endpoint})"));
                 }
             }
         }
@@ -373,12 +366,8 @@ fn precheck_agent_tls(
     let key_path_val = matrix["tls"]["key"].as_str();
 
     match (cert_path, key_path_val) {
-        (None, _) => {
-            errors.push(format!("agent '{name}': tls.cert not set in YAML"))
-        }
-        (_, None) => {
-            errors.push(format!("agent '{name}': tls.key not set in YAML"))
-        }
+        (None, _) => errors.push(format!("agent '{name}': tls.cert not set in YAML")),
+        (_, None) => errors.push(format!("agent '{name}': tls.key not set in YAML")),
         (Some(cert), Some(key)) => {
             if !std::path::Path::new(cert).exists() {
                 errors.push(format!(
@@ -389,16 +378,11 @@ fn precheck_agent_tls(
                     "agent '{name}': TLS key not found at {key} (tls.key in YAML)"
                 ));
             } else {
-                ok.push(format!(
-                    "agent '{name}': TLS certs present ({cert}, {key})"
-                ));
+                ok.push(format!("agent '{name}': TLS certs present ({cert}, {key})"));
                 if let Some(endpoint) = cfg["endpoint"].as_str() {
-                    let reachable =
-                        check_api_endpoint(endpoint, None, Some(cert), Some(key));
+                    let reachable = check_api_endpoint(endpoint, None, Some(cert), Some(key));
                     if reachable {
-                        ok.push(format!(
-                            "agent '{name}': TLS endpoint reachable"
-                        ));
+                        ok.push(format!("agent '{name}': TLS endpoint reachable"));
                     } else {
                         errors.push(format!(
                             "agent '{name}': TLS endpoint unreachable ({endpoint})"
@@ -445,14 +429,12 @@ fn precheck_judges(
                     ok.push(format!("judge '{name}': {env_name} set"));
                     if let Some(endpoint) = cfg["endpoint"].as_str() {
                         let api_key = std::env::var(env_name).unwrap_or_default();
-                        let reachable =
-                            check_api_endpoint(endpoint, Some(&api_key), None, None);
+                        let reachable = check_api_endpoint(endpoint, Some(&api_key), None, None);
                         if reachable {
                             ok.push(format!("judge '{name}': endpoint reachable"));
                         } else {
-                            errors.push(format!(
-                                "judge '{name}': endpoint unreachable ({endpoint})"
-                            ));
+                            errors
+                                .push(format!("judge '{name}': endpoint unreachable ({endpoint})"));
                         }
                     }
                 }
@@ -477,9 +459,7 @@ fn precheck_prompts(
                 if std::path::Path::new(&full_path).exists() {
                     ok.push(format!("prompt '{name}': {path}"));
                 } else {
-                    errors.push(format!(
-                        "prompt '{name}': file not found at {full_path}"
-                    ));
+                    errors.push(format!("prompt '{name}': file not found at {full_path}"));
                 }
             }
             // null means compiled-in default — always ok
@@ -536,8 +516,20 @@ fn precheck(resources: &str, matrix_path: &str) -> PrecheckResult {
                 let valid_providers = ["openai", "openai-new", "anthropic"];
 
                 precheck_tls(&matrix, &mut ok, &mut errors);
-                precheck_agents(&matrix, &filter_models, &valid_providers, &mut ok, &mut errors);
-                precheck_judges(&matrix, &filter_judges, &valid_providers, &mut ok, &mut errors);
+                precheck_agents(
+                    &matrix,
+                    &filter_models,
+                    &valid_providers,
+                    &mut ok,
+                    &mut errors,
+                );
+                precheck_judges(
+                    &matrix,
+                    &filter_judges,
+                    &valid_providers,
+                    &mut ok,
+                    &mut errors,
+                );
                 precheck_prompts(&matrix, resources, &mut ok, &mut errors);
             }
             Err(e) => errors.push(format!("evaluation-matrix.yaml parse error: {e}")),
@@ -630,9 +622,7 @@ fn build_ground_truth_for_seed(
     let distractor_rationales: Vec<String> = seed
         .relations
         .iter()
-        .filter(|r| {
-            r.source_node_id.contains("noise") || r.target_node_id.contains("noise")
-        })
+        .filter(|r| r.source_node_id.contains("noise") || r.target_node_id.contains("noise"))
         .filter_map(|r| r.rationale.clone())
         .collect();
     let distractor = if distractor_rationales.is_empty() {
@@ -715,7 +705,11 @@ fn extract_kernel_observability(
 // Phase 2 helpers: evaluation result construction
 // ---------------------------------------------------------------------------
 
-fn build_eval_result_from_ctx(ctx: &CapturedVariant, model: String, prompt_name: &str) -> EvalResult {
+fn build_eval_result_from_ctx(
+    ctx: &CapturedVariant,
+    model: String,
+    prompt_name: &str,
+) -> EvalResult {
     EvalResult {
         model,
         prompt: prompt_name.to_string(),
@@ -774,10 +768,7 @@ fn write_report(
     boot_ms: f64,
     total_ms: f64,
 ) {
-    run.log(&format!(
-        "\n\n{}",
-        "=".repeat(120)
-    ));
+    run.log(&format!("\n\n{}", "=".repeat(120)));
     run.log(&format!(
         "EVALUATION MATRIX \u{2014} {} variants captured, {} evals, boot {boot_ms:.0}ms, total {total_ms:.0}ms",
         captured.len(),
@@ -954,8 +945,16 @@ async fn judge_prompt_evaluation_across_all_use_cases() -> Result<(), Box<dyn Er
                 .and_then(|e| std::env::var(e).ok()),
             max_tokens: agent_cfg["max_tokens"].as_u64().unwrap_or(200) as u32,
             temperature: agent_cfg["temperature"].as_f64().unwrap_or(0.0),
-            tls_cert_path: if tls { Some(yaml_str(tls_section, "cert", "tls")) } else { None },
-            tls_key_path: if tls { Some(yaml_str(tls_section, "key", "tls")) } else { None },
+            tls_cert_path: if tls {
+                Some(yaml_str(tls_section, "cert", "tls"))
+            } else {
+                None
+            },
+            tls_key_path: if tls {
+                Some(yaml_str(tls_section, "key", "tls"))
+            } else {
+                None
+            },
             tls_insecure: tls,
             judge_endpoint: None,
             judge_model: None,
@@ -1192,8 +1191,12 @@ async fn judge_prompt_evaluation_across_all_use_cases() -> Result<(), Box<dyn Er
                         let obs = extract_kernel_observability(
                             &rendered,
                             timing.map(|t| t.graph_load_seconds * 1000.0).unwrap_or(0.0),
-                            timing.map(|t| t.detail_load_seconds * 1000.0).unwrap_or(0.0),
-                            timing.map(|t| t.bundle_assembly_seconds * 1000.0).unwrap_or(0.0),
+                            timing
+                                .map(|t| t.detail_load_seconds * 1000.0)
+                                .unwrap_or(0.0),
+                            timing
+                                .map(|t| t.bundle_assembly_seconds * 1000.0)
+                                .unwrap_or(0.0),
                             timing.map(|t| t.batch_size).unwrap_or(0),
                         );
 

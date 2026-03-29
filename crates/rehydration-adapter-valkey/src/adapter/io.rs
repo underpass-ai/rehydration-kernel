@@ -33,12 +33,14 @@ pub(crate) async fn execute_eval_command(
     cmd_args.extend(args);
 
     let frame = encode_command(&cmd_args);
-    stream.write_all(&frame).await.map_err(|error| {
-        PortError::Unavailable(format!("failed to write valkey eval: {error}"))
-    })?;
-    stream.flush().await.map_err(|error| {
-        PortError::Unavailable(format!("failed to flush valkey eval: {error}"))
-    })?;
+    stream
+        .write_all(&frame)
+        .await
+        .map_err(|error| PortError::Unavailable(format!("failed to write valkey eval: {error}")))?;
+    stream
+        .flush()
+        .await
+        .map_err(|error| PortError::Unavailable(format!("failed to flush valkey eval: {error}")))?;
 
     let mut reader = BufReader::new(stream);
     match read_response(&mut reader).await? {
@@ -48,7 +50,9 @@ pub(crate) async fn execute_eval_command(
             if message.contains("CONFLICT") {
                 Err(PortError::Conflict(message))
             } else {
-                Err(PortError::Unavailable(format!("valkey eval error: {message}")))
+                Err(PortError::Unavailable(format!(
+                    "valkey eval error: {message}"
+                )))
             }
         }
         other => Err(PortError::Unavailable(format!(
