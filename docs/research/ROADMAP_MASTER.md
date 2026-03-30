@@ -980,6 +980,23 @@ Files with partial coverage that are actual kernel production code:
 | `containers/*.rs` | 70-84% | 37 | Container lifecycle — exclude |
 | **Total** | | **668** | |
 
+These paths are excluded from Sonar coverage because they are supporting
+test/runtime scaffolding:
+
+- `rehydration-tests-shared` contains test fixtures, seed data, runtime
+  containers, and TLS helpers exercised through `container-tests`.
+- `rehydration-testkit` contains the test harness, container bootstrap, seed
+  generation, and LLM evaluator plumbing used by the benchmark suites.
+- `rehydration-transport-grpc/src/agentic_reference/**` and
+  `rehydration-transport-grpc/src/bin/runtime_reference_client/**` are
+  reference/integration helpers, not the product kernel path we are trying to
+  raise to 85% coverage.
+- They stay excluded because their behavior is validated by container-backed
+  integration runs and reference-smoke flows, not by unit coverage.
+
+The intent is to keep Sonar coverage focused on production kernel code while
+preserving coverage signal for the code paths that actually ship.
+
 **Projected impact:**
 
 | Strategy | Lines recovered | Projected coverage |
