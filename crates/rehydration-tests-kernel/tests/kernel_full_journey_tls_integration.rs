@@ -40,11 +40,11 @@ async fn kernel_full_journey_supports_tls_across_query_and_command_surfaces()
             .get_context(GetContextRequest {
                 root_node_id: ROOT_NODE_ID.to_string(),
                 role: DEVELOPER_ROLE.to_string(),
-                token_budget: 8192,
+                token_budget: 65536,
                 requested_scopes: vec!["graph".to_string(), "decisions".to_string()],
                 depth: 1,
                 max_tier: 0,
-                rehydration_mode: 0,
+                rehydration_mode: 2,
             })
             .await?
             .into_inner();
@@ -83,11 +83,11 @@ async fn kernel_full_journey_supports_tls_across_query_and_command_surfaces()
             .get_context(GetContextRequest {
                 root_node_id: ROOT_NODE_ID.to_string(),
                 role: DEVELOPER_ROLE.to_string(),
-                token_budget: 8192,
+                token_budget: 65536,
                 requested_scopes: vec!["graph".to_string(), "decisions".to_string()],
                 depth: 3,
                 max_tier: 0,
-                rehydration_mode: 0,
+                rehydration_mode: 2,
             })
             .await?
             .into_inner();
@@ -227,11 +227,11 @@ async fn kernel_full_journey_supports_tls_across_query_and_command_surfaces()
             .get_context(GetContextRequest {
                 root_node_id: EXPLORER_WORKSTREAM_ID.to_string(),
                 role: DEVELOPER_ROLE.to_string(),
-                token_budget: 8192,
+                token_budget: 65536,
                 requested_scopes: vec!["graph".to_string(), "details".to_string()],
                 depth: 2,
                 max_tier: 0,
-                rehydration_mode: 0,
+                rehydration_mode: 2,
             })
             .await?
             .into_inner();
