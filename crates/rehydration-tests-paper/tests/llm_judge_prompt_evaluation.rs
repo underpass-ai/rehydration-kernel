@@ -10,8 +10,8 @@ use rehydration_proto::v1beta1::{
 };
 use rehydration_testkit::{
     Domain, EvaluationGroundTruth, GeneratedNode, GeneratedSeed, GraphSeedConfig,
-    LlmEvaluatorConfig, LlmProvider, NoiseMode, PromptConfig, RelationMix, calibrate_agent,
-    calibrate_judge, evaluate_with_config, generate_seed,
+    LlmEvaluationResult, LlmEvaluatorConfig, LlmProvider, NoiseMode, PromptConfig, RelationMix,
+    calibrate_agent, calibrate_judge, evaluate_with_config, generate_seed,
     seed_publisher::seed_to_projection_events,
 };
 use rehydration_tests_shared::containers::connect_nats_with_retry;
@@ -1156,6 +1156,228 @@ fn build_scale_entries(
     }
 }
 
+fn noise_modes_for_mix(mix_name: &str) -> &'static [(&'static str, NoiseMode)] {
+    match mix_name {
+        "explanatory" => &[
+            ("clean", NoiseMode::Structural),
+            ("competing", NoiseMode::CompetingCausal),
+        ],
+        "structural" => &[
+            ("clean", NoiseMode::Structural),
+            ("conflicting", NoiseMode::ConflictingMainPath),
+        ],
+        "mixed" => &[
+            ("clean", NoiseMode::Structural),
+            ("restart", NoiseMode::CompetingRestartPoint),
+        ],
+        _ => &[("clean", NoiseMode::Structural)],
+    }
+}
+
+struct CaptureJob {
+    scale_fn: fn(Domain) -> GraphSeedConfig,
+    domain_name: &'static str,
+    domain: Domain,
+    mix: RelationMix,
+    noise_mode: NoiseMode,
+    seed_idx: usize,
+    variant_id: String,
+}
+
+fn capture_jobs(
+    matrix: &serde_yaml::Value,
+    filter_scales: &[String],
+    filter_noise: &[String],
+) -> Vec<CaptureJob> {
+    let seeds_per_cell = matrix["seeds_per_cell"].as_u64().unwrap_or(1) as usize;
+    let scales = build_scale_entries(matrix);
+    let domains = [
+        ("ops", Domain::Operations),
+        ("debug", Domain::SoftwareDebugging),
+    ];
+    let mixes = [
+        ("explanatory", RelationMix::Explanatory),
+        ("structural", RelationMix::Structural),
+        ("mixed", RelationMix::Mixed),
+    ];
+
+    scales
+        .into_iter()
+        .filter(|(scale_name, _)| filter_allows(scale_name, filter_scales))
+        .flat_map(|(scale_name, scale_fn)| {
+            domains.into_iter().flat_map(move |(domain_name, domain)| {
+                mixes.into_iter().flat_map(move |(mix_name, mix)| {
+                    noise_modes_for_mix(mix_name)
+                        .iter()
+                        .copied()
+                        .filter(move |(noise_name, _)| filter_allows(noise_name, filter_noise))
+                        .flat_map(move |(noise_name, noise_mode)| {
+                            (0..seeds_per_cell).map(move |seed_idx| {
+                                let variant_id = if seeds_per_cell > 1 {
+                                    format!(
+                                        "{scale_name}-{domain_name}-{mix_name}-{noise_name}-s{seed_idx}"
+                                    )
+                                } else {
+                                    format!("{scale_name}-{domain_name}-{mix_name}-{noise_name}")
+                                };
+                                CaptureJob {
+                                    scale_fn,
+                                    domain_name,
+                                    domain,
+                                    mix,
+                                    noise_mode,
+                                    seed_idx,
+                                    variant_id,
+                                }
+                            })
+                        })
+                })
+            })
+        })
+        .collect()
+}
+
+async fn execute_capture_job(
+    run: &mut RunDir,
+    fixture: &mut Option<TestFixture>,
+    job: &CaptureJob,
+) -> Result<CapturedVariant, Box<dyn Error + Send + Sync>> {
+    let mut config = (job.scale_fn)(job.domain);
+    config.relation_mix = job.mix;
+    config.noise_mode = job.noise_mode;
+    config.seed = job.seed_idx;
+    config.id_prefix = job.variant_id.clone();
+
+    let seed = generate_seed(config.clone());
+    let events = seed_to_projection_events(&seed, SUBJECT_PREFIX, &job.variant_id)?;
+    let root_id = seed.root.node_id.clone();
+    let focus_id = seed
+        .nodes
+        .first()
+        .map(|n| n.node_id.clone())
+        .unwrap_or_else(|| root_id.clone());
+
+    match fixture {
+        None => {
+            run.log(&format!(
+                "[INFRA] Booting containers for {}...",
+                job.variant_id
+            ));
+            let f = TestFixture::builder()
+                .with_neo4j()
+                .with_valkey()
+                .with_nats()
+                .with_projection_runtime()
+                .with_grpc_server()
+                .build()
+                .await?;
+            let client = connect_nats_with_retry(f.nats_url()).await?;
+            for (subject, payload) in &events {
+                client
+                    .publish(subject.clone(), payload.clone().into())
+                    .await?;
+            }
+            client.flush().await?;
+            wait_for_context(&f, &root_id, &focus_id).await?;
+            *fixture = Some(f);
+        }
+        Some(f) => {
+            run.log(&format!("[INFRA] Reseeding {}...", job.variant_id));
+            let client = connect_nats_with_retry(f.nats_url()).await?;
+            for (subject, payload) in &events {
+                client
+                    .publish(subject.clone(), payload.clone().into())
+                    .await?;
+            }
+            client.flush().await?;
+            wait_for_context(f, &root_id, &focus_id).await?;
+        }
+    }
+
+    sleep(Duration::from_millis(500)).await;
+
+    let mut qc = fixture
+        .as_ref()
+        .expect("fixture should be Some")
+        .query_client();
+    let response = qc
+        .get_context(GetContextRequest {
+            root_node_id: root_id.clone(),
+            role: BENCHMARK_ROLE.to_string(),
+            token_budget: std::env::var("BENCHMARK_TOKEN_BUDGET")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(4096),
+            requested_scopes: vec![],
+            depth: config.chain_length as u32,
+            max_tier: 0,
+            rehydration_mode: 0,
+        })
+        .await?
+        .into_inner();
+
+    let rendered = response.rendered.ok_or("missing rendered")?;
+    let eval_content = tier_content_for_eval(&rendered);
+    let tokens = rendered.token_count;
+    let quality = rendered
+        .quality
+        .ok_or("missing quality metrics in rendered context")?;
+    let (question, ground_truth) = build_ground_truth_for_seed(&seed, job.domain_name);
+    let chain_kinds: String = seed
+        .nodes
+        .iter()
+        .filter(|n| !n.node_id.contains("noise") && !n.node_id.contains("distractor"))
+        .map(|n| n.node_kind.as_str())
+        .collect::<Vec<_>>()
+        .join("→");
+    run.log(&format!(
+        "[CAPTURE] {}: {tokens} tok (raw={}, compress={:.2}x, causal={:.0}%, noise={:.0}%, detail={:.0}%), chain=[{chain_kinds}], reason={}, distractor={}",
+        job.variant_id,
+        quality.raw_equivalent_tokens,
+        quality.compression_ratio,
+        quality.causal_density * 100.0,
+        quality.noise_ratio * 100.0,
+        quality.detail_coverage * 100.0,
+        ground_truth.expected_reason.as_deref().unwrap_or("none"),
+        ground_truth.distractor_rationale.as_deref().unwrap_or("none")
+    ));
+
+    let timing = response.timing.as_ref();
+    let obs = extract_kernel_observability(
+        &rendered,
+        timing.map(|t| t.graph_load_seconds * 1000.0).unwrap_or(0.0),
+        timing
+            .map(|t| t.detail_load_seconds * 1000.0)
+            .unwrap_or(0.0),
+        timing
+            .map(|t| t.bundle_assembly_seconds * 1000.0)
+            .unwrap_or(0.0),
+        timing.map(|t| t.batch_size).unwrap_or(0),
+    );
+
+    Ok(CapturedVariant {
+        run_id: job.variant_id.clone(),
+        rendered_content: eval_content,
+        rendered_tokens: tokens,
+        raw_equivalent_tokens: quality.raw_equivalent_tokens,
+        compression_ratio: quality.compression_ratio,
+        causal_density: quality.causal_density,
+        noise_ratio: quality.noise_ratio,
+        detail_coverage: quality.detail_coverage,
+        resolved_mode: obs.resolved_mode,
+        tier_l0_tokens: obs.tier_l0_tokens,
+        tier_l1_tokens: obs.tier_l1_tokens,
+        tier_l2_tokens: obs.tier_l2_tokens,
+        tier_total_tokens: obs.tier_total_tokens,
+        graph_load_ms: obs.graph_load_ms,
+        detail_load_ms: obs.detail_load_ms,
+        bundle_assembly_ms: obs.bundle_assembly_ms,
+        timing_batch_size: obs.timing_batch_size,
+        question,
+        ground_truth,
+    })
+}
+
 async fn run_judge_calibrations(
     run: &mut RunDir,
     matrix: &serde_yaml::Value,
@@ -1230,214 +1452,177 @@ async fn run_capture_phase(
     filter_scales: &[String],
     filter_noise: &[String],
 ) -> Result<(Vec<CapturedVariant>, f64), Box<dyn Error + Send + Sync>> {
-    type ScaleEntry = (&'static str, fn(Domain) -> GraphSeedConfig);
-    let scales: Vec<ScaleEntry> = build_scale_entries(matrix);
-    let domains = [
-        ("ops", Domain::Operations),
-        ("debug", Domain::SoftwareDebugging),
-    ];
-    let mixes = [
-        ("explanatory", RelationMix::Explanatory),
-        ("structural", RelationMix::Structural),
-        ("mixed", RelationMix::Mixed),
-    ];
-    let noise_for_mix: &[(&str, &[(&str, NoiseMode)])] = &[
-        (
-            "explanatory",
-            &[
-                ("clean", NoiseMode::Structural),
-                ("competing", NoiseMode::CompetingCausal),
-            ],
-        ),
-        (
-            "structural",
-            &[
-                ("clean", NoiseMode::Structural),
-                ("conflicting", NoiseMode::ConflictingMainPath),
-            ],
-        ),
-        (
-            "mixed",
-            &[
-                ("clean", NoiseMode::Structural),
-                ("restart", NoiseMode::CompetingRestartPoint),
-            ],
-        ),
-    ];
-
-    let seeds_per_cell = matrix["seeds_per_cell"].as_u64().unwrap_or(1) as usize;
-    let active_scale_names: Vec<&str> = scales.iter().map(|(name, _)| *name).collect();
+    let jobs = capture_jobs(matrix, filter_scales, filter_noise);
+    let active_scale_names = build_scale_entries(matrix)
+        .iter()
+        .map(|(name, _)| *name)
+        .collect::<Vec<_>>();
     run.log(&format!(
-        "[CONFIG] seeds_per_cell={seeds_per_cell}, scales={active_scale_names:?}"
+        "[CONFIG] seeds_per_cell={}, scales={active_scale_names:?}",
+        matrix["seeds_per_cell"].as_u64().unwrap_or(1)
     ));
-
     let boot_start = Instant::now();
     let mut captured = Vec::new();
     let mut fixture: Option<TestFixture> = None;
 
-    for &(scale_name, scale_fn) in &scales {
-        if !filter_allows(scale_name, filter_scales) {
-            continue;
-        }
-        for &(domain_name, domain) in &domains {
-            for &(mix_name, mix) in &mixes {
-                let noises = noise_for_mix
-                    .iter()
-                    .find(|(m, _)| *m == mix_name)
-                    .map(|(_, n)| *n)
-                    .unwrap_or(&[("clean", NoiseMode::Structural)]);
-                for &(noise_name, noise_mode) in noises {
-                    if !filter_allows(noise_name, filter_noise) {
-                        continue;
-                    }
-                    for seed_idx in 0..seeds_per_cell {
-                        let mut config = scale_fn(domain);
-                        config.relation_mix = mix;
-                        config.noise_mode = noise_mode;
-                        config.seed = seed_idx;
-                        let variant_id = if seeds_per_cell > 1 {
-                            format!(
-                                "{scale_name}-{domain_name}-{mix_name}-{noise_name}-s{seed_idx}"
-                            )
-                        } else {
-                            format!("{scale_name}-{domain_name}-{mix_name}-{noise_name}")
-                        };
-                        config.id_prefix = variant_id.clone();
-
-                        let seed = generate_seed(config.clone());
-                        let events = seed_to_projection_events(&seed, SUBJECT_PREFIX, &variant_id)?;
-                        let root_id = seed.root.node_id.clone();
-                        let focus_id = seed
-                            .nodes
-                            .first()
-                            .map(|n| n.node_id.clone())
-                            .unwrap_or_else(|| root_id.clone());
-
-                        match &fixture {
-                            None => {
-                                run.log(&format!("[INFRA] Booting containers for {variant_id}..."));
-                                let f = TestFixture::builder()
-                                    .with_neo4j()
-                                    .with_valkey()
-                                    .with_nats()
-                                    .with_projection_runtime()
-                                    .with_grpc_server()
-                                    .build()
-                                    .await?;
-                                let client = connect_nats_with_retry(f.nats_url()).await?;
-                                for (subject, payload) in &events {
-                                    client
-                                        .publish(subject.clone(), payload.clone().into())
-                                        .await?;
-                                }
-                                client.flush().await?;
-                                wait_for_context(&f, &root_id, &focus_id).await?;
-                                fixture = Some(f);
-                            }
-                            Some(f) => {
-                                run.log(&format!("[INFRA] Reseeding {variant_id}..."));
-                                let client = connect_nats_with_retry(f.nats_url()).await?;
-                                for (subject, payload) in &events {
-                                    client
-                                        .publish(subject.clone(), payload.clone().into())
-                                        .await?;
-                                }
-                                client.flush().await?;
-                                wait_for_context(f, &root_id, &focus_id).await?;
-                            }
-                        }
-
-                        sleep(Duration::from_millis(500)).await;
-
-                        let mut qc = fixture
-                            .as_ref()
-                            .expect("fixture should be Some")
-                            .query_client();
-                        let response = qc
-                            .get_context(GetContextRequest {
-                                root_node_id: root_id.clone(),
-                                role: BENCHMARK_ROLE.to_string(),
-                                token_budget: std::env::var("BENCHMARK_TOKEN_BUDGET")
-                                    .ok()
-                                    .and_then(|v| v.parse().ok())
-                                    .unwrap_or(4096),
-                                requested_scopes: vec![],
-                                depth: config.chain_length as u32,
-                                max_tier: 0,
-                                rehydration_mode: 0,
-                            })
-                            .await?
-                            .into_inner();
-
-                        let rendered = response.rendered.ok_or("missing rendered")?;
-                        let eval_content = tier_content_for_eval(&rendered);
-                        let tokens = rendered.token_count;
-                        let quality = rendered
-                            .quality
-                            .ok_or("missing quality metrics in rendered context")?;
-                        let (question, ground_truth) =
-                            build_ground_truth_for_seed(&seed, domain_name);
-                        let chain_kinds: String = seed
-                            .nodes
-                            .iter()
-                            .filter(|n| {
-                                !n.node_id.contains("noise") && !n.node_id.contains("distractor")
-                            })
-                            .map(|n| n.node_kind.as_str())
-                            .collect::<Vec<_>>()
-                            .join("→");
-                        run.log(&format!(
-                            "[CAPTURE] {variant_id}: {tokens} tok (raw={}, compress={:.2}x, causal={:.0}%, noise={:.0}%, detail={:.0}%), chain=[{chain_kinds}], reason={}, distractor={}",
-                            quality.raw_equivalent_tokens,
-                            quality.compression_ratio,
-                            quality.causal_density * 100.0,
-                            quality.noise_ratio * 100.0,
-                            quality.detail_coverage * 100.0,
-                            ground_truth.expected_reason.as_deref().unwrap_or("none"),
-                            ground_truth.distractor_rationale.as_deref().unwrap_or("none")
-                        ));
-
-                        let timing = response.timing.as_ref();
-                        let obs = extract_kernel_observability(
-                            &rendered,
-                            timing.map(|t| t.graph_load_seconds * 1000.0).unwrap_or(0.0),
-                            timing
-                                .map(|t| t.detail_load_seconds * 1000.0)
-                                .unwrap_or(0.0),
-                            timing
-                                .map(|t| t.bundle_assembly_seconds * 1000.0)
-                                .unwrap_or(0.0),
-                            timing.map(|t| t.batch_size).unwrap_or(0),
-                        );
-
-                        captured.push(CapturedVariant {
-                            run_id: variant_id,
-                            rendered_content: eval_content,
-                            rendered_tokens: tokens,
-                            raw_equivalent_tokens: quality.raw_equivalent_tokens,
-                            compression_ratio: quality.compression_ratio,
-                            causal_density: quality.causal_density,
-                            noise_ratio: quality.noise_ratio,
-                            detail_coverage: quality.detail_coverage,
-                            resolved_mode: obs.resolved_mode,
-                            tier_l0_tokens: obs.tier_l0_tokens,
-                            tier_l1_tokens: obs.tier_l1_tokens,
-                            tier_l2_tokens: obs.tier_l2_tokens,
-                            tier_total_tokens: obs.tier_total_tokens,
-                            graph_load_ms: obs.graph_load_ms,
-                            detail_load_ms: obs.detail_load_ms,
-                            bundle_assembly_ms: obs.bundle_assembly_ms,
-                            timing_batch_size: obs.timing_batch_size,
-                            question,
-                            ground_truth,
-                        });
-                    }
-                }
-            }
-        }
+    for job in jobs {
+        captured.push(execute_capture_job(run, &mut fixture, &job).await?);
     }
 
     Ok((captured, boot_start.elapsed().as_secs_f64() * 1000.0))
+}
+
+struct EvaluationJob {
+    agent_name: String,
+    judge_name: String,
+    prompt_name: String,
+    prompts_cfg: PromptConfig,
+    agent_cfg: serde_yaml::Value,
+    judge_cfg: serde_yaml::Value,
+}
+
+fn evaluation_jobs(
+    matrix: &serde_yaml::Value,
+    resources: &str,
+    filter_models: &[String],
+    filter_judges: &[String],
+    filter_prompts: &[String],
+) -> Result<Vec<EvaluationJob>, Box<dyn Error + Send + Sync>> {
+    let agents = matrix["agents"].as_mapping().expect("agents mapping");
+    let judges = matrix["judges"].as_mapping().expect("judges mapping");
+    let prompts = matrix["prompts"].as_mapping().expect("prompts mapping");
+
+    let mut jobs = Vec::new();
+    for (agent_key, agent_cfg) in agents {
+        let agent_name = agent_key.as_str().expect("agent key");
+        if !filter_allows(agent_name, filter_models) {
+            continue;
+        }
+        for (judge_key, judge_cfg) in judges {
+            let judge_name = judge_key.as_str().expect("judge key");
+            if !filter_allows(judge_name, filter_judges) || agent_name == judge_name {
+                continue;
+            }
+            for (prompt_key, prompt_val) in prompts {
+                let prompt_name = prompt_key.as_str().expect("prompt key");
+                if !filter_allows(prompt_name, filter_prompts) {
+                    continue;
+                }
+                let prompt_file = prompt_val.as_str().map(|p| format!("{resources}/{p}"));
+                let prompts_cfg = PromptConfig::load(prompt_file.as_deref())?;
+                jobs.push(EvaluationJob {
+                    agent_name: agent_name.to_string(),
+                    judge_name: judge_name.to_string(),
+                    prompt_name: prompt_name.to_string(),
+                    prompts_cfg,
+                    agent_cfg: agent_cfg.clone(),
+                    judge_cfg: judge_cfg.clone(),
+                });
+            }
+        }
+    }
+    Ok(jobs)
+}
+
+fn build_success_eval_result(
+    ctx: &CapturedVariant,
+    cell_id: String,
+    prompt_name: &str,
+    e: LlmEvaluationResult,
+) -> EvalResult {
+    EvalResult {
+        model: cell_id,
+        prompt: prompt_name.to_string(),
+        variant: ctx.run_id.clone(),
+        task: Some(e.llm_task_success),
+        restart: Some(e.llm_restart_accuracy),
+        restart_exact: Some(e.llm_restart_exact),
+        restart_off_by_one: Some(e.llm_restart_off_by_one),
+        restart_on_competing: Some(e.llm_restart_on_competing),
+        restart_explained: Some(e.llm_restart_explained),
+        reason: Some(e.llm_reason_preserved),
+        reason_correct: Some(e.llm_reason_correct),
+        reason_distractor: Some(e.llm_reason_distractor),
+        latency_ms: e.llm_latency_ms,
+        rendered_tokens: ctx.rendered_tokens,
+        raw_equivalent_tokens: ctx.raw_equivalent_tokens,
+        compression_ratio: ctx.compression_ratio,
+        causal_density: ctx.causal_density,
+        noise_ratio: ctx.noise_ratio,
+        detail_coverage: ctx.detail_coverage,
+        resolved_mode: ctx.resolved_mode.clone(),
+        tier_l0_tokens: ctx.tier_l0_tokens,
+        tier_l1_tokens: ctx.tier_l1_tokens,
+        tier_l2_tokens: ctx.tier_l2_tokens,
+        tier_total_tokens: ctx.tier_total_tokens,
+        graph_load_ms: ctx.graph_load_ms,
+        detail_load_ms: ctx.detail_load_ms,
+        bundle_assembly_ms: ctx.bundle_assembly_ms,
+        timing_batch_size: ctx.timing_batch_size,
+        llm_prompt_tokens: Some(e.llm_prompt_tokens),
+        llm_completion_tokens: Some(e.llm_completion_tokens),
+        llm_reason_source: Some(e.llm_reason_source),
+        llm_confidence: Some(e.llm_confidence),
+        llm_reason_fabricated: Some(e.llm_reason_fabricated),
+        agent_response: e.llm_response,
+        judge_raw: e.llm_judge_raw,
+    }
+}
+
+async fn evaluate_job(
+    run: &mut RunDir,
+    matrix: &serde_yaml::Value,
+    captured: &[CapturedVariant],
+    job: &EvaluationJob,
+) -> Result<Vec<EvalResult>, Box<dyn Error + Send + Sync>> {
+    let llm_config = build_llm_config(matrix, &job.agent_cfg, &job.judge_cfg);
+    run.log(&format!(
+        "\n████ {}→{}/{} ████",
+        job.agent_name, job.judge_name, job.prompt_name
+    ));
+
+    let mut results = Vec::new();
+    for ctx in captured {
+        let eval = evaluate_with_config(
+            &job.prompts_cfg,
+            &llm_config,
+            &ctx.rendered_content,
+            &ctx.question,
+            &ctx.ground_truth,
+        )
+        .await;
+        let cell_id = format!("{}→{}", job.agent_name, job.judge_name);
+        let result = match eval {
+            Ok(e) => {
+                run.log(&format!(
+                    "  [{cell_id}/{}] {}: T={} R={} (x={} o1={} cb={} ex={}) Rc={} Rd={}  agent=\"{}...\"  judge={}",
+                    job.prompt_name,
+                    ctx.run_id,
+                    if e.llm_task_success { "OK" } else { "FAIL" },
+                    if e.llm_restart_accuracy { "OK" } else { "FAIL" },
+                    if e.llm_restart_exact { "OK" } else { "FAIL" },
+                    if e.llm_restart_off_by_one { "OK" } else { "FAIL" },
+                    if e.llm_restart_on_competing { "OK" } else { "FAIL" },
+                    if e.llm_restart_explained { "OK" } else { "FAIL" },
+                    if e.llm_reason_correct { "OK" } else { "FAIL" },
+                    if e.llm_reason_distractor { "LEAK" } else { "clean" },
+                    e.llm_response.replace('\n', " ").chars().take(120).collect::<String>(),
+                    e.llm_judge_raw.as_deref().unwrap_or("?")
+                ));
+                build_success_eval_result(ctx, cell_id, &job.prompt_name, e)
+            }
+            Err(err) => {
+                run.log(&format!(
+                    "  [{cell_id}/{}] {}: ERROR {err}",
+                    job.prompt_name, ctx.run_id
+                ));
+                build_eval_result_from_ctx(ctx, cell_id, &job.prompt_name)
+            }
+        };
+        results.push(result);
+    }
+
+    Ok(results)
 }
 
 async fn run_evaluation_phase(
@@ -1449,138 +1634,26 @@ async fn run_evaluation_phase(
     filter_judges: &[String],
     filter_prompts: &[String],
 ) -> Result<Vec<EvalResult>, Box<dyn Error + Send + Sync>> {
-    let agents = matrix["agents"].as_mapping().expect("agents mapping");
-    let judges = matrix["judges"].as_mapping().expect("judges mapping");
-    let prompts = matrix["prompts"].as_mapping().expect("prompts mapping");
-
+    let jobs = evaluation_jobs(
+        matrix,
+        resources,
+        filter_models,
+        filter_judges,
+        filter_prompts,
+    )?;
     let mut results = Vec::new();
     let mut eval_count = 0u32;
 
-    for (agent_key, agent_cfg) in agents {
-        let agent_name = agent_key.as_str().expect("agent key");
-        if !filter_allows(agent_name, filter_models) {
-            continue;
-        }
-        for (judge_key, judge_cfg) in judges {
-            let judge_name = judge_key.as_str().expect("judge key");
-            if !filter_allows(judge_name, filter_judges) || agent_name == judge_name {
-                continue;
-            }
-            let llm_config = build_llm_config(matrix, agent_cfg, judge_cfg);
-            for (prompt_key, prompt_val) in prompts {
-                let prompt_name = prompt_key.as_str().expect("prompt key");
-                if !filter_allows(prompt_name, filter_prompts) {
-                    continue;
-                }
-                let prompt_file = prompt_val.as_str().map(|p| format!("{resources}/{p}"));
-                let prompts_cfg = PromptConfig::load(prompt_file.as_deref())?;
-                run.log(&format!(
-                    "
-████ {agent_name}→{judge_name}/{prompt_name} ████"
-                ));
-
-                for ctx in captured {
-                    eval_count += 1;
-                    let eval = evaluate_with_config(
-                        &prompts_cfg,
-                        &llm_config,
-                        &ctx.rendered_content,
-                        &ctx.question,
-                        &ctx.ground_truth,
-                    )
-                    .await;
-                    let cell_id = format!("{agent_name}→{judge_name}");
-                    let result = match eval {
-                        Ok(e) => {
-                            let t = if e.llm_task_success { "OK" } else { "FAIL" };
-                            let r = if e.llm_restart_accuracy { "OK" } else { "FAIL" };
-                            let rx = if e.llm_restart_exact { "OK" } else { "FAIL" };
-                            let ro = if e.llm_restart_off_by_one {
-                                "OK"
-                            } else {
-                                "FAIL"
-                            };
-                            let rcb = if e.llm_restart_on_competing {
-                                "OK"
-                            } else {
-                                "FAIL"
-                            };
-                            let re = if e.llm_restart_explained {
-                                "OK"
-                            } else {
-                                "FAIL"
-                            };
-                            let rc = if e.llm_reason_correct { "OK" } else { "FAIL" };
-                            let rd = if e.llm_reason_distractor {
-                                "LEAK"
-                            } else {
-                                "clean"
-                            };
-                            let resp_short: String = e
-                                .llm_response
-                                .replace('\n', " ")
-                                .chars()
-                                .take(120)
-                                .collect();
-                            run.log(&format!(
-                                "  [{cell_id}/{prompt_name}] {}: T={t} R={r}(x={rx} o1={ro} cb={rcb} ex={re}) Rc={rc} Rd={rd}  agent=\"{resp_short}...\"  judge={}",
-                                ctx.run_id,
-                                e.llm_judge_raw.as_deref().unwrap_or("?")
-                            ));
-                            EvalResult {
-                                model: cell_id,
-                                prompt: prompt_name.to_string(),
-                                variant: ctx.run_id.clone(),
-                                task: Some(e.llm_task_success),
-                                restart: Some(e.llm_restart_accuracy),
-                                restart_exact: Some(e.llm_restart_exact),
-                                restart_off_by_one: Some(e.llm_restart_off_by_one),
-                                restart_on_competing: Some(e.llm_restart_on_competing),
-                                restart_explained: Some(e.llm_restart_explained),
-                                reason: Some(e.llm_reason_preserved),
-                                reason_correct: Some(e.llm_reason_correct),
-                                reason_distractor: Some(e.llm_reason_distractor),
-                                latency_ms: e.llm_latency_ms,
-                                rendered_tokens: ctx.rendered_tokens,
-                                raw_equivalent_tokens: ctx.raw_equivalent_tokens,
-                                compression_ratio: ctx.compression_ratio,
-                                causal_density: ctx.causal_density,
-                                noise_ratio: ctx.noise_ratio,
-                                detail_coverage: ctx.detail_coverage,
-                                resolved_mode: ctx.resolved_mode.clone(),
-                                tier_l0_tokens: ctx.tier_l0_tokens,
-                                tier_l1_tokens: ctx.tier_l1_tokens,
-                                tier_l2_tokens: ctx.tier_l2_tokens,
-                                tier_total_tokens: ctx.tier_total_tokens,
-                                graph_load_ms: ctx.graph_load_ms,
-                                detail_load_ms: ctx.detail_load_ms,
-                                bundle_assembly_ms: ctx.bundle_assembly_ms,
-                                timing_batch_size: ctx.timing_batch_size,
-                                llm_prompt_tokens: Some(e.llm_prompt_tokens),
-                                llm_completion_tokens: Some(e.llm_completion_tokens),
-                                llm_reason_source: Some(e.llm_reason_source),
-                                llm_confidence: Some(e.llm_confidence),
-                                llm_reason_fabricated: Some(e.llm_reason_fabricated),
-                                agent_response: e.llm_response,
-                                judge_raw: e.llm_judge_raw,
-                            }
-                        }
-                        Err(err) => {
-                            run.log(&format!(
-                                "  [{cell_id}/{prompt_name}] {}: ERROR {err}",
-                                ctx.run_id
-                            ));
-                            build_eval_result_from_ctx(ctx, cell_id, prompt_name)
-                        }
-                    };
-                    let result_name = format!(
-                        "{eval_count:04}_{agent_name}_{judge_name}_{prompt_name}_{}",
-                        ctx.run_id
-                    );
-                    run.write_result(&result_name, &result)?;
-                    results.push(result);
-                }
-            }
+    for job in jobs {
+        let job_results = evaluate_job(run, matrix, captured, &job).await?;
+        for result in job_results {
+            eval_count += 1;
+            let result_name = format!(
+                "{eval_count:04}_{}_{}_{}_{}",
+                job.agent_name, job.judge_name, job.prompt_name, result.variant
+            );
+            run.write_result(&result_name, &result)?;
+            results.push(result);
         }
     }
 
