@@ -256,6 +256,163 @@ fn tier_content_for_eval(rendered: &RenderedContext) -> String {
 }
 
 // ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+fn check_api_endpoint(
+    endpoint: &str,
+    api_key: Option<&str>,
+    tls_cert: Option<&str>,
+    tls_key: Option<&str>,
+) -> bool {
+    let probe_url = endpoint
+        .replace("/v1/chat/completions", "/v1/models")
+        .replace("/v1/messages", "/v1/models");
+
+    let mut args = vec![
+        "-s",
+        "--max-time",
+        "10",
+        "-o",
+        "/dev/null",
+        "-w",
+        "%{http_code}",
+    ];
+    if tls_cert.is_some() {
+        args.push("-k");
+    }
+    if let Some(cert) = tls_cert {
+        args.push("--cert");
+        args.push(cert);
+    }
+    if let Some(key) = tls_key {
+        args.push("--key");
+        args.push(key);
+    }
+
+    let auth_header;
+    let anthropic_header;
+    let anthropic_version;
+    if let Some(key) = api_key {
+        if endpoint.contains("anthropic.com") {
+            anthropic_header = format!("x-api-key: {key}");
+            anthropic_version = "anthropic-version: 2023-06-01".to_string();
+            args.extend(["-H", &anthropic_header, "-H", &anthropic_version]);
+        } else {
+            auth_header = format!("Authorization: Bearer {key}");
+            args.extend(["-H", &auth_header]);
+        }
+    }
+    args.push(&probe_url);
+
+    match std::process::Command::new("curl").args(&args).output() {
+        Ok(out) => {
+            let code = String::from_utf8_lossy(&out.stdout);
+            code.trim() != "000"
+        }
+        Err(_) => false,
+    }
+}
+
+fn env_filter(key: &str) -> Vec<String> {
+    std::env::var(key)
+        .map(|s| s.split(',').map(str::trim).map(String::from).collect())
+        .unwrap_or_default()
+}
+
+fn parse_provider(s: &str) -> LlmProvider {
+    match s {
+        "openai" => LlmProvider::OpenAI,
+        "openai-new" => LlmProvider::OpenAINew,
+        "anthropic" => LlmProvider::Anthropic,
+        other => {
+            panic!("unknown provider '{other}' in YAML — expected: openai, openai-new, anthropic")
+        }
+    }
+}
+
+fn yaml_str(cfg: &serde_yaml::Value, field: &str, context: &str) -> String {
+    cfg[field]
+        .as_str()
+        .unwrap_or_else(|| panic!("{context}: missing required field '{field}' in YAML"))
+        .to_string()
+}
+
+fn build_llm_config(
+    matrix: &serde_yaml::Value,
+    agent_cfg: &serde_yaml::Value,
+    judge_cfg: &serde_yaml::Value,
+) -> LlmEvaluatorConfig {
+    let tls = agent_cfg["tls"].as_bool().unwrap_or(false);
+    let tls_section = &matrix["tls"];
+    let tls_cert = if tls {
+        Some(yaml_str(tls_section, "cert", "tls"))
+    } else {
+        None
+    };
+    let tls_key = if tls {
+        Some(yaml_str(tls_section, "key", "tls"))
+    } else {
+        None
+    };
+
+    LlmEvaluatorConfig {
+        endpoint: yaml_str(agent_cfg, "endpoint", "agent"),
+        model: yaml_str(agent_cfg, "model", "agent"),
+        provider: parse_provider(&yaml_str(agent_cfg, "provider", "agent")),
+        api_key: agent_cfg["api_key_env"]
+            .as_str()
+            .and_then(|e| std::env::var(e).ok()),
+        max_tokens: 200,
+        temperature: 0.0,
+        tls_cert_path: tls_cert,
+        tls_key_path: tls_key,
+        tls_insecure: tls,
+        judge_endpoint: Some(yaml_str(judge_cfg, "endpoint", "judge")),
+        judge_model: Some(yaml_str(judge_cfg, "model", "judge")),
+        judge_provider: Some(parse_provider(&yaml_str(judge_cfg, "provider", "judge"))),
+        judge_api_key: judge_cfg["api_key_env"]
+            .as_str()
+            .and_then(|e| std::env::var(e).ok()),
+    }
+}
+
+async fn wait_for_context(
+    fixture: &TestFixture,
+    root_node_id: &str,
+    _focus_node_id: &str,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let mut qc = fixture.query_client();
+    for _ in 0..40 {
+        if let Ok(resp) = qc
+            .get_context(GetContextRequest {
+                root_node_id: root_node_id.to_string(),
+                role: BENCHMARK_ROLE.to_string(),
+                token_budget: 1200,
+                requested_scopes: vec!["implementation".to_string()],
+                depth: 0,
+                max_tier: 0,
+                rehydration_mode: 0,
+            })
+            .await
+        {
+            let resp = resp.into_inner();
+            if let Some(bundle) = resp.bundle
+                && bundle.root_node_id == root_node_id
+                && bundle
+                    .bundles
+                    .first()
+                    .is_some_and(|b| !b.neighbor_nodes.is_empty())
+            {
+                return Ok(());
+            }
+        }
+        sleep(Duration::from_millis(200)).await;
+    }
+    Err("context did not become ready".into())
+}
+
+// ---------------------------------------------------------------------------
 // Precheck — validate all dependencies before booting containers
 // ---------------------------------------------------------------------------
 
@@ -289,83 +446,125 @@ fn precheck_tls(matrix: &serde_yaml::Value, ok: &mut Vec<String>, errors: &mut V
     }
 }
 
-fn precheck_agents(
+fn load_matrix(matrix_path: &str) -> Result<serde_yaml::Value, String> {
+    let content = std::fs::read_to_string(matrix_path)
+        .map_err(|e| format!("evaluation-matrix.yaml not found: {e}"))?;
+    serde_yaml::from_str::<serde_yaml::Value>(&content)
+        .map_err(|e| format!("evaluation-matrix.yaml parse error: {e}"))
+}
+
+fn validate_matrix(
     matrix: &serde_yaml::Value,
+    resources: &str,
     filter_models: &[String],
+    filter_judges: &[String],
+    ok: &mut Vec<String>,
+    errors: &mut Vec<String>,
+) {
+    let valid_providers = ["openai", "openai-new", "anthropic"];
+
+    precheck_tls(matrix, ok, errors);
+    precheck_agents(matrix, filter_models, &valid_providers, ok, errors);
+    precheck_judges(matrix, filter_judges, &valid_providers, ok, errors);
+    precheck_prompts(matrix, resources, ok, errors);
+}
+
+fn filter_allows(name: &str, filter: &[String]) -> bool {
+    filter.is_empty() || filter.contains(&name.to_string())
+}
+
+fn yaml_endpoint(cfg: &serde_yaml::Value) -> Option<&str> {
+    cfg["endpoint"].as_str()
+}
+
+fn yaml_model(cfg: &serde_yaml::Value) -> Option<&str> {
+    cfg["model"].as_str()
+}
+
+fn yaml_provider(cfg: &serde_yaml::Value) -> Option<&str> {
+    cfg["provider"].as_str()
+}
+
+fn push_missing_field(errors: &mut Vec<String>, kind: &str, name: &str, field: &str) {
+    errors.push(format!("{kind} '{name}': missing {field}"));
+}
+
+fn push_unknown_provider(
+    errors: &mut Vec<String>,
+    kind: &str,
+    name: &str,
+    provider: &str,
+    valid_providers: &[&str],
+) {
+    errors.push(format!(
+        "{kind} '{name}': unknown provider '{provider}' — expected: {}",
+        valid_providers.join(", ")
+    ));
+}
+
+fn check_endpoint_reachable(
+    endpoint: &str,
+    api_key: Option<&str>,
+    cert: Option<&str>,
+    key: Option<&str>,
+) -> bool {
+    check_api_endpoint(endpoint, api_key, cert, key)
+}
+
+fn precheck_named_service(
+    kind: &str,
+    name: &str,
+    cfg: &serde_yaml::Value,
     valid_providers: &[&str],
     ok: &mut Vec<String>,
     errors: &mut Vec<String>,
 ) {
-    if let Some(agents) = matrix["agents"].as_mapping() {
-        ok.push(format!("{} agents configured", agents.len()));
-        for (key, cfg) in agents {
-            let name = key.as_str().unwrap_or("?");
-            if !filter_models.is_empty() && !filter_models.contains(&name.to_string()) {
-                ok.push(format!("agent '{name}': skipped (filtered)"));
-                continue;
-            }
-            if cfg["endpoint"].as_str().unwrap_or("").is_empty() {
-                errors.push(format!("agent '{name}': missing endpoint"));
-            }
-            if cfg["model"].as_str().unwrap_or("").is_empty() {
-                errors.push(format!("agent '{name}': missing model"));
-            }
-            match cfg["provider"].as_str() {
-                None => errors.push(format!("agent '{name}': missing provider")),
-                Some(p) if !valid_providers.contains(&p) => {
+    if yaml_endpoint(cfg).unwrap_or("").is_empty() {
+        push_missing_field(errors, kind, name, "endpoint");
+    }
+    if yaml_model(cfg).unwrap_or("").is_empty() {
+        push_missing_field(errors, kind, name, "model");
+    }
+    match yaml_provider(cfg) {
+        None => push_missing_field(errors, kind, name, "provider"),
+        Some(provider) if !valid_providers.contains(&provider) => {
+            push_unknown_provider(errors, kind, name, provider, valid_providers);
+        }
+        Some(_) => {}
+    }
+
+    if let Some(env_name) = cfg["api_key_env"].as_str() {
+        if let Ok(api_key) = std::env::var(env_name) {
+            ok.push(format!("{kind} '{name}': {env_name} set"));
+            if let Some(endpoint) = yaml_endpoint(cfg) {
+                if check_endpoint_reachable(endpoint, Some(&api_key), None, None) {
+                    ok.push(format!("{kind} '{name}': endpoint reachable"));
+                } else {
                     errors.push(format!(
-                        "agent '{name}': unknown provider '{p}' — expected: {}",
-                        valid_providers.join(", ")
+                        "{kind} '{name}': endpoint unreachable ({endpoint})"
                     ));
                 }
-                Some(_) => {}
             }
-            precheck_agent_api_key(name, cfg, ok, errors);
-            precheck_agent_tls(name, cfg, matrix, ok, errors);
-        }
-    } else {
-        errors.push("matrix: no agents defined".to_string());
-    }
-}
-
-fn precheck_agent_api_key(
-    name: &str,
-    cfg: &serde_yaml::Value,
-    ok: &mut Vec<String>,
-    errors: &mut Vec<String>,
-) {
-    if let Some(env_name) = cfg["api_key_env"].as_str() {
-        if std::env::var(env_name).is_err() {
-            errors.push(format!("agent '{name}': env var {env_name} not set"));
         } else {
-            ok.push(format!("agent '{name}': {env_name} set"));
-            if let Some(endpoint) = cfg["endpoint"].as_str() {
-                let api_key = std::env::var(env_name).unwrap_or_default();
-                let reachable = check_api_endpoint(endpoint, Some(&api_key), None, None);
-                if reachable {
-                    ok.push(format!("agent '{name}': endpoint reachable"));
-                } else {
-                    errors.push(format!("agent '{name}': endpoint unreachable ({endpoint})"));
-                }
-            }
+            errors.push(format!("{kind} '{name}': env var {env_name} not set"));
         }
     }
 }
 
-fn precheck_agent_tls(
+fn precheck_agent_tls_paths(
     name: &str,
-    cfg: &serde_yaml::Value,
     matrix: &serde_yaml::Value,
+    cfg: &serde_yaml::Value,
     ok: &mut Vec<String>,
     errors: &mut Vec<String>,
 ) {
     if !cfg["tls"].as_bool().unwrap_or(false) {
         return;
     }
-    let cert_path = matrix["tls"]["cert"].as_str();
-    let key_path_val = matrix["tls"]["key"].as_str();
-
-    match (cert_path, key_path_val) {
+    match (
+        matrix["tls"]["cert"].as_str(),
+        matrix["tls"]["key"].as_str(),
+    ) {
         (None, _) => errors.push(format!("agent '{name}': tls.cert not set in YAML")),
         (_, None) => errors.push(format!("agent '{name}': tls.key not set in YAML")),
         (Some(cert), Some(key)) => {
@@ -379,9 +578,8 @@ fn precheck_agent_tls(
                 ));
             } else {
                 ok.push(format!("agent '{name}': TLS certs present ({cert}, {key})"));
-                if let Some(endpoint) = cfg["endpoint"].as_str() {
-                    let reachable = check_api_endpoint(endpoint, None, Some(cert), Some(key));
-                    if reachable {
+                if let Some(endpoint) = yaml_endpoint(cfg) {
+                    if check_endpoint_reachable(endpoint, None, Some(cert), Some(key)) {
                         ok.push(format!("agent '{name}': TLS endpoint reachable"));
                     } else {
                         errors.push(format!(
@@ -391,6 +589,50 @@ fn precheck_agent_tls(
                 }
             }
         }
+    }
+}
+
+fn precheck_agent_entry(
+    name: &str,
+    cfg: &serde_yaml::Value,
+    matrix: &serde_yaml::Value,
+    valid_providers: &[&str],
+    ok: &mut Vec<String>,
+    errors: &mut Vec<String>,
+) {
+    precheck_named_service("agent", name, cfg, valid_providers, ok, errors);
+    precheck_agent_tls_paths(name, matrix, cfg, ok, errors);
+}
+
+fn precheck_judge_entry(
+    name: &str,
+    cfg: &serde_yaml::Value,
+    valid_providers: &[&str],
+    ok: &mut Vec<String>,
+    errors: &mut Vec<String>,
+) {
+    precheck_named_service("judge", name, cfg, valid_providers, ok, errors);
+}
+
+fn precheck_agents(
+    matrix: &serde_yaml::Value,
+    filter_models: &[String],
+    valid_providers: &[&str],
+    ok: &mut Vec<String>,
+    errors: &mut Vec<String>,
+) {
+    if let Some(agents) = matrix["agents"].as_mapping() {
+        ok.push(format!("{} agents configured", agents.len()));
+        for (key, cfg) in agents {
+            let name = key.as_str().unwrap_or("?");
+            if !filter_allows(name, filter_models) {
+                ok.push(format!("agent '{name}': skipped (filtered)"));
+                continue;
+            }
+            precheck_agent_entry(name, cfg, matrix, valid_providers, ok, errors);
+        }
+    } else {
+        errors.push("matrix: no agents defined".to_string());
     }
 }
 
@@ -405,40 +647,11 @@ fn precheck_judges(
         ok.push(format!("{} judges configured", judges.len()));
         for (key, cfg) in judges {
             let name = key.as_str().unwrap_or("?");
-            if !filter_judges.is_empty() && !filter_judges.contains(&name.to_string()) {
+            if !filter_allows(name, filter_judges) {
                 ok.push(format!("judge '{name}': skipped (filtered)"));
                 continue;
             }
-            if cfg["endpoint"].as_str().unwrap_or("").is_empty() {
-                errors.push(format!("judge '{name}': missing endpoint"));
-            }
-            if cfg["model"].as_str().unwrap_or("").is_empty() {
-                errors.push(format!("judge '{name}': missing model"));
-            }
-            match cfg["provider"].as_str() {
-                None => errors.push(format!("judge '{name}': missing provider")),
-                Some(p) if !valid_providers.contains(&p) => {
-                    errors.push(format!("judge '{name}': unknown provider '{p}'"));
-                }
-                Some(_) => {}
-            }
-            if let Some(env_name) = cfg["api_key_env"].as_str() {
-                if std::env::var(env_name).is_err() {
-                    errors.push(format!("judge '{name}': env var {env_name} not set"));
-                } else {
-                    ok.push(format!("judge '{name}': {env_name} set"));
-                    if let Some(endpoint) = cfg["endpoint"].as_str() {
-                        let api_key = std::env::var(env_name).unwrap_or_default();
-                        let reachable = check_api_endpoint(endpoint, Some(&api_key), None, None);
-                        if reachable {
-                            ok.push(format!("judge '{name}': endpoint reachable"));
-                        } else {
-                            errors
-                                .push(format!("judge '{name}': endpoint unreachable ({endpoint})"));
-                        }
-                    }
-                }
-            }
+            precheck_judge_entry(name, cfg, valid_providers, ok, errors);
         }
     } else {
         errors.push("matrix: no judges defined".to_string());
@@ -509,32 +722,19 @@ fn precheck(resources: &str, matrix_path: &str) -> PrecheckResult {
 
     // 1. Matrix YAML
     let matrix_path = matrix_path.to_string();
-    match std::fs::read_to_string(&matrix_path) {
-        Ok(content) => match serde_yaml::from_str::<serde_yaml::Value>(&content) {
-            Ok(matrix) => {
-                ok.push(format!("evaluation-matrix.yaml loaded ({matrix_path})"));
-                let valid_providers = ["openai", "openai-new", "anthropic"];
-
-                precheck_tls(&matrix, &mut ok, &mut errors);
-                precheck_agents(
-                    &matrix,
-                    &filter_models,
-                    &valid_providers,
-                    &mut ok,
-                    &mut errors,
-                );
-                precheck_judges(
-                    &matrix,
-                    &filter_judges,
-                    &valid_providers,
-                    &mut ok,
-                    &mut errors,
-                );
-                precheck_prompts(&matrix, resources, &mut ok, &mut errors);
-            }
-            Err(e) => errors.push(format!("evaluation-matrix.yaml parse error: {e}")),
-        },
-        Err(e) => errors.push(format!("evaluation-matrix.yaml not found: {e}")),
+    match load_matrix(&matrix_path) {
+        Ok(matrix) => {
+            ok.push(format!("evaluation-matrix.yaml loaded ({matrix_path})"));
+            validate_matrix(
+                &matrix,
+                resources,
+                &filter_models,
+                &filter_judges,
+                &mut ok,
+                &mut errors,
+            );
+        }
+        Err(msg) => errors.push(msg),
     }
 
     // 3. Container runtime
@@ -809,188 +1009,129 @@ fn write_report(
 }
 
 // ---------------------------------------------------------------------------
-// Test
+// Test orchestration
 // ---------------------------------------------------------------------------
 
-#[tokio::test]
-async fn judge_prompt_evaluation_across_all_use_cases() -> Result<(), Box<dyn Error + Send + Sync>>
-{
-    let resources = concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../crates/rehydration-testkit/resources"
-    );
-    let matrix_path = std::env::var("EVAL_MATRIX_PATH")
-        .unwrap_or_else(|_| format!("{resources}/evaluation-matrix.yaml"));
-
-    // ── Precheck: validate everything before booting containers ──
-    let precheck = precheck(resources, &matrix_path);
+fn log_precheck_result(precheck: &PrecheckResult) {
     if !precheck.pass {
-        eprintln!("\n{}", "=".repeat(70));
+        eprintln!(
+            "
+{}",
+            "=".repeat(70)
+        );
         eprintln!("  PRECHECK FAILED — fix the issues below before running");
-        eprintln!("{}\n", "=".repeat(70));
+        eprintln!(
+            "{}
+",
+            "=".repeat(70)
+        );
         for msg in &precheck.errors {
-            eprintln!("  \u{2718} {msg}");
+            eprintln!("  ✘ {msg}");
         }
         eprintln!();
         for msg in &precheck.warnings {
-            eprintln!("  \u{26a0} {msg}");
+            eprintln!("  ⚠ {msg}");
         }
         eprintln!();
         panic!("precheck failed: {} error(s)", precheck.errors.len());
     }
     for msg in &precheck.warnings {
-        eprintln!("  \u{26a0} {msg}");
+        eprintln!("  ⚠ {msg}");
     }
     for msg in &precheck.ok {
-        eprintln!("  \u{2714} {msg}");
+        eprintln!("  ✔ {msg}");
     }
     eprintln!();
+}
 
-    let mut run = RunDir::create()?;
-    let boot_start = Instant::now();
+fn build_judge_cal_config(judge_cfg: &serde_yaml::Value) -> LlmEvaluatorConfig {
+    let endpoint = yaml_str(judge_cfg, "endpoint", "judge");
+    let model = yaml_str(judge_cfg, "model", "judge");
+    let provider = parse_provider(&yaml_str(judge_cfg, "provider", "judge"));
+    let api_key = judge_cfg["api_key_env"]
+        .as_str()
+        .and_then(|env_name| std::env::var(env_name).ok());
 
-    let matrix: serde_yaml::Value = serde_yaml::from_str(&std::fs::read_to_string(&matrix_path)?)?;
-    run.log(&format!("[CONFIG] matrix={matrix_path}"));
+    LlmEvaluatorConfig {
+        endpoint: endpoint.clone(),
+        model: model.clone(),
+        provider,
+        api_key: api_key.clone(),
+        max_tokens: 200,
+        temperature: 0.0,
+        tls_cert_path: None,
+        tls_key_path: None,
+        tls_insecure: false,
+        judge_endpoint: Some(endpoint),
+        judge_model: Some(model),
+        judge_provider: Some(provider),
+        judge_api_key: api_key,
+    }
+}
 
-    let filter_models = env_filter("FILTER_MODELS");
-    let filter_prompts = env_filter("FILTER_PROMPTS");
-    let filter_scales = env_filter("FILTER_SCALES");
-    let filter_noise = env_filter("FILTER_NOISE");
+fn build_agent_cal_config(
+    agent_cfg: &serde_yaml::Value,
+    tls_section: &serde_yaml::Value,
+) -> LlmEvaluatorConfig {
+    let tls = agent_cfg["tls"].as_bool().unwrap_or(false);
+    let tls_cert_path = if tls {
+        Some(yaml_str(tls_section, "cert", "tls"))
+    } else {
+        None
+    };
+    let tls_key_path = if tls {
+        Some(yaml_str(tls_section, "key", "tls"))
+    } else {
+        None
+    };
 
-    // ── Phase 0: Judge calibration ──
-    // Send known-good and known-bad synthetic responses to each judge
-    // to verify the judge model + prompt combination is sane before
-    // committing to the full benchmark. Aborts early on miscalibration.
+    LlmEvaluatorConfig {
+        endpoint: yaml_str(agent_cfg, "endpoint", "agent"),
+        model: yaml_str(agent_cfg, "model", "agent"),
+        provider: parse_provider(&yaml_str(agent_cfg, "provider", "agent")),
+        api_key: agent_cfg["api_key_env"]
+            .as_str()
+            .and_then(|env_name| std::env::var(env_name).ok()),
+        max_tokens: agent_cfg["max_tokens"].as_u64().unwrap_or(200) as u32,
+        temperature: agent_cfg["temperature"].as_f64().unwrap_or(0.0),
+        tls_cert_path,
+        tls_key_path,
+        tls_insecure: false,
+        judge_endpoint: None,
+        judge_model: None,
+        judge_provider: None,
+        judge_api_key: None,
+    }
+}
 
-    let judges = matrix["judges"].as_mapping().expect("judges mapping");
-    let prompts_map = matrix["prompts"].as_mapping().expect("prompts mapping");
-    let filter_judges = env_filter("FILTER_JUDGES");
-
-    // Calibrate with the default prompt and first non-filtered judge
-    let default_prompt = PromptConfig::load(None)?;
-    for (judge_key, judge_cfg) in judges {
-        let judge_name = judge_key.as_str().expect("judge key");
-        if !filter_judges.is_empty() && !filter_judges.contains(&judge_name.to_string()) {
-            continue;
-        }
-
-        // Build a judge-only config (no agent needed for calibration)
-        let cal_config = LlmEvaluatorConfig {
-            endpoint: yaml_str(judge_cfg, "endpoint", "judge"),
-            model: yaml_str(judge_cfg, "model", "judge"),
-            provider: parse_provider(&yaml_str(judge_cfg, "provider", "judge")),
-            api_key: judge_cfg["api_key_env"]
-                .as_str()
-                .and_then(|e| std::env::var(e).ok()),
-            max_tokens: 200,
-            temperature: 0.0,
-            tls_cert_path: None,
-            tls_key_path: None,
-            tls_insecure: false,
-            judge_endpoint: Some(yaml_str(judge_cfg, "endpoint", "judge")),
-            judge_model: Some(yaml_str(judge_cfg, "model", "judge")),
-            judge_provider: Some(parse_provider(&yaml_str(judge_cfg, "provider", "judge"))),
-            judge_api_key: judge_cfg["api_key_env"]
-                .as_str()
-                .and_then(|e| std::env::var(e).ok()),
-        };
-
+fn log_calibration_cases(
+    run: &mut RunDir,
+    label: &str,
+    name: &str,
+    cases: &[rehydration_testkit::CalibrationCase],
+) -> bool {
+    let mut failed = false;
+    for case in cases {
+        let icon = if case.passed { "✔" } else { "✘" };
         run.log(&format!(
-            "\n[CALIBRATION] Testing judge '{judge_name}' with known-good/known-bad cases..."
+            "  {icon} {}: expected={}, got={}",
+            case.name, case.expected, case.got
         ));
-        let cases = calibrate_judge(&default_prompt, &cal_config).await?;
-        let mut cal_failed = false;
-        for case in &cases {
-            let icon = if case.passed { "\u{2714}" } else { "\u{2718}" };
-            run.log(&format!(
-                "  {icon} {}: expected={}, got={}",
-                case.name, case.expected, case.got
-            ));
-            if !case.passed {
-                cal_failed = true;
-            }
+        if !case.passed {
+            failed = true;
         }
-        if cal_failed {
-            run.log(&format!("[CALIBRATION] FAILED for judge '{judge_name}' — aborting to avoid wasting eval budget"));
-            panic!(
-                "judge calibration failed for '{judge_name}': judge is miscalibrated, fix prompt or switch model"
-            );
-        }
+    }
+    if failed {
         run.log(&format!(
-            "[CALIBRATION] Judge '{judge_name}' passed ({} cases)\n",
-            cases.len()
+            "[CALIBRATION] FAILED for {label} '{name}' — aborting to avoid wasting eval budget"
         ));
     }
+    failed
+}
 
-    // ── Phase 0b: Agent calibration ──
-    // Verify each agent returns non-empty JSON with required fields.
-    // Catches misconfigured thinking mode, empty responses from missing
-    // --reasoning-parser, and malformed output before wasting eval budget.
-
-    let agents_map = matrix["agents"].as_mapping().expect("agents mapping");
-    for (agent_key, agent_cfg) in agents_map {
-        let agent_name = agent_key.as_str().expect("agent key");
-        if !filter_models.is_empty() && !filter_models.contains(&agent_name.to_string()) {
-            continue;
-        }
-
-        let tls = agent_cfg["tls"].as_bool().unwrap_or(false);
-        let tls_section = &matrix["tls"];
-        let agent_cal_config = LlmEvaluatorConfig {
-            endpoint: yaml_str(agent_cfg, "endpoint", "agent"),
-            model: yaml_str(agent_cfg, "model", "agent"),
-            provider: parse_provider(&yaml_str(agent_cfg, "provider", "agent")),
-            api_key: agent_cfg["api_key_env"]
-                .as_str()
-                .and_then(|e| std::env::var(e).ok()),
-            max_tokens: agent_cfg["max_tokens"].as_u64().unwrap_or(200) as u32,
-            temperature: agent_cfg["temperature"].as_f64().unwrap_or(0.0),
-            tls_cert_path: if tls {
-                Some(yaml_str(tls_section, "cert", "tls"))
-            } else {
-                None
-            },
-            tls_key_path: if tls {
-                Some(yaml_str(tls_section, "key", "tls"))
-            } else {
-                None
-            },
-            tls_insecure: tls,
-            judge_endpoint: None,
-            judge_model: None,
-            judge_provider: None,
-            judge_api_key: None,
-        };
-        run.log(&format!(
-            "\n[CALIBRATION] Testing agent '{agent_name}' inference..."
-        ));
-        let cases = calibrate_agent(&agent_cal_config).await?;
-        let mut cal_failed = false;
-        for case in &cases {
-            let icon = if case.passed { "\u{2714}" } else { "\u{2718}" };
-            run.log(&format!(
-                "  {icon} {}: expected={}, got={}",
-                case.name, case.expected, case.got
-            ));
-            if !case.passed {
-                cal_failed = true;
-            }
-        }
-        if cal_failed {
-            run.log(&format!("[CALIBRATION] FAILED for agent '{agent_name}' — aborting to avoid wasting eval budget"));
-            panic!(
-                "agent calibration failed for '{agent_name}': model returns empty or malformed responses. \
-                 Check LLM_ENABLE_THINKING vs --reasoning-parser on the vLLM server."
-            );
-        }
-        run.log(&format!(
-            "[CALIBRATION] Agent '{agent_name}' passed ({} cases)\n",
-            cases.len()
-        ));
-    }
-
-    // ── Phase 1: Boot + capture ──
-
+fn build_scale_entries(
+    matrix: &serde_yaml::Value,
+) -> Vec<(&'static str, fn(Domain) -> GraphSeedConfig)> {
     type ScaleEntry = (&'static str, fn(Domain) -> GraphSeedConfig);
     let all_scales: Vec<ScaleEntry> = vec![
         ("micro", |d| GraphSeedConfig::micro(d)),
@@ -1005,14 +1146,92 @@ async fn judge_prompt_evaluation_across_all_use_cases() -> Result<(), Box<dyn Er
                 .collect()
         })
         .unwrap_or_default();
-    let scales: Vec<ScaleEntry> = if yaml_scales.is_empty() {
+    if yaml_scales.is_empty() {
         all_scales
     } else {
         all_scales
             .into_iter()
             .filter(|(name, _)| yaml_scales.iter().any(|s| s == name))
             .collect()
-    };
+    }
+}
+
+async fn run_judge_calibrations(
+    run: &mut RunDir,
+    matrix: &serde_yaml::Value,
+    filter_judges: &[String],
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let judges = matrix["judges"].as_mapping().expect("judges mapping");
+    let default_prompt = PromptConfig::load(None)?;
+
+    for (judge_key, judge_cfg) in judges {
+        let judge_name = judge_key.as_str().expect("judge key");
+        if !filter_allows(judge_name, filter_judges) {
+            continue;
+        }
+        let cal_config = build_judge_cal_config(judge_cfg);
+        run.log(&format!(
+            "
+[CALIBRATION] Testing judge '{judge_name}' with known-good/known-bad cases..."
+        ));
+        let cases = calibrate_judge(&default_prompt, &cal_config).await?;
+        if log_calibration_cases(run, "judge", judge_name, &cases) {
+            panic!(
+                "judge calibration failed for '{judge_name}': judge is miscalibrated, fix prompt or switch model"
+            );
+        }
+        run.log(&format!(
+            "[CALIBRATION] Judge '{judge_name}' passed ({} cases)
+",
+            cases.len()
+        ));
+    }
+
+    Ok(())
+}
+
+async fn run_agent_calibrations(
+    run: &mut RunDir,
+    matrix: &serde_yaml::Value,
+    filter_models: &[String],
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let agents_map = matrix["agents"].as_mapping().expect("agents mapping");
+    let tls_section = &matrix["tls"];
+
+    for (agent_key, agent_cfg) in agents_map {
+        let agent_name = agent_key.as_str().expect("agent key");
+        if !filter_allows(agent_name, filter_models) {
+            continue;
+        }
+        let agent_cal_config = build_agent_cal_config(agent_cfg, tls_section);
+        run.log(&format!(
+            "
+[CALIBRATION] Testing agent '{agent_name}' inference..."
+        ));
+        let cases = calibrate_agent(&agent_cal_config).await?;
+        if log_calibration_cases(run, "agent", agent_name, &cases) {
+            panic!(
+                "agent calibration failed for '{agent_name}': model returns empty or malformed responses. Check LLM_ENABLE_THINKING vs --reasoning-parser on the vLLM server."
+            );
+        }
+        run.log(&format!(
+            "[CALIBRATION] Agent '{agent_name}' passed ({} cases)
+",
+            cases.len()
+        ));
+    }
+
+    Ok(())
+}
+
+async fn run_capture_phase(
+    run: &mut RunDir,
+    matrix: &serde_yaml::Value,
+    filter_scales: &[String],
+    filter_noise: &[String],
+) -> Result<(Vec<CapturedVariant>, f64), Box<dyn Error + Send + Sync>> {
+    type ScaleEntry = (&'static str, fn(Domain) -> GraphSeedConfig);
+    let scales: Vec<ScaleEntry> = build_scale_entries(matrix);
     let domains = [
         ("ops", Domain::Operations),
         ("debug", Domain::SoftwareDebugging),
@@ -1022,13 +1241,6 @@ async fn judge_prompt_evaluation_across_all_use_cases() -> Result<(), Box<dyn Er
         ("structural", RelationMix::Structural),
         ("mixed", RelationMix::Mixed),
     ];
-    // Noise modes are distributed across mixes rather than fully crossed,
-    // keeping the total variant count constant at 36 (same as the original
-    // binary clean/competing). Each mix gets 2 noise modes:
-    //   explanatory → clean + competing (rationale preservation under noise)
-    //   structural  → clean + conflicting (resistance to contradictions)
-    //   mixed       → clean + restart (restart accuracy under pressure)
-    // This ensures every noise mode is tested while the eval budget stays flat.
     let noise_for_mix: &[(&str, &[(&str, NoiseMode)])] = &[
         (
             "explanatory",
@@ -1059,11 +1271,12 @@ async fn judge_prompt_evaluation_across_all_use_cases() -> Result<(), Box<dyn Er
         "[CONFIG] seeds_per_cell={seeds_per_cell}, scales={active_scale_names:?}"
     ));
 
-    let mut captured: Vec<CapturedVariant> = Vec::new();
+    let boot_start = Instant::now();
+    let mut captured = Vec::new();
     let mut fixture: Option<TestFixture> = None;
 
     for &(scale_name, scale_fn) in &scales {
-        if !filter_scales.is_empty() && !filter_scales.contains(&scale_name.to_string()) {
+        if !filter_allows(scale_name, filter_scales) {
             continue;
         }
         for &(domain_name, domain) in &domains {
@@ -1074,7 +1287,7 @@ async fn judge_prompt_evaluation_across_all_use_cases() -> Result<(), Box<dyn Er
                     .map(|(_, n)| *n)
                     .unwrap_or(&[("clean", NoiseMode::Structural)]);
                 for &(noise_name, noise_mode) in noises {
-                    if !filter_noise.is_empty() && !filter_noise.contains(&noise_name.to_string()) {
+                    if !filter_allows(noise_name, filter_noise) {
                         continue;
                     }
                     for seed_idx in 0..seeds_per_cell {
@@ -1093,7 +1306,6 @@ async fn judge_prompt_evaluation_across_all_use_cases() -> Result<(), Box<dyn Er
 
                         let seed = generate_seed(config.clone());
                         let events = seed_to_projection_events(&seed, SUBJECT_PREFIX, &variant_id)?;
-
                         let root_id = seed.root.node_id.clone();
                         let focus_id = seed
                             .nodes
@@ -1112,7 +1324,6 @@ async fn judge_prompt_evaluation_across_all_use_cases() -> Result<(), Box<dyn Er
                                     .with_grpc_server()
                                     .build()
                                     .await?;
-
                                 let client = connect_nats_with_retry(f.nats_url()).await?;
                                 for (subject, payload) in &events {
                                     client
@@ -1120,7 +1331,6 @@ async fn judge_prompt_evaluation_across_all_use_cases() -> Result<(), Box<dyn Er
                                         .await?;
                                 }
                                 client.flush().await?;
-
                                 wait_for_context(&f, &root_id, &focus_id).await?;
                                 fixture = Some(f);
                             }
@@ -1133,7 +1343,6 @@ async fn judge_prompt_evaluation_across_all_use_cases() -> Result<(), Box<dyn Er
                                         .await?;
                                 }
                                 client.flush().await?;
-
                                 wait_for_context(f, &root_id, &focus_id).await?;
                             }
                         }
@@ -1166,11 +1375,8 @@ async fn judge_prompt_evaluation_across_all_use_cases() -> Result<(), Box<dyn Er
                         let quality = rendered
                             .quality
                             .ok_or("missing quality metrics in rendered context")?;
-
-                        // Build ground truth that rewards multi-layer graph reasoning.
                         let (question, ground_truth) =
                             build_ground_truth_for_seed(&seed, domain_name);
-
                         let chain_kinds: String = seed
                             .nodes
                             .iter()
@@ -1179,14 +1385,18 @@ async fn judge_prompt_evaluation_across_all_use_cases() -> Result<(), Box<dyn Er
                             })
                             .map(|n| n.node_kind.as_str())
                             .collect::<Vec<_>>()
-                            .join("\u{2192}");
-                        run.log(&format!("[CAPTURE] {variant_id}: {tokens} tok (raw={}, compress={:.2}x, causal={:.0}%, noise={:.0}%, detail={:.0}%), chain=[{chain_kinds}], reason={}, distractor={}",
-                    quality.raw_equivalent_tokens, quality.compression_ratio,
-                    quality.causal_density * 100.0, quality.noise_ratio * 100.0, quality.detail_coverage * 100.0,
-                    ground_truth.expected_reason.as_deref().unwrap_or("none"),
-                    ground_truth.distractor_rationale.as_deref().unwrap_or("none")));
+                            .join("→");
+                        run.log(&format!(
+                            "[CAPTURE] {variant_id}: {tokens} tok (raw={}, compress={:.2}x, causal={:.0}%, noise={:.0}%, detail={:.0}%), chain=[{chain_kinds}], reason={}, distractor={}",
+                            quality.raw_equivalent_tokens,
+                            quality.compression_ratio,
+                            quality.causal_density * 100.0,
+                            quality.noise_ratio * 100.0,
+                            quality.detail_coverage * 100.0,
+                            ground_truth.expected_reason.as_deref().unwrap_or("none"),
+                            ground_truth.distractor_rationale.as_deref().unwrap_or("none")
+                        ));
 
-                        // Kernel domain observability
                         let timing = response.timing.as_ref();
                         let obs = extract_kernel_observability(
                             &rendered,
@@ -1221,56 +1431,55 @@ async fn judge_prompt_evaluation_across_all_use_cases() -> Result<(), Box<dyn Er
                             question,
                             ground_truth,
                         });
-                    } // seed_idx
+                    }
                 }
             }
         }
     }
 
-    let boot_ms = boot_start.elapsed().as_secs_f64() * 1000.0;
-    run.log(&format!(
-        "[INFRA] {} variants captured in {boot_ms:.0}ms\n",
-        captured.len()
-    ));
+    Ok((captured, boot_start.elapsed().as_secs_f64() * 1000.0))
+}
 
-    // ── Phase 2: Evaluate model x prompt x captured variant ──
-
+async fn run_evaluation_phase(
+    run: &mut RunDir,
+    matrix: &serde_yaml::Value,
+    resources: &str,
+    captured: &[CapturedVariant],
+    filter_models: &[String],
+    filter_judges: &[String],
+    filter_prompts: &[String],
+) -> Result<Vec<EvalResult>, Box<dyn Error + Send + Sync>> {
     let agents = matrix["agents"].as_mapping().expect("agents mapping");
-    let prompts = prompts_map;
+    let judges = matrix["judges"].as_mapping().expect("judges mapping");
+    let prompts = matrix["prompts"].as_mapping().expect("prompts mapping");
 
-    let mut results: Vec<EvalResult> = Vec::new();
+    let mut results = Vec::new();
     let mut eval_count = 0u32;
 
     for (agent_key, agent_cfg) in agents {
         let agent_name = agent_key.as_str().expect("agent key");
-        if !filter_models.is_empty() && !filter_models.contains(&agent_name.to_string()) {
+        if !filter_allows(agent_name, filter_models) {
             continue;
         }
-
         for (judge_key, judge_cfg) in judges {
             let judge_name = judge_key.as_str().expect("judge key");
-            if !filter_judges.is_empty() && !filter_judges.contains(&judge_name.to_string()) {
+            if !filter_allows(judge_name, filter_judges) || agent_name == judge_name {
                 continue;
             }
-            if agent_name == judge_name {
-                continue;
-            }
-
-            let llm_config = build_llm_config(&matrix, agent_cfg, judge_cfg);
-
+            let llm_config = build_llm_config(matrix, agent_cfg, judge_cfg);
             for (prompt_key, prompt_val) in prompts {
                 let prompt_name = prompt_key.as_str().expect("prompt key");
-                if !filter_prompts.is_empty() && !filter_prompts.contains(&prompt_name.to_string())
-                {
+                if !filter_allows(prompt_name, filter_prompts) {
                     continue;
                 }
-
                 let prompt_file = prompt_val.as_str().map(|p| format!("{resources}/{p}"));
                 let prompts_cfg = PromptConfig::load(prompt_file.as_deref())?;
+                run.log(&format!(
+                    "
+████ {agent_name}→{judge_name}/{prompt_name} ████"
+                ));
 
-                run.log(&format!("\n\u{2588}\u{2588}\u{2588}\u{2588} {agent_name}\u{2192}{judge_name}/{prompt_name} \u{2588}\u{2588}\u{2588}\u{2588}"));
-
-                for ctx in &captured {
+                for ctx in captured {
                     eval_count += 1;
                     let eval = evaluate_with_config(
                         &prompts_cfg,
@@ -1280,8 +1489,7 @@ async fn judge_prompt_evaluation_across_all_use_cases() -> Result<(), Box<dyn Er
                         &ctx.ground_truth,
                     )
                     .await;
-
-                    let cell_id = format!("{agent_name}\u{2192}{judge_name}");
+                    let cell_id = format!("{agent_name}→{judge_name}");
                     let result = match eval {
                         Ok(e) => {
                             let t = if e.llm_task_success { "OK" } else { "FAIL" };
@@ -1314,8 +1522,11 @@ async fn judge_prompt_evaluation_across_all_use_cases() -> Result<(), Box<dyn Er
                                 .chars()
                                 .take(120)
                                 .collect();
-                            run.log(&format!("  [{cell_id}/{prompt_name}] {}: T={t} R={r}(x={rx} o1={ro} cb={rcb} ex={re}) Rc={rc} Rd={rd}  agent=\"{resp_short}...\"  judge={}",
-                                ctx.run_id, e.llm_judge_raw.as_deref().unwrap_or("?")));
+                            run.log(&format!(
+                                "  [{cell_id}/{prompt_name}] {}: T={t} R={r}(x={rx} o1={ro} cb={rcb} ex={re}) Rc={rc} Rd={rd}  agent=\"{resp_short}...\"  judge={}",
+                                ctx.run_id,
+                                e.llm_judge_raw.as_deref().unwrap_or("?")
+                            ));
                             EvalResult {
                                 model: cell_id,
                                 prompt: prompt_name.to_string(),
@@ -1362,7 +1573,6 @@ async fn judge_prompt_evaluation_across_all_use_cases() -> Result<(), Box<dyn Er
                             build_eval_result_from_ctx(ctx, cell_id, prompt_name)
                         }
                     };
-
                     let result_name = format!(
                         "{eval_count:04}_{agent_name}_{judge_name}_{prompt_name}_{}",
                         ctx.run_id
@@ -1374,237 +1584,61 @@ async fn judge_prompt_evaluation_across_all_use_cases() -> Result<(), Box<dyn Er
         }
     }
 
+    Ok(results)
+}
+
+async fn run_judge_prompt_evaluation() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let resources = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../crates/rehydration-testkit/resources"
+    );
+    let matrix_path = std::env::var("EVAL_MATRIX_PATH")
+        .unwrap_or_else(|_| format!("{resources}/evaluation-matrix.yaml"));
+
+    let precheck = precheck(resources, &matrix_path);
+    log_precheck_result(&precheck);
+
+    let mut run = RunDir::create()?;
+    let boot_start = Instant::now();
+
+    let matrix: serde_yaml::Value = serde_yaml::from_str(&std::fs::read_to_string(&matrix_path)?)?;
+    run.log(&format!("[CONFIG] matrix={matrix_path}"));
+
+    let filter_models = env_filter("FILTER_MODELS");
+    let filter_prompts = env_filter("FILTER_PROMPTS");
+    let filter_scales = env_filter("FILTER_SCALES");
+    let filter_noise = env_filter("FILTER_NOISE");
+    let filter_judges = env_filter("FILTER_JUDGES");
+
+    run_judge_calibrations(&mut run, &matrix, &filter_judges).await?;
+    run_agent_calibrations(&mut run, &matrix, &filter_models).await?;
+
+    let (captured, boot_ms) =
+        run_capture_phase(&mut run, &matrix, &filter_scales, &filter_noise).await?;
+    run.log(&format!(
+        "[INFRA] {} variants captured in {boot_ms:.0}ms
+",
+        captured.len()
+    ));
+
+    let results = run_evaluation_phase(
+        &mut run,
+        &matrix,
+        resources,
+        &captured,
+        &filter_models,
+        &filter_judges,
+        &filter_prompts,
+    )
+    .await?;
+
     let total_ms = boot_start.elapsed().as_secs_f64() * 1000.0;
-
-    // ── Phase 3: Report ──
-
     write_report(&mut run, &results, &captured, boot_ms, total_ms);
-    print_summary(&mut run, &results);
-    run.write_summary(&results, &captured, boot_ms, total_ms)?;
-
-    if let Some(f) = fixture {
-        f.shutdown().await?;
-    }
     Ok(())
 }
 
-fn print_summary(run: &mut RunDir, results: &[EvalResult]) {
-    run.log(&format!("\u{2554}{}\u{2557}", "\u{2550}".repeat(78)));
-    run.log(&format!("\u{2551}  SUMMARY{}\u{2551}", " ".repeat(70)));
-    run.log(&format!("\u{2560}{}\u{2563}", "\u{2550}".repeat(78)));
-    run.log(&format!(
-        "\u{2551}  {:<16} {:<16} {:>8} {:>8} {:>8} {:>8} \u{2551}",
-        "Model", "Prompt", "Task", "Restart", "Reason", "LLM ms"
-    ));
-    run.log(&format!("\u{2560}{}\u{2563}", "\u{2550}".repeat(78)));
-
-    let mut seen: Vec<(String, String)> = Vec::new();
-    for r in results {
-        let key = (r.model.clone(), r.prompt.clone());
-        if seen.contains(&key) {
-            continue;
-        }
-        seen.push(key);
-
-        let cell: Vec<&EvalResult> = results
-            .iter()
-            .filter(|x| x.model == r.model && x.prompt == r.prompt)
-            .collect();
-        let n = cell.iter().filter(|x| x.task.is_some()).count();
-        let t = cell.iter().filter(|x| x.task == Some(true)).count();
-        let re = cell.iter().filter(|x| x.restart == Some(true)).count();
-        let p = cell.iter().filter(|x| x.reason == Some(true)).count();
-        let ms: f64 = cell.iter().map(|x| x.latency_ms).sum();
-
-        run.log(&format!(
-            "\u{2551}  {:<16} {:<16} {:>3}/{:<4} {:>3}/{:<4} {:>3}/{:<4} {:>6.0} \u{2551}",
-            r.model, r.prompt, t, n, re, n, p, n, ms
-        ));
-    }
-    run.log(&format!("\u{255a}{}\u{255d}", "\u{2550}".repeat(78)));
-
-    run.log("\nBy scale:");
-    for scale in &["micro", "meso", "stress"] {
-        let sr: Vec<&EvalResult> = results
-            .iter()
-            .filter(|r| r.variant.starts_with(scale))
-            .collect();
-        if sr.is_empty() {
-            continue;
-        }
-        let n = sr.iter().filter(|x| x.task.is_some()).count();
-        let t = sr.iter().filter(|x| x.task == Some(true)).count();
-        let p = sr.iter().filter(|x| x.reason == Some(true)).count();
-        run.log(&format!("  {scale:<8}: Task {t}/{n}  Reason {p}/{n}"));
-    }
-
-    run.log("\nBy relation mix:");
-    for mix in &["explanatory", "structural", "mixed"] {
-        let mr: Vec<&EvalResult> = results.iter().filter(|r| r.variant.contains(mix)).collect();
-        if mr.is_empty() {
-            continue;
-        }
-        let n = mr.iter().filter(|x| x.task.is_some()).count();
-        let t = mr.iter().filter(|x| x.task == Some(true)).count();
-        let p = mr.iter().filter(|x| x.reason == Some(true)).count();
-        run.log(&format!("  {mix:<14}: Task {t}/{n}  Reason {p}/{n}"));
-    }
-}
-
-/// Checks that an LLM endpoint is reachable with a real HTTP request.
-/// For OpenAI-compatible: GET /v1/models. For Anthropic: GET /v1/models (returns 404 but proves connectivity).
-fn check_api_endpoint(
-    endpoint: &str,
-    api_key: Option<&str>,
-    tls_cert: Option<&str>,
-    tls_key: Option<&str>,
-) -> bool {
-    let probe_url = endpoint
-        .replace("/v1/chat/completions", "/v1/models")
-        .replace("/v1/messages", "/v1/models");
-
-    let mut args = vec![
-        "-s",
-        "--max-time",
-        "10",
-        "-o",
-        "/dev/null",
-        "-w",
-        "%{http_code}",
-    ];
-    if tls_cert.is_some() {
-        args.push("-k");
-    }
-    if let Some(cert) = tls_cert {
-        args.push("--cert");
-        args.push(cert);
-    }
-    if let Some(key) = tls_key {
-        args.push("--key");
-        args.push(key);
-    }
-
-    let auth_header;
-    let anthropic_header;
-    let anthropic_version;
-    if let Some(key) = api_key {
-        if endpoint.contains("anthropic.com") {
-            anthropic_header = format!("x-api-key: {key}");
-            anthropic_version = "anthropic-version: 2023-06-01".to_string();
-            args.extend(["-H", &anthropic_header, "-H", &anthropic_version]);
-        } else {
-            auth_header = format!("Authorization: Bearer {key}");
-            args.extend(["-H", &auth_header]);
-        }
-    }
-    args.push(&probe_url);
-
-    match std::process::Command::new("curl").args(&args).output() {
-        Ok(out) => {
-            let code = String::from_utf8_lossy(&out.stdout);
-            // Any HTTP response means the endpoint is reachable.
-            // 200 = OK, 401 = auth issue but reachable, 404 = wrong path but reachable.
-            // Only 000 (connection refused/timeout) is a real failure.
-            code.trim() != "000"
-        }
-        Err(_) => false,
-    }
-}
-
-fn env_filter(key: &str) -> Vec<String> {
-    std::env::var(key)
-        .map(|s| s.split(',').map(str::trim).map(String::from).collect())
-        .unwrap_or_default()
-}
-
-fn parse_provider(s: &str) -> LlmProvider {
-    match s {
-        "openai" => LlmProvider::OpenAI,
-        "openai-new" => LlmProvider::OpenAINew,
-        "anthropic" => LlmProvider::Anthropic,
-        other => {
-            panic!("unknown provider '{other}' in YAML — expected: openai, openai-new, anthropic")
-        }
-    }
-}
-
-fn yaml_str(cfg: &serde_yaml::Value, field: &str, context: &str) -> String {
-    cfg[field]
-        .as_str()
-        .unwrap_or_else(|| panic!("{context}: missing required field '{field}' in YAML"))
-        .to_string()
-}
-
-fn build_llm_config(
-    matrix: &serde_yaml::Value,
-    agent_cfg: &serde_yaml::Value,
-    judge_cfg: &serde_yaml::Value,
-) -> LlmEvaluatorConfig {
-    let tls = agent_cfg["tls"].as_bool().unwrap_or(false);
-    let tls_section = &matrix["tls"];
-    let tls_cert = if tls {
-        Some(yaml_str(tls_section, "cert", "tls"))
-    } else {
-        None
-    };
-    let tls_key = if tls {
-        Some(yaml_str(tls_section, "key", "tls"))
-    } else {
-        None
-    };
-
-    LlmEvaluatorConfig {
-        endpoint: yaml_str(agent_cfg, "endpoint", "agent"),
-        model: yaml_str(agent_cfg, "model", "agent"),
-        provider: parse_provider(&yaml_str(agent_cfg, "provider", "agent")),
-        api_key: agent_cfg["api_key_env"]
-            .as_str()
-            .and_then(|e| std::env::var(e).ok()),
-        max_tokens: agent_cfg["max_tokens"].as_u64().unwrap_or(200) as u32,
-        temperature: agent_cfg["temperature"].as_f64().unwrap_or(0.0),
-        tls_cert_path: tls_cert,
-        tls_key_path: tls_key,
-        tls_insecure: tls,
-        judge_endpoint: Some(yaml_str(judge_cfg, "endpoint", "judge")),
-        judge_model: Some(yaml_str(judge_cfg, "model", "judge")),
-        judge_provider: Some(parse_provider(&yaml_str(judge_cfg, "provider", "judge"))),
-        judge_api_key: judge_cfg["api_key_env"]
-            .as_str()
-            .and_then(|e| std::env::var(e).ok()),
-    }
-}
-
-async fn wait_for_context(
-    fixture: &TestFixture,
-    root_node_id: &str,
-    _focus_node_id: &str,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
-    let mut qc = fixture.query_client();
-    for _ in 0..40 {
-        if let Ok(resp) = qc
-            .get_context(GetContextRequest {
-                root_node_id: root_node_id.to_string(),
-                role: BENCHMARK_ROLE.to_string(),
-                token_budget: 1200,
-                requested_scopes: vec!["implementation".to_string()],
-                depth: 0,
-                max_tier: 0,
-                rehydration_mode: 0,
-            })
-            .await
-        {
-            let resp = resp.into_inner();
-            if let Some(bundle) = resp.bundle
-                && bundle.root_node_id == root_node_id
-                && bundle
-                    .bundles
-                    .first()
-                    .is_some_and(|b| !b.neighbor_nodes.is_empty())
-            {
-                return Ok(());
-            }
-        }
-        sleep(Duration::from_millis(200)).await;
-    }
-    Err("context did not become ready".into())
+#[tokio::test]
+async fn judge_prompt_evaluation_across_all_use_cases() -> Result<(), Box<dyn Error + Send + Sync>>
+{
+    run_judge_prompt_evaluation().await
 }

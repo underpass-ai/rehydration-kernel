@@ -506,9 +506,7 @@ fn apply_llm_eval(result: &mut BenchmarkResult, eval: &LlmEvaluationResult) {
 // Test
 // ---------------------------------------------------------------------------
 
-#[tokio::test]
-async fn vllm_benchmark_across_scales_domains_and_variants()
--> Result<(), Box<dyn Error + Send + Sync>> {
+async fn run_vllm_benchmark() -> Result<(), Box<dyn Error + Send + Sync>> {
     let resources = concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../crates/rehydration-testkit/resources"
@@ -889,4 +887,10 @@ async fn vllm_benchmark_across_scales_domains_and_variants()
     }
 
     Ok(())
+}
+
+#[tokio::test]
+async fn vllm_benchmark_across_scales_domains_and_variants()
+-> Result<(), Box<dyn Error + Send + Sync>> {
+    run_vllm_benchmark().await
 }
