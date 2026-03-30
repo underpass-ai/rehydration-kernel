@@ -997,6 +997,19 @@ test/runtime scaffolding:
 The intent is to keep Sonar coverage focused on production kernel code while
 preserving coverage signal for the code paths that actually ship.
 
+Observed during the CC cleanup:
+- `crates/rehydration-tests-paper/tests/llm_judge_prompt_evaluation.rs` and
+  `crates/rehydration-tests-paper/tests/vllm_benchmark_integration.rs` still
+  mix orchestration, fixture setup, capture, evaluation, and reporting in a
+  single test module.
+- The current helper split lowers Sonar's cognitive-complexity score, but the
+  underlying shape is still framework-like. These flows should be revisited as
+  dedicated orchestration components rather than continuing to grow in the
+  test files.
+- `CaptureJob` / `EvaluationJob` style structs are a signal that the test code
+  is describing an execution engine; the next refactor should move that engine
+  behind reusable domain helpers instead of adding more branches here.
+
 **Projected impact:**
 
 | Strategy | Lines recovered | Projected coverage |
