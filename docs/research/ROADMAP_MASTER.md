@@ -980,6 +980,36 @@ Files with partial coverage that are actual kernel production code:
 | `containers/*.rs` | 70-84% | 37 | Container lifecycle — exclude |
 | **Total** | | **668** | |
 
+These paths are excluded from Sonar coverage because they are supporting
+test/runtime scaffolding:
+
+- `rehydration-tests-shared` contains test fixtures, seed data, runtime
+  containers, and TLS helpers exercised through `container-tests`.
+- `rehydration-testkit` contains the test harness, container bootstrap, seed
+  generation, and LLM evaluator plumbing used by the benchmark suites.
+- `rehydration-transport-grpc/src/agentic_reference/**` and
+  `rehydration-transport-grpc/src/bin/runtime_reference_client/**` are
+  reference/integration helpers, not the product kernel path we are trying to
+  raise to 85% coverage.
+- They stay excluded because their behavior is validated by container-backed
+  integration runs and reference-smoke flows, not by unit coverage.
+
+The intent is to keep Sonar coverage focused on production kernel code while
+preserving coverage signal for the code paths that actually ship.
+
+Observed during the CC cleanup:
+- `crates/rehydration-tests-paper/tests/llm_judge_prompt_evaluation.rs` and
+  `crates/rehydration-tests-paper/tests/vllm_benchmark_integration.rs` still
+  mix orchestration, fixture setup, capture, evaluation, and reporting in a
+  single test module.
+- The current helper split lowers Sonar's cognitive-complexity score, but the
+  underlying shape is still framework-like. These flows should be revisited as
+  dedicated orchestration components rather than continuing to grow in the
+  test files.
+- `CaptureJob` / `EvaluationJob` style structs are a signal that the test code
+  is describing an execution engine; the next refactor should move that engine
+  behind reusable domain helpers instead of adding more branches here.
+
 **Projected impact:**
 
 | Strategy | Lines recovered | Projected coverage |
