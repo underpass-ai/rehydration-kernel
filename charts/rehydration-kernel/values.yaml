@@ -213,8 +213,8 @@ certGen:
   # Creates the shared CA (if missing) and generates server certs for gRPC,
   # NATS, and Valkey, plus CA-only mirror secrets and a kernel client cert.
   enabled: false
-  # -- Container image with openssl, curl, and jq
-  image: docker.io/alpine:3.19
+  # -- Container image with openssl, curl, and jq (preinstalled)
+  image: ghcr.io/underpass-ai/underpass-runtime/cert-gen:v1.0.0
   # -- Key algorithm: ec (ECDSA)
   keyAlgorithm: ec
   # -- Elliptic curve for ECDSA keys
