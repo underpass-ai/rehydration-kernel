@@ -204,6 +204,28 @@ neo4j:
     existingSecret: ""
     caSecret: ""
 
+# ---------------------------------------------------------------------------
+# TLS Certificate Generation (pre-install/pre-upgrade hook)
+# ---------------------------------------------------------------------------
+
+certGen:
+  # -- Enable automatic TLS certificate generation via Helm hook Job.
+  # Creates the shared CA (if missing) and generates server certs for gRPC,
+  # NATS, and Valkey, plus CA-only mirror secrets and a kernel client cert.
+  enabled: false
+  # -- Container image with openssl, curl, and jq
+  image: docker.io/alpine:3.19
+  # -- Key algorithm: ec (ECDSA)
+  keyAlgorithm: ec
+  # -- Elliptic curve for ECDSA keys
+  keyCurve: prime256v1
+  # -- Certificate validity in days
+  validityDays: 365
+  # -- CA certificate validity in days
+  caValidityDays: 3650
+  # -- CA common name
+  caCommonName: rehydration-kernel-internal-ca
+
 # Optional NATS server managed by this chart.
 nats:
   enabled: false

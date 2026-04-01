@@ -1,16 +1,35 @@
 # Full mTLS deployment example for underpass-runtime.
 #
 # All boundaries encrypted with mutual TLS where supported.
-# Requires secrets pre-created in the namespace:
+# The in-chart Neo4j sidecar is the current exception: it still serves
+# plaintext Bolt, so this profile keeps the graph connection on `neo4j://`.
+# Use `values.underpass-runtime.secure.example.yaml` when pointing the kernel
+# at an external Neo4j endpoint that already exposes TLS.
 #
-#   kubectl create secret tls grpc-tls --cert=server.crt --key=server.key -n underpass-runtime
-#   kubectl create secret generic grpc-ca --from-file=ca.crt -n underpass-runtime
-#   kubectl create secret tls nats-tls --cert=nats.crt --key=nats.key -n underpass-runtime
-#   kubectl create secret generic nats-ca --from-file=ca.crt -n underpass-runtime
-#   kubectl create secret tls valkey-tls --cert=valkey.crt --key=valkey.key -n underpass-runtime
-#   kubectl create secret generic valkey-ca --from-file=ca.crt -n underpass-runtime
-#   kubectl create secret tls otel-tls --cert=otel.crt --key=otel.key -n underpass-runtime
-#   kubectl create secret generic neo4j-tls --from-file=ca.crt -n underpass-runtime
+# Option A — automatic certificate generation (recommended):
+#   Set certGen.enabled: true below. The pre-install hook generates the CA
+#   and all server/client certs automatically.
+#
+# Option B — manual prerequisites:
+#   kubectl create secret tls rehydration-kernel-grpc-tls \
+#     --cert=server.crt --key=server.key -n underpass-runtime
+#   kubectl create secret generic rehydration-kernel-nats-tls \
+#     --from-file=tls.crt=nats.crt --from-file=tls.key=nats.key --from-file=ca.crt \
+#     -n underpass-runtime
+#   kubectl create secret generic rehydration-kernel-nats-ca \
+#     --from-file=ca.crt -n underpass-runtime
+#   kubectl create secret generic rehydration-kernel-valkey-tls \
+#     --from-file=tls.crt=valkey.crt --from-file=tls.key=valkey.key --from-file=ca.crt \
+#     -n underpass-runtime
+#   kubectl create secret generic rehydration-kernel-valkey-ca \
+#     --from-file=ca.crt -n underpass-runtime
+#   kubectl create secret generic rehydration-kernel-client-tls \
+#     --from-file=tls.crt=client.crt --from-file=tls.key=client.key --from-file=ca.crt \
+#     -n underpass-runtime
+
+# Uncomment to enable automatic cert generation:
+# certGen:
+#   enabled: true
 
 image:
   pullPolicy: Always
@@ -31,7 +50,7 @@ development:
   allowInlineConnections: true
 
 connections:
-  graphUri: "neo4j+s://neo4j:underpassai@rehydration-kernel-neo4j:7687"
+  graphUri: "neo4j://neo4j:underpassai@rehydration-kernel-neo4j:7687"
   detailUri: "rediss://rehydration-kernel-valkey:6379"
   snapshotUri: "rediss://rehydration-kernel-valkey:6379"
   runtimeStateUri: "rediss://rehydration-kernel-valkey:6379"
@@ -56,7 +75,7 @@ nats:
 
 natsTls:
   mode: mutual
-  existingSecret: rehydration-kernel-nats-tls
+  existingSecret: rehydration-kernel-client-tls
   tlsFirst: false
   keys:
     ca: ca.crt
@@ -73,27 +92,26 @@ valkey:
 
 valkeyTls:
   enabled: true
-  existingSecret: rehydration-kernel-valkey-tls
+  existingSecret: rehydration-kernel-client-tls
   keys:
     ca: ca.crt
     cert: tls.crt
     key: tls.key
 
-# --- Neo4j TLS (CA trust only — mTLS pending neo4rs upgrade) ---
+# --- Neo4j today ---
+# The self-contained Neo4j subchart still serves plaintext Bolt.
+# Leave Neo4j TLS disabled in this profile.
 neo4j:
   enabled: true
   auth: "neo4j/underpassai"
   tls:
-    enabled: true
-    existingSecret: rehydration-kernel-neo4j-tls
-    caSecret: neo4j-tls
+    enabled: false
 
 neo4jTls:
-  enabled: true
-  existingSecret: rehydration-kernel-neo4j-tls
+  enabled: false
+  existingSecret: ""
   keys:
-    ca: ca.crt
-    # cert and key pending neo4rs 0.8 driver support
+    ca: ""
     cert: ""
     key: ""
 

@@ -272,6 +272,13 @@ underpassai
 {{- end -}}
 {{- end -}}
 
+{{/*
+Resolve the CA secret name used by the cert-gen hook Job.
+*/}}
+{{- define "rehydration-kernel.certGen.caSecretName" -}}
+{{- printf "%s-internal-ca" (include "rehydration-kernel.fullname" .) -}}
+{{- end -}}
+
 {{- define "rehydration-kernel.image" -}}
 {{- $repository := .Values.image.repository -}}
 {{- $tag := default "" .Values.image.tag -}}
