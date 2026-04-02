@@ -1,0 +1,34 @@
+# Shared infrastructure — use existing NATS and Valkey in the namespace.
+#
+# Usage:
+#   helm install rehydration-kernel charts/rehydration-kernel \
+#     -f charts/rehydration-kernel/values.shared-infra.yaml \
+#     -n underpass-runtime
+#
+# Use this when NATS/Valkey are already running in the namespace
+# (e.g., deployed by another chart or by the kernel's own previous install).
+#
+# To deploy kernel WITH its own infra (default), use values.underpass-runtime.yaml instead.
+
+development:
+  allowInlineConnections: true
+
+# Disable managed infrastructure — use existing services.
+nats:
+  enabled: false
+
+valkey:
+  enabled: false
+
+# Neo4j is kernel-specific, always managed by this chart.
+neo4j:
+  enabled: true
+  auth: "neo4j/underpassai"
+
+# Point to existing services in the namespace.
+# These override the auto-generated URIs from disabled subcharts.
+connections:
+  natsUrl: "nats://rehydration-kernel-nats:4222"
+  detailUri: "redis://rehydration-kernel-valkey:6379"
+  snapshotUri: "redis://rehydration-kernel-valkey:6379"
+  runtimeStateUri: "redis://rehydration-kernel-valkey:6379"

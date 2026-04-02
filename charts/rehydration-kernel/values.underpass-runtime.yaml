@@ -17,6 +17,8 @@ development:
   allowInlineConnections: true
 
 # Self-contained infrastructure — all managed by this chart.
+# Runtime chart uses values.shared-infra.yaml to connect to these services.
+# Service names: {release}-rehydration-kernel-nats, {release}-rehydration-kernel-valkey
 neo4j:
   enabled: true
   auth: "neo4j/underpassai"
