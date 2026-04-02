@@ -73,10 +73,11 @@ What is in place:
 - Hexagonal domain/application/adapter/transport layers
 - gRPC + async (NATS) contracts with CI protection (`buf breaking`, AsyncAPI checks)
 - TLS/mTLS on all infrastructure boundaries
-- 270 unit tests + 9 container-backed integration tests + [LLM-as-judge E2E benchmark](./docs/testing.md#benchmark-tests-llm-as-judge) (primary empirical validation harness — methodology refinement ongoing)
+- 270 unit tests + 9 container-backed integration tests + [LLM-as-judge E2E benchmark](./docs/testing.md#benchmark-tests-llm-as-judge) ([methodology](./docs/research/benchmark-methodology-v1.md))
+- 4 E2E Helm tests via `helm test` (mTLS handshake, gRPC reachability, connection stability, mTLS enforcement)
 - Multi-resolution rendering (L0/L1/L2) with auto mode selection
 - Quality metrics with OTel + Loki observability
-- Helm chart with optional infrastructure sidecars
+- Helm chart with optional infrastructure sidecars and E2E test hooks
 
 What is out of scope:
 
@@ -99,6 +100,20 @@ docker pull ghcr.io/underpass-ai/rehydration-kernel:latest
 Full guides: [usage](./docs/usage-guide.md) | [testing](./docs/testing.md) |
 [container image](./docs/operations/container-image.md) |
 [Helm deploy](./docs/operations/kubernetes-deploy.md)
+
+### Verify a deployment
+
+```bash
+# Enable E2E tests and run against live cluster
+helm upgrade rehydration-kernel charts/rehydration-kernel \
+  --reuse-values --set e2e.enabled=true
+
+helm test rehydration-kernel --timeout 5m
+# 4 tests: health (mTLS handshake), rehydrate-session, get-context, mTLS enforcement
+```
+
+Tests require the `e2e-client-tls` secret (same CA used by the kernel).
+See `charts/rehydration-kernel/values.yaml` for full E2E configuration.
 
 ## Architecture
 
