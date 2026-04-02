@@ -10,10 +10,12 @@ spec:
   selector:
     matchLabels:
       {{- include "rehydration-kernel.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: server
   template:
     metadata:
       labels:
         {{- include "rehydration-kernel.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: server
         {{- with .Values.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
