@@ -245,3 +245,34 @@ valkey:
     enabled: false
     existingSecret: ""
     caSecret: ""
+
+# ---------------------------------------------------------------------------
+# E2E Tests (helm test)
+# ---------------------------------------------------------------------------
+
+e2e:
+  # -- Enable E2E test Pods (created as helm.sh/hook: test)
+  enabled: false
+  image:
+    # -- E2E runner image (grpcurl + scripts)
+    repository: ghcr.io/underpass-ai/rehydration-kernel/e2e-runner
+    # -- Image pull policy
+    pullPolicy: Always
+    # -- Image tag (defaults to Chart appVersion)
+    tag: ""
+  # -- Existing Secret with client TLS certs for gRPC (ca.crt, tls.crt, tls.key)
+  clientTlsSecret: e2e-client-tls
+  # -- Tests to run
+  tests:
+    - id: "01"
+      name: health
+      timeout: 60
+    - id: "02"
+      name: rehydrate-session
+      timeout: 120
+    - id: "03"
+      name: get-context
+      timeout: 120
+    - id: "04"
+      name: connectivity
+      timeout: 60
