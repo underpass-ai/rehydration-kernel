@@ -239,6 +239,14 @@ random seeds. Null hypothesis rejected at 95% confidence.
 The repository includes a paper draft on explanatory graph context
 rehydration: [docs/research/](./docs/research/)
 
-## License
+## Legal
 
-Apache-2.0. See [`LICENSE`](./LICENSE).
+Copyright © 2026 Tirso García Ibáñez.
+
+This repository is part of the Underpass AI project.
+Licensed under the Apache License, Version 2.0, unless stated otherwise.
+
+Redistributions and derivative works must preserve applicable copyright,
+license, and NOTICE information.
+
+Original author: [Tirso García Ibáñez](https://github.com/tgarciai) · [LinkedIn](https://www.linkedin.com/in/tirsogarcia/) · [Underpass AI](https://github.com/underpass-ai)
