@@ -133,6 +133,13 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- if and (or (eq $valkeyTlsCertKey "") (eq $valkeyTlsKeyKey "")) (not (and (eq $valkeyTlsCertKey "") (eq $valkeyTlsKeyKey ""))) -}}
 {{- fail "valkeyTls.keys.cert and valkeyTls.keys.key must be configured together" -}}
 {{- end -}}
+{{/* --- NATS/Valkey server CA validation --- */}}
+{{- if and (default false .Values.nats.enabled) (default false .Values.nats.tls.enabled) (eq (default "" .Values.nats.tls.caSecret) "") -}}
+{{- fail "nats.tls.caSecret is required when nats.tls.enabled=true (mount the CA for NATS server verification)" -}}
+{{- end -}}
+{{- if and (default false .Values.valkey.enabled) (default false .Values.valkey.tls.enabled) (eq (default "" .Values.valkey.tls.caSecret) "") -}}
+{{- fail "valkey.tls.caSecret is required when valkey.tls.enabled=true (mount the CA for Valkey server verification)" -}}
+{{- end -}}
 {{- if $allowInlineConnections -}}
 {{- if and (not $neo4jEnabled) (eq (default "" .Values.connections.graphUri) "") -}}
 {{- fail "connections.graphUri is required when development.allowInlineConnections=true" -}}

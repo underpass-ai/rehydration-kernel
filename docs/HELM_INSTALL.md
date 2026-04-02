@@ -30,6 +30,7 @@ This creates 7 secrets from the shared CA:
 | `rehydration-kernel-valkey-tls` | Valkey server cert |
 | `rehydration-kernel-nats-ca` | CA mirror for NATS config |
 | `rehydration-kernel-valkey-ca` | CA mirror for Valkey config |
+| `rehydration-kernel-otel-tls` | OTel Collector server cert |
 | `rehydration-kernel-client-tls` | Kernel client cert (NATS/Valkey mTLS) |
 
 ## Values Profiles

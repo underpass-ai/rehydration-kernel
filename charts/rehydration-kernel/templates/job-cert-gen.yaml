@@ -22,12 +22,10 @@ spec:
       restartPolicy: OnFailure
       serviceAccountName: {{ include "rehydration-kernel.fullname" . }}-cert-gen
       automountServiceAccountToken: true
+      {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
-        {{- with .Values.imagePullSecrets }}
         {{- toYaml . | nindent 8 }}
-        {{- else }}
-        - name: ghcr-pull
-        {{- end }}
+      {{- end }}
       securityContext:
         runAsNonRoot: true
         runAsUser: 65534
@@ -191,7 +189,13 @@ spec:
               create_ca_mirror "${FULLNAME}-nats-ca"
               create_ca_mirror "${FULLNAME}-valkey-ca"
 
-              # ── 6. Kernel client cert (for kernel → NATS/Valkey) ─────
+              # ── 6. OTel Collector cert ─────────────────────────────
+              gen_server_cert "${FULLNAME}-otel-tls" "${FULLNAME}-otel-collector" \
+                "${FULLNAME}-otel-collector" \
+                "${FULLNAME}-otel-collector.${NAMESPACE}.svc" \
+                "${FULLNAME}-otel-collector.${NAMESPACE}.svc.cluster.local"
+
+              # ── 7. Kernel client cert (for kernel → NATS/Valkey) ─────
               CLIENT_SECRET="${FULLNAME}-client-tls"
               if secret_exists "$CLIENT_SECRET"; then
                 echo "Secret $CLIENT_SECRET already exists, skipping"
