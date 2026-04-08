@@ -64,6 +64,13 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- $valkeyTlsCaKey := default "" .Values.valkeyTls.keys.ca -}}
 {{- $valkeyTlsCertKey := default "" .Values.valkeyTls.keys.cert -}}
 {{- $valkeyTlsKeyKey := default "" .Values.valkeyTls.keys.key -}}
+{{- $otelCollectorEnabled := default false .Values.otelCollector.enabled -}}
+{{- $otelTlsEnabled := default false .Values.otelCollector.tls.enabled -}}
+{{- $otelTlsSecret := default "" .Values.otelCollector.tls.existingSecret -}}
+{{- $otelTlsMountPath := default "" .Values.otelCollector.tls.mountPath -}}
+{{- $otelTlsCaKey := default "" .Values.otelCollector.tls.keys.ca -}}
+{{- $otelTlsCertKey := default "" .Values.otelCollector.tls.keys.cert -}}
+{{- $otelTlsKeyKey := default "" .Values.otelCollector.tls.keys.key -}}
 {{- $neo4jEnabled := default false .Values.neo4j.enabled -}}
 {{- if and (eq $tag "") (eq $digest "") -}}
 {{- fail "set image.tag or image.digest; the chart no longer defaults to latest" -}}
@@ -132,6 +139,24 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 {{- if and (or (eq $valkeyTlsCertKey "") (eq $valkeyTlsKeyKey "")) (not (and (eq $valkeyTlsCertKey "") (eq $valkeyTlsKeyKey ""))) -}}
 {{- fail "valkeyTls.keys.cert and valkeyTls.keys.key must be configured together" -}}
+{{- end -}}
+{{- if and $otelTlsEnabled (not $otelCollectorEnabled) -}}
+{{- fail "otelCollector.enabled must be true when otelCollector.tls.enabled=true" -}}
+{{- end -}}
+{{- if and $otelTlsEnabled (eq $otelTlsSecret "") -}}
+{{- fail "otelCollector.tls.existingSecret is required when otelCollector.tls.enabled=true" -}}
+{{- end -}}
+{{- if and $otelTlsEnabled (eq $otelTlsMountPath "") -}}
+{{- fail "otelCollector.tls.mountPath is required when otelCollector.tls.enabled=true" -}}
+{{- end -}}
+{{- if and $otelTlsEnabled (eq $otelTlsCaKey "") -}}
+{{- fail "otelCollector.tls.keys.ca is required when otelCollector.tls.enabled=true" -}}
+{{- end -}}
+{{- if and $otelTlsEnabled (eq $otelTlsCertKey "") -}}
+{{- fail "otelCollector.tls.keys.cert is required when otelCollector.tls.enabled=true" -}}
+{{- end -}}
+{{- if and $otelTlsEnabled (eq $otelTlsKeyKey "") -}}
+{{- fail "otelCollector.tls.keys.key is required when otelCollector.tls.enabled=true" -}}
 {{- end -}}
 {{- if $allowInlineConnections -}}
 {{- if and (not $neo4jEnabled) (eq (default "" .Values.connections.graphUri) "") -}}

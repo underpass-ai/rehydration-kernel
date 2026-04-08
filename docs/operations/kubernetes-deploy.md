@@ -348,7 +348,9 @@ otelCollector:
 ```
 
 When `otelCollector.enabled=true`, the kernel deployment automatically sets
-`OTEL_EXPORTER_OTLP_ENDPOINT` to the in-chart collector. No manual wiring needed.
+`OTEL_EXPORTER_OTLP_ENDPOINT` to the in-chart collector. Helm uses
+`http://...:4317` in plaintext mode and `https://...:4317` when
+`otelCollector.tls.enabled=true`.
 
 The OTel Collector exports:
 - **Metrics** → Prometheus endpoint (always active when collector is enabled)
@@ -384,7 +386,8 @@ This configures:
 - Valkey mTLS (kernel ↔ Valkey)
 - Neo4j TLS with CA trust (mTLS pending neo4rs driver upgrade)
 - OTel Collector mTLS (receiver + Loki exporter)
-- Kernel → OTel Collector mTLS (via `OTEL_EXPORTER_OTLP_*_PATH` env vars)
+- Kernel → OTel Collector mTLS (via `OTEL_EXPORTER_OTLP_*_PATH` env vars that
+  point to the mounted OTel TLS secret)
 - Grafana with anonymous access disabled
 
 Requires secrets pre-created in the namespace. See

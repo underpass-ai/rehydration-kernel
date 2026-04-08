@@ -117,8 +117,9 @@ otelCollector:
       key: tls.key
 
 # --- Kernel OTLP mTLS env vars ---
-# These are set automatically via extraEnv since the Helm chart
-# auto-wires OTEL_EXPORTER_OTLP_ENDPOINT but not the TLS paths.
+# The Helm chart auto-wires OTEL_EXPORTER_OTLP_ENDPOINT and mounts the OTel TLS
+# secret into the kernel pod. These env vars point the OTLP exporter at those
+# mounted files.
 extraEnv:
   - name: OTEL_EXPORTER_OTLP_CA_PATH
     value: /var/run/rehydration-kernel/otel-tls/ca.crt

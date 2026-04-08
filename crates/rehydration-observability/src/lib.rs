@@ -2,6 +2,7 @@ pub mod metrics;
 pub mod quality_observers;
 
 use opentelemetry::trace::TracerProvider as _;
+use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_otlp::WithTonicConfig;
 use opentelemetry_otlp::tonic_types::transport::{Certificate, ClientTlsConfig, Identity};
 use opentelemetry_sdk::metrics::SdkMeterProvider;
@@ -89,7 +90,9 @@ fn init_otel_tracer(service_name: &str) -> Option<SdkTracerProvider> {
         return None;
     }
 
-    let mut builder = opentelemetry_otlp::SpanExporter::builder().with_tonic();
+    let mut builder = opentelemetry_otlp::SpanExporter::builder()
+        .with_tonic()
+        .with_endpoint(endpoint);
     if let Some(tls_config) = build_otlp_tls_config() {
         builder = builder.with_tls_config(tls_config);
     }

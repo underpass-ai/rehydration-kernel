@@ -64,7 +64,7 @@ spec:
               value: {{ .Values.observability.logFormat | quote }}
             {{- if .Values.otelCollector.enabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: "http://{{ include "rehydration-kernel.fullname" . }}-otel-collector:4317"
+              value: {{ printf "%s://%s-otel-collector:4317" (ternary "https" "http" .Values.otelCollector.tls.enabled) (include "rehydration-kernel.fullname" .) | quote }}
             {{- else if ne (default "" .Values.observability.otlpEndpoint) "" }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.observability.otlpEndpoint | quote }}
@@ -132,7 +132,7 @@ spec:
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
-          {{- if or (ne .Values.tls.mode "disabled") .Values.natsTls.existingSecret .Values.valkeyTls.existingSecret .Values.neo4jTls.existingSecret }}
+          {{- if or (ne .Values.tls.mode "disabled") .Values.natsTls.existingSecret .Values.valkeyTls.existingSecret .Values.neo4jTls.existingSecret (and .Values.otelCollector.tls.enabled .Values.otelCollector.tls.existingSecret) }}
           volumeMounts:
             {{- if ne .Values.tls.mode "disabled" }}
             - name: grpc-tls
@@ -154,10 +154,15 @@ spec:
               mountPath: {{ .Values.neo4jTls.mountPath | quote }}
               readOnly: true
             {{- end }}
+            {{- if and .Values.otelCollector.tls.enabled .Values.otelCollector.tls.existingSecret }}
+            - name: otel-tls
+              mountPath: {{ .Values.otelCollector.tls.mountPath | quote }}
+              readOnly: true
+            {{- end }}
           {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-      {{- if or (ne .Values.tls.mode "disabled") .Values.natsTls.existingSecret .Values.valkeyTls.existingSecret .Values.neo4jTls.existingSecret }}
+      {{- if or (ne .Values.tls.mode "disabled") .Values.natsTls.existingSecret .Values.valkeyTls.existingSecret .Values.neo4jTls.existingSecret (and .Values.otelCollector.tls.enabled .Values.otelCollector.tls.existingSecret) }}
       volumes:
         {{- if ne .Values.tls.mode "disabled" }}
         - name: grpc-tls
@@ -178,6 +183,11 @@ spec:
         - name: neo4j-tls
           secret:
             secretName: {{ .Values.neo4jTls.existingSecret | quote }}
+        {{- end }}
+        {{- if and .Values.otelCollector.tls.enabled .Values.otelCollector.tls.existingSecret }}
+        - name: otel-tls
+          secret:
+            secretName: {{ .Values.otelCollector.tls.existingSecret | quote }}
         {{- end }}
       {{- end }}
       {{- with .Values.nodeSelector }}

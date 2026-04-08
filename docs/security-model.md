@@ -3,7 +3,8 @@
 ## Transport Security Posture
 
 Every infrastructure boundary supports TLS. The gRPC transport supports
-mutual TLS (mTLS). The OTLP export to the OTel Collector is **plaintext** today.
+mutual TLS (mTLS). OTLP export to the OTel Collector supports TLS and mTLS when
+the OTLP endpoint and certificate paths are configured.
 
 ```mermaid
 graph LR
@@ -11,12 +12,13 @@ graph LR
     K -- TLS --> N4[(Neo4j)]
     K -- TLS + mTLS --> VK[(Valkey)]
     K -- TLS --> NT[(NATS)]
-    K -. OTLP plaintext .-> OT[OTel Collector]
+    K -- TLS + mTLS --> OT[OTel Collector]
 ```
 
-> **Gap**: Kernel → OTel Collector connection does not support TLS.
-> The OTLP gRPC exporter uses `with_tonic()` without TLS configuration.
-> mTLS support is in progress. Until then, co-locate the collector or network-isolate.
+> For the in-chart collector, Helm auto-wires the OTLP endpoint and uses
+> `https://...:4317` when `otelCollector.tls.enabled=true`. The kernel still
+> needs `OTEL_EXPORTER_OTLP_{CA,CERT,KEY}_PATH` to point at the mounted client
+> certificate material.
 
 ## Trust Boundaries
 
