@@ -1,0 +1,242 @@
+{{- if .Values.certGen.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "rehydration-kernel.fullname" . }}-cert-gen
+  labels:
+    {{- include "rehydration-kernel.labels" . | nindent 4 }}
+    app.kubernetes.io/component: cert-gen
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 120
+  template:
+    metadata:
+      labels:
+        {{- include "rehydration-kernel.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: cert-gen
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: {{ include "rehydration-kernel.fullname" . }}-cert-gen
+      automountServiceAccountToken: true
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: cert-gen
+          image: {{ .Values.certGen.image | quote }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          env:
+            - name: FULLNAME
+              value: {{ include "rehydration-kernel.fullname" . | quote }}
+            - name: NAMESPACE
+              value: {{ .Release.Namespace | quote }}
+            - name: KEY_CURVE
+              value: {{ .Values.certGen.keyCurve | quote }}
+            - name: VALIDITY_DAYS
+              value: {{ .Values.certGen.validityDays | quote }}
+            - name: CA_VALIDITY_DAYS
+              value: {{ .Values.certGen.caValidityDays | quote }}
+            - name: CA_CN
+              value: {{ .Values.certGen.caCommonName | quote }}
+          command:
+            - /bin/sh
+            - -ce
+            - |
+              APISERVER=https://kubernetes.default.svc
+              TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+              KUBE_CA=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+              API_BASE="${APISERVER}/api/v1/namespaces/${NAMESPACE}/secrets"
+
+              # ── helpers ──────────────────────────────────────────────
+              kube_get() {
+                curl -s -o /tmp/response.json -w "%{http_code}" \
+                  --cacert "$KUBE_CA" \
+                  -H "Authorization: Bearer $TOKEN" \
+                  "${API_BASE}/$1"
+              }
+
+              secret_exists() {
+                [ "$(kube_get "$1")" = "200" ]
+              }
+
+              create_secret() {
+                local name=$1 data=$2
+                local payload
+                payload=$(printf '{"apiVersion":"v1","kind":"Secret","metadata":{"name":"%s","namespace":"%s","labels":{"app.kubernetes.io/managed-by":"cert-gen","app.kubernetes.io/part-of":"rehydration-kernel"}},"type":"Opaque","data":%s}' \
+                  "$name" "$NAMESPACE" "$data")
+                local code
+                code=$(curl -s -o /tmp/response.json -w "%{http_code}" \
+                  --cacert "$KUBE_CA" \
+                  -H "Authorization: Bearer $TOKEN" \
+                  -H "Content-Type: application/json" \
+                  -X POST -d "$payload" "$API_BASE")
+                if [ "$code" != "201" ] && [ "$code" != "409" ]; then
+                  echo "ERROR: failed to create secret $name (HTTP $code)"
+                  cat /tmp/response.json
+                  return 1
+                fi
+                echo "  created secret $name"
+              }
+
+              gen_key() {
+                openssl genpkey -algorithm EC \
+                  -pkeyopt ec_paramgen_curve:"$KEY_CURVE" \
+                  -out "$1" 2>/dev/null
+              }
+
+              # ── 1. CA ────────────────────────────────────────────────
+              CA_SECRET="${FULLNAME}-internal-ca"
+              if secret_exists "$CA_SECRET"; then
+                echo "CA secret $CA_SECRET already exists, extracting..."
+                jq -r '.data["tls.crt"]' /tmp/response.json | base64 -d > /tmp/ca.crt
+                jq -r '.data["tls.key"]' /tmp/response.json | base64 -d > /tmp/ca.key
+                CA_CRT_B64=$(jq -r '.data["tls.crt"]' /tmp/response.json)
+              else
+                echo "Creating CA ($CA_CN)..."
+                gen_key /tmp/ca.key
+                openssl req -new -x509 -key /tmp/ca.key -out /tmp/ca.crt \
+                  -days "$CA_VALIDITY_DAYS" -subj "/CN=$CA_CN"
+                CA_CRT_B64=$(base64 -w0 /tmp/ca.crt)
+                CA_KEY_B64=$(base64 -w0 /tmp/ca.key)
+                create_secret "$CA_SECRET" \
+                  "{\"tls.crt\":\"$CA_CRT_B64\",\"tls.key\":\"$CA_KEY_B64\",\"ca.crt\":\"$CA_CRT_B64\"}"
+              fi
+
+              # ── helper: generate server cert ─────────────────────────
+              gen_server_cert() {
+                local name=$1 cn=$2
+                shift 2
+                if secret_exists "$name"; then
+                  echo "Secret $name already exists, skipping"
+                  return 0
+                fi
+                echo "Generating server certificate $name..."
+                local sans=""
+                for san in "$@"; do
+                  [ -n "$sans" ] && sans="$sans,"
+                  sans="${sans}DNS:$san"
+                done
+                gen_key /tmp/srv.key
+                cat > /tmp/srv.ext <<EXTEOF
+              [req]
+              distinguished_name = dn
+              req_extensions = v3_req
+              prompt = no
+              [dn]
+              CN = $cn
+              [v3_req]
+              subjectAltName = $sans
+              extendedKeyUsage = serverAuth,clientAuth
+              EXTEOF
+                openssl req -new -key /tmp/srv.key -out /tmp/srv.csr \
+                  -config /tmp/srv.ext
+                openssl x509 -req -in /tmp/srv.csr \
+                  -CA /tmp/ca.crt -CAkey /tmp/ca.key -CAcreateserial \
+                  -out /tmp/srv.crt -days "$VALIDITY_DAYS" \
+                  -extfile /tmp/srv.ext -extensions v3_req 2>/dev/null
+                local CRT_B64=$(base64 -w0 /tmp/srv.crt)
+                local KEY_B64=$(base64 -w0 /tmp/srv.key)
+                create_secret "$name" \
+                  "{\"tls.crt\":\"$CRT_B64\",\"tls.key\":\"$KEY_B64\",\"ca.crt\":\"$CA_CRT_B64\"}"
+              }
+
+              # ── helper: create CA-only mirror secret ─────────────────
+              create_ca_mirror() {
+                local name=$1
+                if secret_exists "$name"; then
+                  echo "Secret $name already exists, skipping"
+                  return 0
+                fi
+                echo "Creating CA mirror $name..."
+                create_secret "$name" "{\"ca.crt\":\"$CA_CRT_B64\"}"
+              }
+
+              # ── 2. gRPC server cert ──────────────────────────────────
+              gen_server_cert "${FULLNAME}-grpc-tls" "${FULLNAME}" \
+                "${FULLNAME}" \
+                "${FULLNAME}.${NAMESPACE}.svc" \
+                "${FULLNAME}.${NAMESPACE}.svc.cluster.local"
+
+              # ── 3. NATS server cert ──────────────────────────────────
+              gen_server_cert "${FULLNAME}-nats-tls" "${FULLNAME}-nats" \
+                "${FULLNAME}-nats" \
+                "${FULLNAME}-nats.${NAMESPACE}.svc" \
+                "${FULLNAME}-nats.${NAMESPACE}.svc.cluster.local"
+
+              # ── 4. Valkey server cert ────────────────────────────────
+              gen_server_cert "${FULLNAME}-valkey-tls" "${FULLNAME}-valkey" \
+                "${FULLNAME}-valkey" \
+                "${FULLNAME}-valkey.${NAMESPACE}.svc" \
+                "${FULLNAME}-valkey.${NAMESPACE}.svc.cluster.local"
+
+              # ── 5. CA-only mirror secrets (NATS/Valkey mount separately) ──
+              create_ca_mirror "${FULLNAME}-nats-ca"
+              create_ca_mirror "${FULLNAME}-valkey-ca"
+
+              # ── 6. OTel Collector cert ─────────────────────────────
+              gen_server_cert "${FULLNAME}-otel-tls" "${FULLNAME}-otel-collector" \
+                "${FULLNAME}-otel-collector" \
+                "${FULLNAME}-otel-collector.${NAMESPACE}.svc" \
+                "${FULLNAME}-otel-collector.${NAMESPACE}.svc.cluster.local"
+
+              # ── 7. Kernel client cert (for kernel → NATS/Valkey) ─────
+              CLIENT_SECRET="${FULLNAME}-client-tls"
+              if secret_exists "$CLIENT_SECRET"; then
+                echo "Secret $CLIENT_SECRET already exists, skipping"
+              else
+                echo "Generating kernel client certificate..."
+                gen_key /tmp/client.key
+                cat > /tmp/client.ext <<EXTEOF
+              [req]
+              distinguished_name = dn
+              req_extensions = v3_req
+              prompt = no
+              [dn]
+              CN = ${FULLNAME}-client
+              [v3_req]
+              extendedKeyUsage = clientAuth
+              EXTEOF
+                openssl req -new -key /tmp/client.key -out /tmp/client.csr \
+                  -config /tmp/client.ext
+                openssl x509 -req -in /tmp/client.csr \
+                  -CA /tmp/ca.crt -CAkey /tmp/ca.key -CAcreateserial \
+                  -out /tmp/client.crt -days "$VALIDITY_DAYS" \
+                  -extfile /tmp/client.ext -extensions v3_req 2>/dev/null
+                CRT_B64=$(base64 -w0 /tmp/client.crt)
+                KEY_B64=$(base64 -w0 /tmp/client.key)
+                create_secret "$CLIENT_SECRET" \
+                  "{\"tls.crt\":\"$CRT_B64\",\"tls.key\":\"$KEY_B64\",\"ca.crt\":\"$CA_CRT_B64\"}"
+              fi
+
+              echo "Certificate generation complete"
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            limits:
+              cpu: 200m
+              memory: 128Mi
+            requests:
+              cpu: 100m
+              memory: 64Mi
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 16Mi
+{{- end }}
