@@ -60,13 +60,7 @@ fn classify_default(
     });
 
     // Focus node (if different from root)
-    let focus_node_id = options.focus_node_id.as_deref().and_then(|fid| {
-        if fid != bundle.root_node().node_id() {
-            bundle.neighbor_nodes().iter().find(|n| n.node_id() == fid)
-        } else {
-            None
-        }
-    });
+    let focus_node_id = find_focus_node(bundle, options);
 
     if let Some(focus_node) = focus_node_id {
         sections.push(TieredSection {
@@ -103,6 +97,19 @@ fn salience_sorted_relationships(
     let mut relationships: Vec<_> = bundle.relationships().iter().collect();
     relationships.sort_by_key(|r| r.explanation().semantic_class().salience_rank());
     relationships
+}
+
+fn find_focus_node<'a>(
+    bundle: &'a RehydrationBundle,
+    options: &'a ContextRenderOptions,
+) -> Option<&'a rehydration_domain::BundleNode> {
+    options.focus_node_id.as_deref().and_then(|fid| {
+        if fid != bundle.root_node().node_id() {
+            bundle.neighbor_nodes().iter().find(|n| n.node_id() == fid)
+        } else {
+            None
+        }
+    })
 }
 
 fn append_l1_explanatory(
