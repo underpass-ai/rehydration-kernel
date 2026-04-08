@@ -445,7 +445,7 @@ export LLM_TEMPERATURE=0.0
 
 # Set judge
 export LLM_JUDGE_ENDPOINT=https://api.anthropic.com/v1/messages
-export LLM_JUDGE_MODEL=claude-opus-4-6-20250610
+export LLM_JUDGE_MODEL=claude-opus-4-6
 export LLM_JUDGE_PROVIDER=anthropic
 export LLM_JUDGE_API_KEY="$(cat /path/to/anthropic-key.txt)"
 

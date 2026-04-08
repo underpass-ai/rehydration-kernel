@@ -84,6 +84,10 @@ bash scripts/ci/container-image.sh ghcr.io/underpass-ai/rehydration-kernel:dev-$
 
 The script only builds — it does **not** push. Override runtime: `CONTAINER_RUNTIME=docker` or `CONTAINER_RUNTIME=podman`.
 
+The build context must include `vendor/` because `Cargo.toml` patches
+`async-nats` to `./vendor/async-nats`. Without that directory in the image
+build context, `cargo build` fails inside the container.
+
 ## Push to GHCR
 
 After building locally, push manually:

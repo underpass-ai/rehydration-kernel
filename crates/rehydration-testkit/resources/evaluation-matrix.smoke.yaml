@@ -1,0 +1,44 @@
+# Minimal evaluation matrix for smoke runs.
+#
+# This keeps the harness unchanged and reduces the runtime as much as
+# possible through configuration alone:
+# - 1 scale: micro
+# - 1 seed per cell
+# - 1 inference model
+# - 1 judge
+# - 1 prompt
+#
+# The harness still evaluates all domain/mix combinations that it knows
+# about, so this is the smallest config-compatible smoke run.
+
+keys:
+  anthropic_env: ANTHROPIC_KEY
+  openai_env: OPENAI_KEY
+
+tls:
+  cert: /tmp/vllm-client.crt
+  key: /tmp/vllm-client.key
+
+agents:
+  qwen3-8b:
+    endpoint: https://llm.underpassai.com/v1/chat/completions
+    model: Qwen/Qwen3-8B
+    provider: openai
+    tls: true
+    max_tokens: 4096
+    temperature: 0.6
+
+judges:
+  gpt-5.4:
+    endpoint: https://api.openai.com/v1/chat/completions
+    model: gpt-5.4
+    provider: openai-new
+    api_key_env: OPENAI_KEY
+
+prompts:
+  default: null
+
+scales:
+  micro: micro
+
+seeds_per_cell: 1

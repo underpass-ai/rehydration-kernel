@@ -86,11 +86,9 @@ for i, cell in enumerate(cells, 1):
     if cell['tls']:
         env.setdefault('LLM_TLS_CERT_PATH', '/tmp/vllm-client.crt')
         env.setdefault('LLM_TLS_KEY_PATH', '/tmp/vllm-client.key')
-        env['LLM_TLS_INSECURE'] = 'true'
     else:
         env.pop('LLM_TLS_CERT_PATH', None)
         env.pop('LLM_TLS_KEY_PATH', None)
-        env.pop('LLM_TLS_INSECURE', None)
 
     if cell['api_key_env']:
         env['LLM_API_KEY'] = os.environ.get(cell['api_key_env'], '')

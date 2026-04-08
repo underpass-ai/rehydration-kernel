@@ -283,7 +283,7 @@ per agent in `evaluation-matrix.yaml`). Qwen3 model card recommends
 agents:
   gpt-5.4:
     endpoint: https://api.openai.com/v1/chat/completions
-    model: gpt-5.4-20250327
+    model: gpt-5.4
     provider: openai-new    # uses max_completion_tokens instead of max_tokens
     api_key_env: OPENAI_KEY
 ```
@@ -296,7 +296,7 @@ No TLS certs needed — auth is via bearer token from `OPENAI_KEY` env var.
 agents:
   opus-4.6:
     endpoint: https://api.anthropic.com/v1/messages
-    model: claude-opus-4-6-20250514
+    model: claude-opus-4-6
     provider: anthropic     # uses Anthropic message format, not OpenAI
     api_key_env: ANTHROPIC_KEY
 ```
@@ -331,13 +331,13 @@ before any container starts or any API dollar is spent.
 
 All examples use the YAML matrix with filters — no env var overrides needed.
 
-**Smoke test** — 1 agent, 1 judge, micro only, clean noise (~$0.01):
+**Minimum smoke** — 1 agent, 1 judge, micro only, clean noise (~$0.01):
 
 ```bash
-export ANTHROPIC_KEY="$(cat /tmp/claude.txt)"
+export OPENAI_KEY="$(cat /tmp/openai.txt)"
 
 FILTER_MODELS="qwen3-8b" \
-FILTER_JUDGES="sonnet-4.6" \
+FILTER_JUDGES="gpt-5.4" \
 FILTER_PROMPTS="default" \
 FILTER_SCALES="micro" \
 FILTER_NOISE="clean" \
@@ -348,7 +348,10 @@ cargo test -p rehydration-tests-paper \
   -- --nocapture --test-threads=1'
 ```
 
-18 evals: 1 scale × 2 domains × 3 mixes × 1 noise (clean) × 3 seeds.
+Uses [`crates/rehydration-testkit/resources/evaluation-matrix.smoke.yaml`](../crates/rehydration-testkit/resources/evaluation-matrix.smoke.yaml).
+
+6 evals: 1 scale × 2 domains × 3 mixes × 1 noise (clean) × 1 seed. This is
+the smallest config-only run that still exercises the full harness path.
 
 **Demonstrative run** — 1 agent, 1 judge, all noise, micro + meso (~$0.10):
 

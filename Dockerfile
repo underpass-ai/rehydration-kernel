@@ -9,6 +9,8 @@ WORKDIR /workspace
 COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
 COPY api ./api
 COPY crates ./crates
+# Required because Cargo.toml patches async-nats to ./vendor/async-nats.
+COPY vendor ./vendor
 
 RUN cargo build --locked --release \
     -p rehydration-server --bin rehydration-server \

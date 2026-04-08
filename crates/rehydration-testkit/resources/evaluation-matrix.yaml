@@ -24,8 +24,9 @@ tls:
   cert: /tmp/vllm-client.crt
   key: /tmp/vllm-client.key
 
-# Pin model versions for reproducibility. Use exact IDs (with date suffix)
-# when available. vLLM models are pinned by the deployed checkpoint.
+# Use the exact model IDs returned by the provider APIs. For vLLM, pin the
+# deployed checkpoint name and keep the TLS client certs in sync with the
+# configured endpoint.
 agents:
   qwen3-8b:
     endpoint: https://llm.underpassai.com/v1/chat/completions
@@ -47,14 +48,14 @@ agents:
 
   opus-4.6:
     endpoint: https://api.anthropic.com/v1/messages
-    model: claude-opus-4-6-20250514
+    model: claude-opus-4-6
     provider: anthropic
     api_key_env: ANTHROPIC_KEY
 
 judges:
   opus-4.6:
     endpoint: https://api.anthropic.com/v1/messages
-    model: claude-opus-4-6-20250514
+    model: claude-opus-4-6
     provider: anthropic
     api_key_env: ANTHROPIC_KEY
 
