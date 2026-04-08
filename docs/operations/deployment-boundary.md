@@ -57,7 +57,7 @@ The chart ships values overlays for specific deployment targets:
 | `values.dev.yaml` | Local development | Inline connections allowed |
 | `values.underpass-runtime.yaml` | `underpass-runtime` namespace | All sidecars enabled, observability stack enabled |
 | `values.underpass-runtime.secure.example.yaml` | Production example | External infra with TLS, `secrets.existingSecret` |
-| `values.underpass-runtime.mtls.example.yaml` | Full mTLS example | All boundaries mTLS, Grafana auth disabled, OTLP TLS |
+| `values.underpass-runtime.mtls.example.yaml` | Full mTLS example | All boundaries mTLS except the in-chart Neo4j sidecar, which remains plaintext today; Grafana auth disabled, OTLP TLS |
 
 The `underpass-runtime` overlay enables all sidecars for a self-contained
 deployment. The `secure.example` overlay shows production configuration with

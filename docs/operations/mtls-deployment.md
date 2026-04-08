@@ -172,7 +172,7 @@ The values file configures:
 | gRPC inbound | mutual TLS | `rehydration-kernel-grpc-tls` |
 | Kernel → NATS | mutual TLS | `rehydration-kernel-nats-tls` |
 | Kernel → Valkey | mutual TLS (rediss://) | `rehydration-kernel-valkey-tls` |
-| Kernel → Neo4j | TLS with CA trust | `rehydration-kernel-neo4j-tls` |
+| Kernel → Neo4j | plaintext in this self-contained profile | in-chart `rehydration-kernel-neo4j` |
 | Kernel → OTel Collector | mTLS via env vars | `rehydration-kernel-otel-tls` |
 | OTel Collector receiver | mTLS with client CA | `rehydration-kernel-otel-tls` |
 | OTel Collector → Loki | mTLS (HTTPS) | `rehydration-kernel-otel-tls` |
@@ -204,11 +204,25 @@ kubectl -n underpass-runtime logs deploy/rehydration-kernel-otel-collector --tai
 | Valkey connection refused | Wrong scheme | URI must use `rediss://` not `redis://` |
 | Neo4j connection failed | Scheme not secure | URI must use `neo4j+s://` not `neo4j://` |
 
+## Neo4j note for this profile
+
+The `values.underpass-runtime.mtls.example.yaml` overlay keeps the self-contained
+Neo4j sidecar on plaintext `neo4j://`.
+
+That is intentional:
+
+- the in-chart Neo4j template does not yet expose Bolt TLS
+- the kernel can consume TLS-protected Neo4j endpoints
+- but that path is currently represented by
+  `values.underpass-runtime.secure.example.yaml`, not by the self-contained
+  sidecar profile
+
 ## What is NOT mTLS yet
 
 - **Neo4j**: The `neo4rs` 0.8 driver only supports CA trust (server verification).
-  Client certificate authentication requires a driver upgrade. The URI parsing
-  and Helm values are ready — only the driver call is missing.
+  Client certificate authentication requires a driver upgrade. In addition, the
+  in-chart Neo4j sidecar still serves plaintext Bolt today, so a fully secured
+  self-contained Neo4j boundary needs chart work as well.
 
 ## Certificate Rotation
 

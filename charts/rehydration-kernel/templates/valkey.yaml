@@ -14,6 +14,12 @@ spec:
       targetPort: 6379
       protocol: TCP
       name: client
+    {{- if .Values.valkey.exporter.enabled }}
+    - port: {{ .Values.valkey.exporter.port }}
+      targetPort: {{ .Values.valkey.exporter.port }}
+      protocol: TCP
+      name: metrics
+    {{- end }}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -84,6 +90,47 @@ spec:
             {{- end }}
           resources:
             {{- toYaml .Values.valkey.resources | nindent 12 }}
+        {{- if .Values.valkey.exporter.enabled }}
+        - name: valkey-exporter
+          image: "{{ .Values.valkey.exporter.image.repository }}:{{ .Values.valkey.exporter.image.tag }}"
+          ports:
+            - containerPort: {{ .Values.valkey.exporter.port }}
+              name: metrics
+          env:
+            {{- if .Values.valkey.tls.enabled }}
+            - name: REDIS_ADDR
+              value: "rediss://localhost:6379"
+            - name: REDIS_EXPORTER_TLS_CLIENT_CERT_FILE
+              value: /etc/valkey-tls/tls.crt
+            - name: REDIS_EXPORTER_TLS_CLIENT_KEY_FILE
+              value: /etc/valkey-tls/tls.key
+            - name: REDIS_EXPORTER_TLS_CA_CERT_FILE
+              value: /etc/valkey-tls-ca/ca.crt
+            - name: REDIS_EXPORTER_SKIP_TLS_VERIFICATION
+              value: "true"
+            - name: REDIS_EXPORTER_SET_CLIENT_NAME
+              value: "false"
+            {{- else }}
+            - name: REDIS_ADDR
+              value: "redis://localhost:6379"
+            {{- end }}
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          {{- if .Values.valkey.tls.enabled }}
+          volumeMounts:
+            - name: valkey-tls
+              mountPath: /etc/valkey-tls
+              readOnly: true
+            - name: valkey-tls-ca
+              mountPath: /etc/valkey-tls-ca
+              readOnly: true
+          {{- end }}
+        {{- end }}
       volumes:
         - name: data
           persistentVolumeClaim:
