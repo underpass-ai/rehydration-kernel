@@ -1075,7 +1075,9 @@ fn build_http_client(
     let mut builder = reqwest::Client::builder();
 
     if config.tls_insecure {
-        builder = builder.danger_accept_invalid_certs(true);
+        return Err(
+            "LLM_TLS_INSECURE is no longer supported; require valid TLS certificates".into(),
+        );
     }
 
     if let (Some(cert_path), Some(key_path)) = (&config.tls_cert_path, &config.tls_key_path) {

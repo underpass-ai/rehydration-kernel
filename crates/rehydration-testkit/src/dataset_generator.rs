@@ -212,58 +212,88 @@ fn build_causal_chain(
         let kind_index = (depth + seed_offset) % vocab.chain_kinds.len();
         let kind = vocab.chain_kinds[kind_index];
         let node_id = format!("{}:chain-{}", config.id_prefix, depth);
-        let has_detail = config.detail_density >= 1.0
-            || (depth as f64) < (config.chain_length as f64 * config.detail_density);
 
         let semantic_class = resolve_chain_semantic_class(config, vocab, kind_index, depth);
-
-        let relation = GeneratedRelation {
-            source_node_id: previous_id.clone(),
-            target_node_id: node_id.clone(),
-            relation_type: vocab.chain_relation_types
-                [kind_index % vocab.chain_relation_types.len()]
-            .to_string(),
+        relations.push(build_chain_relation(
+            config,
+            vocab,
+            kind_index,
+            depth,
+            kind,
             semantic_class,
-            rationale: if config.relation_mix != RelationMix::Structural {
-                if seed_offset == 0 {
-                    Some(format!("{} at depth {depth}", vocab.chain_rationale))
-                } else {
-                    Some(format!(
-                        "{} at depth {depth} (variant {seed_offset})",
-                        vocab.chain_rationale
-                    ))
-                }
-            } else {
-                None
-            },
-            motivation: None,
-            method: if config.relation_mix != RelationMix::Structural {
-                Some(format!("{} verification", kind))
-            } else {
-                None
-            },
-            decision_id: Some(format!("{}:decision-{}", config.id_prefix, depth)),
-            caused_by_node_id: Some(previous_id.clone()),
-            sequence: Some(depth as u32),
-        };
-
-        let node = GeneratedNode {
-            node_id: node_id.clone(),
-            node_kind: kind.to_string(),
-            title: format!("{kind} {depth}"),
-            summary: format!("{} step {depth}", vocab.chain_summary),
-            detail: if has_detail {
-                Some(format!("{} detail for step {depth}", vocab.chain_detail))
-            } else {
-                None
-            },
-            labels: vec![kind.to_string()],
-            properties: BTreeMap::new(),
-        };
-
-        relations.push(relation);
-        nodes.push(node);
+            previous_id,
+        ));
+        nodes.push(build_chain_node(
+            config,
+            vocab,
+            kind,
+            node_id.clone(),
+            depth,
+        ));
         *previous_id = node_id;
+    }
+}
+
+fn build_chain_relation(
+    config: &GraphSeedConfig,
+    vocab: &DomainVocabulary,
+    kind_index: usize,
+    depth: usize,
+    kind: &str,
+    semantic_class: RelationSemanticClass,
+    previous_id: &str,
+) -> GeneratedRelation {
+    let rationale = match config.relation_mix {
+        RelationMix::Structural => None,
+        _ if config.seed == 0 => Some(format!("{} at depth {depth}", vocab.chain_rationale)),
+        _ => Some(format!(
+            "{} at depth {depth} (variant {})",
+            vocab.chain_rationale, config.seed
+        )),
+    };
+    let method = if config.relation_mix != RelationMix::Structural {
+        Some(format!("{kind} verification"))
+    } else {
+        None
+    };
+
+    GeneratedRelation {
+        source_node_id: previous_id.to_string(),
+        target_node_id: format!("{}:chain-{}", config.id_prefix, depth),
+        relation_type: vocab.chain_relation_types[kind_index % vocab.chain_relation_types.len()]
+            .to_string(),
+        semantic_class,
+        rationale,
+        motivation: None,
+        method,
+        decision_id: Some(format!("{}:decision-{}", config.id_prefix, depth)),
+        caused_by_node_id: Some(previous_id.to_string()),
+        sequence: Some(depth as u32),
+    }
+}
+
+fn build_chain_node(
+    config: &GraphSeedConfig,
+    vocab: &DomainVocabulary,
+    kind: &str,
+    node_id: String,
+    depth: usize,
+) -> GeneratedNode {
+    let has_detail = config.detail_density >= 1.0
+        || (depth as f64) < (config.chain_length as f64 * config.detail_density);
+
+    GeneratedNode {
+        node_id,
+        node_kind: kind.to_string(),
+        title: format!("{kind} {depth}"),
+        summary: format!("{} step {depth}", vocab.chain_summary),
+        detail: if has_detail {
+            Some(format!("{} detail for step {depth}", vocab.chain_detail))
+        } else {
+            None
+        },
+        labels: vec![kind.to_string()],
+        properties: BTreeMap::new(),
     }
 }
 
@@ -314,15 +344,8 @@ fn build_noise_branches(
                 noise_title,
                 noise_summary,
             ) = build_noise_fields(config, vocab, depth, branch);
-
-            // When the variant is Structural, ALL branches must be free of
-            // causal metadata — rationale, motivation, method, decision_id.
             let (noise_rationale, noise_motivation) =
-                if config.relation_mix == RelationMix::Structural {
-                    (None, None)
-                } else {
-                    (noise_rationale, noise_motivation)
-                };
+                strip_noise_metadata(config.relation_mix, noise_rationale, noise_motivation);
 
             relations.push(GeneratedRelation {
                 source_node_id: source_id,
@@ -347,6 +370,18 @@ fn build_noise_branches(
                 properties: BTreeMap::new(),
             });
         }
+    }
+}
+
+fn strip_noise_metadata(
+    relation_mix: RelationMix,
+    rationale: Option<String>,
+    motivation: Option<String>,
+) -> (Option<String>, Option<String>) {
+    if relation_mix == RelationMix::Structural {
+        (None, None)
+    } else {
+        (rationale, motivation)
     }
 }
 

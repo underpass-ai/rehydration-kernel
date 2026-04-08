@@ -25,6 +25,22 @@ import numpy as np
 # ── Constants ──
 
 LABEL_TASK_SUCCESS_RATE = "Task Success Rate (%)"
+LABEL_SUCCESS_RATE = "Success Rate (%)"
+
+MIXES = ["explanatory", "structural", "mixed"]
+SCALES = ["micro", "meso", "stress"]
+NOISES = ["clean", "competing"]
+
+
+def _variant_matches(variant, *, mix=None, scale=None, noise=None):
+    parsed = parse_variant(variant)
+    if mix is not None and parsed["mix"] != mix:
+        return False
+    if scale is not None and parsed["scale"] != scale:
+        return False
+    if noise is not None and parsed["noise"] != noise:
+        return False
+    return True
 
 # ── Style ──
 
@@ -140,12 +156,12 @@ def fig_relation_mix_bars(results, fig_dir):
             errs_lo.append((r - lo) * 100)
             errs_hi.append((hi - r) * 100)
 
-        _bars = ax.bar(x + i * width, rates, width,
-                       yerr=[errs_lo, errs_hi], capsize=4,
-                       label=label, color=[COLORS.get(metric, "#999")] * len(mixes),
-                       alpha=0.85 if i == 0 else 0.6)
+        ax.bar(x + i * width, rates, width,
+               yerr=[errs_lo, errs_hi], capsize=4,
+               label=label, color=[COLORS.get(metric, "#999")] * len(mixes),
+               alpha=0.85 if i == 0 else 0.6)
 
-    ax.set_ylabel("Success Rate (%)")
+    ax.set_ylabel(LABEL_SUCCESS_RATE)
     ax.set_title("Rehydration Quality by Relation Type")
     ax.set_xticks(x + width / 2)
     ax.set_xticklabels([m.capitalize() for m in mixes])
@@ -164,7 +180,7 @@ def fig_agent_comparison(results, fig_dir):
         by_agent[agent].append(r)
 
     agents = sorted(by_agent.keys())
-    mixes = ["explanatory", "structural", "mixed"]
+    mixes = MIXES
 
     fig, ax = plt.subplots(figsize=(9, 5))
     x = np.arange(len(agents))
@@ -173,7 +189,7 @@ def fig_agent_comparison(results, fig_dir):
     for i, mix in enumerate(mixes):
         rates = []
         for agent in agents:
-            cell = [r for r in by_agent[agent] if parse_variant(r["variant"])["mix"] == mix]
+            cell = [r for r in by_agent[agent] if _variant_matches(r["variant"], mix=mix)]
             rates.append(rate(cell, "task") * 100)
         ax.bar(x + i * width, rates, width, label=mix.capitalize(),
                color=COLORS.get(mix, "#999"), alpha=0.85)
@@ -197,7 +213,7 @@ def fig_agent_reason(results, fig_dir):
         by_agent[agent].append(r)
 
     agents = sorted(by_agent.keys())
-    mixes = ["explanatory", "structural", "mixed"]
+    mixes = MIXES
 
     fig, ax = plt.subplots(figsize=(9, 5))
     x = np.arange(len(agents))
@@ -206,7 +222,7 @@ def fig_agent_reason(results, fig_dir):
     for i, mix in enumerate(mixes):
         rates = []
         for agent in agents:
-            cell = [r for r in by_agent[agent] if parse_variant(r["variant"])["mix"] == mix]
+            cell = [r for r in by_agent[agent] if _variant_matches(r["variant"], mix=mix)]
             rates.append(rate(cell, "reason") * 100)
         ax.bar(x + i * width, rates, width, label=mix.capitalize(),
                color=COLORS.get(mix, "#999"), alpha=0.85)
@@ -224,17 +240,15 @@ def fig_agent_reason(results, fig_dir):
 
 def fig_scale_effect(results, fig_dir):
     """Line chart: Task rate by scale for each relation mix."""
-    scales = ["micro", "meso", "stress"]
-    mixes = ["explanatory", "structural", "mixed"]
+    scales = SCALES
+    mixes = MIXES
 
     fig, ax = plt.subplots(figsize=(8, 5))
 
     for mix in mixes:
         rates = []
         for scale in scales:
-            cell = [r for r in results
-                    if parse_variant(r["variant"])["scale"] == scale
-                    and parse_variant(r["variant"])["mix"] == mix]
+            cell = [r for r in results if _variant_matches(r["variant"], scale=scale, mix=mix)]
             rates.append(rate(cell, "task") * 100)
         ax.plot(scales, rates, marker="o", linewidth=2, markersize=8,
                 label=mix.capitalize(), color=COLORS.get(mix, "#999"))
@@ -302,7 +316,7 @@ def fig_judge_bias(results, fig_dir):
             ax.bar(x + i * width, rates, width, label=f"Judge: {judge}",
                    color=COLORS.get(judge, "#999"), alpha=0.85)
 
-        ax.set_ylabel("Success Rate (%)" if idx == 0 else "")
+        ax.set_ylabel(LABEL_SUCCESS_RATE if idx == 0 else "")
         ax.set_title(metric.capitalize())
         ax.set_xticks(x + width / 2)
         ax.set_xticklabels(agents, fontsize=9)
@@ -319,7 +333,7 @@ def fig_judge_bias(results, fig_dir):
 def fig_noise_impact(results, fig_dir):
     """Grouped bar: clean vs competing noise by relation mix."""
     mixes = ["explanatory", "structural", "mixed"]
-    noises = ["clean", "competing"]
+    noises = NOISES
 
     fig, ax = plt.subplots(figsize=(8, 5))
     x = np.arange(len(mixes))
@@ -328,9 +342,7 @@ def fig_noise_impact(results, fig_dir):
     for i, noise in enumerate(noises):
         rates = []
         for mix in mixes:
-            cell = [r for r in results
-                    if parse_variant(r["variant"])["mix"] == mix
-                    and parse_variant(r["variant"])["noise"] == noise]
+            cell = [r for r in results if _variant_matches(r["variant"], mix=mix, noise=noise)]
             rates.append(rate(cell, "task") * 100)
         ax.bar(x + i * width, rates, width, label=noise.capitalize(),
                color=COLORS.get(noise, "#999"), alpha=0.85)
@@ -567,9 +579,7 @@ def fig_kernel_token_efficiency(results, captures, fig_dir):
             avg_tokens = np.mean(variant_tokens) if variant_tokens else 1
 
             # Get task success rate for this mix+scale
-            cell = [r for r in results
-                    if parse_variant(r["variant"])["mix"] == mix
-                    and parse_variant(r["variant"])["scale"] == scale]
+            cell = [r for r in results if _variant_matches(r["variant"], mix=mix, scale=scale)]
             task_rate = rate(cell, "task")
 
             # Information density: task success per 100 tokens
@@ -607,7 +617,7 @@ def fig_kernel_causal_signal(captures, fig_dir):
             by_mix[mix]["without_reason"] += 1
         by_mix[mix]["total_tokens"] += data["tokens"]
 
-    mixes = ["explanatory", "structural", "mixed"]
+    mixes = MIXES
 
     fig, axes = plt.subplots(1, 2, figsize=(12, 5))
 
@@ -634,8 +644,8 @@ def fig_kernel_causal_signal(captures, fig_dir):
         avg = by_mix[mix]["total_tokens"] / total_variants if total_variants > 0 else 0
         avg_tokens.append(avg)
 
-    bars = ax2.bar(x, avg_tokens, 0.6,
-                   color=[COLORS.get(m, "#999") for m in mixes], alpha=0.85)
+    ax2.bar(x, avg_tokens, 0.6,
+            color=[COLORS.get(m, "#999") for m in mixes], alpha=0.85)
     ax2.set_ylabel("Average Tokens")
     ax2.set_title("Token Cost by Relation Type")
     ax2.set_xticks(x)
@@ -662,12 +672,12 @@ def _verdict_color(verdict):
 def _build_hypotheses(results):
     """Build the five hypothesis tuples (name, measure, val_a, val_b)."""
     def _mix_rate(mix, metric):
-        return rate([r for r in results if parse_variant(r["variant"])["mix"] == mix], metric)
+        return rate([r for r in results if _variant_matches(r["variant"], mix=mix)], metric)
 
     def _qwen_mix_rate(mix):
         return rate([r for r in results
                      if parse_model(r["model"])[0] == "qwen3-8b"
-                     and parse_variant(r["variant"])["mix"] == mix], "task")
+                     and _variant_matches(r["variant"], mix=mix)], "task")
 
     return [
         ("H1: Rehydration adds value",
@@ -735,11 +745,12 @@ def _render_hypothesis_row(ax, y_pos, hyp_name, measure, verdict, color, detail)
             bbox={"boxstyle": "round,pad=0.3", "facecolor": color, "alpha": 0.15})
 
 
-def fig_hypothesis_summary(results, _captures, fig_dir):
+def fig_hypothesis_summary(results, captures, fig_dir):
     """Summary figure: the five hypotheses this benchmark tests."""
     fig, ax = plt.subplots(figsize=(12, 7))
     ax.axis("off")
 
+    _ = captures
     hypotheses = _build_hypotheses(results)
 
     y_pos = 0.92
@@ -930,9 +941,7 @@ def fig_chain_depth_vs_task(results, fig_dir):
         depths = []
         rates = []
         for scale, depth in scale_depth.items():
-            cell = [r for r in results
-                    if parse_variant(r["variant"])["scale"] == scale
-                    and parse_variant(r["variant"])["mix"] == mix]
+            cell = [r for r in results if _variant_matches(r["variant"], scale=scale, mix=mix)]
             if cell:
                 depths.append(depth)
                 rates.append(rate(cell, "task") * 100)

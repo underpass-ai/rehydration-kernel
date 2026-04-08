@@ -29,6 +29,45 @@ HDR_AGENT_MIX = "| Agent | Explanatory | Structural | Mixed |"
 SEP_METRIC_EVALS = "|-------|------|---------|--------|-------|"
 HDR_MIX_CI = "| Mix | N | Rate | 95% CI |"
 SEP_MIX_CI = "|-----|---|------|--------|"
+HDR_PROMPT = "| Prompt | Task | Restart | Reason | Evals |"
+SEP_PROMPT = "|--------|------|---------|--------|-------|"
+HDR_DOMAIN = "| Domain | Task | Restart | Reason | Evals |"
+SEP_DOMAIN = "|--------|------|---------|--------|-------|"
+HDR_NOISE = "| Noise | Task | Restart | Reason Correct | Reason Distractor | Evals |"
+SEP_NOISE = "|-------|------|---------|----------------|-------------------|-------|"
+HDR_RESTART = "| Noise | Restart | Exact | Off-by-1 | Competing | Explained | Evals |"
+SEP_RESTART = "|-------|---------|-------|----------|-----------|-----------|-------|"
+HDR_OVERVIEW = "| Metric | OK | FAIL | ERR | Rate |"
+SEP_OVERVIEW = "|--------|----|------|-----|------|"
+HDR_AGENT_PROMPT = "| Agent | Judge | Prompt | Task | Restart | Reason | Avg Latency |"
+SEP_AGENT_PROMPT = "|-------|-------|--------|------|---------|--------|-------------|"
+HDR_AGENT_GROUP = "| Agent | Task | Restart | Reason | Evals |"
+HDR_JUDGE_GROUP = "| Judge | Task | Restart | Reason | Evals |"
+HDR_VARIANT_MIX = "| Mix | Task | Restart | Reason Correct | Reason Distractor | Evals |"
+SEP_VARIANT_MIX = "|-----|------|---------|----------------|-------------------|-------|"
+HDR_SCALE = "| Scale | Task | Restart | Reason | Evals |"
+HDR_HEATMAP = "| Noise | Explanatory | Structural | Mixed |"
+HDR_SCALE_HEATMAP = "| Scale | Explanatory | Structural | Mixed |"
+HDR_AGENT_COMPARE = "| Agent | Evals | Task | Restart | Reason Correct | Reason Distractor |"
+SEP_AGENT_COMPARE = "|-------|-------|------|---------|----------------|-------------------|"
+HDR_JUDGE_COMPARE = "| Judge | Evals | Task | Restart | Reason Correct | Reason Distractor |"
+SEP_JUDGE_COMPARE = "|-------|-------|------|---------|----------------|-------------------|"
+HDR_CONVERGENCE = "| Agent→Judge | Metric | Strict | Lenient | Default | Delta S-L |"
+SEP_CONVERGENCE = "|-------------|--------|--------|---------|---------|-----------|"
+HDR_LATENCY_AGENT = "| Agent | Avg Latency | Min | Max | P50 |"
+SEP_LATENCY_AGENT = "|-------|-------------|-----|-----|-----|"
+HDR_COST = "| Role | Model | Evals | Est. Cost |"
+SEP_COST = "|------|-------|-------|-----------|"
+HDR_AGENT_CI = "| Agent | N | Rate | 95% CI |"
+SEP_AGENT_CI = "|-------|---|------|--------|"
+HDR_LATENCY_CI = "| Agent | N | Mean | Std | P25 | P50 | P75 | P95 |"
+SEP_LATENCY_CI = "|-------|---|------|-----|-----|-----|-----|-----|"
+HDR_VARIANCE = "| Condition | Seeds | Task rates | Task variance |"
+SEP_VARIANCE = "|-----------|-------|------------|---------------|"
+HDR_TOKEN = "| Mix | Avg Rendered | Avg Raw | Avg Compression | Causal Density | Detail Coverage |"
+SEP_TOKEN = "|-----|-------------|---------|-----------------|----------------|-----------------|"
+HDR_EVALS = "| # | Agent | Judge | Prompt | Variant | Task | Restart | Reason | Rc | Rd | Latency | Failure Point | Restart Node |"
+SEP_EVALS = "|---|-------|-------|--------|---------|------|---------|--------|----|----|---------|---------------|--------------|"
 
 
 def find_latest_run():
@@ -127,6 +166,28 @@ def wilson_ci(ok, n):
     return p_hat, lo, hi
 
 
+def count_true(rows, key):
+    return sum(1 for row in rows if row.get(key) is True)
+
+
+def count_truthy(rows, key):
+    return sum(1 for row in rows if row.get(key))
+
+
+def count_rows(rows):
+    return len(rows)
+
+
+def append_row(md, values):
+    md.append(f"| {' | '.join(values)} |")
+
+
+def ratio_row(label, rows, key, total=None):
+    total = len(rows) if total is None else total
+    ok = count_true(rows, key)
+    return [label, str(ok), str(total - ok), str(0), ratio(ok, total)]
+
+
 def _parse_results(results):
     """Pre-compute groupings used across multiple report sections."""
     by_cell = defaultdict(list)
@@ -156,22 +217,21 @@ def _parse_results(results):
 def _build_overview(md, results):
     """Append the overview summary table."""
     total = len(results)
-    task_ok = sum(1 for r in results if r.get("task") is True)
+    task_ok = count_true(results, "task")
     task_fail = sum(1 for r in results if r.get("task") is False)
-    task_err = sum(1 for r in results if r.get("task") is None)
-    restart_ok = sum(1 for r in results if r.get("restart") is True)
-    restart_exact = sum(1 for r in results if r.get("restart_exact") is True)
-    restart_off1 = sum(1 for r in results if r.get("restart_off_by_one") is True)
-    restart_competing = sum(1 for r in results if r.get("restart_on_competing") is True)
-    restart_explained = sum(1 for r in results if r.get("restart_explained") is True)
-    _reason_ok = sum(1 for r in results if r.get("reason") is True)
-    reason_correct_ok = sum(1 for r in results if r.get("reason_correct") is True)
-    reason_distractor_ok = sum(1 for r in results if r.get("reason_distractor") is True)
+    task_err = count_rows([r for r in results if r.get("task") is None])
+    restart_ok = count_true(results, "restart")
+    restart_exact = count_true(results, "restart_exact")
+    restart_off1 = count_true(results, "restart_off_by_one")
+    restart_competing = count_true(results, "restart_on_competing")
+    restart_explained = count_true(results, "restart_explained")
+    reason_correct_ok = count_true(results, "reason_correct")
+    reason_distractor_ok = count_true(results, "reason_distractor")
 
     md.append("## Overview")
     md.append("")
-    md.append("| Metric | OK | FAIL | ERR | Rate |")
-    md.append("|--------|----|------|-----|------|")
+    md.append(HDR_OVERVIEW)
+    md.append(SEP_OVERVIEW)
     md.append(f"| Task | {task_ok} | {task_fail} | {task_err} | {ratio(task_ok, total)} |")
     md.append(f"| Restart | {restart_ok} | {total - restart_ok - task_err} | {task_err} | {ratio(restart_ok, total)} |")
     md.append(f"| \u21b3 Exact | {restart_exact} | | | {ratio(restart_exact, total)} |")
@@ -188,8 +248,8 @@ def _build_summary_tables(md, run_dir, by_cell, by_agent, by_judge, by_prompt):
     # ── By Agent x Judge x Prompt ──
     md.append("## By Agent x Judge x Prompt")
     md.append("")
-    md.append("| Agent | Judge | Prompt | Task | Restart | Reason | Avg Latency |")
-    md.append("|-------|-------|--------|------|---------|--------|-------------|")
+    md.append(HDR_AGENT_PROMPT)
+    md.append(SEP_AGENT_PROMPT)
 
     for (agent, judge, prompt), cell in sorted(by_cell.items()):
         n = len(cell)
@@ -197,14 +257,14 @@ def _build_summary_tables(md, run_dir, by_cell, by_agent, by_judge, by_prompt):
         re = sum(1 for r in cell if r.get("restart") is True)
         p = sum(1 for r in cell if r.get("reason") is True)
         lat = avg_latency(cell)
-        md.append(f"| {agent} | {judge} | {prompt} | {ratio(t, n)} | {ratio(re, n)} | {ratio(p, n)} | {lat} |")
+        append_row(md, [agent, judge, prompt, ratio(t, n), ratio(re, n), ratio(p, n), lat])
 
     md.append("")
 
     # ── By Agent (aggregated across judges and prompts) ──
     md.append("## By Agent (all judges, all prompts)")
     md.append("")
-    md.append("| Agent | Task | Restart | Reason | Evals |")
+    md.append(HDR_AGENT_GROUP)
     md.append(SEP_METRIC_EVALS)
 
     for agent, cell in sorted(by_agent.items()):
@@ -212,14 +272,14 @@ def _build_summary_tables(md, run_dir, by_cell, by_agent, by_judge, by_prompt):
         t = sum(1 for r in cell if r.get("task") is True)
         re = sum(1 for r in cell if r.get("restart") is True)
         p = sum(1 for r in cell if r.get("reason") is True)
-        md.append(f"| {agent} | {ratio(t, n)} | {ratio(re, n)} | {ratio(p, n)} | {n} |")
+        append_row(md, [agent, ratio(t, n), ratio(re, n), ratio(p, n), str(n)])
 
     md.append("")
 
     # ── By Judge (aggregated) ──
     md.append("## By Judge (all agents, all prompts)")
     md.append("")
-    md.append("| Judge | Task | Restart | Reason | Evals |")
+    md.append(HDR_JUDGE_GROUP)
     md.append(SEP_METRIC_EVALS)
 
     for judge, cell in sorted(by_judge.items()):
@@ -227,7 +287,7 @@ def _build_summary_tables(md, run_dir, by_cell, by_agent, by_judge, by_prompt):
         t = sum(1 for r in cell if r.get("task") is True)
         re = sum(1 for r in cell if r.get("restart") is True)
         p = sum(1 for r in cell if r.get("reason") is True)
-        md.append(f"| {judge} | {ratio(t, n)} | {ratio(re, n)} | {ratio(p, n)} | {n} |")
+        append_row(md, [judge, ratio(t, n), ratio(re, n), ratio(p, n), str(n)])
 
     md.append("")
 
@@ -235,15 +295,15 @@ def _build_summary_tables(md, run_dir, by_cell, by_agent, by_judge, by_prompt):
     md.append("## By Prompt Variant")
     md.append(fig_ref(run_dir, "05_prompt_comparison.png", "Prompt Variant Effectiveness"))
     md.append("")
-    md.append("| Prompt | Task | Restart | Reason | Evals |")
-    md.append("|--------|------|---------|--------|-------|")
+    md.append(HDR_PROMPT)
+    md.append(SEP_PROMPT)
 
     for prompt, cell in sorted(by_prompt.items()):
         n = len(cell)
         t = sum(1 for r in cell if r.get("task") is True)
         re = sum(1 for r in cell if r.get("restart") is True)
         p = sum(1 for r in cell if r.get("reason") is True)
-        md.append(f"| {prompt} | {ratio(t, n)} | {ratio(re, n)} | {ratio(p, n)} | {n} |")
+        append_row(md, [prompt, ratio(t, n), ratio(re, n), ratio(p, n), str(n)])
 
     md.append("")
 
@@ -254,8 +314,8 @@ def _build_dimension_tables(md, run_dir, by_mix, by_scale, by_domain, by_noise):
     md.append("## By Relation Mix (key signal)")
     md.append(fig_ref(run_dir, "01_relation_mix_bars.png", "Rehydration Quality by Relation Type"))
     md.append("")
-    md.append("| Mix | Task | Restart | Reason Correct | Reason Distractor | Evals |")
-    md.append("|-----|------|---------|----------------|-------------------|-------|")
+    md.append(HDR_VARIANT_MIX)
+    md.append(SEP_VARIANT_MIX)
 
     for mix in ["explanatory", "structural", "mixed"]:
         cell = by_mix.get(mix, [])
@@ -266,7 +326,7 @@ def _build_dimension_tables(md, run_dir, by_mix, by_scale, by_domain, by_noise):
         re = sum(1 for r in cell if r.get("restart") is True)
         rc = sum(1 for r in cell if r.get("reason_correct") is True)
         rd = sum(1 for r in cell if r.get("reason_distractor") is True)
-        md.append(f"| **{mix}** | **{ratio(t, n)}** | **{ratio(re, n)}** | **{ratio(rc, n)}** | **{ratio(rd, n)}** | {n} |")
+        append_row(md, [f"**{mix}**", f"**{ratio(t, n)}**", f"**{ratio(re, n)}**", f"**{ratio(rc, n)}**", f"**{ratio(rd, n)}**", str(n)])
 
     md.append("")
 
@@ -274,7 +334,7 @@ def _build_dimension_tables(md, run_dir, by_mix, by_scale, by_domain, by_noise):
     md.append("## By Scale")
     md.append(fig_ref(run_dir, "04_scale_effect.png", "Scale Effect"))
     md.append("")
-    md.append("| Scale | Task | Restart | Reason | Evals |")
+    md.append(HDR_SCALE)
     md.append(SEP_METRIC_EVALS)
 
     for scale in ["micro", "meso", "stress"]:
@@ -285,22 +345,22 @@ def _build_dimension_tables(md, run_dir, by_mix, by_scale, by_domain, by_noise):
         t = sum(1 for r in cell if r.get("task") is True)
         re = sum(1 for r in cell if r.get("restart") is True)
         p = sum(1 for r in cell if r.get("reason") is True)
-        md.append(f"| {scale} | {ratio(t, n)} | {ratio(re, n)} | {ratio(p, n)} | {n} |")
+        append_row(md, [scale, ratio(t, n), ratio(re, n), ratio(p, n), str(n)])
 
     md.append("")
 
     # ── By Domain ──
     md.append("## By Domain")
     md.append("")
-    md.append("| Domain | Task | Restart | Reason | Evals |")
-    md.append("|--------|------|---------|--------|-------|")
+    md.append(HDR_DOMAIN)
+    md.append(SEP_DOMAIN)
 
     for domain, cell in sorted(by_domain.items()):
         n = len(cell)
         t = sum(1 for r in cell if r.get("task") is True)
         re = sum(1 for r in cell if r.get("restart") is True)
         p = sum(1 for r in cell if r.get("reason") is True)
-        md.append(f"| {domain} | {ratio(t, n)} | {ratio(re, n)} | {ratio(p, n)} | {n} |")
+        append_row(md, [domain, ratio(t, n), ratio(re, n), ratio(p, n), str(n)])
 
     md.append("")
 
@@ -308,8 +368,8 @@ def _build_dimension_tables(md, run_dir, by_mix, by_scale, by_domain, by_noise):
     md.append("## By Noise Mode")
     md.append(fig_ref(run_dir, "07_noise_impact.png", "Noise Impact"))
     md.append("")
-    md.append("| Noise | Task | Restart | Reason Correct | Reason Distractor | Evals |")
-    md.append("|-------|------|---------|----------------|-------------------|-------|")
+    md.append(HDR_NOISE)
+    md.append(SEP_NOISE)
 
     for noise in ["clean", "competing", "conflicting", "restart"]:
         cell = by_noise.get(noise, [])
@@ -320,7 +380,7 @@ def _build_dimension_tables(md, run_dir, by_mix, by_scale, by_domain, by_noise):
         re = sum(1 for r in cell if r.get("restart") is True)
         rc = sum(1 for r in cell if r.get("reason_correct") is True)
         rd = sum(1 for r in cell if r.get("reason_distractor") is True)
-        md.append(f"| **{noise}** | {ratio(t, n)} | {ratio(re, n)} | {ratio(rc, n)} | {ratio(rd, n)} | {n} |")
+        append_row(md, [f"**{noise}**", ratio(t, n), ratio(re, n), ratio(rc, n), ratio(rd, n), str(n)])
 
     # Any noise modes not in the predefined list
     for noise, cell in sorted(by_noise.items()):
@@ -331,7 +391,7 @@ def _build_dimension_tables(md, run_dir, by_mix, by_scale, by_domain, by_noise):
         re = sum(1 for r in cell if r.get("restart") is True)
         rc = sum(1 for r in cell if r.get("reason_correct") is True)
         rd = sum(1 for r in cell if r.get("reason_distractor") is True)
-        md.append(f"| {noise} | {ratio(t, n)} | {ratio(re, n)} | {ratio(rc, n)} | {ratio(rd, n)} | {n} |")
+        append_row(md, [noise, ratio(t, n), ratio(re, n), ratio(rc, n), ratio(rd, n), str(n)])
 
     md.append("")
 
@@ -341,7 +401,7 @@ def _build_heatmaps(md, run_dir, results, by_agent, by_noise):
     # ── Cross: Noise x Mix ──
     md.append("## Noise x Relation Mix (Task)")
     md.append("")
-    md.append("| Noise | Explanatory | Structural | Mixed |")
+    md.append(HDR_HEATMAP)
     md.append(SEP_CROSS_MIX)
 
     for noise in ["clean", "competing", "conflicting", "restart"]:
@@ -354,7 +414,7 @@ def _build_heatmaps(md, run_dir, results, by_agent, by_noise):
             n = len(mix_cell)
             t = sum(1 for r in mix_cell if r.get("task") is True)
             row.append(ratio(t, n))
-        md.append(f"| {' | '.join(row)} |")
+        append_row(md, row)
 
     md.append("")
 
@@ -372,7 +432,7 @@ def _build_heatmaps(md, run_dir, results, by_agent, by_noise):
             n = len(cell)
             t = sum(1 for r in cell if r.get("task") is True)
             row.append(ratio(t, n))
-        md.append(f"| {' | '.join(row)} |")
+        append_row(md, row)
 
     md.append("")
 
@@ -390,7 +450,7 @@ def _build_heatmaps(md, run_dir, results, by_agent, by_noise):
             n = len(cell)
             p = sum(1 for r in cell if r.get("reason_correct") is True)
             row.append(ratio(p, n))
-        md.append(f"| {' | '.join(row)} |")
+        append_row(md, row)
 
     md.append("")
 
@@ -407,7 +467,7 @@ def _build_heatmaps(md, run_dir, results, by_agent, by_noise):
             n = len(cell)
             d = sum(1 for r in cell if r.get("reason_distractor") is True)
             row.append(ratio(d, n))
-        md.append(f"| {' | '.join(row)} |")
+        append_row(md, row)
 
     md.append("")
 
@@ -415,7 +475,7 @@ def _build_heatmaps(md, run_dir, results, by_agent, by_noise):
     md.append("## Scale x Relation Mix (Task)")
     md.append(fig_ref(run_dir, "04_scale_effect.png", "Scale Effect on Task Identification"))
     md.append("")
-    md.append("| Scale | Explanatory | Structural | Mixed |")
+    md.append(HDR_SCALE_HEATMAP)
     md.append(SEP_CROSS_MIX)
 
     for scale in ["micro", "meso", "stress"]:
@@ -427,7 +487,7 @@ def _build_heatmaps(md, run_dir, results, by_agent, by_noise):
             n = len(cell)
             t = sum(1 for r in cell if r.get("task") is True)
             row.append(ratio(t, n))
-        md.append(f"| {' | '.join(row)} |")
+        append_row(md, row)
 
     md.append("")
 
@@ -448,8 +508,8 @@ def _build_controlled_comparisons(md, results, by_agent, by_judge):
         agents_in_judge = sorted({parse_model(r["model"])[0] for r in judge_results})
         md.append(f"### Judge = {judge}")
         md.append("")
-        md.append("| Agent | Evals | Task | Restart | Reason Correct | Reason Distractor |")
-        md.append("|-------|-------|------|---------|----------------|-------------------|")
+        md.append(HDR_AGENT_COMPARE)
+        md.append(SEP_AGENT_COMPARE)
         for agent in agents_in_judge:
             cell = [r for r in judge_results if parse_model(r["model"])[0] == agent]
             n = len(cell)
@@ -457,7 +517,7 @@ def _build_controlled_comparisons(md, results, by_agent, by_judge):
             re = sum(1 for r in cell if r.get("restart") is True)
             rc = sum(1 for r in cell if r.get("reason_correct") is True)
             rd = sum(1 for r in cell if r.get("reason_distractor") is True)
-            md.append(f"| {agent} | {n} | {ratio(t, n)} | {ratio(re, n)} | {ratio(rc, n)} | {ratio(rd, n)} |")
+            append_row(md, [agent, str(n), ratio(t, n), ratio(re, n), ratio(rc, n), ratio(rd, n)])
         md.append("")
 
     # ── Controlled comparison: Judge (fixed agent) ──
@@ -475,8 +535,8 @@ def _build_controlled_comparisons(md, results, by_agent, by_judge):
             continue
         md.append(f"### Agent = {agent}")
         md.append("")
-        md.append("| Judge | Evals | Task | Restart | Reason Correct | Reason Distractor |")
-        md.append("|-------|-------|------|---------|----------------|-------------------|")
+        md.append(HDR_JUDGE_COMPARE)
+        md.append(SEP_JUDGE_COMPARE)
         for judge in judges_in_agent:
             cell = [r for r in agent_results if parse_model(r["model"])[1] == judge]
             n = len(cell)
@@ -484,7 +544,7 @@ def _build_controlled_comparisons(md, results, by_agent, by_judge):
             re = sum(1 for r in cell if r.get("restart") is True)
             rc = sum(1 for r in cell if r.get("reason_correct") is True)
             rd = sum(1 for r in cell if r.get("reason_distractor") is True)
-            md.append(f"| {judge} | {n} | {ratio(t, n)} | {ratio(re, n)} | {ratio(rc, n)} | {ratio(rd, n)} |")
+            append_row(md, [judge, str(n), ratio(t, n), ratio(re, n), ratio(rc, n), ratio(rd, n)])
         md.append("")
 
 
@@ -493,8 +553,8 @@ def _build_convergence_table(md, run_dir, by_cell):
     md.append("## Prompt Convergence: Strict vs Lenient")
     md.append(fig_ref(run_dir, "09_convergence_heatmap.png", "Convergence Heatmap"))
     md.append("")
-    md.append("| Agent\u2192Judge | Metric | Strict | Lenient | Default | Delta S-L |")
-    md.append("|-------------|--------|--------|---------|---------|-----------|")
+    md.append(HDR_CONVERGENCE)
+    md.append(SEP_CONVERGENCE)
 
     for (agent, judge) in sorted({(a, j) for (a, j, _) in by_cell.keys()}):
         for metric_name, metric_key in [("Task", "task"), ("Restart", "restart"), ("Reason", "reason")]:
@@ -507,8 +567,11 @@ def _build_convergence_table(md, run_dir, by_cell):
             s_ok, s_n = vals.get("strict-judge", (0, 0))
             l_ok, l_n = vals.get("lenient-judge", (0, 0))
             d_ok, d_n = vals.get("default", (0, 0))
-            delta = abs(s_ok - l_ok) if s_n > 0 and l_n > 0 else "?"
-            md.append(f"| {agent}\u2192{judge} | {metric_name} | {ratio(s_ok, s_n)} | {ratio(l_ok, l_n)} | {ratio(d_ok, d_n)} | {delta} |")
+            if s_n > 0 and l_n > 0:
+                delta = abs(s_ok - l_ok)
+            else:
+                delta = "?"
+            append_row(md, [f"{agent}\u2192{judge}", metric_name, ratio(s_ok, s_n), ratio(l_ok, l_n), ratio(d_ok, d_n), str(delta)])
 
     md.append("")
 
@@ -519,8 +582,8 @@ def _build_latency_and_cost(md, run_dir, results, by_agent, by_judge):
     md.append("## Latency by Agent")
     md.append(fig_ref(run_dir, "08_latency_boxplot.png", "Latency Distribution"))
     md.append("")
-    md.append("| Agent | Avg Latency | Min | Max | P50 |")
-    md.append("|-------|-------------|-----|-----|-----|")
+    md.append(HDR_LATENCY_AGENT)
+    md.append(SEP_LATENCY_AGENT)
 
     for agent, cell in sorted(by_agent.items()):
         latencies = sorted([r["latency_ms"] for r in cell if r.get("latency_ms", 0) > 0])
@@ -528,7 +591,7 @@ def _build_latency_and_cost(md, run_dir, results, by_agent, by_judge):
             continue
         avg = sum(latencies) / len(latencies)
         p50 = latencies[len(latencies) // 2]
-        md.append(f"| {agent} | {avg:.0f}ms | {latencies[0]:.0f}ms | {latencies[-1]:.0f}ms | {p50:.0f}ms |")
+        append_row(md, [agent, f"{avg:.0f}ms", f"{latencies[0]:.0f}ms", f"{latencies[-1]:.0f}ms", f"{p50:.0f}ms"])
 
     md.append("")
 
@@ -544,8 +607,8 @@ def _build_latency_and_cost(md, run_dir, results, by_agent, by_judge):
     input_per_call = 700
     total_cost = 0.0
 
-    md.append("| Role | Model | Evals | Est. Cost |")
-    md.append("|------|-------|-------|-----------|")
+    md.append(HDR_COST)
+    md.append(SEP_COST)
 
     for agent, cell in sorted(by_agent.items()):
         n = len(cell)
@@ -553,7 +616,7 @@ def _build_latency_and_cost(md, run_dir, results, by_agent, by_judge):
         p = prices.get(agent, {"input": 0, "output": 0})
         cost = (n * input_per_call * p["input"] + out_tokens * p["output"]) / 1_000_000
         total_cost += cost
-        md.append(f"| agent | {agent} | {n} | ${cost:.2f} |")
+        append_row(md, ["agent", agent, str(n), f"${cost:.2f}"])
 
     for judge, cell in sorted(by_judge.items()):
         n = len(cell)
@@ -561,9 +624,9 @@ def _build_latency_and_cost(md, run_dir, results, by_agent, by_judge):
         p = prices.get(judge, {"input": 0, "output": 0})
         cost = (n * 600 * p["input"] + out_tokens * p["output"]) / 1_000_000
         total_cost += cost
-        md.append(f"| judge | {judge} | {n} | ${cost:.2f} |")
+        append_row(md, ["judge", judge, str(n), f"${cost:.2f}"])
 
-    md.append(f"| **total** | | **{len(results)}** | **${total_cost:.2f}** |")
+    append_row(md, ["**total**", "", f"**{len(results)}**", f"**${total_cost:.2f}**"])
     md.append("")
 
 
@@ -571,8 +634,8 @@ def _build_restart_diagnostics(md, by_noise):
     """Append restart diagnostic table by noise mode."""
     md.append("## Restart Diagnostic by Noise Mode")
     md.append("")
-    md.append("| Noise | Restart | Exact | Off-by-1 | Competing | Explained | Evals |")
-    md.append("|-------|---------|-------|----------|-----------|-----------|-------|")
+    md.append(HDR_RESTART)
+    md.append(SEP_RESTART)
 
     for noise in ["clean", "competing", "conflicting", "restart"]:
         cell = by_noise.get(noise, [])
@@ -584,7 +647,7 @@ def _build_restart_diagnostics(md, by_noise):
         ro = sum(1 for r in cell if r.get("restart_off_by_one") is True)
         rcb = sum(1 for r in cell if r.get("restart_on_competing") is True)
         rexp = sum(1 for r in cell if r.get("restart_explained") is True)
-        md.append(f"| **{noise}** | {ratio(re, n)} | {ratio(rx, n)} | {ratio(ro, n)} | {ratio(rcb, n)} | {ratio(rexp, n)} | {n} |")
+        append_row(md, [f"**{noise}**", ratio(re, n), ratio(rx, n), ratio(ro, n), ratio(rcb, n), ratio(rexp, n), str(n)])
 
     md.append("")
 
@@ -607,7 +670,7 @@ def _build_statistical_summary(md, run_dir, by_agent, by_mix):
         n = len(cell)
         ok = sum(1 for r in cell if r.get("task") is True)
         rate, lo, hi = wilson_ci(ok, n)
-        md.append(f"| {mix} | {n} | {rate:.1%} | [{lo:.1%}, {hi:.1%}] |")
+        append_row(md, [mix, str(n), f"{rate:.1%}", f"[{lo:.1%}, {hi:.1%}]"])
     md.append("")
 
     md.append("### Reason Correct (Main Path) Rate by Relation Mix")
@@ -619,7 +682,7 @@ def _build_statistical_summary(md, run_dir, by_agent, by_mix):
         n = len(cell)
         ok = sum(1 for r in cell if r.get("reason_correct") is True)
         rate, lo, hi = wilson_ci(ok, n)
-        md.append(f"| {mix} | {n} | {rate:.1%} | [{lo:.1%}, {hi:.1%}] |")
+        append_row(md, [mix, str(n), f"{rate:.1%}", f"[{lo:.1%}, {hi:.1%}]"])
     md.append("")
 
     md.append("### Reason Distractor Leakage Rate by Relation Mix")
@@ -631,25 +694,25 @@ def _build_statistical_summary(md, run_dir, by_agent, by_mix):
         n = len(cell)
         ok = sum(1 for r in cell if r.get("reason_distractor") is True)
         rate, lo, hi = wilson_ci(ok, n)
-        md.append(f"| {mix} | {n} | {rate:.1%} | [{lo:.1%}, {hi:.1%}] |")
+        append_row(md, [mix, str(n), f"{rate:.1%}", f"[{lo:.1%}, {hi:.1%}]"])
     md.append("")
 
     md.append("### Task Success Rate by Agent")
     md.append("")
-    md.append("| Agent | N | Rate | 95% CI |")
-    md.append("|-------|---|------|--------|")
+    md.append(HDR_AGENT_CI)
+    md.append(SEP_AGENT_CI)
     for agent in sorted(by_agent.keys()):
         cell = by_agent[agent]
         n = len(cell)
         ok = sum(1 for r in cell if r.get("task") is True)
         rate, lo, hi = wilson_ci(ok, n)
-        md.append(f"| {agent} | {n} | {rate:.1%} | [{lo:.1%}, {hi:.1%}] |")
+        append_row(md, [agent, str(n), f"{rate:.1%}", f"[{lo:.1%}, {hi:.1%}]"])
     md.append("")
 
     md.append("### Latency Distribution by Agent (ms)")
     md.append("")
-    md.append("| Agent | N | Mean | Std | P25 | P50 | P75 | P95 |")
-    md.append("|-------|---|------|-----|-----|-----|-----|-----|")
+    md.append(HDR_LATENCY_CI)
+    md.append(SEP_LATENCY_CI)
     for agent in sorted(by_agent.keys()):
         latencies = sorted([r["latency_ms"] for r in by_agent[agent] if r.get("latency_ms", 0) > 0])
         if not latencies:
@@ -661,7 +724,7 @@ def _build_statistical_summary(md, run_dir, by_agent, by_mix):
         p50 = latencies[int(n * 0.50)]
         p75 = latencies[int(n * 0.75)]
         p95 = latencies[int(n * 0.95)]
-        md.append(f"| {agent} | {n} | {mean:.0f} | {std:.0f} | {p25:.0f} | {p50:.0f} | {p75:.0f} | {p95:.0f} |")
+        append_row(md, [agent, str(n), f"{mean:.0f}", f"{std:.0f}", f"{p25:.0f}", f"{p50:.0f}", f"{p75:.0f}", f"{p95:.0f}"])
     md.append("")
 
 
@@ -705,8 +768,8 @@ def _build_variance_section(md, results):
     md.append("Multiple graph seeds per cell enable variance estimation.")
     md.append("Each row groups evals by condition (scale\u00d7domain\u00d7mix\u00d7noise), across seeds.")
     md.append("")
-    md.append("| Condition | Seeds | Task rates | Task variance |")
-    md.append("|-----------|-------|------------|---------------|")
+    md.append(HDR_VARIANCE)
+    md.append(SEP_VARIANCE)
 
     conditions = OrderedDict()
     for r in results:
@@ -726,7 +789,7 @@ def _build_variance_section(md, results):
         mean = sum(seed_rates) / len(seed_rates)
         var = sum((r - mean) ** 2 for r in seed_rates) / len(seed_rates)
         rates_str = ", ".join(f"{r:.0%}" for r in seed_rates)
-        md.append(f"| {cond} | {len(seed_map)} | {rates_str} | {var:.4f} |")
+        append_row(md, [cond, str(len(seed_map)), rates_str, f"{var:.4f}"])
 
     md.append("")
 
@@ -741,8 +804,8 @@ def _build_token_efficiency(md, results, by_mix):
     md.append("")
     md.append("Compression ratio = raw_equivalent_tokens / rendered_tokens. >1.0 means the structured graph uses fewer tokens than a flat text dump of the same data.")
     md.append("")
-    md.append("| Mix | Avg Rendered | Avg Raw | Avg Compression | Causal Density | Detail Coverage |")
-    md.append("|-----|-------------|---------|-----------------|----------------|-----------------|")
+    md.append(HDR_TOKEN)
+    md.append(SEP_TOKEN)
 
     for mix in ["explanatory", "structural", "mixed"]:
         cell = by_mix.get(mix, [])
@@ -758,7 +821,7 @@ def _build_token_efficiency(md, results, by_mix):
         avg_c = f"{sum(comp)/len(comp):.2f}x" if comp else "n/a"
         avg_cd = f"{sum(cd)/len(cd):.0%}" if cd else "n/a"
         avg_dc = f"{sum(dc)/len(dc):.0%}" if dc else "n/a"
-        md.append(f"| **{mix}** | {avg_r} | {avg_raw} | **{avg_c}** | {avg_cd} | {avg_dc} |")
+        append_row(md, [f"**{mix}**", avg_r, avg_raw, f"**{avg_c}**", avg_cd, avg_dc])
 
     md.append("")
 
@@ -783,8 +846,8 @@ def _build_eval_listing(md, results):
     """Append the line-by-line evaluation listing."""
     md.append("## All Evaluations (line by line)")
     md.append("")
-    md.append("| # | Agent | Judge | Prompt | Variant | Task | Restart | Reason | Rc | Rd | Latency | Failure Point | Restart Node |")
-    md.append("|---|-------|-------|--------|---------|------|---------|--------|----|----|---------|---------------|--------------|")
+    md.append(HDR_EVALS)
+    md.append(SEP_EVALS)
 
     for i, r in enumerate(results, 1):
         agent, judge = parse_model(r["model"])
@@ -807,7 +870,7 @@ def _build_eval_listing(md, results):
 
         rc = tristate_label(r.get("reason_correct"), "OK", "FAIL", "-")
         rd = "LEAK" if r.get("reason_distractor") is True else "-"
-        md.append(f"| {i} | {agent} | {judge} | {r['prompt']} | {r['variant']} | {t} | {re} | {p} | {rc} | {rd} | {lat} | {fp} | {rn} |")
+        append_row(md, [str(i), agent, judge, r["prompt"], r["variant"], t, re, p, rc, rd, lat, fp, rn])
 
 
 def generate_report(run_dir, results):

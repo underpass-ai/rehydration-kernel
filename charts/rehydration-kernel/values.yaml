@@ -133,10 +133,9 @@ loki:
       cpu: 500m
       memory: 512Mi
 
-# Optional Grafana dashboard managed by this chart.
-# Auto-provisions Loki and Prometheus (OTel) datasources when enabled.
-# WARNING: Default deploys with anonymous admin access for development convenience.
-# For production: set adminPassword and disable anonymous access in extraEnv.
+# DEPRECATED: Use the centralized Grafana in the monitoring namespace instead.
+# This embedded Grafana is kept for backward compatibility but should not be
+# enabled in new deployments. See cluster-observability/grafana/.
 grafana:
   enabled: false
   adminPassword: admin
@@ -181,7 +180,8 @@ otelCollector:
 # and will connect to the release-scoped Neo4j service automatically.
 neo4j:
   enabled: false
-  auth: "neo4j/underpassai"
+  # Override via --set neo4j.auth=neo4j/<password> at install time
+  auth: "neo4j/changeme"
   image:
     repository: docker.io/library/neo4j
     tag: "5.14"
@@ -203,6 +203,8 @@ neo4j:
     enabled: false
     existingSecret: ""
     caSecret: ""
+  # NOTE: Neo4j Community Edition does not support Prometheus metrics.
+  # Exporter config removed — monitor Neo4j via logs (Loki) and health checks.
 
 # Optional NATS server managed by this chart.
 nats:
@@ -224,6 +226,12 @@ nats:
     enabled: false
     existingSecret: ""
     caSecret: ""
+  exporter:
+    enabled: false
+    image:
+      repository: docker.io/natsio/prometheus-nats-exporter
+      tag: "0.16.0"
+    port: 7777
 
 # Optional Valkey server managed by this chart.
 valkey:
@@ -245,6 +253,12 @@ valkey:
     enabled: false
     existingSecret: ""
     caSecret: ""
+  exporter:
+    enabled: false
+    image:
+      repository: docker.io/oliver006/redis_exporter
+      tag: "v1.67.0"
+    port: 9121
 
 # ---------------------------------------------------------------------------
 # E2E Tests (helm test)

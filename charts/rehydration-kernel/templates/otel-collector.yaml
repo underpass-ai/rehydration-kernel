@@ -82,6 +82,25 @@ data:
               key_file: {{ .Values.otelCollector.tls.mountPath }}/{{ .Values.otelCollector.tls.keys.key }}
               client_ca_file: {{ .Values.otelCollector.tls.mountPath }}/{{ .Values.otelCollector.tls.keys.ca }}
             {{- end }}
+      {{- if or (and .Values.valkey.enabled .Values.valkey.exporter.enabled) (and .Values.nats.enabled .Values.nats.exporter.enabled) }}
+      prometheus:
+        config:
+          scrape_configs:
+            {{- if and .Values.valkey.enabled .Values.valkey.exporter.enabled }}
+            - job_name: valkey
+              scrape_interval: 15s
+              static_configs:
+                - targets:
+                    - {{ include "rehydration-kernel.fullname" . }}-valkey:{{ .Values.valkey.exporter.port }}
+            {{- end }}
+            {{- if and .Values.nats.enabled .Values.nats.exporter.enabled }}
+            - job_name: nats
+              scrape_interval: 15s
+              static_configs:
+                - targets:
+                    - {{ include "rehydration-kernel.fullname" . }}-nats:{{ .Values.nats.exporter.port }}
+            {{- end }}
+      {{- end }}
     processors:
       batch:
         timeout: 5s
@@ -104,7 +123,11 @@ data:
     service:
       pipelines:
         metrics:
-          receivers: [otlp]
+          receivers:
+            - otlp
+            {{- if or (and .Values.valkey.enabled .Values.valkey.exporter.enabled) (and .Values.nats.enabled .Values.nats.exporter.enabled) }}
+            - prometheus
+            {{- end }}
           processors: [batch]
           exporters: [prometheus]
         {{- if .Values.loki.enabled }}

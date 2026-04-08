@@ -23,7 +23,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${ROOT_DIR}"
 
-SEP="══════════════════════════════════════════════════════════════"
+SEP="$(printf '═%.0s' {1..62})"
 
 echo "${SEP}"
 echo "  P0 GROUND TRUTH DIAGNOSTIC"
@@ -91,7 +91,12 @@ for f in files:
     model = d.get('model', '?')
     variant = d.get('variant', '?')
     task = d.get('task')
-    task_str = 'OK' if task else 'FAIL' if task is False else 'ERR'
+    if task is True:
+        task_str = 'OK'
+    elif task is False:
+        task_str = 'FAIL'
+    else:
+        task_str = 'ERR'
 
     print(f'  {model:<20} {variant}')
     print(f'    failure_point: {fp}')
