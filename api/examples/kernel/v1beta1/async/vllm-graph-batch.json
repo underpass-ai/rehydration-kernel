@@ -1,0 +1,85 @@
+{
+  "root_node_id": "incident-2026-04-08-payments-latency",
+  "correlation_id": "incident-2026-04-08-payments-latency",
+  "causation_id": "diagnostic-run-42",
+  "occurred_at": "2026-04-08T19:00:00Z",
+  "nodes": [
+    {
+      "node_id": "incident-2026-04-08-payments-latency",
+      "node_kind": "incident",
+      "title": "Payments latency spike",
+      "summary": "P95 latency exceeded 2s after a configuration rollout.",
+      "status": "INVESTIGATING",
+      "labels": ["incident", "payments", "p1"],
+      "properties": {
+        "service": "payments-api",
+        "region": "eu-west-1"
+      },
+      "source_kind": "human",
+      "source_agent": "triage-agent"
+    },
+    {
+      "node_id": "finding-db-pool-typo",
+      "node_kind": "agent_finding",
+      "title": "Connection pool typo",
+      "summary": "The rollout changed the DB pool size from 50 to 5.",
+      "status": "CONFIRMED",
+      "labels": ["finding", "config"],
+      "properties": {
+        "deployment": "2026.04.08.3"
+      },
+      "source_kind": "agent",
+      "source_agent": "diagnostic-agent",
+      "observed_at": "2026-04-08T18:59:00Z"
+    },
+    {
+      "node_id": "decision-reroute-secondary",
+      "node_kind": "decision",
+      "title": "Reroute traffic to the secondary region",
+      "summary": "Shift 80% of traffic away from the degraded primary region.",
+      "status": "ACCEPTED",
+      "labels": ["decision", "mitigation"],
+      "properties": {
+        "owner": "oncall"
+      },
+      "source_kind": "agent",
+      "source_agent": "recovery-agent"
+    }
+  ],
+  "relations": [
+    {
+      "source_node_id": "incident-2026-04-08-payments-latency",
+      "target_node_id": "finding-db-pool-typo",
+      "relation_type": "EXPLAINED_BY",
+      "semantic_class": "causal",
+      "rationale": "The smaller pool saturated DB access and caused the latency spike.",
+      "method": "deployment diff",
+      "caused_by_node_id": "finding-db-pool-typo",
+      "evidence": "config map diff + pod env",
+      "confidence": "high",
+      "sequence": 1
+    },
+    {
+      "source_node_id": "incident-2026-04-08-payments-latency",
+      "target_node_id": "decision-reroute-secondary",
+      "relation_type": "MITIGATED_BY",
+      "semantic_class": "motivational",
+      "rationale": "Traffic must be moved while the bad rollout is reverted.",
+      "decision_id": "decision-reroute-secondary",
+      "confidence": "high",
+      "sequence": 2
+    }
+  ],
+  "node_details": [
+    {
+      "node_id": "finding-db-pool-typo",
+      "detail": "The Helm values reduced maxConnections from 50 to 5. Error rate reached 23% and P95 rose to 2.4s within three minutes.",
+      "revision": 1
+    },
+    {
+      "node_id": "decision-reroute-secondary",
+      "detail": "Apply DNS weight shift to secondary region and monitor 5xx plus queue depth for 15 minutes.",
+      "revision": 1
+    }
+  ]
+}

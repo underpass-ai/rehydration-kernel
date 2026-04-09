@@ -38,6 +38,10 @@ detected as duplicate and skipped without re-applying mutations.
 The kernel checks if the key was already processed and returns the cached
 outcome (revision + content_hash) without side effects.
 
+For the experimental `GraphBatch` ingress shape, the same rule should be
+treated as mandatory: retries are only safe when the client provides a stable
+idempotency key.
+
 ## Projection
 
 Events are materialized into the read model:
@@ -87,6 +91,41 @@ publish fails after event append, a retry may be treated as a new request
 **NAK redelivery limits depend on NATS broker config.** The kernel does
 not configure max redelivery attempts. Poison messages are handled by
 NATS, not the kernel.
+
+**No mesh-managed retry semantics.** The kernel does not assume an Envoy
+sidecar or service-mesh retry policy. Retry behavior must be owned by the
+calling client or ingress adapter and must respect idempotency and domain
+error types.
+
+## Recommended Client Policy For Experimental GraphBatch Ingress
+
+The recommended client policy is:
+
+- require `idempotency_key`
+- bounded retries only for transient transport failures
+- no blind replay on `ABORTED` or validation failures
+- explicit request deadlines
+
+Recommended defaults:
+
+| Setting | Value |
+|---------|------:|
+| Connect timeout | 2 s |
+| Request timeout | 5 s |
+| Max attempts | 4 |
+| Backoff | 250 ms, 1 s, 3 s (+ jitter) |
+
+Safe-to-retry categories:
+
+- `UNAVAILABLE`
+- `DEADLINE_EXCEEDED`
+- connection-level transport failure
+
+Do-not-blindly-retry categories:
+
+- `ABORTED`
+- validation errors
+- authorization errors
 
 ## Operational Language
 

@@ -1,6 +1,7 @@
 # Testing Guide
 
-270 unit tests, 9 integration tests (testcontainers), 4 benchmark tests (LLM-as-judge).
+Workspace unit tests, container integration tests, benchmark tests, and live
+`vLLM` smoke coverage for schema-constrained graph extraction.
 
 ## Quick Start
 
@@ -53,6 +54,7 @@ bash scripts/ci/testcontainers-runtime.sh
 
 | Test | What it validates | Infra | Script |
 |------|-------------------|-------|--------|
+| `llm_graph_materialization_integration` | GraphBatch materialization: minimal flow + medium incremental flow on the same root aggregate | Neo4j + Valkey + NATS + gRPC | — |
 | `kernel_full_journey_integration` | Projection → query → command full cycle | Neo4j + Valkey + NATS + gRPC | `scripts/ci/integration-kernel-full-journey.sh` |
 | `kernel_full_journey_tls_integration` | mTLS end-to-end with generated certs | Same + OpenSSL certs | `scripts/ci/integration-kernel-full-journey-tls.sh` |
 | `kernel_golden_integration` | Golden contract tests (4 RPCs) | Neo4j + Valkey + NATS + gRPC | — |
@@ -71,6 +73,45 @@ cargo test -p rehydration-tests-kernel \
   --test kernel_full_journey_integration \
   -- --nocapture --test-threads=1
 ```
+
+### Model-driven ingestion coverage
+
+The repo now validates the `GraphBatch` path in three layers:
+
+1. **Translator/unit invariants** — parse + validate + translate the bounded
+   batch shape.
+2. **Deterministic container E2E** — materialize GraphBatch fixtures through
+   NATS into Neo4j + Valkey, then read them back via gRPC.
+3. **Live `vLLM` smoke** — hit the real `vLLM` endpoint with strict schema
+   output and prove that the response still parses and translates.
+
+Commands:
+
+```bash
+# Local translator + schema invariants
+cargo test -p rehydration-testkit llm_graph -- --nocapture
+
+# Container E2E: minimal + incremental GraphBatch materialization
+cargo test -p rehydration-tests-kernel \
+  --features container-tests \
+  --test llm_graph_materialization_integration \
+  -- --nocapture --test-threads=1
+
+# Live vLLM smoke (requires endpoint + mTLS env vars)
+RUN_VLLM_SMOKE=1 cargo test -p rehydration-testkit \
+  vllm_graph_prompt_smoke -- --nocapture
+
+# Optional: exercise the dedicated repair judge too
+RUN_VLLM_SMOKE=1 \
+LLM_GRAPH_BATCH_USE_REPAIR_JUDGE=1 \
+cargo test -p rehydration-testkit \
+  vllm_graph_prompt_smoke -- --nocapture
+```
+
+For cluster-managed runs, do not keep these values as ad-hoc shell exports.
+Prefer a `ConfigMap` for non-secret LLM client settings and a `Secret` for API
+keys, then inject them with `envFrom`. A reference manifest lives at
+[`k8s/llm-client-config.example.yaml`](../k8s/llm-client-config.example.yaml).
 
 ## Benchmark Tests (LLM-as-Judge)
 
@@ -193,21 +234,87 @@ benchmarks, prefer editing `evaluation-matrix.yaml` directly.
 |:---------|:------------|
 | `LLM_ENDPOINT` | Inference endpoint (e.g. `https://llm.underpassai.com/v1/chat/completions`) |
 | `LLM_MODEL` | Model name (e.g. `Qwen/Qwen3-8B`) |
-| `LLM_PROVIDER` | `openai` (vLLM), `openai-new` (GPT-5.x), `anthropic` |
+| `LLM_PROVIDER` | `openai` (OpenAI-compatible, including vLLM), `openai-new` (GPT-5.x), `anthropic` |
 | `LLM_TEMPERATURE` | Sampling temperature (recommend `0.0` for reproducibility) |
 | `LLM_TLS_CERT_PATH` | Client cert for mTLS endpoints (vLLM) |
 | `LLM_TLS_KEY_PATH` | Client key for mTLS endpoints |
 | `LLM_ENABLE_THINKING` | `true` to activate Qwen3 chain-of-thought. Requires `--reasoning-parser=qwen3` on vLLM server. With the reasoning parser, thinking tokens go to a separate `reasoning_content` field and `thinking_budget` (512) is independent of `max_tokens` — no token overhead on the content budget. `strip_thinking_tags()` remains as fallback for vLLM servers without the parser. |
-| `LLM_TLS_INSECURE` | Skip server cert verification (`true` for self-signed) |
+| `LLM_TLS_INSECURE` | Deprecated. Unsupported by the current client; use valid TLS certs and mounted secrets instead. |
 
 **Judge:**
 
 | Variable | Description |
 |:---------|:------------|
-| `LLM_JUDGE_ENDPOINT` | Judge endpoint (e.g. `https://api.openai.com/v1/chat/completions`) |
+| `LLM_JUDGE_ENDPOINT` | Judge endpoint (e.g. `https://api.openai.com/v1/chat/completions` or `https://vllm-repair-judge.underpassai.com/v1/chat/completions`) |
 | `LLM_JUDGE_MODEL` | Judge model (e.g. `claude-sonnet-4-6`, `gpt-5.4`) |
-| `LLM_JUDGE_PROVIDER` | `openai-new`, `anthropic` |
+| `LLM_JUDGE_PROVIDER` | `openai` (OpenAI-compatible, including vLLM), `openai-new`, `anthropic` |
 | `LLM_JUDGE_API_KEY` | API key for the judge endpoint |
+
+**GraphBatch transport policy:**
+
+| Variable | Description |
+|:---------|:------------|
+| `LLM_GRAPH_BATCH_PRIMARY_MAX_ATTEMPTS` | Max transport/validation attempts for the primary inference request |
+| `LLM_GRAPH_BATCH_PRIMARY_CONNECT_TIMEOUT_SECS` | Connect timeout for the primary request |
+| `LLM_GRAPH_BATCH_PRIMARY_REQUEST_TIMEOUT_SECS` | Per-request timeout for the primary request |
+| `LLM_GRAPH_BATCH_REPAIR_MAX_ATTEMPTS` | Max attempts for the repair-judge request |
+| `LLM_GRAPH_BATCH_REPAIR_CONNECT_TIMEOUT_SECS` | Connect timeout for the repair-judge request |
+| `LLM_GRAPH_BATCH_REPAIR_REQUEST_TIMEOUT_SECS` | Per-request timeout for the repair-judge request |
+| `LLM_GRAPH_BATCH_USE_REPAIR_JUDGE` | `true` to make the live smoke call `request_graph_batch_with_repair_judge` instead of primary-only |
+
+### Cluster-owned LLM config
+
+For shared environments, treat the LLM client configuration as cluster-owned
+config, not as shell-local state.
+
+Recommended split:
+
+- `ConfigMap`: `LLM_ENDPOINT`, `LLM_MODEL`, `LLM_PROVIDER`,
+  `LLM_TEMPERATURE`, `LLM_ENABLE_THINKING`, `LLM_TLS_CERT_PATH`,
+  `LLM_TLS_KEY_PATH`, `LLM_JUDGE_ENDPOINT`, `LLM_JUDGE_MODEL`,
+  `LLM_JUDGE_PROVIDER`
+- `Secret`: `LLM_API_KEY`, `LLM_JUDGE_API_KEY`
+
+For in-cluster smoke or benchmark jobs, prefer the in-cluster vLLM service
+endpoint, for example `http://vllm-qwen35-9b:8000/v1/chat/completions`. In
+that case you usually do not need `LLM_TLS_CERT_PATH` or `LLM_TLS_KEY_PATH`.
+Only set those when the client talks to an mTLS-protected endpoint such as the
+public ingress.
+
+This repo now supports `envFrom` for both the main chart deployment and the
+Helm test Pods:
+
+- `extraEnvFrom` for the kernel deployment
+- `e2e.extraEnv` for explicit `secretKeyRef` mappings
+- `e2e.extraEnvFrom` for Helm test Pods
+
+That keeps reproducible smoke and benchmark config in Kubernetes rather than
+in one developer shell session.
+
+If your existing secret keys do not already match the `LLM_*` names expected by
+this repo, map them explicitly in the Helm test Pod values. Example:
+
+```yaml
+e2e:
+  extraEnvFrom:
+    - configMapRef:
+        name: rehydration-kernel-llm-client
+  extraEnv:
+    - name: LLM_JUDGE_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: llm-api-keys
+          key: openai_api_key
+```
+
+For a dedicated repair judge behind `vllm-repair-judge.underpassai.com`, prefer
+`LLM_JUDGE_PROVIDER=openai` and start with `LLM_ENABLE_THINKING=false` so the
+repair pass stays deterministic and schema-focused.
+
+The primary inference request and the repair judge now have independent timeout
+and retry budgets. Keep the primary budget tight for fast failures, and give
+the repair judge a longer request timeout when it runs on a slower dedicated
+model.
 
 **API keys:**
 

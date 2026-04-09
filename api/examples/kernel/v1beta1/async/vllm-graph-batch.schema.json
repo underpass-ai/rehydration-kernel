@@ -1,0 +1,263 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://underpass.ai/schemas/rehydration-kernel/v1beta1/vllm-graph-batch.schema.json",
+  "title": "LlmGraphBatch",
+  "description": "Bounded aggregate update around one root node for translation into kernel projection events.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "root_node_id",
+    "nodes",
+    "relations",
+    "node_details"
+  ],
+  "properties": {
+    "root_node_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "correlation_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "causation_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "occurred_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "nodes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/node"
+      }
+    },
+    "relations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/relation"
+      }
+    },
+    "node_details": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/node_detail"
+      }
+    }
+  },
+  "$defs": {
+    "confidence": {
+      "type": "string",
+      "enum": [
+        "high",
+        "medium",
+        "low"
+      ]
+    },
+    "semantic_class": {
+      "type": "string",
+      "enum": [
+        "structural",
+        "causal",
+        "motivational",
+        "procedural",
+        "evidential",
+        "constraint"
+      ]
+    },
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "node_id",
+        "node_kind",
+        "title",
+        "summary",
+        "status",
+        "labels",
+        "properties"
+      ],
+      "properties": {
+        "node_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "node_kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "summary": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "minLength": 1
+        },
+        "labels": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "source_kind": {
+          "type": "string",
+          "enum": [
+            "human",
+            "agent",
+            "projection",
+            "derived"
+          ]
+        },
+        "source_agent": {
+          "type": "string",
+          "minLength": 1
+        },
+        "observed_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "relation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_node_id",
+        "target_node_id",
+        "relation_type",
+        "semantic_class"
+      ],
+      "properties": {
+        "source_node_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "target_node_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "relation_type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "semantic_class": {
+          "$ref": "#/$defs/semantic_class"
+        },
+        "rationale": {
+          "type": "string",
+          "minLength": 1
+        },
+        "motivation": {
+          "type": "string",
+          "minLength": 1
+        },
+        "method": {
+          "type": "string",
+          "minLength": 1
+        },
+        "decision_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "caused_by_node_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence": {
+          "type": "string",
+          "minLength": 1
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "semantic_class": {
+                "const": "structural"
+              }
+            },
+            "required": [
+              "semantic_class"
+            ]
+          },
+          "then": true,
+          "else": {
+            "required": [
+              "confidence"
+            ],
+            "anyOf": [
+              {
+                "required": [
+                  "rationale"
+                ]
+              },
+              {
+                "required": [
+                  "motivation"
+                ]
+              },
+              {
+                "required": [
+                  "method"
+                ]
+              },
+              {
+                "required": [
+                  "evidence"
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "node_detail": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "node_id",
+        "detail",
+        "revision"
+      ],
+      "properties": {
+        "node_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "detail": {
+          "type": "string",
+          "minLength": 1
+        },
+        "content_hash": {
+          "type": "string",
+          "minLength": 1
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    }
+  }
+}

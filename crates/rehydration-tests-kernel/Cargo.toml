@@ -66,3 +66,8 @@ required-features = ["container-tests"]
 name = "tier_resolution_integration"
 path = "tests/tier_resolution_integration.rs"
 required-features = ["container-tests"]
+
+[[test]]
+name = "llm_graph_materialization_integration"
+path = "tests/llm_graph_materialization_integration.rs"
+required-features = ["container-tests"]

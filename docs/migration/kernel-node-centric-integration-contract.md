@@ -44,6 +44,22 @@ Outbound (kernel publishes):
 
 Defined in [`api/asyncapi/context-projection.v1beta1.yaml`](../../api/asyncapi/context-projection.v1beta1.yaml).
 
+### 3. Experimental GraphBatch ingress
+
+The repo also documents an experimental `GraphBatch` ingestion shape for
+model-driven producers.
+
+Important:
+
+- it is **recommended guidance**, not a stable `v1beta1` transport contract
+- it translates into the async subjects above
+- it does not replace the owned async projection boundary
+
+See:
+
+- [`graph-batch-quickstart.md`](../graph-batch-quickstart.md)
+- [`graph-batch-ingestion-api.md`](../graph-batch-ingestion-api.md)
+
 ## What Consumers May Rely On
 
 - `root_node_id` is the primary bundle anchor

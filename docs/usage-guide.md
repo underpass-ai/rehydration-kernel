@@ -2,11 +2,100 @@
 
 How to give your AI agent graph-aware context in 3 steps.
 
+Most users integrating a model such as `vLLM` should start with
+[`graph-batch-quickstart.md`](graph-batch-quickstart.md).
+
+Mental model:
+
+- Neo4j stores graph topology and short metadata
+- Valkey stores long per-node detail
+- the kernel reads both, then renders bounded context for your LLM
+
+## Recommended paths
+
+There are three ways to interact with the kernel write/read boundary, but they
+do not serve the same purpose.
+
+| Path | Use when | Recommendation |
+|:-----|:---------|:---------------|
+| `GraphBatch -> translator -> NATS` | Your producer is an LLM or agent and you want to materialize graph context safely | **Default for new model-driven integrations** |
+| Raw projection events | Your producer already owns event envelopes and subject publishing | Good for fully deterministic non-LLM producers |
+| `UpdateContext` | You need the generic command/event-store path with idempotency and optimistic preconditions | Useful, but **not** the primary graph-materialization path for model output |
+
+If you only remember one integration pattern from this page, use:
+
+`GraphBatch -> graph.node.materialized + node.detail.materialized -> GetContext`
+
 ## Step 1 — Seed your graph
 
 Publish projection events to NATS. Each event materializes a node or detail
 in the kernel's graph store. Events follow the
 [AsyncAPI contract](../api/asyncapi/context-projection.v1beta1.yaml).
+
+### Recommended for model producers: GraphBatch
+
+If your upstream producer is an LLM such as `vLLM`, prefer a two-step shape:
+
+1. The model emits a simple batch with `nodes`, `relations`, and
+   `node_details`
+2. A translator turns that batch into kernel events
+
+Do not ask the model to invent NATS subjects or event envelopes. Keep the model
+on graph semantics and let the adapter own transport details.
+
+The repo includes a minimal adapter for that path:
+
+```rust
+use rehydration_testkit::{graph_batch_to_projection_events, parse_graph_batch};
+
+let batch = parse_graph_batch(llm_json_payload)?;
+let messages = graph_batch_to_projection_events(&batch, "rehydration", "incident-42")?;
+```
+
+Example model payload:
+
+```text
+api/examples/kernel/v1beta1/async/vllm-graph-batch.json
+```
+
+Canonical schema and request example:
+
+```text
+api/examples/kernel/v1beta1/async/vllm-graph-batch.schema.json
+api/examples/inference-prompts/vllm-graph-materialization.request.json
+```
+
+This is the intended mental split:
+
+```mermaid
+flowchart LR
+    M[LLM or agent] -->|GraphBatch JSON| T[Translator]
+    T -->|graph.node.materialized| NATS[NATS JetStream]
+    T -->|node.detail.materialized| NATS
+    NATS --> P[Kernel projection runtime]
+    P --> N4[Neo4j]
+    P --> VK[Valkey]
+```
+
+Why this is the recommended path:
+
+- the model stays focused on graph semantics
+- the adapter owns validation, hashing, envelopes, and subjects
+- the stable kernel-owned write boundary remains async projection events
+
+Operational rule for real clients:
+
+- always attach an `idempotency_key` if you add a direct `GraphBatch` ingress
+- use bounded retries only for transient transport failures
+- do not blindly retry domain conflicts such as `ABORTED`
+
+For the shortest end-to-end explanation of this write path, see
+[`graph-batch-quickstart.md`](graph-batch-quickstart.md).
+
+### If you already own the transport: raw projection events
+
+If your producer is not an LLM and already publishes kernel events directly,
+you can skip `GraphBatch` and publish the async contract yourself.
 
 **Materialize a node** (published to `rehydration.graph.node.materialized`):
 
@@ -197,7 +286,19 @@ feeds the text to your LLM.
 
 | RPC | Use when | Key params |
 |:----|:---------|:-----------|
-| `UpdateContext` | Record a context change event | `root_node_id`, `role`, `changes[]`, `metadata` (idempotency_key, correlation_id) |
+| `UpdateContext` | Record a generic context change command into the event store | `root_node_id`, `role`, `changes[]`, `metadata` (idempotency_key, correlation_id) |
+
+Important:
+
+- `UpdateContext` is part of the stable `v1beta1` gRPC contract
+- it is **not** the recommended primary write path for model-generated graph materialization
+- for model output, prefer `GraphBatch -> translator -> async projection events`
+
+The same retry discipline applies across both write paths:
+
+- retries need idempotency
+- transient transport failures may be retried with backoff
+- domain conflicts should be handled explicitly, not replayed blindly
 
 ## Multi-Resolution Tiers
 
@@ -375,6 +476,8 @@ will be treated as a new request. The kernel logs a warning when this happens.
 
 ## Further Reading
 
+- [GraphBatch Quickstart](graph-batch-quickstart.md) — fastest model-driven path
+- [GraphBatch ingestion API](graph-batch-ingestion-api.md) — experimental ingress proposal
 - [Proto contracts](../api/proto/underpass/rehydration/kernel/v1beta1/) — gRPC API definition
 - [AsyncAPI contract](../api/asyncapi/context-projection.v1beta1.yaml) — event schema
 - [Reference fixtures](../api/examples/kernel/v1beta1/grpc/) — example request/response JSON

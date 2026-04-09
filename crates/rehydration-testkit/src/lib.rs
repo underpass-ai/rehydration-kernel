@@ -1,7 +1,9 @@
 mod container_runtime;
 pub mod dataset_generator;
+mod graph_batch_llm;
 mod in_memory_stores;
 pub mod llm_evaluator;
+mod llm_graph;
 pub mod raw_dump;
 pub mod seed_publisher;
 pub mod seed_to_bundle;
@@ -11,6 +13,11 @@ pub use dataset_generator::{
     Domain, GeneratedNode, GeneratedRelation, GeneratedSeed, GraphSeedConfig, NoiseMode,
     RelationMix, generate_seed,
 };
+pub use graph_batch_llm::{
+    GraphBatchRepairJudgePolicy, GraphBatchRequestError, GraphBatchRequestOutcome,
+    GraphBatchRetryPolicy, build_graph_batch_request_body, request_graph_batch_with_policy,
+    request_graph_batch_with_repair_judge, request_graph_batch_with_retry,
+};
 pub use in_memory_stores::{
     InMemoryContextEventStore, InMemoryGraphNeighborhoodReader, InMemoryNodeDetailReader,
     InMemoryProcessedEventStore, InMemoryProjectionCheckpointStore, InMemoryProjectionWriter,
@@ -19,7 +26,13 @@ pub use in_memory_stores::{
 pub use llm_evaluator::{
     CalibrationCase, EvaluationGroundTruth, LlmEvaluationResult, LlmEvaluatorConfig, LlmProvider,
     PromptConfig, calibrate_agent, calibrate_judge, call_llm, evaluate_with_config,
-    evaluate_with_llm,
+    evaluate_with_llm, normalize_llm_json_response,
+};
+pub use llm_graph::{
+    GraphBatch, GraphBatchNode, GraphBatchNodeDetail, GraphBatchRelation, LlmGraphBatch,
+    LlmGraphError, LlmGraphNode, LlmGraphRelation, LlmNodeDetail, ProjectionMessage,
+    graph_batch_to_projection_events, llm_graph_to_projection_events, parse_graph_batch,
+    parse_llm_graph_batch,
 };
 pub use seed_to_bundle::{seed_raw_equivalent_tokens, seed_to_bundle};
 

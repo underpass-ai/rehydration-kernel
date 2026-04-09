@@ -9,6 +9,7 @@
 
 use std::error::Error;
 use std::sync::LazyLock;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
@@ -122,7 +123,7 @@ impl LlmEvaluatorConfig {
 fn detect_provider(explicit: &str, model: &str) -> LlmProvider {
     match explicit {
         "anthropic" => LlmProvider::Anthropic,
-        "openai_new" => LlmProvider::OpenAINew,
+        "openai_new" | "openai-new" => LlmProvider::OpenAINew,
         "openai" => LlmProvider::OpenAI,
         _ => {
             if model.starts_with("claude") {
@@ -448,7 +449,7 @@ pub async fn evaluate_with_llm(
     )
     .await?;
     let latency_ms = start.elapsed().as_secs_f64() * 1000.0;
-    let content = strip_markdown_fences(&strip_thinking_tags(&content));
+    let content = normalize_llm_json_response(&content);
 
     // LLM-as-judge: use separate judge endpoint if configured
     let judge_client = if config.judge_endpoint.is_some() {
@@ -564,7 +565,7 @@ pub async fn evaluate_with_config(
     )
     .await?;
     let latency_ms = start.elapsed().as_secs_f64() * 1000.0;
-    let content = strip_markdown_fences(&strip_thinking_tags(&content));
+    let content = normalize_llm_json_response(&content);
 
     let judge_client = if config.judge_endpoint.is_some() {
         build_http_client(config)?
@@ -848,6 +849,14 @@ fn strip_markdown_fences(s: &str) -> String {
     }
 }
 
+/// Normalizes LLM JSON-ish output before schema parsing.
+///
+/// Removes provider-specific reasoning wrappers and markdown fences while
+/// preserving the inner JSON payload.
+pub fn normalize_llm_json_response(s: &str) -> String {
+    strip_markdown_fences(&strip_thinking_tags(s))
+}
+
 // ── calibration ─────────────────────────────────────────────────────
 
 /// Result of a single calibration case.
@@ -995,7 +1004,7 @@ pub async fn calibrate_agent(
     .await
     {
         Ok((raw_content, _prompt_tokens, completion_tokens)) => {
-            let content = strip_markdown_fences(&strip_thinking_tags(&raw_content));
+            let content = normalize_llm_json_response(&raw_content);
 
             // Check 1: non-empty response
             let non_empty = !content.trim().is_empty();
@@ -1069,8 +1078,15 @@ pub async fn calibrate_agent(
     Ok(cases)
 }
 
-fn build_http_client(
+pub(crate) fn build_http_client(
     config: &LlmEvaluatorConfig,
+) -> Result<reqwest::Client, Box<dyn Error + Send + Sync>> {
+    build_http_client_with_connect_timeout(config, None)
+}
+
+pub(crate) fn build_http_client_with_connect_timeout(
+    config: &LlmEvaluatorConfig,
+    connect_timeout: Option<Duration>,
 ) -> Result<reqwest::Client, Box<dyn Error + Send + Sync>> {
     let mut builder = reqwest::Client::builder();
 
@@ -1078,6 +1094,10 @@ fn build_http_client(
         return Err(
             "LLM_TLS_INSECURE is no longer supported; require valid TLS certificates".into(),
         );
+    }
+
+    if let Some(connect_timeout) = connect_timeout {
+        builder = builder.connect_timeout(connect_timeout);
     }
 
     if let (Some(cert_path), Some(key_path)) = (&config.tls_cert_path, &config.tls_key_path) {

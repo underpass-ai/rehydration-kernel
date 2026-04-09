@@ -5,6 +5,7 @@
 | ADR | Decision | PR |
 |:----|:---------|:---|
 | [ADR-007](ADR-007-quality-metrics-observability.md) | BundleQualityMetrics as domain VO + hexagonal observer port | — (2026-03-27) |
+| [ADR-008](ADR-008-graph-batch-ingestion-boundary.md) | GraphBatch as the experimental ingestion boundary | — (2026-04-08) |
 
 ## Not Yet Written (decisions implicit in PRs)
 

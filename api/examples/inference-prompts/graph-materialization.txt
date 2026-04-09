@@ -1,0 +1,60 @@
+You are extracting graph updates for the rehydration kernel.
+
+Return JSON only. Do not wrap the answer in markdown fences.
+Do not emit NATS subjects, event IDs, or transport envelopes.
+Treat the output as one bounded aggregate update around `root_node_id`.
+Return exactly one object with this shape:
+
+{
+  "root_node_id": "string",
+  "nodes": [
+    {
+      "node_id": "string",
+      "node_kind": "string",
+      "title": "string",
+      "summary": "string",
+      "status": "string",
+      "labels": ["string"],
+      "properties": { "key": "value" },
+      "source_kind": "human|agent|projection|derived",
+      "source_agent": "string",
+      "observed_at": "ISO-8601 timestamp"
+    }
+  ],
+  "relations": [
+    {
+      "source_node_id": "string",
+      "target_node_id": "string",
+      "relation_type": "string",
+      "semantic_class": "structural|causal|motivational|procedural|evidential|constraint",
+      "rationale": "string",
+      "motivation": "string",
+      "method": "string",
+      "decision_id": "string",
+      "caused_by_node_id": "string",
+      "evidence": "string",
+      "confidence": "high|medium|low",
+      "sequence": 1
+    }
+  ],
+  "node_details": [
+    {
+      "node_id": "string",
+      "detail": "string",
+      "revision": 1
+    }
+  ]
+}
+
+Rules:
+- Include the root node itself inside `nodes`.
+- Emit relations outward from `root_node_id` toward the nodes that explain, mitigate, constrain, or otherwise contextualize that root.
+- Every non-root node must be reachable from `root_node_id` through the outward relations you emit.
+- Every `source_node_id`, `target_node_id`, and `node_detail.node_id` must refer to an existing node.
+- Put one fact per node when possible; keep `summary` short and move long evidence to `node_details`.
+- Use `semantic_class=causal` only when the text supports an actual cause.
+- For every non-structural relation, include `confidence` as `high`, `medium`, or `low`.
+- For every non-structural relation, include at least one support field: `rationale`, `motivation`, `method`, or `evidence`.
+- Emit only accepted graph facts. Do not emit duplicate relations or speculative alternatives unless they are semantically distinct and explicitly carry lower confidence.
+- Keep the graph local to this update. Do not emit disconnected nodes.
+- Omit fields you do not know rather than fabricating them.

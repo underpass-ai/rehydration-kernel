@@ -118,6 +118,7 @@ tolerations: []
 affinity: {}
 
 extraEnv: []
+extraEnvFrom: []
 
 # Optional Loki log aggregation managed by this chart.
 loki:
@@ -276,6 +277,10 @@ e2e:
     tag: ""
   # -- Existing Secret with client TLS certs for gRPC (ca.crt, tls.crt, tls.key)
   clientTlsSecret: e2e-client-tls
+  # -- Additional env entries for helm test Pods
+  extraEnv: []
+  # -- Additional envFrom entries for helm test Pods (ConfigMapRef / SecretRef)
+  extraEnvFrom: []
   # -- Tests to run
   tests:
     - id: "01"

@@ -1,0 +1,160 @@
+{
+  "root_node_id": "incident-2026-04-09-checkout-latency",
+  "correlation_id": "incident-2026-04-09-checkout-latency",
+  "causation_id": "analysis-wave-1",
+  "occurred_at": "2026-04-09T09:00:00Z",
+  "nodes": [
+    {
+      "node_id": "incident-2026-04-09-checkout-latency",
+      "node_kind": "incident",
+      "title": "Checkout latency spike",
+      "summary": "P95 checkout latency exceeded 2.5s after a rollout.",
+      "status": "INVESTIGATING",
+      "labels": ["incident", "checkout", "p1"],
+      "properties": {
+        "service": "checkout-api",
+        "region": "eu-west-1"
+      },
+      "source_kind": "human",
+      "source_agent": "triage-agent"
+    },
+    {
+      "node_id": "finding-db-pool-typo",
+      "node_kind": "agent_finding",
+      "title": "Connection pool typo",
+      "summary": "The rollout changed maxConnections from 50 to 5.",
+      "status": "CONFIRMED",
+      "labels": ["finding", "config"],
+      "properties": {
+        "deployment": "2026.04.09.2"
+      },
+      "source_kind": "agent",
+      "source_agent": "diagnostic-agent",
+      "observed_at": "2026-04-09T08:58:00Z"
+    },
+    {
+      "node_id": "constraint-live-traffic-window",
+      "node_kind": "constraint",
+      "title": "Live traffic window",
+      "summary": "Mitigation must preserve checkout availability during peak traffic.",
+      "status": "ACTIVE",
+      "labels": ["constraint", "traffic"],
+      "properties": {
+        "window": "peak-hours"
+      },
+      "source_kind": "derived",
+      "source_agent": "policy-agent"
+    },
+    {
+      "node_id": "decision-reroute-secondary",
+      "node_kind": "decision",
+      "title": "Reroute checkout traffic",
+      "summary": "Shift most traffic to the secondary region while rollback completes.",
+      "status": "ACCEPTED",
+      "labels": ["decision", "mitigation"],
+      "properties": {
+        "owner": "oncall"
+      },
+      "source_kind": "agent",
+      "source_agent": "recovery-agent"
+    },
+    {
+      "node_id": "task-rollback-pool-config",
+      "node_kind": "task",
+      "title": "Rollback pool configuration",
+      "summary": "Restore the checkout pool size to its previous value.",
+      "status": "IN_PROGRESS",
+      "labels": ["task", "rollback"],
+      "properties": {
+        "owner": "platform"
+      },
+      "source_kind": "agent",
+      "source_agent": "recovery-agent"
+    },
+    {
+      "node_id": "artifact-dashboard-checkout-latency",
+      "node_kind": "artifact",
+      "title": "Checkout latency dashboard",
+      "summary": "Dashboard captures p95 latency, DB wait time, and 5xx rate.",
+      "status": "READY",
+      "labels": ["artifact", "observability"],
+      "properties": {
+        "dashboard": "checkout-latency"
+      },
+      "source_kind": "projection",
+      "source_agent": "grafana-sync"
+    }
+  ],
+  "relations": [
+    {
+      "source_node_id": "incident-2026-04-09-checkout-latency",
+      "target_node_id": "finding-db-pool-typo",
+      "relation_type": "EXPLAINED_BY",
+      "semantic_class": "causal",
+      "rationale": "The smaller pool saturated DB access and drove checkout latency upward.",
+      "method": "deployment diff",
+      "caused_by_node_id": "finding-db-pool-typo",
+      "evidence": "config map diff plus live pod env",
+      "confidence": "high",
+      "sequence": 1
+    },
+    {
+      "source_node_id": "incident-2026-04-09-checkout-latency",
+      "target_node_id": "constraint-live-traffic-window",
+      "relation_type": "BOUNDED_BY",
+      "semantic_class": "constraint",
+      "rationale": "Any mitigation must keep checkout available during the live traffic window.",
+      "evidence": "business peak-hours policy",
+      "confidence": "high",
+      "sequence": 2
+    },
+    {
+      "source_node_id": "incident-2026-04-09-checkout-latency",
+      "target_node_id": "decision-reroute-secondary",
+      "relation_type": "MITIGATED_BY",
+      "semantic_class": "motivational",
+      "rationale": "Traffic must be moved while the bad pool configuration is rolled back.",
+      "decision_id": "decision-reroute-secondary",
+      "confidence": "high",
+      "sequence": 3
+    },
+    {
+      "source_node_id": "decision-reroute-secondary",
+      "target_node_id": "task-rollback-pool-config",
+      "relation_type": "IMPLEMENTED_BY",
+      "semantic_class": "procedural",
+      "rationale": "The reroute buys time for the rollback task to restore DB capacity.",
+      "method": "Helm rollback plus rollout restart",
+      "decision_id": "decision-reroute-secondary",
+      "confidence": "high",
+      "sequence": 4
+    },
+    {
+      "source_node_id": "incident-2026-04-09-checkout-latency",
+      "target_node_id": "artifact-dashboard-checkout-latency",
+      "relation_type": "EVIDENCED_BY",
+      "semantic_class": "evidential",
+      "rationale": "The dashboard shows the latency spike and the DB wait amplification.",
+      "evidence": "grafana panels for p95, DB wait, and error rate",
+      "confidence": "high",
+      "sequence": 5
+    }
+  ],
+  "node_details": [
+    {
+      "node_id": "finding-db-pool-typo",
+      "detail": "Checkout deployment 2026.04.09.2 changed maxConnections from 50 to 5. Connection acquisition queued behind the smaller pool and p95 reached 2.7s.",
+      "revision": 1
+    },
+    {
+      "node_id": "task-rollback-pool-config",
+      "detail": "Rollback task restores maxConnections=50, restarts the checkout-api deployment, and verifies the pool setting from the live pod env.",
+      "revision": 1
+    },
+    {
+      "node_id": "artifact-dashboard-checkout-latency",
+      "detail": "Dashboard panels show p95 checkout latency at 2.7s, database wait time rising, and error rate at 11% for /checkout/create.",
+      "revision": 1
+    }
+  ]
+}
