@@ -56,6 +56,15 @@ Use case: an agent plans under binding constraints that must be preserved.
 api/examples/inference-prompts/constraint-planning.txt
 ```
 
+### 5. Graph materialization (write path)
+
+Use case: an agent must emit structured graph updates that can be translated
+into kernel projection events.
+
+```
+api/examples/inference-prompts/graph-materialization.txt
+```
+
 ## Tips
 
 - **Quote rationale**: instruct the LLM to cite `rationale` fields from
@@ -67,3 +76,56 @@ api/examples/inference-prompts/constraint-planning.txt
 - **Semantic class hints**: mention that relationships have `semantic_class`
   (causal, motivational, evidential, etc.) so the LLM knows which
   relationships carry explanatory weight.
+
+## If You Want The LLM To Fill The Graph
+
+Do not ask the model to emit full kernel events with `event_id`,
+`correlation_id`, and NATS subjects. That is transport noise, not model work.
+
+The recommended pattern is:
+
+1. Ask the model for a simple batch with `nodes`, `relations`, and
+   `node_details`.
+2. Translate that batch into `graph.node.materialized` and
+   `node.detail.materialized`.
+3. Publish the translated events to NATS.
+
+Example batch payload:
+
+```text
+api/examples/kernel/v1beta1/async/vllm-graph-batch.json
+```
+
+Canonical schema for that payload:
+
+```text
+api/examples/kernel/v1beta1/async/vllm-graph-batch.schema.json
+```
+
+Example prompt for that extraction task:
+
+```text
+api/examples/inference-prompts/graph-materialization.txt
+```
+
+Example OpenAI-compatible request body for `vLLM`:
+
+```text
+api/examples/inference-prompts/vllm-graph-materialization.request.json
+```
+
+The repo now ships a minimal translator for that contract:
+
+- `rehydration_testkit::parse_graph_batch`
+- `rehydration_testkit::graph_batch_to_projection_events`
+
+Legacy helper names remain available for compatibility:
+
+- `rehydration_testkit::parse_llm_graph_batch`
+- `rehydration_testkit::llm_graph_to_projection_events`
+
+That keeps the LLM focused on graph semantics while the translator owns
+envelopes, hashing, validation, and subject naming.
+
+Use `response_format.type=json_schema` for current `vLLM` structured outputs.
+Do not use deprecated `guided_json` examples from older snippets.

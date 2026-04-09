@@ -448,7 +448,7 @@ pub async fn evaluate_with_llm(
     )
     .await?;
     let latency_ms = start.elapsed().as_secs_f64() * 1000.0;
-    let content = strip_markdown_fences(&strip_thinking_tags(&content));
+    let content = normalize_llm_json_response(&content);
 
     // LLM-as-judge: use separate judge endpoint if configured
     let judge_client = if config.judge_endpoint.is_some() {
@@ -564,7 +564,7 @@ pub async fn evaluate_with_config(
     )
     .await?;
     let latency_ms = start.elapsed().as_secs_f64() * 1000.0;
-    let content = strip_markdown_fences(&strip_thinking_tags(&content));
+    let content = normalize_llm_json_response(&content);
 
     let judge_client = if config.judge_endpoint.is_some() {
         build_http_client(config)?
@@ -848,6 +848,14 @@ fn strip_markdown_fences(s: &str) -> String {
     }
 }
 
+/// Normalizes LLM JSON-ish output before schema parsing.
+///
+/// Removes provider-specific reasoning wrappers and markdown fences while
+/// preserving the inner JSON payload.
+pub fn normalize_llm_json_response(s: &str) -> String {
+    strip_markdown_fences(&strip_thinking_tags(s))
+}
+
 // ── calibration ─────────────────────────────────────────────────────
 
 /// Result of a single calibration case.
@@ -995,7 +1003,7 @@ pub async fn calibrate_agent(
     .await
     {
         Ok((raw_content, _prompt_tokens, completion_tokens)) => {
-            let content = strip_markdown_fences(&strip_thinking_tags(&raw_content));
+            let content = normalize_llm_json_response(&raw_content);
 
             // Check 1: non-empty response
             let non_empty = !content.trim().is_empty();

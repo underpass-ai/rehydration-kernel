@@ -2239,12 +2239,14 @@ dependencies = [
 name = "rehydration-testkit"
 version = "0.1.0"
 dependencies = [
+ "async-nats",
  "rehydration-application",
  "rehydration-domain",
  "reqwest",
  "serde",
  "serde_json",
  "serde_yaml",
+ "sha2",
  "tiktoken-rs",
  "tokio",
 ]

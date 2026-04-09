@@ -1,0 +1,141 @@
+{
+  "root_node_id": "incident-2026-04-09-checkout-latency",
+  "correlation_id": "incident-2026-04-09-checkout-latency",
+  "causation_id": "analysis-wave-2",
+  "occurred_at": "2026-04-09T09:04:00Z",
+  "nodes": [
+    {
+      "node_id": "incident-2026-04-09-checkout-latency",
+      "node_kind": "incident",
+      "title": "Checkout latency spike",
+      "summary": "P95 checkout latency exceeded 2.5s after a rollout.",
+      "status": "MITIGATING",
+      "labels": ["incident", "checkout", "p1"],
+      "properties": {
+        "service": "checkout-api",
+        "region": "eu-west-1"
+      },
+      "source_kind": "human",
+      "source_agent": "triage-agent"
+    },
+    {
+      "node_id": "finding-retry-storm",
+      "node_kind": "agent_finding",
+      "title": "Retry storm amplified saturation",
+      "summary": "Aggressive retries multiplied DB pressure during the incident.",
+      "status": "CONFIRMED",
+      "labels": ["finding", "retries"],
+      "properties": {
+        "component": "checkout-retries"
+      },
+      "source_kind": "agent",
+      "source_agent": "diagnostic-agent",
+      "observed_at": "2026-04-09T09:03:00Z"
+    },
+    {
+      "node_id": "decision-throttle-retries",
+      "node_kind": "decision",
+      "title": "Throttle checkout retries",
+      "summary": "Cap retry fan-out while rollback completes.",
+      "status": "ACCEPTED",
+      "labels": ["decision", "mitigation"],
+      "properties": {
+        "owner": "oncall"
+      },
+      "source_kind": "agent",
+      "source_agent": "recovery-agent"
+    },
+    {
+      "node_id": "task-apply-retry-cap",
+      "node_kind": "task",
+      "title": "Apply retry cap",
+      "summary": "Reduce retry fan-out from 5x to 2x and add jitter.",
+      "status": "IN_PROGRESS",
+      "labels": ["task", "retries"],
+      "properties": {
+        "owner": "platform"
+      },
+      "source_kind": "agent",
+      "source_agent": "recovery-agent"
+    },
+    {
+      "node_id": "artifact-recovery-checklist",
+      "node_kind": "artifact",
+      "title": "Recovery verification checklist",
+      "summary": "Checklist for confirming latency, pool size, and retry stabilization.",
+      "status": "READY",
+      "labels": ["artifact", "runbook"],
+      "properties": {
+        "runbook": "checkout-latency-recovery"
+      },
+      "source_kind": "projection",
+      "source_agent": "runbook-sync"
+    }
+  ],
+  "relations": [
+    {
+      "source_node_id": "incident-2026-04-09-checkout-latency",
+      "target_node_id": "finding-retry-storm",
+      "relation_type": "EXPLAINED_BY",
+      "semantic_class": "causal",
+      "rationale": "The retry fan-out amplified the saturation created by the small pool.",
+      "method": "request trace analysis",
+      "evidence": "retry counters plus DB wait traces",
+      "confidence": "high",
+      "sequence": 6
+    },
+    {
+      "source_node_id": "incident-2026-04-09-checkout-latency",
+      "target_node_id": "decision-throttle-retries",
+      "relation_type": "MITIGATED_BY",
+      "semantic_class": "motivational",
+      "rationale": "Retry pressure must be reduced while rollback restores DB capacity.",
+      "decision_id": "decision-throttle-retries",
+      "confidence": "high",
+      "sequence": 7
+    },
+    {
+      "source_node_id": "decision-throttle-retries",
+      "target_node_id": "task-apply-retry-cap",
+      "relation_type": "IMPLEMENTED_BY",
+      "semantic_class": "procedural",
+      "rationale": "The decision is executed by reducing retry fan-out and adding jitter.",
+      "method": "config update plus canary verification",
+      "decision_id": "decision-throttle-retries",
+      "confidence": "high",
+      "sequence": 8
+    },
+    {
+      "source_node_id": "incident-2026-04-09-checkout-latency",
+      "target_node_id": "artifact-recovery-checklist",
+      "relation_type": "EVIDENCED_BY",
+      "semantic_class": "evidential",
+      "rationale": "The checklist defines the concrete recovery signals that must turn green.",
+      "evidence": "SRE recovery runbook",
+      "confidence": "medium",
+      "sequence": 9
+    },
+    {
+      "source_node_id": "task-apply-retry-cap",
+      "target_node_id": "finding-retry-storm",
+      "relation_type": "ADDRESSES",
+      "semantic_class": "procedural",
+      "rationale": "The retry cap directly targets the amplification pattern seen in the retry storm.",
+      "method": "retry policy update",
+      "confidence": "high",
+      "sequence": 10
+    }
+  ],
+  "node_details": [
+    {
+      "node_id": "finding-retry-storm",
+      "detail": "Checkout clients retried each failed request up to five times without enough jitter. This multiplied DB wait pressure while the pool remained undersized.",
+      "revision": 1
+    },
+    {
+      "node_id": "task-apply-retry-cap",
+      "detail": "Apply a retry cap of 2 with full jitter, then verify that DB wait time, request concurrency, and checkout p95 begin to normalize.",
+      "revision": 1
+    }
+  ]
+}

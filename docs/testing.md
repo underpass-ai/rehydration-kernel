@@ -1,6 +1,7 @@
 # Testing Guide
 
-270 unit tests, 9 integration tests (testcontainers), 4 benchmark tests (LLM-as-judge).
+Workspace unit tests, container integration tests, benchmark tests, and live
+`vLLM` smoke coverage for schema-constrained graph extraction.
 
 ## Quick Start
 
@@ -53,6 +54,7 @@ bash scripts/ci/testcontainers-runtime.sh
 
 | Test | What it validates | Infra | Script |
 |------|-------------------|-------|--------|
+| `llm_graph_materialization_integration` | GraphBatch materialization: minimal flow + medium incremental flow on the same root aggregate | Neo4j + Valkey + NATS + gRPC | — |
 | `kernel_full_journey_integration` | Projection → query → command full cycle | Neo4j + Valkey + NATS + gRPC | `scripts/ci/integration-kernel-full-journey.sh` |
 | `kernel_full_journey_tls_integration` | mTLS end-to-end with generated certs | Same + OpenSSL certs | `scripts/ci/integration-kernel-full-journey-tls.sh` |
 | `kernel_golden_integration` | Golden contract tests (4 RPCs) | Neo4j + Valkey + NATS + gRPC | — |
@@ -70,6 +72,34 @@ cargo test -p rehydration-tests-kernel \
   --features container-tests \
   --test kernel_full_journey_integration \
   -- --nocapture --test-threads=1
+```
+
+### Model-driven ingestion coverage
+
+The repo now validates the `GraphBatch` path in three layers:
+
+1. **Translator/unit invariants** — parse + validate + translate the bounded
+   batch shape.
+2. **Deterministic container E2E** — materialize GraphBatch fixtures through
+   NATS into Neo4j + Valkey, then read them back via gRPC.
+3. **Live `vLLM` smoke** — hit the real `vLLM` endpoint with strict schema
+   output and prove that the response still parses and translates.
+
+Commands:
+
+```bash
+# Local translator + schema invariants
+cargo test -p rehydration-testkit llm_graph -- --nocapture
+
+# Container E2E: minimal + incremental GraphBatch materialization
+cargo test -p rehydration-tests-kernel \
+  --features container-tests \
+  --test llm_graph_materialization_integration \
+  -- --nocapture --test-threads=1
+
+# Live vLLM smoke (requires endpoint + mTLS env vars)
+RUN_VLLM_SMOKE=1 cargo test -p rehydration-testkit \
+  vllm_graph_prompt_smoke -- --nocapture
 ```
 
 ## Benchmark Tests (LLM-as-Judge)

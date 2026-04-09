@@ -9,6 +9,9 @@ The kernel targets a stable `v1` contract once these conditions are met:
 | Condition | Status |
 |:----------|:-------|
 | All deprecated proto fields removed or implemented | Done — 8 fields pruned, numbers reserved |
+| Experimental GraphBatch ingestion boundary documented and validated | Done — live vLLM smoke + minimal and incremental E2E |
+| GraphBatch retry/timeout policy documented | Done — client-owned retries, idempotency required, no sidecar assumption |
+| GraphBatch transport API frozen as stable public contract | Not started |
 | Authorization backend for scope validation | Not started |
 | Timeline and summary filtering in RehydrateSession | Not started |
 | Quality metrics in all render paths (including RehydrateSession) | Partial — GetContext and GetContextPath only |
@@ -17,7 +20,7 @@ The kernel targets a stable `v1` contract once these conditions are met:
 | OTLP mTLS to OTel Collector | Done — env-var TLS config, Helm wiring, cert-manager |
 | Neo4j client mTLS (2FA since Neo4j 5.19+) | Partial — Helm + URI parsing done, neo4rs client cert pending |
 | Grafana: disable anonymous admin access by default | Done — default `false`, toggle via `grafana.anonymousAccess` |
-| Event store atomic CAS for optimistic concurrency | Not started — check-then-act today |
+| Event store atomic CAS for optimistic concurrency | Done — NATS `expected_last_subject_sequence` + Valkey Lua EVAL CAS |
 | Breaking change window communicated to consumers | Not started |
 
 Until then, the `v1beta1` contract is **stable for current fields** — no breaking
@@ -53,6 +56,31 @@ All channels use the shared `EventEnvelope` schema: `event_id`, `correlation_id`
 `causation_id`, `occurred_at`, `aggregate_id`, `aggregate_type`, `schema_version`.
 
 Subject prefix is configurable via `REHYDRATION_EVENTS_PREFIX` (default: `rehydration`).
+
+## Experimental Ingestion Boundary
+
+The repo now documents and validates an experimental `GraphBatch` ingestion
+shape for model-driven producers.
+
+Status:
+
+- **Recommended for model producers** — yes
+- **Stable `v1beta1` transport contract** — no
+
+What is stable:
+
+- the async projection subjects above
+- the gRPC query surface
+
+What remains experimental:
+
+- any direct ingress API that accepts `GraphBatch` as a request body
+
+See:
+
+- [graph-batch-quickstart.md](graph-batch-quickstart.md)
+- [graph-batch-ingestion-api.md](graph-batch-ingestion-api.md)
+- [ADR-008](adr/ADR-008-graph-batch-ingestion-boundary.md)
 
 ## Removed
 
