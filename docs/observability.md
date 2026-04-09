@@ -183,8 +183,9 @@ otelCollector:
 ```
 
 When `otelCollector.enabled=true`, the kernel deployment automatically sets
-`OTEL_EXPORTER_OTLP_ENDPOINT` to the in-chart collector service. No manual
-configuration needed.
+`OTEL_EXPORTER_OTLP_ENDPOINT` to the in-chart collector service. Helm uses
+`http://...:4317` in plaintext mode and `https://...:4317` when
+`otelCollector.tls.enabled=true`.
 
 Grafana auto-provisions two datasources:
 - **Loki** at `http://<release>-loki:3100`

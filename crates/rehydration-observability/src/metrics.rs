@@ -1,4 +1,5 @@
 use opentelemetry::metrics::{Counter, Histogram, Meter};
+use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_otlp::WithTonicConfig;
 use opentelemetry_sdk::metrics::SdkMeterProvider;
 
@@ -59,7 +60,9 @@ pub(crate) fn init_otel_metrics(service_name: &str) -> Option<SdkMeterProvider> 
         return None;
     }
 
-    let mut builder = opentelemetry_otlp::MetricExporter::builder().with_tonic();
+    let mut builder = opentelemetry_otlp::MetricExporter::builder()
+        .with_tonic()
+        .with_endpoint(endpoint);
     if let Some(tls_config) = super::build_otlp_tls_config() {
         builder = builder.with_tls_config(tls_config);
     }
