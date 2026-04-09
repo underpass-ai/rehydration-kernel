@@ -92,11 +92,13 @@ Stable today:
 Experimental today:
 
 - a higher-level ingress API that accepts `GraphBatch` directly
+- the dedicated `repair-judge` helper that repairs invalid model output before translation
 
 That means:
 
 - `GraphBatch` is the recommended producer shape
 - the stable kernel-owned write boundary is still the async projection contract
+- the `repair-judge` is optional scaffolding around model extraction, not part of the stable write boundary
 
 ## Evidence that this works
 
@@ -105,6 +107,11 @@ The repo now has three proof points:
 - a live `vLLM` smoke using strict schema-constrained output
 - a deterministic minimal materialization E2E
 - a deterministic medium incremental E2E over the same root aggregate
+
+There is also an experimental live repair path:
+
+- if a primary model response is invalid, a dedicated `repair-judge` can rewrite it against the same `GraphBatch` contract
+- that path is useful for stabilization and benchmarking, but it is still experimental
 
 See:
 

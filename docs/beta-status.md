@@ -14,7 +14,7 @@ The kernel targets a stable `v1` contract once these conditions are met:
 | GraphBatch transport API frozen as stable public contract | Not started |
 | Authorization backend for scope validation | Not started |
 | Timeline and summary filtering in RehydrateSession | Not started |
-| Quality metrics in all render paths (including RehydrateSession) | Partial — GetContext and GetContextPath only |
+| Quality metrics in all render paths (including RehydrateSession) | Done — GetContext, GetContextPath, and RehydrateSession emit quality metrics |
 | Full benchmark matrix validated (3 agents x 3 judges x 4 noise) | Planned — see [ROADMAP_MASTER.md](research/ROADMAP_MASTER.md) |
 | Async contract: `context.bundle.generated` actually emitted by runtime | Not started — contract-only today |
 | OTLP mTLS to OTel Collector | Done — env-var TLS config, Helm wiring, cert-manager |
@@ -75,6 +75,13 @@ What is stable:
 What remains experimental:
 
 - any direct ingress API that accepts `GraphBatch` as a request body
+- the dedicated `repair-judge` helper used to salvage invalid model output before translation
+
+What the experimental `repair-judge` is:
+
+- an optional second-pass model used by the testkit and cluster examples
+- a repair layer over invalid `GraphBatch` output from the primary model
+- not part of the stable gRPC or async contract surface
 
 See:
 

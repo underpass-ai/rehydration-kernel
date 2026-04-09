@@ -19,20 +19,21 @@ bash scripts/ci/quality-gate.sh
 
 ## Unit Tests
 
-270 tests across the workspace. No external infrastructure needed.
+Workspace unit coverage across the core crates. No external infrastructure
+needed.
 
-| Crate | Tests | What it validates |
-|:------|------:|:------------------|
-| rehydration-application | 79 | Rendering pipeline, quality metrics, tier classification, mode heuristic |
-| rehydration-domain | 41 | Value objects, invariants, BundleQualityMetrics, aggregate validation |
-| rehydration-adapter-valkey | 38 | RESP protocol, endpoint parsing, TLS config, detail/snapshot stores |
-| rehydration-testkit | 28 | Dataset generator, raw dump baseline, seed consistency |
-| rehydration-transport-grpc | 24 | gRPC roundtrip, TLS/mTLS handshake, proto mapping |
-| rehydration-adapter-neo4j | 15 | Endpoint parsing, TLS CA config, projection store |
-| rehydration-proto | 12 | Contract stability, fixture compliance, AsyncAPI |
-| rehydration-config | 10 | AppConfig defaults, gRPC TLS modes, NATS TLS validation |
-| rehydration-observability | 5 | OTel/Tracing/Composite quality observers |
-| rehydration-ports | 5 | Port trait delegation through Arc |
+| Crate | What it validates |
+|:------|:------------------|
+| rehydration-application | Rendering pipeline, quality metrics, tier classification, mode heuristic |
+| rehydration-domain | Value objects, invariants, BundleQualityMetrics, aggregate validation |
+| rehydration-adapter-valkey | RESP protocol, endpoint parsing, TLS config, detail and snapshot stores |
+| rehydration-testkit | Dataset generator, GraphBatch extraction, retry and repair flows |
+| rehydration-transport-grpc | gRPC roundtrip, TLS and mTLS handshake, proto mapping |
+| rehydration-adapter-neo4j | Endpoint parsing, TLS CA config, projection store |
+| rehydration-proto | Contract stability, fixture compliance, AsyncAPI |
+| rehydration-config | AppConfig defaults, gRPC TLS modes, NATS TLS validation |
+| rehydration-observability | OTel, tracing, and composite quality observers |
+| rehydration-ports | Port trait delegation through Arc |
 
 Run a specific crate:
 ```bash
@@ -106,7 +107,17 @@ RUN_VLLM_SMOKE=1 \
 LLM_GRAPH_BATCH_USE_REPAIR_JUDGE=1 \
 cargo test -p rehydration-testkit \
   vllm_graph_prompt_smoke -- --nocapture
+
+# Dedicated live repair smoke: invalid primary output -> repair judge -> valid GraphBatch
+RUN_VLLM_SMOKE=1 cargo test -p rehydration-testkit \
+  vllm_graph_repair_judge_smoke -- --nocapture
 ```
+
+The dedicated `repair-judge` path is experimental:
+
+- it is useful for stabilization and benchmark experiments
+- it is not part of the stable kernel contract
+- it should not be described as a required runtime dependency for graph ingestion
 
 For cluster-managed runs, do not keep these values as ad-hoc shell exports.
 Prefer a `ConfigMap` for non-secret LLM client settings and a `Secret` for API
@@ -315,6 +326,13 @@ The primary inference request and the repair judge now have independent timeout
 and retry budgets. Keep the primary budget tight for fast failures, and give
 the repair judge a longer request timeout when it runs on a slower dedicated
 model.
+
+Current code defaults for the testkit transport layer:
+
+| Layer | Connect timeout | Request timeout | Max attempts |
+|:------|----------------:|----------------:|-------------:|
+| Primary model extraction | 2 s | 45 s | 4 |
+| Experimental repair-judge | 2 s | 180 s | 1 |
 
 **API keys:**
 

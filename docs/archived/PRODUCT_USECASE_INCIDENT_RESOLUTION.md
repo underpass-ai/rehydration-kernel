@@ -1,5 +1,9 @@
 # Production Incident Resolution — Kernel Perspective
 
+> Archived on 2026-04-09. This document reflects an earlier product write-path
+> assumption around `UpdateContext` and should not be used as current guidance
+> for model-driven graph ingestion.
+
 ## What the Kernel Provides
 
 The Rehydration Kernel is a **causal memory system** that stores knowledge
