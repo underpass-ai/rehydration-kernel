@@ -1,5 +1,9 @@
 # Kernel Repo Closeout
 
+> Archived on 2026-04-09. This note is retained for traceability, but it is no
+> longer a current source of truth for the kernel boundary or product write
+> path.
+
 > Review required. This closeout is still directionally useful, but it was
 > written before the latest removal of compatibility surfaces and alpha-era
 > assumptions. Re-check ownership and handoff statements before relying on it.

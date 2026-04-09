@@ -43,6 +43,12 @@ If your upstream producer is an LLM such as `vLLM`, prefer a two-step shape:
 Do not ask the model to invent NATS subjects or event envelopes. Keep the model
 on graph semantics and let the adapter own transport details.
 
+Optional stabilizer:
+
+- an experimental `repair-judge` pass can repair an invalid `GraphBatch` before translation
+- this helper lives in the testkit and cluster examples today
+- it is not part of the stable kernel contract and should be treated as optional infrastructure
+
 The repo includes a minimal adapter for that path:
 
 ```rust
@@ -83,11 +89,21 @@ Why this is the recommended path:
 - the adapter owns validation, hashing, envelopes, and subjects
 - the stable kernel-owned write boundary remains async projection events
 
+What remains experimental around this path:
+
+- any direct ingress API that accepts `GraphBatch`
+- the dedicated `repair-judge` helper used to salvage invalid model output before translation
+
 Operational rule for real clients:
 
 - always attach an `idempotency_key` if you add a direct `GraphBatch` ingress
 - use bounded retries only for transient transport failures
 - do not blindly retry domain conflicts such as `ABORTED`
+
+Operational rule for model extraction:
+
+- keep the model-generation timeout policy separate from any future `GraphBatch` ingress timeout
+- if you use a `repair-judge`, give it its own timeout budget rather than sharing the primary model budget
 
 For the shortest end-to-end explanation of this write path, see
 [`graph-batch-quickstart.md`](graph-batch-quickstart.md).
@@ -293,6 +309,7 @@ Important:
 - `UpdateContext` is part of the stable `v1beta1` gRPC contract
 - it is **not** the recommended primary write path for model-generated graph materialization
 - for model output, prefer `GraphBatch -> translator -> async projection events`
+- the optional `repair-judge` sits before translation and only repairs invalid model output; it does not change the stable kernel boundary
 
 The same retry discipline applies across both write paths:
 

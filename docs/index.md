@@ -2,6 +2,12 @@
 
 Navigation hub for kernel documentation.
 
+Current integration stance:
+
+- `GraphBatch -> translator -> async projection events` is the recommended write path for model-driven producers.
+- The stable kernel boundary remains gRPC reads plus async projection subjects.
+- The dedicated `repair-judge` is an experimental stabilization helper for model extraction. It is not part of the stable kernel contract.
+
 ## Guides
 
 | Document | Content |
@@ -10,7 +16,7 @@ Navigation hub for kernel documentation.
 | [graph-batch-quickstart.md](graph-batch-quickstart.md) | Fastest path for model-driven graph ingestion |
 | [beta-status.md](beta-status.md) | v1beta1 maturity matrix, path to v1, known limitations |
 | [security-model.md](security-model.md) | Transport security, threat model, TLS configuration |
-| [testing.md](testing.md) | Unit, integration, benchmark, and live vLLM smoke coverage |
+| [testing.md](testing.md) | Unit, integration, benchmark, live vLLM smoke, and experimental repair-judge coverage |
 | [observability.md](observability.md) | Quality metrics, OTel, Loki, Grafana stack |
 
 ## Operations
@@ -49,4 +55,4 @@ LaTeX submission package: [paper/](paper/README.md)
 
 ## Archived
 
-Legacy compatibility documents (pre-v1beta1): [archived/](archived/README.md)
+Historical and superseded documents: [archived/](archived/README.md)

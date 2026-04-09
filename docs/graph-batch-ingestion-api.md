@@ -149,6 +149,12 @@ Recommended defaults for the ingress call itself:
 - connect timeout: `2s`
 - no infinite retries
 
+These defaults are for a future direct `SubmitGraphBatch` call.
+
+They do not cover upstream model extraction. If your producer uses a primary
+model and an optional `repair-judge`, those model calls should keep their own
+independent timeout budgets.
+
 The response acknowledges ingestion only. A timeout does not imply that the
 request was rejected. This is exactly why `idempotency_key` is mandatory.
 
@@ -166,6 +172,9 @@ Reason:
 
 Envoy or service-mesh retries should only be revisited if this ingress becomes
 a shared multi-client platform boundary with centralized traffic policy needs.
+
+The dedicated `repair-judge` used in the current testkit is a separate,
+experimental model-stabilization helper. It is not this API.
 
 ## Example JSON Request
 

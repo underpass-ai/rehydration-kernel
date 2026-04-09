@@ -115,6 +115,12 @@ Recommended defaults:
 | Max attempts | 4 |
 | Backoff | 250 ms, 1 s, 3 s (+ jitter) |
 
+This table is for a future direct `GraphBatch` ingress call.
+
+It does **not** describe the upstream model-extraction step. The current
+testkit uses separate budgets for `vLLM` primary extraction and the optional
+experimental `repair-judge`, with longer request deadlines at that layer.
+
 Safe-to-retry categories:
 
 - `UNAVAILABLE`
