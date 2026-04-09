@@ -8,7 +8,8 @@ They are split by transport and version:
 - `kernel/v1beta1/grpc`: ProtoJSON examples for the canonical
   `underpass.rehydration.kernel.v1beta1` gRPC contract
 - `kernel/v1beta1/async`: JSON examples for the generic AsyncAPI subjects,
-  plus the schema-constrained `vLLM` graph batch fixture
+  plus the schema-constrained `vLLM` graph batch fixture and a stable
+  incident-style GraphBatch smoke fixture
 - `runtime-reference/v1`: consumer-side runtime examples used by the agentic
   integration reference
 

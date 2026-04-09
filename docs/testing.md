@@ -56,6 +56,7 @@ bash scripts/ci/testcontainers-runtime.sh
 | Test | What it validates | Infra | Script |
 |------|-------------------|-------|--------|
 | `llm_graph_materialization_integration` | GraphBatch materialization: minimal flow + medium incremental flow on the same root aggregate | Neo4j + Valkey + NATS + gRPC | — |
+| `pir_graph_batch_integration` | PIR-style GraphBatch integration: idempotent republish and incremental waves on one incident root | Neo4j + Valkey + NATS + gRPC | — |
 | `kernel_full_journey_integration` | Projection → query → command full cycle | Neo4j + Valkey + NATS + gRPC | `scripts/ci/integration-kernel-full-journey.sh` |
 | `kernel_full_journey_tls_integration` | mTLS end-to-end with generated certs | Same + OpenSSL certs | `scripts/ci/integration-kernel-full-journey-tls.sh` |
 | `kernel_golden_integration` | Golden contract tests (4 RPCs) | Neo4j + Valkey + NATS + gRPC | — |
@@ -86,6 +87,13 @@ The repo now validates the `GraphBatch` path in three layers:
 3. **Live `vLLM` smoke** — hit the real `vLLM` endpoint with strict schema
    output and prove that the response still parses and translates.
 
+For consumer integration hardening, the repo now adds three PIR-oriented
+slices:
+
+1. **Republish idempotency E2E** — same `run_id`, same event ids, same graph shape.
+2. **Incremental-wave E2E** — same incident root, new nodes and details over time.
+3. **Live roundtrip smoke** — publish fixture to NATS and read it back from a live kernel.
+
 Commands:
 
 ```bash
@@ -96,6 +104,12 @@ cargo test -p rehydration-testkit llm_graph -- --nocapture
 cargo test -p rehydration-tests-kernel \
   --features container-tests \
   --test llm_graph_materialization_integration \
+  -- --nocapture --test-threads=1
+
+# Container E2E: PIR-style republish idempotency + incremental incident waves
+cargo test -p rehydration-tests-kernel \
+  --features container-tests \
+  --test pir_graph_batch_integration \
   -- --nocapture --test-threads=1
 
 # Live vLLM smoke (requires endpoint + mTLS env vars)
@@ -111,13 +125,28 @@ cargo test -p rehydration-testkit \
 # Dedicated live repair smoke: invalid primary output -> repair judge -> valid GraphBatch
 RUN_VLLM_SMOKE=1 cargo test -p rehydration-testkit \
   vllm_graph_repair_judge_smoke -- --nocapture
+
+# Live PIR-style roundtrip smoke against a real kernel/NATS deployment
+RUN_PIR_GRAPH_BATCH_SMOKE=1 cargo test -p rehydration-testkit \
+  pir_graph_batch_roundtrip_smoke -- --nocapture
 ```
+
+For `underpass-runtime`, the live PIR smoke should use:
+
+- `PIR_GRAPH_BATCH_NATS_URL=nats://rehydration-kernel-nats:4222`
+- mounted NATS TLS certs/keys/CA
+- mounted gRPC TLS certs/keys/CA
+- no `PIR_GRAPH_BATCH_NATS_TLS_FIRST`
 
 The dedicated `repair-judge` path is experimental:
 
 - it is useful for stabilization and benchmark experiments
 - it is not part of the stable kernel contract
 - it should not be described as a required runtime dependency for graph ingestion
+
+The live PIR roundtrip smoke uses the `graph_batch_roundtrip` binary as its
+single source of truth, so the automated smoke and manual cluster smoke follow
+the same publish/query path.
 
 For cluster-managed runs, do not keep these values as ad-hoc shell exports.
 Prefer a `ConfigMap` for non-secret LLM client settings and a `Secret` for API

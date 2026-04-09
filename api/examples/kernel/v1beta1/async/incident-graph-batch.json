@@ -1,0 +1,90 @@
+{
+  "root_node_id": "incident:pir-2026-04-09-payments-latency",
+  "correlation_id": "pir-2026-04-09-payments-latency",
+  "causation_id": "pir-analysis-wave-1",
+  "occurred_at": "2026-04-09T16:00:00Z",
+  "nodes": [
+    {
+      "node_id": "incident:pir-2026-04-09-payments-latency",
+      "node_kind": "incident",
+      "title": "Payments latency spike",
+      "summary": "P95 payments latency exceeded 2 seconds after rollout 2026.04.09.3.",
+      "status": "INVESTIGATING",
+      "labels": ["incident", "payments-api", "p1", "eu-west-1"],
+      "properties": {
+        "external_incident_id": "pir-2026-04-09-payments-latency",
+        "service": "payments-api",
+        "region": "eu-west-1"
+      },
+      "source_kind": "agent",
+      "source_agent": "pir-diagnostic",
+      "observed_at": "2026-04-09T16:00:00Z"
+    },
+    {
+      "node_id": "finding:pir-2026-04-09-payments-latency:db-pool-typo",
+      "node_kind": "finding",
+      "title": "Connection pool typo",
+      "summary": "The rollout changed DB maxConnections from 50 to 5.",
+      "status": "CONFIRMED",
+      "labels": ["finding", "config", "db"],
+      "properties": {
+        "external_incident_id": "pir-2026-04-09-payments-latency",
+        "source": "config-map-diff"
+      },
+      "source_kind": "agent",
+      "source_agent": "pir-diagnostic",
+      "observed_at": "2026-04-09T16:03:00Z"
+    },
+    {
+      "node_id": "decision:pir-2026-04-09-payments-latency:reroute-secondary",
+      "node_kind": "decision",
+      "title": "Reroute to secondary region",
+      "summary": "Shift 80% of traffic while rollback completes.",
+      "status": "ACCEPTED",
+      "labels": ["decision", "mitigation", "traffic"],
+      "properties": {
+        "external_incident_id": "pir-2026-04-09-payments-latency",
+        "owner": "incident-commander"
+      },
+      "source_kind": "agent",
+      "source_agent": "pir-commander",
+      "observed_at": "2026-04-09T16:05:00Z"
+    }
+  ],
+  "relations": [
+    {
+      "source_node_id": "incident:pir-2026-04-09-payments-latency",
+      "target_node_id": "finding:pir-2026-04-09-payments-latency:db-pool-typo",
+      "relation_type": "HAS_FINDING",
+      "semantic_class": "evidential",
+      "rationale": "Config map diff and pod env inspection confirm the pool reduction.",
+      "evidence": "values.yaml diff plus running pod env",
+      "confidence": "high",
+      "sequence": 1
+    },
+    {
+      "source_node_id": "incident:pir-2026-04-09-payments-latency",
+      "target_node_id": "decision:pir-2026-04-09-payments-latency:reroute-secondary",
+      "relation_type": "MITIGATED_BY",
+      "semantic_class": "procedural",
+      "rationale": "Traffic reroute reduces load while the bad rollout is rolled back.",
+      "method": "Shift 80% of traffic to secondary region",
+      "decision_id": "decision:pir-2026-04-09-payments-latency:reroute-secondary",
+      "caused_by_node_id": "finding:pir-2026-04-09-payments-latency:db-pool-typo",
+      "confidence": "high",
+      "sequence": 2
+    }
+  ],
+  "node_details": [
+    {
+      "node_id": "finding:pir-2026-04-09-payments-latency:db-pool-typo",
+      "detail": "The rollout 2026.04.09.3 changed DB maxConnections from 50 to 5. Error rate hit 18% and p95 rose to 2.3 seconds within four minutes.",
+      "revision": 1
+    },
+    {
+      "node_id": "decision:pir-2026-04-09-payments-latency:reroute-secondary",
+      "detail": "Mitigation decision: reroute 80% of traffic to eu-west-2 while rollback completes, then verify that p95, DB wait time, and saturation recover.",
+      "revision": 1
+    }
+  ]
+}
