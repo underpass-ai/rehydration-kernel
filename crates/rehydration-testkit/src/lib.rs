@@ -1,5 +1,6 @@
 mod container_runtime;
 pub mod dataset_generator;
+mod graph_batch_llm;
 mod in_memory_stores;
 pub mod llm_evaluator;
 mod llm_graph;
@@ -11,6 +12,11 @@ pub use container_runtime::ensure_testcontainers_runtime;
 pub use dataset_generator::{
     Domain, GeneratedNode, GeneratedRelation, GeneratedSeed, GraphSeedConfig, NoiseMode,
     RelationMix, generate_seed,
+};
+pub use graph_batch_llm::{
+    GraphBatchRepairJudgePolicy, GraphBatchRequestError, GraphBatchRequestOutcome,
+    GraphBatchRetryPolicy, build_graph_batch_request_body, request_graph_batch_with_policy,
+    request_graph_batch_with_repair_judge, request_graph_batch_with_retry,
 };
 pub use in_memory_stores::{
     InMemoryContextEventStore, InMemoryGraphNeighborhoodReader, InMemoryNodeDetailReader,

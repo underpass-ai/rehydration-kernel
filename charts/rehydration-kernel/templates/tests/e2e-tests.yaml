@@ -53,6 +53,13 @@ spec:
           value: "/var/run/e2e-tls/tls.crt"
         - name: TLS_KEY
           value: "/var/run/e2e-tls/tls.key"
+        {{- with $e2e.extraEnv }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with $e2e.extraEnvFrom }}
+      envFrom:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       resources:
         requests:
           cpu: 50m

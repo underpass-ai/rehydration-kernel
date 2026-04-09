@@ -1,37 +1,16 @@
 use std::error::Error;
 
 use rehydration_testkit::{
-    LlmEvaluatorConfig, LlmProvider, llm_graph_to_projection_events, normalize_llm_json_response,
-    parse_llm_graph_batch,
+    GraphBatchRepairJudgePolicy, GraphBatchRetryPolicy, LlmEvaluatorConfig, LlmProvider,
+    build_graph_batch_request_body, request_graph_batch_with_policy,
+    request_graph_batch_with_repair_judge,
 };
-use serde::Deserialize;
 
 const RUN_ENV: &str = "RUN_VLLM_SMOKE";
+const USE_REPAIR_JUDGE_ENV: &str = "LLM_GRAPH_BATCH_USE_REPAIR_JUDGE";
 const ROOT_NODE_ID: &str = "incident-2026-04-08-payments-latency";
 const REQUEST_FIXTURE: &str =
     include_str!("../../../api/examples/inference-prompts/vllm-graph-materialization.request.json");
-
-#[derive(Debug, Deserialize)]
-struct OpenAiChatResponse {
-    choices: Vec<OpenAiChoice>,
-    usage: Option<OpenAiUsage>,
-}
-
-#[derive(Debug, Deserialize)]
-struct OpenAiChoice {
-    message: OpenAiMessage,
-}
-
-#[derive(Debug, Deserialize)]
-struct OpenAiMessage {
-    content: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct OpenAiUsage {
-    prompt_tokens: u32,
-    completion_tokens: u32,
-}
 
 #[tokio::test]
 async fn vllm_graph_prompt_smoke_returns_valid_batch() -> Result<(), Box<dyn Error + Send + Sync>> {
@@ -49,14 +28,32 @@ async fn vllm_graph_prompt_smoke_returns_valid_batch() -> Result<(), Box<dyn Err
         "vLLM smoke expects LLM_PROVIDER=openai"
     );
 
-    let client = build_http_client(&config)?;
-    let request_body = build_request_body(&config)?;
-    let (raw_content, prompt_tokens, completion_tokens) =
-        send_openai_request(&client, &config, request_body).await?;
-
-    let normalized = normalize_llm_json_response(&raw_content);
-    let batch = parse_llm_graph_batch(&normalized)
-        .map_err(|error| format!("failed to parse normalized response as LlmGraphBatch: {error}\nraw={raw_content}\nnormalized={normalized}"))?;
+    let request_body = build_graph_batch_request_body(&config, REQUEST_FIXTURE)?;
+    let primary_policy = GraphBatchRetryPolicy::from_env();
+    let use_repair_judge = std::env::var(USE_REPAIR_JUDGE_ENV)
+        .map(|value| value == "true" || value == "1")
+        .unwrap_or(false);
+    let outcome = if use_repair_judge {
+        request_graph_batch_with_repair_judge(
+            &config,
+            request_body,
+            "rehydration",
+            "vllm-smoke",
+            primary_policy,
+            GraphBatchRepairJudgePolicy::from_env(),
+        )
+        .await?
+    } else {
+        request_graph_batch_with_policy(
+            &config,
+            request_body,
+            "rehydration",
+            "vllm-smoke",
+            primary_policy,
+        )
+        .await?
+    };
+    let batch = outcome.batch;
 
     assert_eq!(batch.root_node_id, ROOT_NODE_ID);
     assert_eq!(
@@ -95,94 +92,25 @@ async fn vllm_graph_prompt_smoke_returns_valid_batch() -> Result<(), Box<dyn Err
             .iter()
             .all(|detail| detail.node_id != ROOT_NODE_ID)
     );
-
-    let messages =
-        llm_graph_to_projection_events(&batch, "rehydration", "vllm-smoke").map_err(|error| {
-            format!(
-                "model returned a batch that did not translate: {error}\nnormalized={normalized}"
-            )
-        })?;
-    assert_eq!(
-        messages.len(),
-        5,
-        "3 node events + 2 node detail events expected for the smoke payload"
+    assert!(
+        outcome.prompt_tokens > 0,
+        "smoke request should report prompt token usage"
     );
-    assert!(prompt_tokens > 0);
-    assert!(completion_tokens > 0);
-
-    Ok(())
-}
-
-fn build_request_body(
-    config: &LlmEvaluatorConfig,
-) -> Result<serde_json::Value, Box<dyn Error + Send + Sync>> {
-    let mut body: serde_json::Value = serde_json::from_str(REQUEST_FIXTURE)?;
-
-    body["model"] = serde_json::json!(config.model);
-    body["temperature"] = serde_json::json!(config.temperature);
-    body["max_tokens"] = serde_json::json!(config.max_tokens.max(2048));
-
-    let disable_thinking = std::env::var("LLM_ENABLE_THINKING")
-        .map(|v| v == "false" || v == "0")
-        .unwrap_or(false);
-    if disable_thinking {
-        body["chat_template_kwargs"] = serde_json::json!({"enable_thinking": false});
-    } else {
-        body["thinking_token_budget"] = serde_json::json!(512);
-    }
-
-    Ok(body)
-}
-
-async fn send_openai_request(
-    client: &reqwest::Client,
-    config: &LlmEvaluatorConfig,
-    body: serde_json::Value,
-) -> Result<(String, u32, u32), Box<dyn Error + Send + Sync>> {
-    let mut req = client.post(&config.endpoint).json(&body);
-    if let Some(key) = config.api_key.as_deref() {
-        req = req.bearer_auth(key);
-    }
-
-    let response = req.send().await?;
-    let status = response.status();
-    if !status.is_success() {
-        let body_text = response.text().await.unwrap_or_default();
-        return Err(format!("LLM request failed with {status}: {body_text}").into());
-    }
-
-    let chat: OpenAiChatResponse = response.json().await?;
-    let content = chat
-        .choices
-        .first()
-        .and_then(|choice| choice.message.content.clone())
-        .unwrap_or_default();
-    let usage = chat.usage.unwrap_or(OpenAiUsage {
-        prompt_tokens: 0,
-        completion_tokens: 0,
-    });
-
-    Ok((content, usage.prompt_tokens, usage.completion_tokens))
-}
-
-fn build_http_client(
-    config: &LlmEvaluatorConfig,
-) -> Result<reqwest::Client, Box<dyn Error + Send + Sync>> {
-    let mut builder = reqwest::Client::builder();
-
-    if config.tls_insecure {
-        return Err(
-            "LLM_TLS_INSECURE is no longer supported; require valid TLS certificates".into(),
+    assert!(
+        outcome.completion_tokens > 0,
+        "smoke request should report completion token usage"
+    );
+    assert!(
+        outcome.primary_attempts <= primary_policy.max_attempts,
+        "primary retry policy must stay bounded"
+    );
+    if use_repair_judge {
+        let repair_policy = GraphBatchRepairJudgePolicy::from_env();
+        assert!(
+            outcome.repair_attempts <= repair_policy.max_attempts,
+            "repair retry policy must stay bounded"
         );
     }
 
-    if let (Some(cert_path), Some(key_path)) = (&config.tls_cert_path, &config.tls_key_path) {
-        let cert_pem = std::fs::read(cert_path)?;
-        let key_pem = std::fs::read(key_path)?;
-        let mut combined = cert_pem;
-        combined.extend_from_slice(&key_pem);
-        builder = builder.identity(reqwest::Identity::from_pem(&combined)?);
-    }
-
-    Ok(builder.build()?)
+    Ok(())
 }

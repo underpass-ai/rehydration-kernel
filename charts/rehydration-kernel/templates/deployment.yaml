@@ -132,6 +132,10 @@ spec:
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
+          {{- with .Values.extraEnvFrom }}
+          envFrom:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           {{- if or (ne .Values.tls.mode "disabled") .Values.natsTls.existingSecret .Values.valkeyTls.existingSecret .Values.neo4jTls.existingSecret (and .Values.otelCollector.tls.enabled .Values.otelCollector.tls.existingSecret) }}
           volumeMounts:
             {{- if ne .Values.tls.mode "disabled" }}
