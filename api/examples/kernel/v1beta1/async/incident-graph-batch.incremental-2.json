@@ -1,0 +1,89 @@
+{
+  "root_node_id": "incident:pir-2026-04-09-payments-latency",
+  "correlation_id": "pir-2026-04-09-payments-latency",
+  "causation_id": "pir-analysis-wave-2",
+  "occurred_at": "2026-04-09T16:08:00Z",
+  "nodes": [
+    {
+      "node_id": "incident:pir-2026-04-09-payments-latency",
+      "node_kind": "incident",
+      "title": "Payments latency spike",
+      "summary": "P95 payments latency exceeded 2 seconds after rollout 2026.04.09.3.",
+      "status": "MITIGATING",
+      "labels": ["incident", "payments-api", "p1", "eu-west-1"],
+      "properties": {
+        "external_incident_id": "pir-2026-04-09-payments-latency",
+        "service": "payments-api",
+        "region": "eu-west-1"
+      },
+      "source_kind": "agent",
+      "source_agent": "pir-diagnostic",
+      "observed_at": "2026-04-09T16:08:00Z"
+    },
+    {
+      "node_id": "finding:pir-2026-04-09-payments-latency:retry-storm",
+      "node_kind": "finding",
+      "title": "Retry storm amplified load",
+      "summary": "Unbounded client retries multiplied the pressure on the degraded pool.",
+      "status": "CONFIRMED",
+      "labels": ["finding", "retry", "load"],
+      "properties": {
+        "external_incident_id": "pir-2026-04-09-payments-latency",
+        "source": "latency-dashboard"
+      },
+      "source_kind": "agent",
+      "source_agent": "pir-diagnostic",
+      "observed_at": "2026-04-09T16:08:00Z"
+    },
+    {
+      "node_id": "task:pir-2026-04-09-payments-latency:apply-retry-cap",
+      "node_kind": "task",
+      "title": "Apply retry cap",
+      "summary": "Cap retries to 2 with full jitter while rollback completes.",
+      "status": "PLANNED",
+      "labels": ["task", "mitigation", "retry"],
+      "properties": {
+        "external_incident_id": "pir-2026-04-09-payments-latency",
+        "owner": "incident-commander"
+      },
+      "source_kind": "agent",
+      "source_agent": "pir-commander",
+      "observed_at": "2026-04-09T16:09:00Z"
+    }
+  ],
+  "relations": [
+    {
+      "source_node_id": "incident:pir-2026-04-09-payments-latency",
+      "target_node_id": "finding:pir-2026-04-09-payments-latency:retry-storm",
+      "relation_type": "HAS_FINDING",
+      "semantic_class": "causal",
+      "rationale": "Client retries increased request volume while the pool was already degraded.",
+      "evidence": "retry dashboard plus application logs",
+      "confidence": "medium",
+      "sequence": 3
+    },
+    {
+      "source_node_id": "incident:pir-2026-04-09-payments-latency",
+      "target_node_id": "task:pir-2026-04-09-payments-latency:apply-retry-cap",
+      "relation_type": "REQUIRES_ACTION",
+      "semantic_class": "procedural",
+      "rationale": "A retry cap prevents client amplification during mitigation.",
+      "method": "Set retry cap to 2 with full jitter",
+      "caused_by_node_id": "finding:pir-2026-04-09-payments-latency:retry-storm",
+      "confidence": "high",
+      "sequence": 4
+    }
+  ],
+  "node_details": [
+    {
+      "node_id": "finding:pir-2026-04-09-payments-latency:retry-storm",
+      "detail": "After the pool regression, upstream clients retried aggressively without jitter. Request concurrency doubled and queueing pressure rose even before rollback completed.",
+      "revision": 1
+    },
+    {
+      "node_id": "task:pir-2026-04-09-payments-latency:apply-retry-cap",
+      "detail": "Set retry cap to 2 with full jitter and monitor DB wait time, request concurrency, and p95 until rollback and reroute complete.",
+      "revision": 1
+    }
+  ]
+}
