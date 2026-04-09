@@ -570,7 +570,7 @@ async fn send_openai_graph_batch_request(
     let response_text = response
         .text()
         .await
-        .map_err(|error| classify_reqwest_error(error))?;
+        .map_err(classify_reqwest_error)?;
 
     if !status.is_success() {
         let message = format!("LLM request failed with {status}: {response_text}");
