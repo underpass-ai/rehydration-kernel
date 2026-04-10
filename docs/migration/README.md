@@ -17,6 +17,7 @@ an integrating product:
 - `kernel-agentic-event-trigger-e2e.md`
 - `kernel-runtime-integration-reference.md`
 - `pir-kernel-integration-reference.md`
+- `pir-kernel-real-integration-plan.md`
 - `llm-response-determinism-strategy.md`
 
 Historical closeout and compatibility planning material belongs in

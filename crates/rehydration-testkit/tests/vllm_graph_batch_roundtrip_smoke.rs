@@ -6,9 +6,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use rehydration_domain::RelationSemanticClass;
 use rehydration_testkit::{
-    GraphBatch, GraphBatchRepairJudgePolicy, GraphBatchRetryPolicy, LlmEvaluatorConfig,
-    LlmProvider, build_graph_batch_request_body, call_llm, namespace_graph_batch,
-    request_graph_batch_with_policy, request_graph_batch_with_repair_judge,
+    GraphBatch, GraphBatchRepairJudgePolicy, GraphBatchRetryPolicy,
+    GraphBatchSemanticClassifierPolicy, LlmEvaluatorConfig, LlmProvider,
+    build_graph_batch_request_body, call_llm, classify_graph_batch_semantic_classes_with_policy,
+    namespace_graph_batch, request_graph_batch_with_policy, request_graph_batch_with_repair_judge,
 };
 use serde_json::Value;
 
@@ -172,11 +173,10 @@ async fn vllm_graph_batch_roundtrip_smoke_consumes_rehydrated_context() -> TestR
 }
 
 #[tokio::test]
-async fn vllm_graph_batch_roundtrip_large_incident_soak_primary_and_repair_judge_variants()
--> TestResult<()> {
+async fn vllm_graph_batch_roundtrip_large_incident_soak_with_semantic_reranker() -> TestResult<()> {
     if env::var(SOAK_RUN_ENV).as_deref() != Ok("1") {
         eprintln!(
-            "skipping large vLLM GraphBatch soak: set {SOAK_RUN_ENV}=1 plus LLM_* and PIR_GRAPH_BATCH_* endpoint variables"
+            "skipping large vLLM GraphBatch soak: set {SOAK_RUN_ENV}=1 plus LLM_*, LLM_SEMANTIC_CLASSIFIER_* and PIR_GRAPH_BATCH_* endpoint variables"
         );
         return Ok(());
     }
@@ -186,89 +186,102 @@ async fn vllm_graph_batch_roundtrip_large_incident_soak_primary_and_repair_judge
         .unwrap_or_else(|_| format!("vllm-large-soak-{}", unix_timestamp_secs()));
 
     for iteration in 1..=iterations {
-        for (variant, use_repair_judge) in [("primary", false), ("repair-judge", true)] {
-            if use_repair_judge {
-                require_repair_judge_env()?;
-            }
+        let run_id = format!("{root_run_id}-{iteration}");
+        let outcome = request_batch(LARGE_INCIDENT_REQUEST_FIXTURE, &run_id, false).await?;
+        let classified = classify_batch_with_semantic_reranker(&outcome.batch, &run_id).await?;
+        let mut batch = classified.batch;
 
-            let run_id = format!("{root_run_id}-{variant}-{iteration}");
-            let outcome =
-                request_batch(LARGE_INCIDENT_REQUEST_FIXTURE, &run_id, use_repair_judge).await?;
-            let mut batch = outcome.batch;
+        assert!(
+            classified.attempts >= 1,
+            "semantic reranker must run for iteration {iteration}"
+        );
 
-            assert_eq!(
-                batch.root_node_id,
-                "incident-2026-04-10-checkout-degradation"
-            );
-            assert_eq!(batch.nodes.len(), 16, "{variant} iteration {iteration}");
-            assert_eq!(batch.relations.len(), 18, "{variant} iteration {iteration}");
-            assert_eq!(
-                batch.node_details.len(),
-                8,
-                "{variant} iteration {iteration}"
-            );
+        assert_eq!(
+            batch.root_node_id,
+            "incident-2026-04-10-checkout-degradation"
+        );
+        assert_eq!(batch.nodes.len(), 16, "iteration {iteration}");
+        assert_eq!(batch.relations.len(), 18, "iteration {iteration}");
+        assert_eq!(batch.node_details.len(), 8, "iteration {iteration}");
 
-            namespace_graph_batch(&mut batch, &run_id);
-            let batch_payload = serde_json::to_string(&batch)?;
-            let summary = run_roundtrip(&batch_payload, &run_id)?;
+        namespace_graph_batch(&mut batch, &run_id);
+        let batch_payload = serde_json::to_string(&batch)?;
+        let summary = run_roundtrip(&batch_payload, &run_id)?;
 
-            assert_eq!(
-                summary.get("root_node_id").and_then(Value::as_str),
-                Some(batch.root_node_id.as_str())
-            );
-            assert_eq!(
-                summary.get("run_id").and_then(Value::as_str),
-                Some(run_id.as_str())
-            );
-            assert!(
-                summary
-                    .get("published_messages")
-                    .and_then(Value::as_u64)
-                    .unwrap_or_default()
-                    >= (batch.nodes.len() + batch.node_details.len()) as u64,
-                "{variant} iteration {iteration}"
-            );
-            assert!(
-                summary
-                    .get("neighbor_count")
-                    .and_then(Value::as_u64)
-                    .unwrap_or_default()
-                    >= (batch.nodes.len().saturating_sub(1)) as u64,
-                "{variant} iteration {iteration}"
-            );
-            assert!(
-                summary
-                    .get("relationship_count")
-                    .and_then(Value::as_u64)
-                    .unwrap_or_default()
-                    >= batch.relations.len() as u64,
-                "{variant} iteration {iteration}"
-            );
-            assert!(
-                summary
-                    .get("detail_count")
-                    .and_then(Value::as_u64)
-                    .unwrap_or_default()
-                    >= batch.node_details.len() as u64,
-                "{variant} iteration {iteration}"
-            );
-            assert!(
-                summary
-                    .get("rendered_chars")
-                    .and_then(Value::as_u64)
-                    .unwrap_or_default()
-                    > 0,
-                "{variant} iteration {iteration}"
-            );
+        assert_eq!(
+            summary.get("root_node_id").and_then(Value::as_str),
+            Some(batch.root_node_id.as_str())
+        );
+        assert_eq!(
+            summary.get("run_id").and_then(Value::as_str),
+            Some(run_id.as_str())
+        );
+        assert!(
+            summary
+                .get("published_messages")
+                .and_then(Value::as_u64)
+                .unwrap_or_default()
+                >= (batch.nodes.len() + batch.node_details.len()) as u64,
+            "iteration {iteration}"
+        );
+        assert!(
+            summary
+                .get("neighbor_count")
+                .and_then(Value::as_u64)
+                .unwrap_or_default()
+                >= (batch.nodes.len().saturating_sub(1)) as u64,
+            "iteration {iteration}"
+        );
+        assert!(
+            summary
+                .get("relationship_count")
+                .and_then(Value::as_u64)
+                .unwrap_or_default()
+                >= batch.relations.len() as u64,
+            "iteration {iteration}"
+        );
+        assert!(
+            summary
+                .get("detail_count")
+                .and_then(Value::as_u64)
+                .unwrap_or_default()
+                >= batch.node_details.len() as u64,
+            "iteration {iteration}"
+        );
+        assert!(
+            summary
+                .get("rendered_chars")
+                .and_then(Value::as_u64)
+                .unwrap_or_default()
+                > 0,
+            "iteration {iteration}"
+        );
 
-            eprintln!(
-                "large soak variant={variant} iteration={iteration}/{iterations} repaired_by_judge={} primary_attempts={} repair_attempts={}",
-                outcome.repaired_by_judge, outcome.primary_attempts, outcome.repair_attempts
-            );
-        }
+        eprintln!(
+            "large soak iteration={iteration}/{iterations} primary_attempts={} semantic_classifier_attempts={} semantic_classifier_changed_relations={}",
+            outcome.primary_attempts,
+            classified.attempts,
+            classified.changed_relations
+        );
     }
 
     Ok(())
+}
+
+async fn classify_batch_with_semantic_reranker(
+    batch: &GraphBatch,
+    run_id: &str,
+) -> TestResult<rehydration_testkit::GraphBatchSemanticClassifierOutcome> {
+    let config = LlmEvaluatorConfig::from_env();
+    classify_graph_batch_semantic_classes_with_policy(
+        &config,
+        batch,
+        "rehydration",
+        run_id,
+        GraphBatchSemanticClassifierPolicy::from_env(),
+    )
+    .await
+    .map_err(Into::into)
 }
 
 async fn request_batch(

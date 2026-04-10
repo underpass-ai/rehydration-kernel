@@ -130,6 +130,10 @@ RUN_VLLM_SMOKE=1 cargo test -p rehydration-testkit \
 RUN_PIR_GRAPH_BATCH_SMOKE=1 cargo test -p rehydration-testkit \
   pir_graph_batch_roundtrip_smoke -- --nocapture
 
+# Live PIR incremental consumption smoke: two stable-ID waves -> kernel -> rendered context -> vLLM answer
+RUN_PIR_GRAPH_BATCH_CONTEXT_CONSUMPTION_SMOKE=1 cargo test -p rehydration-testkit \
+  pir_graph_batch_incremental_context_consumption_smoke_succeeds_against_live_kernel -- --nocapture
+
 # Live combined smoke: vLLM -> GraphBatch -> NATS -> projection -> read model
 RUN_VLLM_GRAPH_BATCH_ROUNDTRIP_SMOKE=1 cargo test -p rehydration-testkit \
   vllm_graph_batch_roundtrip_smoke -- --nocapture
@@ -138,7 +142,7 @@ RUN_VLLM_GRAPH_BATCH_ROUNDTRIP_SMOKE=1 cargo test -p rehydration-testkit \
 RUN_VLLM_GRAPH_BATCH_CONTEXT_CONSUMPTION_SMOKE=1 cargo test -p rehydration-testkit \
   vllm_graph_batch_roundtrip_smoke_consumes_rehydrated_context -- --nocapture
 
-# Larger 15-20 minute soak: same incident, primary-only and repair-judge-enabled variants
+# Larger 15-20 minute soak: same incident, primary + semantic reranker
 RUN_VLLM_GRAPH_BATCH_ROUNDTRIP_SOAK=1 \
 VLLM_GRAPH_BATCH_ROUNDTRIP_SOAK_ITERATIONS=2 \
 cargo test -p rehydration-testkit \
@@ -158,8 +162,9 @@ graph_batch_vllm_request --run-id vllm-live-roundtrip-001 --namespace-node-ids \
       --nats-tls-cert-path /var/run/rehydration-kernel/nats-tls/tls.crt \
       --nats-tls-key-path /var/run/rehydration-kernel/nats-tls/tls.key
 
-# Manual large incident variant. Run twice, once with and once without --use-repair-judge.
-graph_batch_vllm_request --large-incident --run-id vllm-live-large-001 --namespace-node-ids \
+# Manual large incident variant.
+graph_batch_vllm_request --large-incident --run-id vllm-live-large-001 \
+  --use-semantic-classifier --namespace-node-ids \
   | graph_batch_roundtrip --input - \
       --nats-url nats://rehydration-kernel-nats:4222 \
       --grpc-endpoint https://127.0.0.1:50054 \
@@ -192,9 +197,18 @@ The live PIR roundtrip smoke uses the `graph_batch_roundtrip` binary as its
 single source of truth, so the automated smoke and manual cluster smoke follow
 the same publish/query path.
 
-The live smokes namespace GraphBatch node ids with the test `run_id` before
-publishing. This prevents a repeated run from passing against a graph that was
-already projected by an earlier attempt.
+The incremental PIR consumption smoke adds the missing integration proof for a
+consumer product: two waves keep the same incident identity, each wave uses its
+own `run_id`, the semantic reranker reclassifies relations before publish, and
+the second-wave `rendered.content` is fed back to the LLM.
+
+The single-wave live smokes namespace GraphBatch node ids with the test `run_id`
+before publishing. This prevents a repeated run from passing against a graph
+that was already projected by an earlier attempt.
+
+The incremental PIR smoke uses a different pattern: one stable node namespace
+shared by both waves, plus a distinct `run_id` per wave. That mirrors the PIR
+contract more closely: stable incident identity, new materialization wave.
 
 The PIR-style consumption smoke adds the missing runtime loop: after the graph is
 materialized and queried, it passes `rendered.content` back to vLLM and asserts

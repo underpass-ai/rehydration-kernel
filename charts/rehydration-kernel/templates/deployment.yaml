@@ -136,8 +136,9 @@ spec:
           envFrom:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- if or (ne .Values.tls.mode "disabled") .Values.natsTls.existingSecret .Values.valkeyTls.existingSecret .Values.neo4jTls.existingSecret (and .Values.otelCollector.tls.enabled .Values.otelCollector.tls.existingSecret) }}
           volumeMounts:
+            - name: tmp
+              mountPath: /tmp
             {{- if ne .Values.tls.mode "disabled" }}
             - name: grpc-tls
               mountPath: {{ .Values.tls.mountPath | quote }}
@@ -163,11 +164,11 @@ spec:
               mountPath: {{ .Values.otelCollector.tls.mountPath | quote }}
               readOnly: true
             {{- end }}
-          {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-      {{- if or (ne .Values.tls.mode "disabled") .Values.natsTls.existingSecret .Values.valkeyTls.existingSecret .Values.neo4jTls.existingSecret (and .Values.otelCollector.tls.enabled .Values.otelCollector.tls.existingSecret) }}
       volumes:
+        - name: tmp
+          emptyDir: {}
         {{- if ne .Values.tls.mode "disabled" }}
         - name: grpc-tls
           secret:
@@ -193,7 +194,6 @@ spec:
           secret:
             secretName: {{ .Values.otelCollector.tls.existingSecret | quote }}
         {{- end }}
-      {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
