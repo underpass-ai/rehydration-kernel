@@ -1,9 +1,12 @@
 use std::env;
 use std::error::Error;
+use std::fs;
+use std::io::Write;
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use rehydration_testkit::{namespace_graph_batch, parse_graph_batch};
 use serde_json::Value;
 
 const RUN_ENV: &str = "RUN_PIR_GRAPH_BATCH_SMOKE";
@@ -34,11 +37,15 @@ fn pir_graph_batch_roundtrip_smoke_succeeds_against_live_kernel() -> Result<(), 
     let scopes = env::var("PIR_GRAPH_BATCH_SCOPES").unwrap_or_else(|_| "graph,details".to_string());
     let run_id = env::var("PIR_GRAPH_BATCH_RUN_ID")
         .unwrap_or_else(|_| format!("pir-live-smoke-{}", unix_timestamp_secs()));
+    let payload = fs::read_to_string(&input)?;
+    let mut batch = parse_graph_batch(&payload)?;
+    namespace_graph_batch(&mut batch, &run_id);
+    let batch_payload = serde_json::to_vec(&batch)?;
 
     let mut command = Command::new(env!("CARGO_BIN_EXE_graph_batch_roundtrip"));
     command
         .arg("--input")
-        .arg(input)
+        .arg("-")
         .arg("--nats-url")
         .arg(nats_url)
         .arg("--grpc-endpoint")
@@ -46,7 +53,10 @@ fn pir_graph_batch_roundtrip_smoke_succeeds_against_live_kernel() -> Result<(), 
         .arg("--run-id")
         .arg(&run_id)
         .arg("--role")
-        .arg(role);
+        .arg(role)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
 
     for scope in scopes
         .split(',')
@@ -101,7 +111,13 @@ fn pir_graph_batch_roundtrip_smoke_succeeds_against_live_kernel() -> Result<(), 
         command.arg("--nats-tls-first");
     }
 
-    let output = command.output()?;
+    let mut child = command.spawn()?;
+    child
+        .stdin
+        .as_mut()
+        .ok_or("roundtrip stdin should be available")?
+        .write_all(&batch_payload)?;
+    let output = child.wait_with_output()?;
     if !output.status.success() {
         return Err(format!(
             "graph_batch_roundtrip failed with status {:?}\nstdout:\n{}\nstderr:\n{}",
@@ -115,7 +131,7 @@ fn pir_graph_batch_roundtrip_smoke_succeeds_against_live_kernel() -> Result<(), 
     let summary: Value = serde_json::from_slice(&output.stdout)?;
     assert_eq!(
         summary.get("root_node_id").and_then(Value::as_str),
-        Some("incident:pir-2026-04-09-payments-latency")
+        Some(batch.root_node_id.as_str())
     );
     assert_eq!(
         summary.get("run_id").and_then(Value::as_str),

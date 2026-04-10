@@ -10,8 +10,8 @@ use rehydration_proto::v1beta1::{
 };
 use rehydration_testkit::{
     Domain, EvaluationGroundTruth, GeneratedSeed, GraphSeedConfig, LlmEvaluationResult,
-    LlmEvaluatorConfig, LlmProvider, NoiseMode, RelationMix, calibrate_judge, evaluate_with_llm,
-    generate_seed, seed_publisher::seed_to_projection_events,
+    LlmEvaluatorConfig, LlmProvider, LlmSemanticClassifierMode, NoiseMode, RelationMix,
+    calibrate_judge, evaluate_with_llm, generate_seed, seed_publisher::seed_to_projection_events,
 };
 use rehydration_tests_shared::fixtures::TestFixture;
 use rehydration_tests_shared::ports::{ClosureSeed, SeedContext};
@@ -241,6 +241,11 @@ fn build_llm_config(
         judge_api_key: judge_cfg["api_key_env"]
             .as_str()
             .and_then(|e| std::env::var(e).ok()),
+        semantic_classifier_endpoint: None,
+        semantic_classifier_model: None,
+        semantic_classifier_provider: None,
+        semantic_classifier_api_key: None,
+        semantic_classifier_mode: LlmSemanticClassifierMode::ChatCompletions,
     }
 }
 

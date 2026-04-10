@@ -129,6 +129,50 @@ RUN_VLLM_SMOKE=1 cargo test -p rehydration-testkit \
 # Live PIR-style roundtrip smoke against a real kernel/NATS deployment
 RUN_PIR_GRAPH_BATCH_SMOKE=1 cargo test -p rehydration-testkit \
   pir_graph_batch_roundtrip_smoke -- --nocapture
+
+# Live combined smoke: vLLM -> GraphBatch -> NATS -> projection -> read model
+RUN_VLLM_GRAPH_BATCH_ROUNDTRIP_SMOKE=1 cargo test -p rehydration-testkit \
+  vllm_graph_batch_roundtrip_smoke -- --nocapture
+
+# PIR-style consumption smoke: vLLM -> GraphBatch -> kernel -> rendered context -> vLLM answer
+RUN_VLLM_GRAPH_BATCH_CONTEXT_CONSUMPTION_SMOKE=1 cargo test -p rehydration-testkit \
+  vllm_graph_batch_roundtrip_smoke_consumes_rehydrated_context -- --nocapture
+
+# Larger 15-20 minute soak: same incident, primary-only and repair-judge-enabled variants
+RUN_VLLM_GRAPH_BATCH_ROUNDTRIP_SOAK=1 \
+VLLM_GRAPH_BATCH_ROUNDTRIP_SOAK_ITERATIONS=2 \
+cargo test -p rehydration-testkit \
+  vllm_graph_batch_roundtrip_large_incident_soak -- --nocapture
+
+# Manual equivalent for cluster pods
+graph_batch_vllm_request --run-id vllm-live-roundtrip-001 --namespace-node-ids \
+  | graph_batch_roundtrip --input - \
+      --nats-url nats://rehydration-kernel-nats:4222 \
+      --grpc-endpoint https://127.0.0.1:50054 \
+      --run-id vllm-live-roundtrip-001 \
+      --grpc-tls-ca-path /var/run/rehydration-kernel/tls/ca.crt \
+      --grpc-tls-cert-path /var/run/rehydration-kernel/tls/tls.crt \
+      --grpc-tls-key-path /var/run/rehydration-kernel/tls/tls.key \
+      --grpc-tls-domain-name rehydration-kernel \
+      --nats-tls-ca-path /var/run/rehydration-kernel/nats-tls/ca.crt \
+      --nats-tls-cert-path /var/run/rehydration-kernel/nats-tls/tls.crt \
+      --nats-tls-key-path /var/run/rehydration-kernel/nats-tls/tls.key
+
+# Manual large incident variant. Run twice, once with and once without --use-repair-judge.
+graph_batch_vllm_request --large-incident --run-id vllm-live-large-001 --namespace-node-ids \
+  | graph_batch_roundtrip --input - \
+      --nats-url nats://rehydration-kernel-nats:4222 \
+      --grpc-endpoint https://127.0.0.1:50054 \
+      --run-id vllm-live-large-001 \
+      --grpc-tls-ca-path /var/run/rehydration-kernel/tls/ca.crt \
+      --grpc-tls-cert-path /var/run/rehydration-kernel/tls/tls.crt \
+      --grpc-tls-key-path /var/run/rehydration-kernel/tls/tls.key \
+      --grpc-tls-domain-name rehydration-kernel \
+      --nats-tls-ca-path /var/run/rehydration-kernel/nats-tls/ca.crt \
+      --nats-tls-cert-path /var/run/rehydration-kernel/nats-tls/tls.crt \
+      --nats-tls-key-path /var/run/rehydration-kernel/nats-tls/tls.key \
+      --rehydration-mode reason_preserving \
+      --include-rendered-content
 ```
 
 For `underpass-runtime`, the live PIR smoke should use:
@@ -147,6 +191,16 @@ The dedicated `repair-judge` path is experimental:
 The live PIR roundtrip smoke uses the `graph_batch_roundtrip` binary as its
 single source of truth, so the automated smoke and manual cluster smoke follow
 the same publish/query path.
+
+The live smokes namespace GraphBatch node ids with the test `run_id` before
+publishing. This prevents a repeated run from passing against a graph that was
+already projected by an earlier attempt.
+
+The PIR-style consumption smoke adds the missing runtime loop: after the graph is
+materialized and queried, it passes `rendered.content` back to vLLM and asserts
+that the answer uses the incident finding and mitigation from the rehydrated
+context. It uses `--rehydration-mode reason_preserving` because this is the PIR
+LLM-consumption path, not a compact UI preview.
 
 For cluster-managed runs, do not keep these values as ad-hoc shell exports.
 Prefer a `ConfigMap` for non-secret LLM client settings and a `Secret` for API
@@ -290,6 +344,16 @@ benchmarks, prefer editing `evaluation-matrix.yaml` directly.
 | `LLM_JUDGE_PROVIDER` | `openai` (OpenAI-compatible, including vLLM), `openai-new`, `anthropic` |
 | `LLM_JUDGE_API_KEY` | API key for the judge endpoint |
 
+**Semantic classifier:**
+
+| Variable | Description |
+|:---------|:------------|
+| `LLM_SEMANTIC_CLASSIFIER_ENDPOINT` | Semantic-class classifier endpoint. Use `.../v1/chat/completions` for a small generator or `.../score` for a vLLM reranker. |
+| `LLM_SEMANTIC_CLASSIFIER_MODEL` | Semantic-class classifier model (e.g. `Qwen/Qwen3-0.6B` or `Qwen/Qwen3-Reranker-0.6B`) |
+| `LLM_SEMANTIC_CLASSIFIER_PROVIDER` | `openai`, `openai-new`, or `anthropic` when the classifier uses chat-style completion |
+| `LLM_SEMANTIC_CLASSIFIER_API_KEY` | API key for the classifier endpoint |
+| `LLM_SEMANTIC_CLASSIFIER_MODE` | Optional override: `chat` or `score`. If omitted, endpoints ending in `/score` default to `score`. |
+
 **GraphBatch transport policy:**
 
 | Variable | Description |
@@ -300,7 +364,11 @@ benchmarks, prefer editing `evaluation-matrix.yaml` directly.
 | `LLM_GRAPH_BATCH_REPAIR_MAX_ATTEMPTS` | Max attempts for the repair-judge request |
 | `LLM_GRAPH_BATCH_REPAIR_CONNECT_TIMEOUT_SECS` | Connect timeout for the repair-judge request |
 | `LLM_GRAPH_BATCH_REPAIR_REQUEST_TIMEOUT_SECS` | Per-request timeout for the repair-judge request |
+| `LLM_GRAPH_BATCH_SEMANTIC_CLASSIFIER_MAX_ATTEMPTS` | Max attempts for the semantic-class classifier pass |
+| `LLM_GRAPH_BATCH_SEMANTIC_CLASSIFIER_CONNECT_TIMEOUT_SECS` | Connect timeout for the semantic-class classifier |
+| `LLM_GRAPH_BATCH_SEMANTIC_CLASSIFIER_REQUEST_TIMEOUT_SECS` | Per-request timeout for the semantic-class classifier |
 | `LLM_GRAPH_BATCH_USE_REPAIR_JUDGE` | `true` to make the live smoke call `request_graph_batch_with_repair_judge` instead of primary-only |
+| `LLM_GRAPH_BATCH_USE_SEMANTIC_CLASSIFIER` | `true` to run the semantic-class post-classifier after the primary GraphBatch extraction |
 
 ### Cluster-owned LLM config
 
@@ -312,8 +380,11 @@ Recommended split:
 - `ConfigMap`: `LLM_ENDPOINT`, `LLM_MODEL`, `LLM_PROVIDER`,
   `LLM_TEMPERATURE`, `LLM_ENABLE_THINKING`, `LLM_TLS_CERT_PATH`,
   `LLM_TLS_KEY_PATH`, `LLM_JUDGE_ENDPOINT`, `LLM_JUDGE_MODEL`,
-  `LLM_JUDGE_PROVIDER`
-- `Secret`: `LLM_API_KEY`, `LLM_JUDGE_API_KEY`
+  `LLM_JUDGE_PROVIDER`, `LLM_SEMANTIC_CLASSIFIER_ENDPOINT`,
+  `LLM_SEMANTIC_CLASSIFIER_MODEL`, `LLM_SEMANTIC_CLASSIFIER_PROVIDER`,
+  `LLM_SEMANTIC_CLASSIFIER_MODE`
+- `Secret`: `LLM_API_KEY`, `LLM_JUDGE_API_KEY`,
+  `LLM_SEMANTIC_CLASSIFIER_API_KEY`
 
 For in-cluster smoke or benchmark jobs, prefer the in-cluster vLLM service
 endpoint, for example `http://vllm-qwen35-9b:8000/v1/chat/completions`. In
@@ -356,12 +427,17 @@ and retry budgets. Keep the primary budget tight for fast failures, and give
 the repair judge a longer request timeout when it runs on a slower dedicated
 model.
 
+For a dedicated semantic-class reranker behind a vLLM `/score` endpoint, prefer
+`LLM_SEMANTIC_CLASSIFIER_MODE=score`. The client also auto-detects `score` when
+the classifier endpoint ends in `/score`.
+
 Current code defaults for the testkit transport layer:
 
 | Layer | Connect timeout | Request timeout | Max attempts |
 |:------|----------------:|----------------:|-------------:|
 | Primary model extraction | 2 s | 45 s | 4 |
 | Experimental repair-judge | 2 s | 180 s | 1 |
+| Semantic-class post-classifier | 2 s | 20 s | 1 |
 
 **API keys:**
 

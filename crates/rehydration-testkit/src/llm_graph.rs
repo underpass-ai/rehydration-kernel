@@ -119,6 +119,34 @@ pub type GraphBatchNode = LlmGraphNode;
 pub type GraphBatchRelation = LlmGraphRelation;
 pub type GraphBatchNodeDetail = LlmNodeDetail;
 
+pub fn namespace_graph_batch(batch: &mut GraphBatch, namespace: &str) {
+    let suffix = format!("--{}", normalize_namespace(namespace));
+    let node_id_map = batch
+        .nodes
+        .iter()
+        .map(|node| (node.node_id.clone(), format!("{}{}", node.node_id, suffix)))
+        .collect::<BTreeMap<_, _>>();
+
+    batch.root_node_id = namespaced_node_id(&batch.root_node_id, &node_id_map, &suffix);
+
+    for node in &mut batch.nodes {
+        node.node_id = namespaced_node_id(&node.node_id, &node_id_map, &suffix);
+    }
+
+    for relation in &mut batch.relations {
+        relation.source_node_id =
+            namespaced_node_id(&relation.source_node_id, &node_id_map, &suffix);
+        relation.target_node_id =
+            namespaced_node_id(&relation.target_node_id, &node_id_map, &suffix);
+        namespace_optional_node_reference(&mut relation.caused_by_node_id, &node_id_map);
+        namespace_optional_node_reference(&mut relation.decision_id, &node_id_map);
+    }
+
+    for detail in &mut batch.node_details {
+        detail.node_id = namespaced_node_id(&detail.node_id, &node_id_map, &suffix);
+    }
+}
+
 pub fn parse_graph_batch(payload: &str) -> Result<GraphBatch, LlmGraphError> {
     parse_llm_graph_batch(payload)
 }
@@ -443,6 +471,47 @@ fn subject(prefix: &str, suffix: &str) -> String {
         suffix.to_string()
     } else {
         format!("{prefix}.{suffix}")
+    }
+}
+
+fn namespaced_node_id(
+    node_id: &str,
+    node_id_map: &BTreeMap<String, String>,
+    suffix: &str,
+) -> String {
+    node_id_map
+        .get(node_id)
+        .cloned()
+        .unwrap_or_else(|| format!("{node_id}{suffix}"))
+}
+
+fn namespace_optional_node_reference(
+    node_id: &mut Option<String>,
+    node_id_map: &BTreeMap<String, String>,
+) {
+    if let Some(node_id) = node_id
+        && let Some(namespaced) = node_id_map.get(node_id.as_str())
+    {
+        *node_id = namespaced.clone();
+    }
+}
+
+fn normalize_namespace(value: &str) -> String {
+    let normalized = value
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                ch
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>();
+
+    if normalized.is_empty() {
+        "run".to_string()
+    } else {
+        normalized
     }
 }
 

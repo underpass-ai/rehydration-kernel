@@ -13,6 +13,7 @@ rehydration kernel research track.
 - [PAPER_SUBMISSION_DRAFT.md](PAPER_SUBMISSION_DRAFT.md) — ACL-format manuscript
 - [PAPER_AGENTIC_CONTEXT_REHYDRATION.md](PAPER_AGENTIC_CONTEXT_REHYDRATION.md) — Working paper notes
 - [RELATION_EXPLANATION_MODEL.md](RELATION_EXPLANATION_MODEL.md) — Semantic class taxonomy
+- [small-open-models-semantic-class-agent-2026.md](small-open-models-semantic-class-agent-2026.md) — Small open-model shortlist for the semantic-class agent (curated April 10, 2026)
 - [vllm-graph-extraction-strategy.md](vllm-graph-extraction-strategy.md) — Research note on schema-constrained graph extraction with vLLM
 - [benchmark-paper-use-cases.md](benchmark-paper-use-cases.md) — E2E evaluation matrix
 - [anexo-procedimiento-cientifico-analisis-datos.md](anexo-procedimiento-cientifico-analisis-datos.md) — Scientific analysis methodology

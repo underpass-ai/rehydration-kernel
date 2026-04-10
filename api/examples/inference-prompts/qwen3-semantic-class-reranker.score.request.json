@@ -1,0 +1,19 @@
+{
+  "model": "Qwen/Qwen3-Reranker-0.6B",
+  "queries": [
+    "Classify this Rehydration Kernel relation into the best semantic_class.\nsource_kind=incident\nsource_title=Payments latency spike after rollout\ntarget_kind=finding\ntarget_title=DB pool reduced from 50 to 5\nrelation_type=related_to\nrationale=The DB pool change caused the latency spike.\nmotivation=\nmethod=\nevidence=Config diff shows maxConnections changed from 50 to 5.\ncaused_by_node_id=finding-db-pool\nconfidence=high",
+    "Classify this Rehydration Kernel relation into the best semantic_class.\nsource_kind=incident\nsource_title=Payments latency spike after rollout\ntarget_kind=finding\ntarget_title=DB pool reduced from 50 to 5\nrelation_type=related_to\nrationale=The DB pool change caused the latency spike.\nmotivation=\nmethod=\nevidence=Config diff shows maxConnections changed from 50 to 5.\ncaused_by_node_id=finding-db-pool\nconfidence=high",
+    "Classify this Rehydration Kernel relation into the best semantic_class.\nsource_kind=incident\nsource_title=Payments latency spike after rollout\ntarget_kind=finding\ntarget_title=DB pool reduced from 50 to 5\nrelation_type=related_to\nrationale=The DB pool change caused the latency spike.\nmotivation=\nmethod=\nevidence=Config diff shows maxConnections changed from 50 to 5.\ncaused_by_node_id=finding-db-pool\nconfidence=high",
+    "Classify this Rehydration Kernel relation into the best semantic_class.\nsource_kind=incident\nsource_title=Payments latency spike after rollout\ntarget_kind=finding\ntarget_title=DB pool reduced from 50 to 5\nrelation_type=related_to\nrationale=The DB pool change caused the latency spike.\nmotivation=\nmethod=\nevidence=Config diff shows maxConnections changed from 50 to 5.\ncaused_by_node_id=finding-db-pool\nconfidence=high",
+    "Classify this Rehydration Kernel relation into the best semantic_class.\nsource_kind=incident\nsource_title=Payments latency spike after rollout\ntarget_kind=finding\ntarget_title=DB pool reduced from 50 to 5\nrelation_type=related_to\nrationale=The DB pool change caused the latency spike.\nmotivation=\nmethod=\nevidence=Config diff shows maxConnections changed from 50 to 5.\ncaused_by_node_id=finding-db-pool\nconfidence=high",
+    "Classify this Rehydration Kernel relation into the best semantic_class.\nsource_kind=incident\nsource_title=Payments latency spike after rollout\ntarget_kind=finding\ntarget_title=DB pool reduced from 50 to 5\nrelation_type=related_to\nrationale=The DB pool change caused the latency spike.\nmotivation=\nmethod=\nevidence=Config diff shows maxConnections changed from 50 to 5.\ncaused_by_node_id=finding-db-pool\nconfidence=high"
+  ],
+  "documents": [
+    "semantic_class=causal. Use when the relation states actual cause and effect. Prefer this when a confirmed finding explains the incident or when caused_by_node_id is present.",
+    "semantic_class=motivational. Use when the relation explains why a decision or mitigation was chosen, including tradeoffs or intent.",
+    "semantic_class=procedural. Use when the relation mainly communicates ordered steps, methods, runbook actions, or execution sequence.",
+    "semantic_class=evidential. Use when the relation mainly contributes logs, metrics, traces, diffs, or inspection evidence supporting a finding or decision.",
+    "semantic_class=constraint. Use when the relation mainly communicates a limit, safety rule, dependency, policy, or operational restriction.",
+    "semantic_class=structural. Use when the relation is mostly neutral association, grouping, containment, or reference without explanatory force."
+  ]
+}

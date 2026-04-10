@@ -10,9 +10,9 @@ use rehydration_proto::v1beta1::{
 };
 use rehydration_testkit::{
     Domain, EvaluationGroundTruth, GeneratedNode, GeneratedSeed, GraphSeedConfig,
-    LlmEvaluationResult, LlmEvaluatorConfig, LlmProvider, NoiseMode, PromptConfig, RelationMix,
-    calibrate_agent, calibrate_judge, evaluate_with_config, generate_seed,
-    seed_publisher::seed_to_projection_events,
+    LlmEvaluationResult, LlmEvaluatorConfig, LlmProvider, LlmSemanticClassifierMode, NoiseMode,
+    PromptConfig, RelationMix, calibrate_agent, calibrate_judge, evaluate_with_config,
+    generate_seed, seed_publisher::seed_to_projection_events,
 };
 use rehydration_tests_shared::containers::connect_nats_with_retry;
 use rehydration_tests_shared::fixtures::TestFixture;
@@ -374,6 +374,11 @@ fn build_llm_config(
         judge_api_key: judge_cfg["api_key_env"]
             .as_str()
             .and_then(|e| std::env::var(e).ok()),
+        semantic_classifier_endpoint: None,
+        semantic_classifier_model: None,
+        semantic_classifier_provider: None,
+        semantic_classifier_api_key: None,
+        semantic_classifier_mode: LlmSemanticClassifierMode::ChatCompletions,
     }
 }
 
@@ -1066,6 +1071,11 @@ fn build_judge_cal_config(judge_cfg: &serde_yaml::Value) -> LlmEvaluatorConfig {
         judge_model: Some(model),
         judge_provider: Some(provider),
         judge_api_key: api_key,
+        semantic_classifier_endpoint: None,
+        semantic_classifier_model: None,
+        semantic_classifier_provider: None,
+        semantic_classifier_api_key: None,
+        semantic_classifier_mode: LlmSemanticClassifierMode::ChatCompletions,
     }
 }
 
@@ -1101,6 +1111,11 @@ fn build_agent_cal_config(
         judge_model: None,
         judge_provider: None,
         judge_api_key: None,
+        semantic_classifier_endpoint: None,
+        semantic_classifier_model: None,
+        semantic_classifier_provider: None,
+        semantic_classifier_api_key: None,
+        semantic_classifier_mode: LlmSemanticClassifierMode::ChatCompletions,
     }
 }
 

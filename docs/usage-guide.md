@@ -272,7 +272,10 @@ context = response.rendered.content
 # context = next(t.content for t in response.rendered.tiers if t.tier == "L1_CAUSAL_SPINE")
 
 prompt = f"""You are the oncall engineer investigating an incident.
-Here is the rehydrated context from the operations graph:
+Read this rehydrated context as the source of truth. Prefer causal,
+motivational, evidential, procedural, and constraint relations over purely
+structural links. Use node details as supporting evidence; do not invent
+missing causes or mitigations.
 
 {context}
 
