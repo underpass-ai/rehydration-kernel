@@ -259,9 +259,7 @@ async fn vllm_graph_batch_roundtrip_large_incident_soak_with_semantic_reranker()
 
         eprintln!(
             "large soak iteration={iteration}/{iterations} primary_attempts={} semantic_classifier_attempts={} semantic_classifier_changed_relations={}",
-            outcome.primary_attempts,
-            classified.attempts,
-            classified.changed_relations
+            outcome.primary_attempts, classified.attempts, classified.changed_relations
         );
     }
 

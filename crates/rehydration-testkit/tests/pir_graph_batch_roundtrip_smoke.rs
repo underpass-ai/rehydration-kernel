@@ -120,7 +120,9 @@ async fn pir_graph_batch_incremental_context_consumption_smoke_succeeds_against_
         Some(2)
     );
     assert_eq!(
-        summary_one.get("relationship_count").and_then(Value::as_u64),
+        summary_one
+            .get("relationship_count")
+            .and_then(Value::as_u64),
         Some(2)
     );
     assert_eq!(
@@ -157,7 +159,9 @@ async fn pir_graph_batch_incremental_context_consumption_smoke_succeeds_against_
         Some(4)
     );
     assert_eq!(
-        summary_two.get("relationship_count").and_then(Value::as_u64),
+        summary_two
+            .get("relationship_count")
+            .and_then(Value::as_u64),
         Some(4)
     );
     assert_eq!(
