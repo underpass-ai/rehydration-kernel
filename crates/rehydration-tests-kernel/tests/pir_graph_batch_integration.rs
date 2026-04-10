@@ -21,6 +21,9 @@ const INCIDENT_BATCH_JSON: &str =
 const INCIDENT_BATCH_INCREMENTAL_TWO_JSON: &str = include_str!(
     "../../../api/examples/kernel/v1beta1/async/incident-graph-batch.incremental-2.json"
 );
+const INCIDENT_BATCH_INCREMENTAL_THREE_JSON: &str = include_str!(
+    "../../../api/examples/kernel/v1beta1/async/incident-graph-batch.incremental-3.json"
+);
 
 #[tokio::test]
 async fn pir_graph_batch_republish_with_same_run_id_is_idempotent() {
@@ -184,20 +187,8 @@ async fn pir_graph_batch_incremental_waves_expand_the_same_incident() {
         .await
         .expect("second wave should publish");
 
-    let final_context = wait_for_graph_shape(
-        query_client.clone(),
-        INCIDENT_ROOT_NODE_ID,
-        4,
-        4,
-        4,
-        &[
-            FIRST_FINDING_NODE_ID,
-            "decision:pir-2026-04-09-payments-latency:reroute-secondary",
-            SECOND_WAVE_FINDING_NODE_ID,
-            SECOND_WAVE_TASK_NODE_ID,
-        ],
-    )
-    .await;
+    let final_context =
+        wait_for_corrective_context(query_client.clone(), INCIDENT_ROOT_NODE_ID).await;
     let final_bundle = final_context.bundle.expect("final bundle should exist");
     let final_role_bundle = final_bundle
         .bundles
@@ -246,6 +237,162 @@ async fn pir_graph_batch_incremental_waves_expand_the_same_incident() {
 
     fixture.shutdown().await.expect("fixture should shut down");
     debug_log("finished test pir_graph_batch_incremental_waves_expand_the_same_incident");
+}
+
+#[tokio::test]
+async fn pir_graph_batch_corrective_wave_updates_existing_nodes_without_graph_growth() {
+    let _guard = container_test_guard().lock().await;
+    debug_log(
+        "starting test pir_graph_batch_corrective_wave_updates_existing_nodes_without_graph_growth",
+    );
+
+    let batch_one = parse_graph_batch(INCIDENT_BATCH_JSON).expect("incident batch should parse");
+    let batch_two = parse_graph_batch(INCIDENT_BATCH_INCREMENTAL_TWO_JSON)
+        .expect("second wave batch should parse");
+    let batch_three = parse_graph_batch(INCIDENT_BATCH_INCREMENTAL_THREE_JSON)
+        .expect("third wave batch should parse");
+
+    let batch_one_messages =
+        graph_batch_to_projection_events(&batch_one, "rehydration", "pir-wave-1")
+            .expect("first wave should translate");
+    let batch_two_messages =
+        graph_batch_to_projection_events(&batch_two, "rehydration", "pir-wave-2")
+            .expect("second wave should translate");
+    let batch_three_messages =
+        graph_batch_to_projection_events(&batch_three, "rehydration", "pir-wave-3")
+            .expect("third wave should translate");
+
+    let fixture = TestFixture::builder()
+        .with_neo4j()
+        .with_valkey()
+        .with_nats()
+        .with_projection_runtime()
+        .with_grpc_server()
+        .with_seed(ClosureSeed::new(move |ctx| {
+            let client = ctx.nats_client().clone();
+            let messages = batch_one_messages.clone();
+            Box::pin(async move {
+                publish_messages(&client, &messages).await?;
+                Ok(())
+            })
+        }))
+        .with_readiness_check(INCIDENT_ROOT_NODE_ID, FIRST_FINDING_NODE_ID)
+        .build()
+        .await
+        .expect("fixture should start");
+
+    let query_client = fixture.query_client();
+    let nats_client = async_nats::connect(fixture.nats_url())
+        .await
+        .expect("nats client should connect");
+
+    publish_messages(&nats_client, &batch_two_messages)
+        .await
+        .expect("second wave should publish");
+    wait_for_graph_shape(
+        query_client.clone(),
+        INCIDENT_ROOT_NODE_ID,
+        4,
+        4,
+        4,
+        &[
+            FIRST_FINDING_NODE_ID,
+            "decision:pir-2026-04-09-payments-latency:reroute-secondary",
+            SECOND_WAVE_FINDING_NODE_ID,
+            SECOND_WAVE_TASK_NODE_ID,
+        ],
+    )
+    .await;
+
+    publish_messages(&nats_client, &batch_three_messages)
+        .await
+        .expect("third wave should publish");
+
+    let final_context =
+        wait_for_corrective_context(query_client.clone(), INCIDENT_ROOT_NODE_ID).await;
+    let final_bundle = final_context.bundle.expect("final bundle should exist");
+    let final_role_bundle = final_bundle
+        .bundles
+        .first()
+        .expect("final role bundle should exist");
+    let root_node = final_role_bundle
+        .root_node
+        .as_ref()
+        .expect("root node should exist");
+
+    assert_eq!(final_bundle.root_node_id, INCIDENT_ROOT_NODE_ID);
+    assert_eq!(final_role_bundle.neighbor_nodes.len(), 4);
+    assert_eq!(final_role_bundle.relationships.len(), 4);
+    assert_eq!(final_role_bundle.node_details.len(), 4);
+    assert_eq!(root_node.status, "STABILIZING");
+    assert!(
+        root_node.summary.contains(
+            "returned below 1.1 seconds after rollback, reroute, and the retry-cap rollout"
+        )
+    );
+
+    let retry_cap_task = final_role_bundle
+        .neighbor_nodes
+        .iter()
+        .find(|node| node.node_id == SECOND_WAVE_TASK_NODE_ID)
+        .expect("retry-cap task node should exist");
+    assert_eq!(retry_cap_task.status, "COMPLETED");
+    assert!(
+        retry_cap_task
+            .summary
+            .contains("Retry cap of 2 with full jitter was rolled out")
+    );
+
+    let rendered = final_context
+        .rendered
+        .as_ref()
+        .expect("rendered context should exist")
+        .content
+        .clone();
+    assert!(rendered.contains("returned below 1.1 seconds"));
+    assert!(rendered.contains("retry-cap change was completed"));
+    assert!(!rendered.contains(
+        "Set retry cap to 2 with full jitter and monitor DB wait time, request concurrency, and p95 until rollback and reroute complete."
+    ));
+
+    let task_detail =
+        wait_for_node_detail_revision(query_client.clone(), SECOND_WAVE_TASK_NODE_ID, 2).await;
+
+    assert_eq!(
+        task_detail.detail.as_ref().map(|detail| detail.revision),
+        Some(2)
+    );
+    assert_eq!(
+        task_detail
+            .detail
+            .as_ref()
+            .map(|detail| detail.detail.as_str()),
+        Some(
+            "The retry-cap change was completed with limit 2 and full jitter. Request concurrency and DB wait time fell back toward normal within minutes."
+        )
+    );
+
+    let finding_detail =
+        wait_for_node_detail_revision(query_client.clone(), SECOND_WAVE_FINDING_NODE_ID, 2).await;
+
+    assert_eq!(
+        finding_detail.detail.as_ref().map(|detail| detail.revision),
+        Some(2)
+    );
+    assert_eq!(
+        finding_detail
+            .detail
+            .as_ref()
+            .map(|detail| detail.detail.as_str()),
+        Some(
+            "The retry storm remained the secondary amplifier of the incident. After the retry-cap rollout, request concurrency fell back toward baseline and queue growth stopped."
+        )
+    );
+
+    fixture.shutdown().await.expect("fixture should shut down");
+    debug_log(
+        "finished test pir_graph_batch_corrective_wave_updates_existing_nodes_without_graph_growth",
+    );
 }
 
 async fn publish_messages(
@@ -321,4 +468,67 @@ async fn wait_for_graph_shape(
     }
 
     panic!("incident graph did not reach the expected shape before timeout");
+}
+
+async fn wait_for_corrective_context(
+    mut query_client: rehydration_proto::v1beta1::context_query_service_client::ContextQueryServiceClient<
+        Channel,
+    >,
+    root_node_id: &str,
+) -> rehydration_proto::v1beta1::GetContextResponse {
+    for _ in 0..40 {
+        if let Ok(context) = get_context(&mut query_client, root_node_id).await
+            && let Some(bundle) = context.bundle.as_ref()
+            && let Some(role_bundle) = bundle.bundles.first()
+        {
+            let root_is_corrected = role_bundle.root_node.as_ref().is_some_and(|node| {
+                node.status == "STABILIZING" && node.summary.contains("returned below 1.1 seconds")
+            });
+            let task_is_corrected = role_bundle
+                .neighbor_nodes
+                .iter()
+                .any(|node| node.node_id == SECOND_WAVE_TASK_NODE_ID && node.status == "COMPLETED");
+
+            if role_bundle.neighbor_nodes.len() == 4
+                && role_bundle.relationships.len() == 4
+                && role_bundle.node_details.len() == 4
+                && root_is_corrected
+                && task_is_corrected
+            {
+                return context;
+            }
+        }
+
+        sleep(Duration::from_millis(200)).await;
+    }
+
+    panic!("incident graph did not reach the corrective state before timeout");
+}
+
+async fn wait_for_node_detail_revision(
+    mut query_client: rehydration_proto::v1beta1::context_query_service_client::ContextQueryServiceClient<
+        Channel,
+    >,
+    node_id: &str,
+    expected_revision: u64,
+) -> rehydration_proto::v1beta1::GetNodeDetailResponse {
+    for _ in 0..40 {
+        if let Ok(detail) = query_client
+            .get_node_detail(GetNodeDetailRequest {
+                node_id: node_id.to_string(),
+            })
+            .await
+            .map(|response| response.into_inner())
+            && detail
+                .detail
+                .as_ref()
+                .is_some_and(|value| value.revision == expected_revision)
+        {
+            return detail;
+        }
+
+        sleep(Duration::from_millis(200)).await;
+    }
+
+    panic!("node detail `{node_id}` did not reach revision {expected_revision} before timeout");
 }
