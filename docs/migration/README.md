@@ -18,6 +18,7 @@ an integrating product:
 - `kernel-runtime-integration-reference.md`
 - `pir-kernel-integration-reference.md`
 - `pir-kernel-real-integration-plan.md`
+- `pir-kernel-live-context-consumption-evidence.md`
 - `llm-response-determinism-strategy.md`
 
 Historical closeout and compatibility planning material belongs in

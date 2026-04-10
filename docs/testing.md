@@ -198,23 +198,25 @@ single source of truth, so the automated smoke and manual cluster smoke follow
 the same publish/query path.
 
 The incremental PIR consumption smoke adds the missing integration proof for a
-consumer product: two waves keep the same incident identity, each wave uses its
-own `run_id`, the semantic reranker reclassifies relations before publish, and
-the second-wave `rendered.content` is fed back to the LLM.
+consumer product: three waves keep the same incident identity, each wave uses
+its own `run_id`, the semantic reranker reclassifies relations before publish,
+and the final `rendered.content` is fed back to the LLM.
 
 The single-wave live smokes namespace GraphBatch node ids with the test `run_id`
 before publishing. This prevents a repeated run from passing against a graph
 that was already projected by an earlier attempt.
 
 The incremental PIR smoke uses a different pattern: one stable node namespace
-shared by both waves, plus a distinct `run_id` per wave. That mirrors the PIR
+shared by all waves, plus a distinct `run_id` per wave. That mirrors the PIR
 contract more closely: stable incident identity, new materialization wave.
 
-The PIR-style consumption smoke adds the missing runtime loop: after the graph is
-materialized and queried, it passes `rendered.content` back to vLLM and asserts
-that the answer uses the incident finding and mitigation from the rehydrated
-context. It uses `--rehydration-mode reason_preserving` because this is the PIR
-LLM-consumption path, not a compact UI preview.
+The PIR-style consumption smoke now covers both graph growth and graph
+correction: `wave 1` seeds the incident, `wave 2` expands it with a new finding
+and task, and `wave 3` updates the current incident/task state plus
+`node_detail` revision without growing the graph. After the final query it
+passes `rendered.content` back to vLLM and asserts that the answer uses the
+corrected rehydrated context. It uses `--rehydration-mode reason_preserving`
+because this is the PIR LLM-consumption path, not a compact UI preview.
 
 For cluster-managed runs, do not keep these values as ad-hoc shell exports.
 Prefer a `ConfigMap` for non-secret LLM client settings and a `Secret` for API

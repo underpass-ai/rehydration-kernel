@@ -6,10 +6,11 @@ use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rehydration_testkit::{
-    GraphBatch, GraphBatchSemanticClassifierPolicy, LlmEvaluatorConfig, call_llm,
-    classify_graph_batch_semantic_classes_with_policy, namespace_graph_batch, parse_graph_batch,
+    GraphBatch, GraphBatchSemanticClassifierOutcome, GraphBatchSemanticClassifierPolicy,
+    LlmEvaluatorConfig, call_llm, classify_graph_batch_semantic_classes_with_policy,
+    namespace_graph_batch, parse_graph_batch,
 };
-use serde_json::Value;
+use serde_json::{Value, json};
 
 const RUN_ENV: &str = "RUN_PIR_GRAPH_BATCH_SMOKE";
 const CONTEXT_CONSUMPTION_RUN_ENV: &str = "RUN_PIR_GRAPH_BATCH_CONTEXT_CONSUMPTION_SMOKE";
@@ -18,10 +19,21 @@ const DEFAULT_BATCH_FIXTURE: &str =
 const INCREMENTAL_BATCH_FIXTURE: &str = include_str!(
     "../../../api/examples/kernel/v1beta1/async/incident-graph-batch.incremental-2.json"
 );
+const CORRECTIVE_BATCH_FIXTURE: &str = include_str!(
+    "../../../api/examples/kernel/v1beta1/async/incident-graph-batch.incremental-3.json"
+);
 const KERNEL_CONTEXT_CONSUMPTION_PROMPT: &str =
     include_str!("../../../api/examples/inference-prompts/kernel-context-consumption.txt");
+const SECOND_WAVE_TASK_NODE_ID: &str = "task:pir-2026-04-09-payments-latency:apply-retry-cap";
 
 type TestResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
+
+struct ExecutedWave {
+    run_id: String,
+    batch: GraphBatch,
+    summary: Value,
+    rendered_context: Option<String>,
+}
 
 #[test]
 fn pir_graph_batch_roundtrip_smoke_succeeds_against_live_kernel() -> TestResult<()> {
@@ -37,7 +49,7 @@ fn pir_graph_batch_roundtrip_smoke_succeeds_against_live_kernel() -> TestResult<
     let payload = load_fixture("PIR_GRAPH_BATCH_INPUT", DEFAULT_BATCH_FIXTURE)?;
     let mut batch = parse_graph_batch(&payload)?;
     namespace_graph_batch(&mut batch, &run_id);
-    let summary = run_roundtrip(&serde_json::to_vec(&batch)?, &run_id, false, None)?;
+    let summary = run_roundtrip(&serde_json::to_vec(&batch)?, &run_id, None, false, None)?;
     assert_eq!(
         summary.get("root_node_id").and_then(Value::as_str),
         Some(batch.root_node_id.as_str())
@@ -92,59 +104,57 @@ async fn pir_graph_batch_incremental_context_consumption_smoke_succeeds_against_
         .unwrap_or_else(|_| format!("pir-live-context-{}", unix_timestamp_secs()));
     let first_run_id = format!("{node_namespace}-wave-1");
     let second_run_id = format!("{node_namespace}-wave-2");
+    let third_run_id = format!("{node_namespace}-wave-3");
 
     let wave_one_payload = load_fixture("PIR_GRAPH_BATCH_INPUT", DEFAULT_BATCH_FIXTURE)?;
     let wave_two_payload = load_fixture(
         "PIR_GRAPH_BATCH_INCREMENTAL_INPUT",
         INCREMENTAL_BATCH_FIXTURE,
     )?;
+    let wave_three_payload = load_fixture(
+        "PIR_GRAPH_BATCH_INCREMENTAL_THREE_INPUT",
+        CORRECTIVE_BATCH_FIXTURE,
+    )?;
     let config = LlmEvaluatorConfig::from_env();
 
-    let mut batch_one = parse_graph_batch(&wave_one_payload)?;
-    namespace_graph_batch(&mut batch_one, &node_namespace);
-    let batch_one = classify_batch_with_semantic_reranker(&config, &batch_one, &first_run_id)
-        .await?
-        .batch;
-    let summary_one = run_roundtrip(&serde_json::to_vec(&batch_one)?, &first_run_id, false, None)?;
-
+    let wave_one = execute_live_wave(
+        &config,
+        "wave-1",
+        &wave_one_payload,
+        &node_namespace,
+        &first_run_id,
+        None,
+        false,
+        None,
+    )
+    .await?;
+    let summary_one = &wave_one.summary;
     assert_eq!(
         summary_one.get("root_node_id").and_then(Value::as_str),
-        Some(batch_one.root_node_id.as_str())
+        Some(wave_one.batch.root_node_id.as_str())
     );
     assert_eq!(
         summary_one.get("run_id").and_then(Value::as_str),
-        Some(first_run_id.as_str())
+        Some(wave_one.run_id.as_str())
     );
-    assert_eq!(
-        summary_one.get("neighbor_count").and_then(Value::as_u64),
-        Some(2)
-    );
-    assert_eq!(
-        summary_one
-            .get("relationship_count")
-            .and_then(Value::as_u64),
-        Some(2)
-    );
-    assert_eq!(
-        summary_one.get("detail_count").and_then(Value::as_u64),
-        Some(2)
-    );
+    assert_summary_counts(summary_one, 2, 2, 2);
 
-    let mut batch_two = parse_graph_batch(&wave_two_payload)?;
-    namespace_graph_batch(&mut batch_two, &node_namespace);
-    let batch_two = classify_batch_with_semantic_reranker(&config, &batch_two, &second_run_id)
-        .await?
-        .batch;
-    let summary_two = run_roundtrip(
-        &serde_json::to_vec(&batch_two)?,
+    let wave_two = execute_live_wave(
+        &config,
+        "wave-2",
+        &wave_two_payload,
+        &node_namespace,
         &second_run_id,
+        None,
         true,
         Some("reason_preserving"),
-    )?;
+    )
+    .await?;
+    let summary_two = &wave_two.summary;
 
     assert_eq!(
         summary_two.get("root_node_id").and_then(Value::as_str),
-        Some(batch_two.root_node_id.as_str())
+        Some(wave_two.batch.root_node_id.as_str())
     );
     assert_eq!(
         summary_two.get("root_node_id").and_then(Value::as_str),
@@ -152,68 +162,169 @@ async fn pir_graph_batch_incremental_context_consumption_smoke_succeeds_against_
     );
     assert_eq!(
         summary_two.get("run_id").and_then(Value::as_str),
-        Some(second_run_id.as_str())
+        Some(wave_two.run_id.as_str())
     );
-    assert_eq!(
-        summary_two.get("neighbor_count").and_then(Value::as_u64),
-        Some(4)
-    );
-    assert_eq!(
-        summary_two
-            .get("relationship_count")
-            .and_then(Value::as_u64),
-        Some(4)
-    );
-    assert_eq!(
-        summary_two.get("detail_count").and_then(Value::as_u64),
-        Some(4)
-    );
+    assert_summary_counts(summary_two, 4, 4, 4);
 
-    let rendered_context = summary_two
-        .get("rendered_content")
-        .and_then(Value::as_str)
-        .ok_or("roundtrip summary should include rendered_content")?;
+    let rendered_context_two = wave_two
+        .rendered_context
+        .as_deref()
+        .ok_or("wave 2 roundtrip summary should include rendered_content")?;
     assert!(
-        rendered_context.contains("Retry storm amplified load"),
+        rendered_context_two.contains("Retry storm amplified load"),
         "rendered content should include the second-wave finding"
     );
     assert!(
-        rendered_context.contains("Apply retry cap"),
+        rendered_context_two.contains("Apply retry cap"),
         "rendered content should include the second-wave task"
+    );
+    let wave_three = execute_live_wave(
+        &config,
+        "wave-3",
+        &wave_three_payload,
+        &node_namespace,
+        &third_run_id,
+        Some(SECOND_WAVE_TASK_NODE_ID),
+        true,
+        Some("reason_preserving"),
+    )
+    .await?;
+    let summary_three = &wave_three.summary;
+
+    assert_eq!(
+        summary_three.get("root_node_id").and_then(Value::as_str),
+        Some(wave_three.batch.root_node_id.as_str())
+    );
+    assert_eq!(
+        summary_three.get("root_node_id").and_then(Value::as_str),
+        summary_one.get("root_node_id").and_then(Value::as_str)
+    );
+    assert_eq!(
+        summary_three.get("run_id").and_then(Value::as_str),
+        Some(wave_three.run_id.as_str())
+    );
+    assert_summary_counts(summary_three, 4, 4, 4);
+    assert_eq!(
+        summary_three.get("detail_revision").and_then(Value::as_u64),
+        Some(2)
+    );
+
+    let rendered_context_three = wave_three
+        .rendered_context
+        .as_deref()
+        .ok_or("wave 3 roundtrip summary should include rendered_content")?;
+    assert!(
+        rendered_context_three.contains("returned below 1.1 seconds"),
+        "rendered content should include the corrected incident summary"
+    );
+    assert!(
+        rendered_context_three.contains("retry-cap change was completed"),
+        "rendered content should include the corrected task detail revision"
     );
 
     let answer = answer_from_rehydrated_context(
         &config,
-        rendered_context,
-        "Answer in one concise sentence: what new finding amplified the incident after the pool regression, and what task was planned to mitigate it?",
+        rendered_context_three,
+        "Answer in one concise sentence: after the retry-cap rollout, what happened to incident latency, and what was the final state of the retry-cap task?",
     )
     .await?;
 
     assert_answer_mentions_any(
         &answer,
-        &["retry storm", "retries", "retry"],
-        "second-wave finding",
+        &["below 1.1", "recovered", "returned", "stabilizing"],
+        "corrected incident state",
     )?;
     assert_answer_mentions_any(
         &answer,
-        &["retry cap", "cap retries", "full jitter"],
-        "second-wave task",
+        &["completed", "rolled out", "full jitter"],
+        "corrected retry-cap task state",
     )?;
 
     eprintln!(
+        "pir context consumption result {}",
+        serde_json::to_string_pretty(&json!({
+            "node_namespace": node_namespace,
+            "answer": answer.replace('\n', " "),
+            "rendered_chars": rendered_context_three.chars().count(),
+            "wave_1": {
+                "run_id": wave_one.run_id,
+                "neighbor_count": summary_one.get("neighbor_count").and_then(Value::as_u64),
+                "relationship_count": summary_one.get("relationship_count").and_then(Value::as_u64),
+                "detail_count": summary_one.get("detail_count").and_then(Value::as_u64),
+            },
+            "wave_2": {
+                "run_id": wave_two.run_id,
+                "neighbor_count": summary_two.get("neighbor_count").and_then(Value::as_u64),
+                "relationship_count": summary_two.get("relationship_count").and_then(Value::as_u64),
+                "detail_count": summary_two.get("detail_count").and_then(Value::as_u64),
+            },
+            "wave_3": {
+                "run_id": wave_three.run_id,
+                "neighbor_count": summary_three.get("neighbor_count").and_then(Value::as_u64),
+                "relationship_count": summary_three.get("relationship_count").and_then(Value::as_u64),
+                "detail_count": summary_three.get("detail_count").and_then(Value::as_u64),
+                "detail_revision": summary_three.get("detail_revision").and_then(Value::as_u64),
+            }
+        }))?
+    );
+    eprintln!(
         "pir context consumption smoke node_namespace={node_namespace} rendered_chars={} answer={}",
-        rendered_context.chars().count(),
+        rendered_context_three.chars().count(),
         answer.replace('\n', " ")
     );
 
     Ok(())
 }
 
+async fn execute_live_wave(
+    config: &LlmEvaluatorConfig,
+    label: &str,
+    payload: &str,
+    node_namespace: &str,
+    run_id: &str,
+    detail_node_base_id: Option<&str>,
+    include_rendered_content: bool,
+    rehydration_mode: Option<&str>,
+) -> TestResult<ExecutedWave> {
+    let mut batch = parse_graph_batch(payload)?;
+    namespace_graph_batch(&mut batch, node_namespace);
+    let detail_node_id = detail_node_base_id
+        .map(|base_id| resolve_namespaced_node_id(&batch, base_id))
+        .transpose()?;
+    let classified = classify_batch_with_semantic_reranker(config, &batch, run_id).await?;
+    let batch = classified.batch.clone();
+    let summary = run_roundtrip(
+        &serde_json::to_vec(&batch)?,
+        run_id,
+        detail_node_id.as_deref(),
+        include_rendered_content,
+        rehydration_mode,
+    )?;
+    let rendered_context = summary
+        .get("rendered_content")
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned);
+    emit_wave_evidence(
+        label,
+        run_id,
+        &batch,
+        &classified,
+        &summary,
+        rendered_context.as_deref(),
+    );
+    Ok(ExecutedWave {
+        run_id: run_id.to_string(),
+        batch,
+        summary,
+        rendered_context,
+    })
+}
+
 async fn classify_batch_with_semantic_reranker(
     config: &LlmEvaluatorConfig,
     batch: &GraphBatch,
     run_id: &str,
-) -> TestResult<rehydration_testkit::GraphBatchSemanticClassifierOutcome> {
+) -> TestResult<GraphBatchSemanticClassifierOutcome> {
     let outcome = classify_graph_batch_semantic_classes_with_policy(
         config,
         batch,
@@ -229,6 +340,45 @@ async fn classify_batch_with_semantic_reranker(
     Ok(outcome)
 }
 
+fn emit_wave_evidence(
+    label: &str,
+    run_id: &str,
+    batch: &GraphBatch,
+    classifier: &GraphBatchSemanticClassifierOutcome,
+    summary: &Value,
+    rendered_context: Option<&str>,
+) {
+    let rendered_excerpt = rendered_context.map(|context| excerpt(context, 280));
+    let evidence = json!({
+        "wave": label,
+        "run_id": run_id,
+        "root_node_id": batch.root_node_id,
+        "published_graph": {
+            "node_ids": batch.nodes.iter().map(|node| node.node_id.clone()).collect::<Vec<_>>(),
+            "relation_triplets": batch.relations.iter().map(|relation| {
+                json!({
+                    "source_node_id": relation.source_node_id,
+                    "relation_type": relation.relation_type,
+                    "target_node_id": relation.target_node_id,
+                    "semantic_class": relation.semantic_class,
+                })
+            }).collect::<Vec<_>>(),
+            "detail_node_ids": batch.node_details.iter().map(|detail| detail.node_id.clone()).collect::<Vec<_>>(),
+        },
+        "semantic_reranker": {
+            "attempts": classifier.attempts,
+            "changed_relations": classifier.changed_relations,
+            "prompt_tokens": classifier.prompt_tokens,
+            "completion_tokens": classifier.completion_tokens,
+        },
+        "roundtrip_summary": summary,
+        "rendered_excerpt": rendered_excerpt,
+    });
+    if let Ok(pretty) = serde_json::to_string_pretty(&evidence) {
+        eprintln!("pir wave evidence {pretty}");
+    }
+}
+
 fn load_fixture(env_key: &str, default_fixture: &str) -> TestResult<String> {
     match env::var(env_key) {
         Ok(path) if !path.trim().is_empty() => Ok(fs::read_to_string(path)?),
@@ -239,6 +389,7 @@ fn load_fixture(env_key: &str, default_fixture: &str) -> TestResult<String> {
 fn run_roundtrip(
     batch_payload: &[u8],
     run_id: &str,
+    detail_node_id: Option<&str>,
     include_rendered_content: bool,
     rehydration_mode: Option<&str>,
 ) -> TestResult<Value> {
@@ -272,11 +423,9 @@ fn run_roundtrip(
         command.arg("--requested-scope").arg(scope);
     }
 
-    add_optional_flag(
-        &mut command,
-        "PIR_GRAPH_BATCH_DETAIL_NODE_ID",
-        "--detail-node-id",
-    );
+    if let Some(detail_node_id) = detail_node_id {
+        command.arg("--detail-node-id").arg(detail_node_id);
+    }
     add_optional_flag(
         &mut command,
         "PIR_GRAPH_BATCH_GRPC_TLS_CA_PATH",
@@ -343,6 +492,26 @@ fn run_roundtrip(
     Ok(serde_json::from_slice(&output.stdout)?)
 }
 
+fn assert_summary_counts(
+    summary: &Value,
+    expected_neighbors: u64,
+    expected_relationships: u64,
+    expected_details: u64,
+) {
+    assert_eq!(
+        summary.get("neighbor_count").and_then(Value::as_u64),
+        Some(expected_neighbors)
+    );
+    assert_eq!(
+        summary.get("relationship_count").and_then(Value::as_u64),
+        Some(expected_relationships)
+    );
+    assert_eq!(
+        summary.get("detail_count").and_then(Value::as_u64),
+        Some(expected_details)
+    );
+}
+
 async fn answer_from_rehydrated_context(
     config: &LlmEvaluatorConfig,
     rendered_context: &str,
@@ -383,8 +552,21 @@ fn required_env(key: &str) -> TestResult<String> {
 }
 
 fn graph_batch_roundtrip_bin() -> String {
-    env::var("GRAPH_BATCH_ROUNDTRIP_BIN")
-        .unwrap_or_else(|_| env!("CARGO_BIN_EXE_graph_batch_roundtrip").to_string())
+    match env::var("GRAPH_BATCH_ROUNDTRIP_BIN") {
+        Ok(path) if !path.trim().is_empty() => path,
+        _ => env!("CARGO_BIN_EXE_graph_batch_roundtrip").to_string(),
+    }
+}
+
+fn resolve_namespaced_node_id(batch: &GraphBatch, base_id: &str) -> TestResult<String> {
+    batch
+        .nodes
+        .iter()
+        .map(|node| node.node_id.as_str())
+        .chain(batch.node_details.iter().map(|detail| detail.node_id.as_str()))
+        .find(|node_id| *node_id == base_id || node_id.starts_with(&format!("{base_id}--")))
+        .map(ToOwned::to_owned)
+        .ok_or_else(|| format!("missing namespaced node id for `{base_id}`").into())
 }
 
 fn add_optional_flag(command: &mut Command, env_key: &str, flag: &str) {
@@ -400,4 +582,12 @@ fn unix_timestamp_secs() -> u64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs()
+}
+
+fn excerpt(value: &str, max_chars: usize) -> String {
+    let mut excerpt = value.chars().take(max_chars).collect::<String>();
+    if value.chars().count() > max_chars {
+        excerpt.push_str("...");
+    }
+    excerpt
 }
