@@ -53,6 +53,14 @@ Rules:
 - Every `source_node_id`, `target_node_id`, and `node_detail.node_id` must refer to an existing node.
 - Put one fact per node when possible; keep `summary` short and move long evidence to `node_details`.
 - Use `semantic_class=causal` only when the text supports an actual cause.
+- Choose `semantic_class` with this rubric:
+  - `causal`: an actual cause/effect is stated or confirmed. Use this for findings that caused the incident, e.g. config change -> exhaustion -> latency. Do not label root causes as `procedural`.
+  - `evidential`: a log, dashboard, metric, trace, diff, or inspection supports a finding or decision.
+  - `motivational`: explains why a decision/action was chosen, including mitigation rationale or tradeoffs.
+  - `procedural`: an ordered step, method, runbook action, implementation step, or execution sequence. It describes what to do/how to do it, not why the incident happened.
+  - `constraint`: a rule, safety boundary, dependency, or operational limit that must be respected.
+  - `structural`: containment, reference, grouping, or generic association with no explanatory claim.
+- If the relation contains causal wording (`caused`, `led to`, `triggered`, `because`) or `caused_by_node_id`, prefer `causal` over `procedural`.
 - For every non-structural relation, include `confidence` as `high`, `medium`, or `low`.
 - For every non-structural relation, include at least one support field: `rationale`, `motivation`, `method`, or `evidence`.
 - Emit only accepted graph facts. Do not emit duplicate relations or speculative alternatives unless they are semantically distinct and explicitly carry lower confidence.

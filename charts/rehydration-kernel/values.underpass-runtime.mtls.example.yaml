@@ -127,3 +127,13 @@ extraEnv:
     value: /var/run/rehydration-kernel/otel-tls/tls.crt
   - name: OTEL_EXPORTER_OTLP_KEY_PATH
     value: /var/run/rehydration-kernel/otel-tls/tls.key
+
+# --- Optional in-cluster LLM endpoints ---
+# Apply k8s/llm-client-config.example.yaml first, then load the config and
+# secret through envFrom. This keeps the primary model, repair judge, and
+# semantic reranker outside the chart's static values.
+extraEnvFrom:
+  - configMapRef:
+      name: rehydration-kernel-llm-client
+  - secretRef:
+      name: rehydration-kernel-llm-client-secrets

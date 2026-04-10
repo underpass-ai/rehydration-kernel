@@ -54,6 +54,15 @@ pub enum LlmProvider {
     Anthropic,
 }
 
+/// Transport mode for the semantic-class classifier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LlmSemanticClassifierMode {
+    /// OpenAI-compatible `chat/completions` JSON classification.
+    ChatCompletions,
+    /// vLLM pooling `/score` endpoint for rerankers and scorers.
+    Score,
+}
+
 /// Configuration for the LLM evaluator.
 #[derive(Debug, Clone)]
 pub struct LlmEvaluatorConfig {
@@ -83,6 +92,16 @@ pub struct LlmEvaluatorConfig {
     pub judge_provider: Option<LlmProvider>,
     /// API key for judge. Falls back to main api_key.
     pub judge_api_key: Option<String>,
+    /// Separate endpoint for the semantic-class classifier. Falls back to None.
+    pub semantic_classifier_endpoint: Option<String>,
+    /// Separate model for the semantic-class classifier.
+    pub semantic_classifier_model: Option<String>,
+    /// Provider for the semantic-class classifier.
+    pub semantic_classifier_provider: Option<LlmProvider>,
+    /// API key for the semantic-class classifier. Falls back to main api_key.
+    pub semantic_classifier_api_key: Option<String>,
+    /// Transport mode for the semantic-class classifier.
+    pub semantic_classifier_mode: LlmSemanticClassifierMode,
 }
 
 impl LlmEvaluatorConfig {
@@ -93,6 +112,18 @@ impl LlmEvaluatorConfig {
         let judge_provider = judge_model
             .as_deref()
             .map(|m| detect_provider(&std::env::var("LLM_JUDGE_PROVIDER").unwrap_or_default(), m));
+        let semantic_classifier_endpoint = std::env::var("LLM_SEMANTIC_CLASSIFIER_ENDPOINT").ok();
+        let semantic_classifier_model = std::env::var("LLM_SEMANTIC_CLASSIFIER_MODEL").ok();
+        let semantic_classifier_provider = semantic_classifier_model.as_deref().map(|m| {
+            detect_provider(
+                &std::env::var("LLM_SEMANTIC_CLASSIFIER_PROVIDER").unwrap_or_default(),
+                m,
+            )
+        });
+        let semantic_classifier_mode = detect_semantic_classifier_mode(
+            &std::env::var("LLM_SEMANTIC_CLASSIFIER_MODE").unwrap_or_default(),
+            semantic_classifier_endpoint.as_deref(),
+        );
         Self {
             endpoint: std::env::var("LLM_ENDPOINT")
                 .unwrap_or_else(|_| "http://localhost:8000/v1/chat/completions".to_string()),
@@ -116,6 +147,11 @@ impl LlmEvaluatorConfig {
             judge_model,
             judge_provider,
             judge_api_key: std::env::var("LLM_JUDGE_API_KEY").ok(),
+            semantic_classifier_endpoint,
+            semantic_classifier_model,
+            semantic_classifier_provider,
+            semantic_classifier_api_key: std::env::var("LLM_SEMANTIC_CLASSIFIER_API_KEY").ok(),
+            semantic_classifier_mode,
         }
     }
 }
@@ -137,6 +173,23 @@ fn detect_provider(explicit: &str, model: &str) -> LlmProvider {
                 LlmProvider::OpenAI
             }
         }
+    }
+}
+
+fn detect_semantic_classifier_mode(
+    explicit: &str,
+    endpoint: Option<&str>,
+) -> LlmSemanticClassifierMode {
+    match explicit {
+        "score" | "score_api" | "score-api" => LlmSemanticClassifierMode::Score,
+        "chat" | "chat_completions" | "chat-completions" => {
+            LlmSemanticClassifierMode::ChatCompletions
+        }
+        _ => endpoint
+            .map(|value| value.trim_end_matches('/').ends_with("/score"))
+            .filter(|is_score| *is_score)
+            .map(|_| LlmSemanticClassifierMode::Score)
+            .unwrap_or(LlmSemanticClassifierMode::ChatCompletions),
     }
 }
 
@@ -1129,6 +1182,18 @@ mod tests {
         // Judge fields fall back to None
         assert!(config.judge_provider.is_none());
         assert!(config.judge_api_key.is_none());
+        assert!(config.semantic_classifier_provider.is_none());
+        assert!(config.semantic_classifier_api_key.is_none());
+        assert_eq!(
+            config.semantic_classifier_mode,
+            LlmSemanticClassifierMode::ChatCompletions
+        );
+    }
+
+    #[test]
+    fn semantic_classifier_mode_defaults_to_score_for_score_endpoint() {
+        let mode = detect_semantic_classifier_mode("", Some("http://vllm:8000/score"));
+        assert_eq!(mode, LlmSemanticClassifierMode::Score);
     }
 
     #[test]

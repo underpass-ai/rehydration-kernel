@@ -1,14 +1,17 @@
+use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
 use std::time::Duration;
 
+use rehydration_domain::RelationSemanticClass;
 use reqwest::StatusCode;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tokio::time::sleep;
 
 use crate::llm_evaluator::{
-    LlmEvaluatorConfig, LlmProvider, build_http_client_with_connect_timeout,
+    LlmEvaluatorConfig, LlmProvider, LlmSemanticClassifierMode,
+    build_http_client_with_connect_timeout, call_llm,
 };
 use crate::{
     GraphBatch, LlmGraphError, llm_graph_to_projection_events, normalize_llm_json_response,
@@ -20,12 +23,44 @@ const MIN_GRAPH_BATCH_MAX_TOKENS: u32 = 2048;
 const RETRY_DELAY_SCHEDULE_MS: [u64; 4] = [0, 250, 1_000, 3_000];
 const PRIMARY_POLICY_ENV_PREFIX: &str = "LLM_GRAPH_BATCH_PRIMARY";
 const REPAIR_POLICY_ENV_PREFIX: &str = "LLM_GRAPH_BATCH_REPAIR";
+const SEMANTIC_CLASSIFIER_POLICY_ENV_PREFIX: &str = "LLM_GRAPH_BATCH_SEMANTIC_CLASSIFIER";
 const PRIMARY_DEFAULT_MAX_ATTEMPTS: usize = 4;
 const PRIMARY_DEFAULT_CONNECT_TIMEOUT_SECS: u64 = 2;
 const PRIMARY_DEFAULT_REQUEST_TIMEOUT_SECS: u64 = 45;
 const REPAIR_DEFAULT_MAX_ATTEMPTS: usize = 1;
 const REPAIR_DEFAULT_CONNECT_TIMEOUT_SECS: u64 = 2;
 const REPAIR_DEFAULT_REQUEST_TIMEOUT_SECS: u64 = 180;
+const SEMANTIC_CLASSIFIER_DEFAULT_MAX_ATTEMPTS: usize = 1;
+const SEMANTIC_CLASSIFIER_DEFAULT_CONNECT_TIMEOUT_SECS: u64 = 2;
+const SEMANTIC_CLASSIFIER_DEFAULT_REQUEST_TIMEOUT_SECS: u64 = 20;
+const SEMANTIC_CLASSIFIER_MIN_MAX_TOKENS: u32 = 128;
+const SEMANTIC_CLASSIFIER_MAX_MAX_TOKENS: u32 = 1024;
+const SEMANTIC_CLASS_SCORE_DOCUMENTS: [(RelationSemanticClass, &str); 6] = [
+    (
+        RelationSemanticClass::Causal,
+        "semantic_class=causal. Use when the relation states actual cause and effect. Prefer this when a confirmed finding explains the incident or when caused_by_node_id is present.",
+    ),
+    (
+        RelationSemanticClass::Motivational,
+        "semantic_class=motivational. Use when the relation explains why a decision or mitigation was chosen, including tradeoffs or intent.",
+    ),
+    (
+        RelationSemanticClass::Procedural,
+        "semantic_class=procedural. Use when the relation mainly communicates ordered steps, methods, runbook actions, or execution sequence.",
+    ),
+    (
+        RelationSemanticClass::Evidential,
+        "semantic_class=evidential. Use when the relation mainly contributes logs, metrics, traces, diffs, or inspection evidence supporting a finding or decision.",
+    ),
+    (
+        RelationSemanticClass::Constraint,
+        "semantic_class=constraint. Use when the relation mainly communicates a limit, safety rule, dependency, policy, or operational restriction.",
+    ),
+    (
+        RelationSemanticClass::Structural,
+        "semantic_class=structural. Use when the relation is mostly neutral association, grouping, containment, or reference without explanatory force.",
+    ),
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GraphBatchRetryPolicy {
@@ -134,12 +169,77 @@ impl GraphBatchRepairJudgePolicy {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GraphBatchSemanticClassifierPolicy {
+    pub max_attempts: usize,
+    pub connect_timeout: Duration,
+    pub request_timeout: Duration,
+}
+
+impl Default for GraphBatchSemanticClassifierPolicy {
+    fn default() -> Self {
+        Self {
+            max_attempts: SEMANTIC_CLASSIFIER_DEFAULT_MAX_ATTEMPTS,
+            connect_timeout: Duration::from_secs(SEMANTIC_CLASSIFIER_DEFAULT_CONNECT_TIMEOUT_SECS),
+            request_timeout: Duration::from_secs(SEMANTIC_CLASSIFIER_DEFAULT_REQUEST_TIMEOUT_SECS),
+        }
+    }
+}
+
+impl GraphBatchSemanticClassifierPolicy {
+    pub fn from_env() -> Self {
+        Self::from_reader(|key| std::env::var(key).ok())
+    }
+
+    fn from_reader<F>(read: F) -> Self
+    where
+        F: Fn(&str) -> Option<String>,
+    {
+        let defaults = Self::default();
+        Self {
+            max_attempts: read_usize_with(
+                &read,
+                env_key(SEMANTIC_CLASSIFIER_POLICY_ENV_PREFIX, "MAX_ATTEMPTS"),
+                defaults.max_attempts,
+            ),
+            connect_timeout: Duration::from_secs(read_u64_with(
+                &read,
+                env_key(
+                    SEMANTIC_CLASSIFIER_POLICY_ENV_PREFIX,
+                    "CONNECT_TIMEOUT_SECS",
+                ),
+                defaults.connect_timeout.as_secs(),
+            )),
+            request_timeout: Duration::from_secs(read_u64_with(
+                &read,
+                env_key(
+                    SEMANTIC_CLASSIFIER_POLICY_ENV_PREFIX,
+                    "REQUEST_TIMEOUT_SECS",
+                ),
+                defaults.request_timeout.as_secs(),
+            )),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct GraphBatchSemanticClassifierOutcome {
+    pub batch: GraphBatch,
+    pub raw_content: String,
+    pub normalized_content: String,
+    pub prompt_tokens: u32,
+    pub completion_tokens: u32,
+    pub attempts: usize,
+    pub changed_relations: usize,
+}
+
 #[derive(Debug)]
 pub enum GraphBatchRequestError {
     UnsupportedProvider(LlmProvider),
     InvalidRequestFixture(serde_json::Error),
     InvalidRequestShape(String),
     RepairJudgeUnavailable(String),
+    SemanticClassifierUnavailable(String),
     RepairJudgeFailed {
         primary_attempts: usize,
         primary_error: String,
@@ -155,6 +255,16 @@ pub enum GraphBatchRequestError {
         raw_content: String,
         normalized_content: String,
     },
+    InvalidSemanticClassifierResponse {
+        attempts: usize,
+        error: String,
+        raw_content: String,
+        normalized_content: String,
+    },
+    SemanticClassifierTransport {
+        attempts: usize,
+        message: String,
+    },
 }
 
 impl fmt::Display for GraphBatchRequestError {
@@ -169,6 +279,7 @@ impl fmt::Display for GraphBatchRequestError {
             }
             Self::InvalidRequestShape(message) => f.write_str(message),
             Self::RepairJudgeUnavailable(message) => f.write_str(message),
+            Self::SemanticClassifierUnavailable(message) => f.write_str(message),
             Self::RepairJudgeFailed {
                 primary_attempts,
                 primary_error,
@@ -189,6 +300,19 @@ impl fmt::Display for GraphBatchRequestError {
             } => write!(
                 f,
                 "GraphBatch response stayed invalid after {attempts} attempt(s): {error}\nraw={raw_content}\nnormalized={normalized_content}"
+            ),
+            Self::InvalidSemanticClassifierResponse {
+                attempts,
+                error,
+                raw_content,
+                normalized_content,
+            } => write!(
+                f,
+                "semantic-class classifier response stayed invalid after {attempts} attempt(s): {error}\nraw={raw_content}\nnormalized={normalized_content}"
+            ),
+            Self::SemanticClassifierTransport { attempts, message } => write!(
+                f,
+                "semantic-class classifier failed after {attempts} attempt(s): {message}"
             ),
         }
     }
@@ -218,9 +342,19 @@ pub fn build_graph_batch_request_body(
 
     object.insert("model".to_string(), json!(config.model));
     object.insert("temperature".to_string(), json!(config.temperature));
+    let fixture_max_tokens = object
+        .get("max_tokens")
+        .and_then(Value::as_u64)
+        .and_then(|value| u32::try_from(value).ok())
+        .unwrap_or_default();
     object.insert(
         "max_tokens".to_string(),
-        json!(config.max_tokens.max(MIN_GRAPH_BATCH_MAX_TOKENS)),
+        json!(
+            config
+                .max_tokens
+                .max(fixture_max_tokens)
+                .max(MIN_GRAPH_BATCH_MAX_TOKENS)
+        ),
     );
 
     let disable_thinking = std::env::var("LLM_ENABLE_THINKING")
@@ -324,6 +458,285 @@ pub async fn request_graph_batch_with_repair_judge(
         }
         Err(error) => Err(error),
     }
+}
+
+pub async fn classify_graph_batch_semantic_classes_with_policy(
+    config: &LlmEvaluatorConfig,
+    batch: &GraphBatch,
+    subject_prefix: &str,
+    run_id: &str,
+    policy: GraphBatchSemanticClassifierPolicy,
+) -> Result<GraphBatchSemanticClassifierOutcome, GraphBatchRequestError> {
+    if batch.relations.is_empty() {
+        return Ok(GraphBatchSemanticClassifierOutcome {
+            batch: batch.clone(),
+            raw_content: String::new(),
+            normalized_content: String::new(),
+            prompt_tokens: 0,
+            completion_tokens: 0,
+            attempts: 0,
+            changed_relations: 0,
+        });
+    }
+
+    match config.semantic_classifier_mode {
+        LlmSemanticClassifierMode::ChatCompletions => {
+            classify_graph_batch_semantic_classes_with_chat_api(
+                config,
+                batch,
+                subject_prefix,
+                run_id,
+                policy,
+            )
+            .await
+        }
+        LlmSemanticClassifierMode::Score => {
+            classify_graph_batch_semantic_classes_with_score_api(
+                config,
+                batch,
+                subject_prefix,
+                run_id,
+                policy,
+            )
+            .await
+        }
+    }
+}
+
+async fn classify_graph_batch_semantic_classes_with_chat_api(
+    config: &LlmEvaluatorConfig,
+    batch: &GraphBatch,
+    subject_prefix: &str,
+    run_id: &str,
+    policy: GraphBatchSemanticClassifierPolicy,
+) -> Result<GraphBatchSemanticClassifierOutcome, GraphBatchRequestError> {
+    let classifier_config = build_semantic_classifier_config(config)?;
+    let client =
+        build_http_client_with_connect_timeout(&classifier_config, Some(policy.connect_timeout))
+            .map_err(
+                |error| GraphBatchRequestError::SemanticClassifierTransport {
+                    attempts: 0,
+                    message: error.to_string(),
+                },
+            )?;
+    let prompt = build_semantic_classifier_prompt(batch);
+    let max_tokens = semantic_classifier_max_tokens(batch);
+    let max_attempts = policy.max_attempts.max(1);
+
+    for attempt in 1..=max_attempts {
+        let response = tokio::time::timeout(
+            policy.request_timeout,
+            call_llm(
+                &client,
+                &classifier_config.endpoint,
+                &classifier_config.model,
+                classifier_config.provider,
+                classifier_config.api_key.as_deref(),
+                &prompt,
+                max_tokens,
+                classifier_config.temperature,
+            ),
+        )
+        .await;
+
+        match response {
+            Ok(Ok((raw_content, prompt_tokens, completion_tokens))) => {
+                let normalized_content = normalize_llm_json_response(&raw_content);
+                match apply_semantic_classifications(
+                    batch,
+                    &normalized_content,
+                    subject_prefix,
+                    run_id,
+                ) {
+                    Ok((classified_batch, changed_relations)) => {
+                        return Ok(GraphBatchSemanticClassifierOutcome {
+                            batch: classified_batch,
+                            raw_content,
+                            normalized_content,
+                            prompt_tokens,
+                            completion_tokens,
+                            attempts: attempt,
+                            changed_relations,
+                        });
+                    }
+                    Err(_error) if attempt < max_attempts => {
+                        sleep(retry_delay_for_attempt(attempt + 1)).await;
+                    }
+                    Err(error) => {
+                        return Err(GraphBatchRequestError::InvalidSemanticClassifierResponse {
+                            attempts: attempt,
+                            error,
+                            raw_content,
+                            normalized_content,
+                        });
+                    }
+                }
+            }
+            Ok(Err(error)) if attempt < max_attempts => {
+                let _ = error;
+                sleep(retry_delay_for_attempt(attempt + 1)).await;
+            }
+            Ok(Err(error)) => {
+                return Err(GraphBatchRequestError::SemanticClassifierTransport {
+                    attempts: attempt,
+                    message: error.to_string(),
+                });
+            }
+            Err(_) if attempt < max_attempts => {
+                sleep(retry_delay_for_attempt(attempt + 1)).await;
+            }
+            Err(_) => {
+                return Err(GraphBatchRequestError::SemanticClassifierTransport {
+                    attempts: attempt,
+                    message: format!(
+                        "semantic-class classifier timed out after {:?}",
+                        policy.request_timeout
+                    ),
+                });
+            }
+        }
+    }
+
+    unreachable!("max_attempts is clamped to at least one")
+}
+
+async fn classify_graph_batch_semantic_classes_with_score_api(
+    config: &LlmEvaluatorConfig,
+    batch: &GraphBatch,
+    subject_prefix: &str,
+    run_id: &str,
+    policy: GraphBatchSemanticClassifierPolicy,
+) -> Result<GraphBatchSemanticClassifierOutcome, GraphBatchRequestError> {
+    let classifier_config = build_semantic_classifier_config(config)?;
+    let client =
+        build_http_client_with_connect_timeout(&classifier_config, Some(policy.connect_timeout))
+            .map_err(
+                |error| GraphBatchRequestError::SemanticClassifierTransport {
+                    attempts: 0,
+                    message: error.to_string(),
+                },
+            )?;
+    let max_attempts = policy.max_attempts.max(1);
+
+    for attempt in 1..=max_attempts {
+        let mut prompt_tokens = 0_u32;
+        let mut completion_tokens = 0_u32;
+        let mut raw_responses = Vec::with_capacity(batch.relations.len());
+        let mut classifications = Vec::with_capacity(batch.relations.len());
+        let mut failure = None;
+
+        for relation_index in 0..batch.relations.len() {
+            let query = build_semantic_classifier_score_query(batch, relation_index);
+            let response = tokio::time::timeout(
+                policy.request_timeout,
+                send_semantic_classifier_score_request(
+                    &client,
+                    &classifier_config,
+                    &query,
+                    policy.request_timeout,
+                ),
+            )
+            .await;
+
+            match response {
+                Ok(Ok((raw_content, parsed))) => {
+                    prompt_tokens = prompt_tokens.saturating_add(parsed.usage.prompt_tokens);
+                    completion_tokens =
+                        completion_tokens.saturating_add(parsed.usage.completion_tokens);
+                    raw_responses.push(
+                        serde_json::from_str::<Value>(&raw_content)
+                            .unwrap_or_else(|_| json!(raw_content)),
+                    );
+                    match best_semantic_class_from_score_response(&parsed, relation_index) {
+                        Ok(semantic_class) => classifications.push(SemanticClassifierRelation {
+                            index: relation_index,
+                            semantic_class,
+                        }),
+                        Err(error) => {
+                            failure =
+                                Some(GraphBatchRequestError::InvalidSemanticClassifierResponse {
+                                    attempts: attempt,
+                                    error,
+                                    raw_content: serde_json::to_string(&raw_responses)
+                                        .unwrap_or_else(|_| "[]".to_string()),
+                                    normalized_content: String::new(),
+                                });
+                            break;
+                        }
+                    }
+                }
+                Ok(Err(SendError::Retryable(message))) if attempt < max_attempts => {
+                    failure = Some(GraphBatchRequestError::SemanticClassifierTransport {
+                        attempts: attempt,
+                        message,
+                    });
+                    break;
+                }
+                Ok(Err(SendError::Retryable(message))) | Ok(Err(SendError::Fatal(message))) => {
+                    return Err(GraphBatchRequestError::SemanticClassifierTransport {
+                        attempts: attempt,
+                        message,
+                    });
+                }
+                Err(_) if attempt < max_attempts => {
+                    failure = Some(GraphBatchRequestError::SemanticClassifierTransport {
+                        attempts: attempt,
+                        message: format!(
+                            "semantic-class classifier timed out after {:?}",
+                            policy.request_timeout
+                        ),
+                    });
+                    break;
+                }
+                Err(_) => {
+                    return Err(GraphBatchRequestError::SemanticClassifierTransport {
+                        attempts: attempt,
+                        message: format!(
+                            "semantic-class classifier timed out after {:?}",
+                            policy.request_timeout
+                        ),
+                    });
+                }
+            }
+        }
+
+        if let Some(error) = failure {
+            if attempt < max_attempts {
+                sleep(retry_delay_for_attempt(attempt + 1)).await;
+                continue;
+            }
+            return Err(error);
+        }
+
+        let normalized_content = serde_json::to_string(&SemanticClassifierResponse {
+            relations: classifications,
+        })
+        .unwrap_or_else(|_| "{\"relations\":[]}".to_string());
+        let raw_content =
+            serde_json::to_string(&raw_responses).unwrap_or_else(|_| "[]".to_string());
+        let (classified_batch, changed_relations) =
+            apply_semantic_classifications(batch, &normalized_content, subject_prefix, run_id)
+                .map_err(
+                    |error| GraphBatchRequestError::InvalidSemanticClassifierResponse {
+                        attempts: attempt,
+                        error,
+                        raw_content: raw_content.clone(),
+                        normalized_content: normalized_content.clone(),
+                    },
+                )?;
+
+        return Ok(GraphBatchSemanticClassifierOutcome {
+            batch: classified_batch,
+            raw_content,
+            normalized_content,
+            prompt_tokens,
+            completion_tokens,
+            attempts: attempt,
+            changed_relations,
+        });
+    }
+
+    unreachable!("max_attempts is clamped to at least one")
 }
 
 pub async fn request_graph_batch_with_policy(
@@ -456,7 +869,334 @@ fn build_repair_judge_config(
         judge_model: None,
         judge_provider: None,
         judge_api_key: None,
+        semantic_classifier_endpoint: None,
+        semantic_classifier_model: None,
+        semantic_classifier_provider: None,
+        semantic_classifier_api_key: None,
+        semantic_classifier_mode: config.semantic_classifier_mode,
     })
+}
+
+fn build_semantic_classifier_config(
+    config: &LlmEvaluatorConfig,
+) -> Result<LlmEvaluatorConfig, GraphBatchRequestError> {
+    let endpoint = config.semantic_classifier_endpoint.clone().ok_or_else(|| {
+        GraphBatchRequestError::SemanticClassifierUnavailable(
+            "semantic-class classifier requires LLM_SEMANTIC_CLASSIFIER_ENDPOINT".to_string(),
+        )
+    })?;
+    let model = config.semantic_classifier_model.clone().ok_or_else(|| {
+        GraphBatchRequestError::SemanticClassifierUnavailable(
+            "semantic-class classifier requires LLM_SEMANTIC_CLASSIFIER_MODEL".to_string(),
+        )
+    })?;
+    let provider = config.semantic_classifier_provider.ok_or_else(|| {
+        GraphBatchRequestError::SemanticClassifierUnavailable(
+            "semantic-class classifier requires LLM_SEMANTIC_CLASSIFIER_PROVIDER".to_string(),
+        )
+    })?;
+
+    Ok(LlmEvaluatorConfig {
+        endpoint,
+        model,
+        provider,
+        api_key: config
+            .semantic_classifier_api_key
+            .clone()
+            .or_else(|| config.api_key.clone()),
+        max_tokens: SEMANTIC_CLASSIFIER_MAX_MAX_TOKENS,
+        temperature: 0.0,
+        tls_cert_path: config.tls_cert_path.clone(),
+        tls_key_path: config.tls_key_path.clone(),
+        tls_insecure: config.tls_insecure,
+        judge_endpoint: None,
+        judge_model: None,
+        judge_provider: None,
+        judge_api_key: None,
+        semantic_classifier_endpoint: None,
+        semantic_classifier_model: None,
+        semantic_classifier_provider: None,
+        semantic_classifier_api_key: None,
+        semantic_classifier_mode: config.semantic_classifier_mode,
+    })
+}
+
+fn build_semantic_classifier_prompt(batch: &GraphBatch) -> String {
+    let nodes = batch
+        .nodes
+        .iter()
+        .map(|node| (node.node_id.as_str(), node))
+        .collect::<BTreeMap<_, _>>();
+    let details = batch
+        .node_details
+        .iter()
+        .map(|detail| (detail.node_id.as_str(), detail.detail.as_str()))
+        .collect::<BTreeMap<_, _>>();
+    let relations = batch
+        .relations
+        .iter()
+        .enumerate()
+        .map(|(index, relation)| {
+            let source = nodes.get(relation.source_node_id.as_str());
+            let target = nodes.get(relation.target_node_id.as_str());
+            json!({
+                "index": index,
+                "source_node_id": relation.source_node_id,
+                "source_node_kind": source.map(|node| node.node_kind.as_str()).unwrap_or(""),
+                "source_title": source.map(|node| node.title.as_str()).unwrap_or(""),
+                "source_summary": source.map(|node| node.summary.as_str()).unwrap_or(""),
+                "target_node_id": relation.target_node_id,
+                "target_node_kind": target.map(|node| node.node_kind.as_str()).unwrap_or(""),
+                "target_title": target.map(|node| node.title.as_str()).unwrap_or(""),
+                "target_summary": target.map(|node| node.summary.as_str()).unwrap_or(""),
+                "target_detail_excerpt": details
+                    .get(relation.target_node_id.as_str())
+                    .map(|detail| semantic_classifier_excerpt(detail, 320)),
+                "relation_type": relation.relation_type,
+                "rationale": relation.rationale,
+                "motivation": relation.motivation,
+                "method": relation.method,
+                "decision_id": relation.decision_id,
+                "caused_by_node_id": relation.caused_by_node_id,
+                "evidence": relation.evidence,
+                "confidence": relation.confidence,
+                "current_semantic_class": relation.semantic_class.as_str(),
+            })
+        })
+        .collect::<Vec<_>>();
+    let payload = json!({
+        "root_node_id": batch.root_node_id,
+        "relations": relations,
+    });
+
+    format!(
+        "You are a semantic-class catalog agent for Rehydration Kernel graph edges.\n\
+Return JSON only with this exact shape:\n\
+{{\"relations\":[{{\"index\":0,\"semantic_class\":\"causal\"}}]}}\n\
+Return exactly one entry per input relation index. Do not add or remove indices.\n\
+Do not rewrite node ids, relation_type, rationale, motivation, method, evidence, or confidence.\n\
+Only decide `semantic_class`.\n\n\
+Rubric:\n\
+- `causal`: actual cause/effect, confirmed finding explains the incident, wording like caused/triggered/led to/because, or `caused_by_node_id` is present.\n\
+- `motivational`: explains why a decision or mitigation was selected, including tradeoffs.\n\
+- `procedural`: step, method, runbook, ordered execution, or how-to sequence.\n\
+- `evidential`: logs, metrics, traces, diffs, or inspection support a finding or decision.\n\
+- `constraint`: rule, dependency, safety boundary, limit, or operational restriction.\n\
+- `structural`: reference, containment, grouping, or neutral association without explanatory force.\n\n\
+Prefer the strongest explanatory class over `structural`.\n\
+If both `method` and `motivation` exist, classify by what the relation primarily communicates.\n\
+If a confirmed finding explains the incident, prefer `causal` over `procedural`.\n\n\
+Classify these relations:\n{}\n",
+        serde_json::to_string_pretty(&payload).unwrap_or_else(|_| payload.to_string())
+    )
+}
+
+fn build_semantic_classifier_score_query(batch: &GraphBatch, relation_index: usize) -> String {
+    let relation = &batch.relations[relation_index];
+    let nodes = batch
+        .nodes
+        .iter()
+        .map(|node| (node.node_id.as_str(), node))
+        .collect::<BTreeMap<_, _>>();
+    let details = batch
+        .node_details
+        .iter()
+        .map(|detail| (detail.node_id.as_str(), detail.detail.as_str()))
+        .collect::<BTreeMap<_, _>>();
+    let source = nodes.get(relation.source_node_id.as_str());
+    let target = nodes.get(relation.target_node_id.as_str());
+
+    format!(
+        "Classify this Rehydration Kernel relation into the best semantic_class.\n\
+source_kind={}\n\
+source_title={}\n\
+source_summary={}\n\
+target_kind={}\n\
+target_title={}\n\
+target_summary={}\n\
+target_detail_excerpt={}\n\
+relation_type={}\n\
+rationale={}\n\
+motivation={}\n\
+method={}\n\
+evidence={}\n\
+decision_id={}\n\
+caused_by_node_id={}\n\
+confidence={}\n\
+current_semantic_class={}",
+        source.map(|node| node.node_kind.as_str()).unwrap_or(""),
+        source.map(|node| node.title.as_str()).unwrap_or(""),
+        source.map(|node| node.summary.as_str()).unwrap_or(""),
+        target.map(|node| node.node_kind.as_str()).unwrap_or(""),
+        target.map(|node| node.title.as_str()).unwrap_or(""),
+        target.map(|node| node.summary.as_str()).unwrap_or(""),
+        details
+            .get(relation.target_node_id.as_str())
+            .map(|detail| semantic_classifier_excerpt(detail, 320))
+            .unwrap_or_default(),
+        relation.relation_type,
+        relation.rationale.as_deref().unwrap_or(""),
+        relation.motivation.as_deref().unwrap_or(""),
+        relation.method.as_deref().unwrap_or(""),
+        relation.evidence.as_deref().unwrap_or(""),
+        relation.decision_id.as_deref().unwrap_or(""),
+        relation.caused_by_node_id.as_deref().unwrap_or(""),
+        relation.confidence.as_deref().unwrap_or(""),
+        relation.semantic_class.as_str(),
+    )
+}
+
+fn semantic_classifier_score_documents() -> Vec<&'static str> {
+    SEMANTIC_CLASS_SCORE_DOCUMENTS
+        .iter()
+        .map(|(_, document)| *document)
+        .collect()
+}
+
+fn best_semantic_class_from_score_response(
+    response: &SemanticClassifierScoreResponse,
+    relation_index: usize,
+) -> Result<RelationSemanticClass, String> {
+    if response.data.len() != SEMANTIC_CLASS_SCORE_DOCUMENTS.len() {
+        return Err(format!(
+            "semantic-class score response for relation index {} returned {} score(s), expected {}",
+            relation_index,
+            response.data.len(),
+            SEMANTIC_CLASS_SCORE_DOCUMENTS.len()
+        ));
+    }
+
+    let mut seen = [false; SEMANTIC_CLASS_SCORE_DOCUMENTS.len()];
+    for score in &response.data {
+        if score.index >= SEMANTIC_CLASS_SCORE_DOCUMENTS.len() {
+            return Err(format!(
+                "semantic-class score response for relation index {} returned out-of-range document index {}",
+                relation_index, score.index
+            ));
+        }
+        if std::mem::replace(&mut seen[score.index], true) {
+            return Err(format!(
+                "semantic-class score response for relation index {} returned duplicate document index {}",
+                relation_index, score.index
+            ));
+        }
+    }
+
+    let best = response
+        .data
+        .iter()
+        .max_by(|left, right| {
+            left.score
+                .total_cmp(&right.score)
+                .then_with(|| right.index.cmp(&left.index))
+        })
+        .ok_or_else(|| {
+            format!(
+                "semantic-class score response for relation index {} was empty",
+                relation_index
+            )
+        })?;
+
+    Ok(SEMANTIC_CLASS_SCORE_DOCUMENTS[best.index].0)
+}
+
+fn semantic_classifier_max_tokens(batch: &GraphBatch) -> u32 {
+    let estimated = 64_u32.saturating_add((batch.relations.len() as u32).saturating_mul(24));
+    estimated.clamp(
+        SEMANTIC_CLASSIFIER_MIN_MAX_TOKENS,
+        SEMANTIC_CLASSIFIER_MAX_MAX_TOKENS,
+    )
+}
+
+fn semantic_classifier_excerpt(value: &str, max_chars: usize) -> String {
+    let total = value.chars().count();
+    if total <= max_chars {
+        return value.to_string();
+    }
+
+    let head = value.chars().take(max_chars).collect::<String>();
+    format!("{head}...")
+}
+
+fn apply_semantic_classifications(
+    batch: &GraphBatch,
+    normalized_content: &str,
+    subject_prefix: &str,
+    run_id: &str,
+) -> Result<(GraphBatch, usize), String> {
+    let response: SemanticClassifierResponse =
+        serde_json::from_str(normalized_content).map_err(|error| {
+            format!("parse failed: invalid semantic-class classifier JSON: {error}")
+        })?;
+
+    if response.relations.len() != batch.relations.len() {
+        return Err(format!(
+            "semantic-class classifier returned {} relation classification(s), expected {}",
+            response.relations.len(),
+            batch.relations.len()
+        ));
+    }
+
+    let mut rewritten = batch.clone();
+    let mut seen = BTreeSet::new();
+    let mut changed_relations = 0;
+
+    for relation in response.relations {
+        if relation.index >= rewritten.relations.len() {
+            return Err(format!(
+                "semantic-class classifier returned out-of-range relation index {}",
+                relation.index
+            ));
+        }
+        if !seen.insert(relation.index) {
+            return Err(format!(
+                "semantic-class classifier returned duplicate classification for relation index {}",
+                relation.index
+            ));
+        }
+
+        let current = &mut rewritten.relations[relation.index];
+        if current.semantic_class != relation.semantic_class {
+            current.semantic_class = relation.semantic_class;
+            changed_relations += 1;
+        }
+    }
+
+    llm_graph_to_projection_events(&rewritten, subject_prefix, run_id)
+        .map_err(|error| format_graph_batch_error("semantic classification translation", &error))?;
+
+    Ok((rewritten, changed_relations))
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct SemanticClassifierResponse {
+    relations: Vec<SemanticClassifierRelation>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct SemanticClassifierRelation {
+    index: usize,
+    semantic_class: rehydration_domain::RelationSemanticClass,
+}
+
+#[derive(Debug, Deserialize)]
+struct SemanticClassifierScoreResponse {
+    data: Vec<SemanticClassifierScore>,
+    usage: SemanticClassifierScoreUsage,
+}
+
+#[derive(Debug, Deserialize)]
+struct SemanticClassifierScore {
+    index: usize,
+    score: f64,
+}
+
+#[derive(Debug, Deserialize)]
+struct SemanticClassifierScoreUsage {
+    #[serde(default)]
+    prompt_tokens: u32,
+    #[serde(default)]
+    completion_tokens: u32,
 }
 
 fn build_repair_judge_request_body(
@@ -596,6 +1336,50 @@ async fn send_openai_graph_batch_request(
     Ok((content, usage.prompt_tokens, usage.completion_tokens))
 }
 
+async fn send_semantic_classifier_score_request(
+    client: &reqwest::Client,
+    config: &LlmEvaluatorConfig,
+    query: &str,
+    request_timeout: Duration,
+) -> Result<(String, SemanticClassifierScoreResponse), SendError> {
+    let body = json!({
+        "model": config.model,
+        "queries": query,
+        "documents": semantic_classifier_score_documents(),
+    });
+
+    let mut request = client
+        .post(&config.endpoint)
+        .timeout(request_timeout)
+        .json(&body);
+
+    if let Some(key) = config.api_key.as_deref() {
+        request = request.bearer_auth(key);
+    }
+
+    let response = request.send().await.map_err(classify_reqwest_error)?;
+    let status = response.status();
+    let response_text = response.text().await.map_err(classify_reqwest_error)?;
+
+    if !status.is_success() {
+        let message = format!("semantic-class score request failed with {status}: {response_text}");
+        return Err(if is_retryable_http_status(status) {
+            SendError::Retryable(message)
+        } else {
+            SendError::Fatal(message)
+        });
+    }
+
+    let parsed: SemanticClassifierScoreResponse =
+        serde_json::from_str(&response_text).map_err(|error| {
+            SendError::Fatal(format!(
+                "failed to parse semantic-class score response: {error}; body={response_text}"
+            ))
+        })?;
+
+    Ok((response_text, parsed))
+}
+
 fn is_retryable_http_status(status: StatusCode) -> bool {
     matches!(
         status,
@@ -661,6 +1445,11 @@ mod tests {
             judge_model: None,
             judge_provider: None,
             judge_api_key: None,
+            semantic_classifier_endpoint: None,
+            semantic_classifier_model: None,
+            semantic_classifier_provider: None,
+            semantic_classifier_api_key: None,
+            semantic_classifier_mode: LlmSemanticClassifierMode::ChatCompletions,
         }
     }
 
@@ -692,6 +1481,20 @@ mod tests {
             repair_policy.request_timeout,
             Duration::from_secs(REPAIR_DEFAULT_REQUEST_TIMEOUT_SECS)
         );
+
+        let semantic_policy = GraphBatchSemanticClassifierPolicy::default();
+        assert_eq!(
+            semantic_policy.max_attempts,
+            SEMANTIC_CLASSIFIER_DEFAULT_MAX_ATTEMPTS
+        );
+        assert_eq!(
+            semantic_policy.connect_timeout,
+            Duration::from_secs(SEMANTIC_CLASSIFIER_DEFAULT_CONNECT_TIMEOUT_SECS)
+        );
+        assert_eq!(
+            semantic_policy.request_timeout,
+            Duration::from_secs(SEMANTIC_CLASSIFIER_DEFAULT_REQUEST_TIMEOUT_SECS)
+        );
     }
 
     #[test]
@@ -721,10 +1524,24 @@ mod tests {
                 "LLM_GRAPH_BATCH_REPAIR_REQUEST_TIMEOUT_SECS".to_string(),
                 "240".to_string(),
             ),
+            (
+                "LLM_GRAPH_BATCH_SEMANTIC_CLASSIFIER_MAX_ATTEMPTS".to_string(),
+                "2".to_string(),
+            ),
+            (
+                "LLM_GRAPH_BATCH_SEMANTIC_CLASSIFIER_CONNECT_TIMEOUT_SECS".to_string(),
+                "1".to_string(),
+            ),
+            (
+                "LLM_GRAPH_BATCH_SEMANTIC_CLASSIFIER_REQUEST_TIMEOUT_SECS".to_string(),
+                "12".to_string(),
+            ),
         ]);
 
         let primary = GraphBatchRetryPolicy::from_reader(|key| overrides.get(key).cloned());
         let repair = GraphBatchRepairJudgePolicy::from_reader(|key| overrides.get(key).cloned());
+        let semantic =
+            GraphBatchSemanticClassifierPolicy::from_reader(|key| overrides.get(key).cloned());
 
         assert_eq!(primary.max_attempts, 2);
         assert_eq!(primary.connect_timeout, Duration::from_secs(5));
@@ -733,6 +1550,10 @@ mod tests {
         assert_eq!(repair.max_attempts, 3);
         assert_eq!(repair.connect_timeout, Duration::from_secs(7));
         assert_eq!(repair.request_timeout, Duration::from_secs(240));
+
+        assert_eq!(semantic.max_attempts, 2);
+        assert_eq!(semantic.connect_timeout, Duration::from_secs(1));
+        assert_eq!(semantic.request_timeout, Duration::from_secs(12));
     }
 
     #[test]
@@ -749,6 +1570,18 @@ mod tests {
         assert_eq!(request["max_tokens"], json!(2048));
         assert_eq!(request["thinking_token_budget"], json!(512));
         assert!(request.get("chat_template_kwargs").is_none());
+    }
+
+    #[test]
+    fn build_request_body_preserves_large_fixture_max_tokens() {
+        let config = sample_config();
+        let request = build_graph_batch_request_body(
+            &config,
+            r#"{"model":"old","temperature":0.7,"max_tokens":8192,"messages":[]}"#,
+        )
+        .expect("request body should build");
+
+        assert_eq!(request["max_tokens"], json!(8192));
     }
 
     #[test]
@@ -848,6 +1681,211 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn semantic_classifier_requires_explicit_config() {
+        let error = build_semantic_classifier_config(&sample_config())
+            .expect_err("semantic classifier should require explicit config");
+        assert!(matches!(
+            error,
+            GraphBatchRequestError::SemanticClassifierUnavailable(_)
+        ));
+    }
+
+    #[tokio::test]
+    async fn semantic_classifier_can_rewrite_relation_classes() {
+        let classifier_response = openai_chat_response(
+            r#"{
+              "relations":[
+                {"index":0,"semantic_class":"causal"},
+                {"index":1,"semantic_class":"motivational"}
+              ]
+            }"#,
+        );
+        let classifier_endpoint = spawn_single_response_server(classifier_response).await;
+        let mut config = sample_config();
+        config.semantic_classifier_endpoint = Some(classifier_endpoint);
+        config.semantic_classifier_model = Some("Qwen/Qwen3-0.6B".to_string());
+        config.semantic_classifier_provider = Some(LlmProvider::OpenAI);
+        let batch = parse_llm_graph_batch(
+            r#"{
+              "root_node_id":"incident-1",
+              "nodes":[
+                {
+                  "node_id":"incident-1",
+                  "node_kind":"incident",
+                  "title":"Latency spike",
+                  "summary":"Payments latency increased after rollout.",
+                  "status":"INVESTIGATING",
+                  "labels":["incident"],
+                  "properties":{}
+                },
+                {
+                  "node_id":"finding-1",
+                  "node_kind":"finding",
+                  "title":"DB pool reduced",
+                  "summary":"maxConnections changed from 50 to 5.",
+                  "status":"CONFIRMED",
+                  "labels":["finding"],
+                  "properties":{"service":"payments-api"}
+                },
+                {
+                  "node_id":"decision-1",
+                  "node_kind":"decision",
+                  "title":"Reroute traffic",
+                  "summary":"Shift 80% of traffic while rollback completes.",
+                  "status":"APPROVED",
+                  "labels":["decision"],
+                  "properties":{"owner":"oncall"}
+                }
+              ],
+              "relations":[
+                {
+                  "source_node_id":"incident-1",
+                  "target_node_id":"finding-1",
+                  "relation_type":"related_to",
+                  "semantic_class":"procedural",
+                  "rationale":"The DB pool change caused the latency spike.",
+                  "caused_by_node_id":"finding-1",
+                  "confidence":"high"
+                },
+                {
+                  "source_node_id":"incident-1",
+                  "target_node_id":"decision-1",
+                  "relation_type":"related_to",
+                  "semantic_class":"structural",
+                  "motivation":"The secondary region was chosen to buy time for rollback.",
+                  "confidence":"high"
+                }
+              ],
+              "node_details":[
+                {
+                  "node_id":"finding-1",
+                  "detail":"Config diff shows maxConnections changed from 50 to 5.",
+                  "revision":1
+                }
+              ]
+            }"#,
+        )
+        .expect("batch should parse");
+
+        let outcome = classify_graph_batch_semantic_classes_with_policy(
+            &config,
+            &batch,
+            "rehydration",
+            "semantic-class-test",
+            GraphBatchSemanticClassifierPolicy::default(),
+        )
+        .await
+        .expect("semantic classifier should classify the relations");
+
+        assert_eq!(outcome.attempts, 1);
+        assert_eq!(outcome.changed_relations, 2);
+        assert_eq!(
+            outcome.batch.relations[0].semantic_class,
+            rehydration_domain::RelationSemanticClass::Causal
+        );
+        assert_eq!(
+            outcome.batch.relations[1].semantic_class,
+            rehydration_domain::RelationSemanticClass::Motivational
+        );
+    }
+
+    #[tokio::test]
+    async fn semantic_classifier_score_api_can_rewrite_relation_classes() {
+        let classifier_endpoint = spawn_response_server(vec![
+            semantic_classifier_score_response(0),
+            semantic_classifier_score_response(1),
+        ])
+        .await;
+        let mut config = sample_config();
+        config.semantic_classifier_endpoint = Some(classifier_endpoint);
+        config.semantic_classifier_model = Some("Qwen/Qwen3-Reranker-0.6B".to_string());
+        config.semantic_classifier_provider = Some(LlmProvider::OpenAI);
+        config.semantic_classifier_mode = LlmSemanticClassifierMode::Score;
+        let batch = parse_llm_graph_batch(
+            r#"{
+              "root_node_id":"incident-1",
+              "nodes":[
+                {
+                  "node_id":"incident-1",
+                  "node_kind":"incident",
+                  "title":"Latency spike",
+                  "summary":"Payments latency increased after rollout.",
+                  "status":"INVESTIGATING",
+                  "labels":["incident"],
+                  "properties":{}
+                },
+                {
+                  "node_id":"finding-1",
+                  "node_kind":"finding",
+                  "title":"DB pool reduced",
+                  "summary":"maxConnections changed from 50 to 5.",
+                  "status":"CONFIRMED",
+                  "labels":["finding"],
+                  "properties":{"service":"payments-api"}
+                },
+                {
+                  "node_id":"decision-1",
+                  "node_kind":"decision",
+                  "title":"Reroute traffic",
+                  "summary":"Shift 80% of traffic while rollback completes.",
+                  "status":"APPROVED",
+                  "labels":["decision"],
+                  "properties":{"owner":"oncall"}
+                }
+              ],
+              "relations":[
+                {
+                  "source_node_id":"incident-1",
+                  "target_node_id":"finding-1",
+                  "relation_type":"related_to",
+                  "semantic_class":"procedural",
+                  "rationale":"The DB pool change caused the latency spike.",
+                  "caused_by_node_id":"finding-1",
+                  "confidence":"high"
+                },
+                {
+                  "source_node_id":"incident-1",
+                  "target_node_id":"decision-1",
+                  "relation_type":"related_to",
+                  "semantic_class":"structural",
+                  "motivation":"The secondary region was chosen to buy time for rollback.",
+                  "confidence":"high"
+                }
+              ],
+              "node_details":[
+                {
+                  "node_id":"finding-1",
+                  "detail":"Config diff shows maxConnections changed from 50 to 5.",
+                  "revision":1
+                }
+              ]
+            }"#,
+        )
+        .expect("batch should parse");
+
+        let outcome = classify_graph_batch_semantic_classes_with_policy(
+            &config,
+            &batch,
+            "rehydration",
+            "semantic-class-score-test",
+            GraphBatchSemanticClassifierPolicy::default(),
+        )
+        .await
+        .expect("semantic classifier score API should classify the relations");
+
+        assert_eq!(outcome.attempts, 1);
+        assert_eq!(outcome.changed_relations, 2);
+        assert_eq!(
+            outcome.batch.relations[0].semantic_class,
+            rehydration_domain::RelationSemanticClass::Causal
+        );
+        assert_eq!(
+            outcome.batch.relations[1].semantic_class,
+            rehydration_domain::RelationSemanticClass::Motivational
+        );
+    }
+
     #[tokio::test]
     async fn repair_judge_can_salvage_an_invalid_primary_response() {
         let primary_response = openai_chat_response(
@@ -944,24 +1982,52 @@ mod tests {
     }
 
     async fn spawn_single_response_server(response_body: String) -> String {
+        spawn_response_server(vec![response_body]).await
+    }
+
+    fn semantic_classifier_score_response(winner_index: usize) -> String {
+        let data = (0..SEMANTIC_CLASS_SCORE_DOCUMENTS.len())
+            .map(|index| {
+                json!({
+                    "index": index,
+                    "object": "score",
+                    "score": if index == winner_index {
+                        0.99
+                    } else {
+                        0.01 * (index as f64 + 1.0)
+                    }
+                })
+            })
+            .collect::<Vec<_>>();
+
+        json!({
+            "data": data,
+            "usage": {"prompt_tokens": 24, "completion_tokens": 0}
+        })
+        .to_string()
+    }
+
+    async fn spawn_response_server(response_bodies: Vec<String>) -> String {
         let listener = TcpListener::bind("127.0.0.1:0")
             .await
             .expect("listener should bind");
         let address = listener.local_addr().expect("listener should have address");
 
         tokio::spawn(async move {
-            let (mut stream, _) = listener.accept().await.expect("connection should arrive");
-            let mut buffer = vec![0_u8; 8192];
-            let _ = stream.read(&mut buffer).await;
-            let response = format!(
-                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
-                response_body.len(),
-                response_body
-            );
-            stream
-                .write_all(response.as_bytes())
-                .await
-                .expect("response should write");
+            for response_body in response_bodies {
+                let (mut stream, _) = listener.accept().await.expect("connection should arrive");
+                let mut buffer = vec![0_u8; 8192];
+                let _ = stream.read(&mut buffer).await;
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                    response_body.len(),
+                    response_body
+                );
+                stream
+                    .write_all(response.as_bytes())
+                    .await
+                    .expect("response should write");
+            }
         });
 
         format!("http://{address}/v1/chat/completions")

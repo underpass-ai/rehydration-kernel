@@ -15,8 +15,10 @@ pub use dataset_generator::{
 };
 pub use graph_batch_llm::{
     GraphBatchRepairJudgePolicy, GraphBatchRequestError, GraphBatchRequestOutcome,
-    GraphBatchRetryPolicy, build_graph_batch_request_body, request_graph_batch_with_policy,
-    request_graph_batch_with_repair_judge, request_graph_batch_with_retry,
+    GraphBatchRetryPolicy, GraphBatchSemanticClassifierOutcome, GraphBatchSemanticClassifierPolicy,
+    build_graph_batch_request_body, classify_graph_batch_semantic_classes_with_policy,
+    request_graph_batch_with_policy, request_graph_batch_with_repair_judge,
+    request_graph_batch_with_retry,
 };
 pub use in_memory_stores::{
     InMemoryContextEventStore, InMemoryGraphNeighborhoodReader, InMemoryNodeDetailReader,
@@ -25,14 +27,14 @@ pub use in_memory_stores::{
 };
 pub use llm_evaluator::{
     CalibrationCase, EvaluationGroundTruth, LlmEvaluationResult, LlmEvaluatorConfig, LlmProvider,
-    PromptConfig, calibrate_agent, calibrate_judge, call_llm, evaluate_with_config,
-    evaluate_with_llm, normalize_llm_json_response,
+    LlmSemanticClassifierMode, PromptConfig, calibrate_agent, calibrate_judge, call_llm,
+    evaluate_with_config, evaluate_with_llm, normalize_llm_json_response,
 };
 pub use llm_graph::{
     GraphBatch, GraphBatchNode, GraphBatchNodeDetail, GraphBatchRelation, LlmGraphBatch,
     LlmGraphError, LlmGraphNode, LlmGraphRelation, LlmNodeDetail, ProjectionMessage,
-    graph_batch_to_projection_events, llm_graph_to_projection_events, parse_graph_batch,
-    parse_llm_graph_batch,
+    graph_batch_to_projection_events, llm_graph_to_projection_events, namespace_graph_batch,
+    parse_graph_batch, parse_llm_graph_batch,
 };
 pub use seed_to_bundle::{seed_raw_equivalent_tokens, seed_to_bundle};
 

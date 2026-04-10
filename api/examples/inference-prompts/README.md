@@ -65,6 +65,15 @@ into kernel projection events.
 api/examples/inference-prompts/graph-materialization.txt
 ```
 
+### 6. Kernel context consumption (PIR read path)
+
+Use case: an agent consumes `rendered.content` from `GetContext` after a graph
+has been materialized.
+
+```
+api/examples/inference-prompts/kernel-context-consumption.txt
+```
+
 ## Tips
 
 - **Quote rationale**: instruct the LLM to cite `rationale` fields from

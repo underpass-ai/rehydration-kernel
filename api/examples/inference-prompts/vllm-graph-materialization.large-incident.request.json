@@ -1,0 +1,246 @@
+{
+  "model": "Qwen/Qwen3.5-9B",
+  "temperature": 0.0,
+  "max_tokens": 8192,
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a precise graph extraction engine. Return valid JSON only."
+    },
+    {
+      "role": "user",
+      "content": "You are extracting a larger incident graph update for the rehydration kernel.\n\nReturn JSON only. Do not wrap the answer in markdown fences. Do not emit NATS subjects, event IDs, or transport envelopes. Treat the output as one bounded aggregate update around `root_node_id`.\n\nRules:\n- Include the root node itself inside `nodes`.\n- Emit relations outward from `root_node_id` toward the nodes that explain, mitigate, constrain, or otherwise contextualize that root.\n- Every non-root node must be reachable from `root_node_id` through the outward relations you emit.\n- Every `source_node_id`, `target_node_id`, and `node_detail.node_id` must refer to an existing node.\n- Put one fact per node when possible; keep `summary` short and move long evidence to `node_details`.\n- Use `semantic_class=causal` only when the text supports an actual cause.\n- Choose `semantic_class` with this rubric:\n  - `causal`: an actual cause/effect is stated or confirmed. Use this for findings that caused the incident, e.g. config change -> exhaustion -> latency. Do not label root causes as `procedural`.\n  - `evidential`: a log, dashboard, metric, trace, diff, or inspection supports a finding or decision.\n  - `motivational`: explains why a decision/action was chosen, including mitigation rationale or tradeoffs.\n  - `procedural`: an ordered step, method, runbook action, implementation step, or execution sequence. It describes what to do/how to do it, not why the incident happened.\n  - `constraint`: a rule, safety boundary, dependency, or operational limit that must be respected.\n  - `structural`: containment, reference, grouping, or generic association with no explanatory claim.\n- If the relation contains causal wording (`caused`, `led to`, `triggered`, `because`) or `caused_by_node_id`, prefer `causal` over `procedural`.\n- For every relation, include `semantic_class`, `rationale`, `evidence`, `confidence`, and `sequence`.\n- Do not emit a `support` object. Put support text directly in `rationale` and `evidence`.\n- Emit only accepted graph facts. Do not emit duplicate relations or speculative alternatives unless they are semantically distinct and explicitly carry lower confidence.\n- Keep the graph local to this update. Do not emit disconnected nodes.\n- Omit fields you do not know rather than fabricating them.\n\nEvery relation object must use exactly this flat shape:\n{\n  \"source_node_id\": \"string\",\n  \"target_node_id\": \"string\",\n  \"relation_type\": \"string\",\n  \"semantic_class\": \"structural|causal|motivational|procedural|evidential|constraint\",\n  \"rationale\": \"string\",\n  \"evidence\": \"string\",\n  \"confidence\": \"high|medium|low\",\n  \"sequence\": 1\n}\n\nIncident notes:\n- Incident ID: incident-2026-04-10-checkout-degradation\n- Service: checkout-api\n- Region: eu-west-1\n- Symptom: checkout success rate dropped from 99.1% to 91.4% and P95 latency rose above 3.8s for 22 minutes.\n- Deployment: release checkout-api 2026.04.10.5 enabled payment-intent-batching and changed the idempotency cache TTL from 300s to 15s.\n- Confirmed finding: payment gateway retries increased because idempotency keys expired before slow provider callbacks completed.\n- Confirmed finding: Valkey CPU reached 92% and cache evictions rose during the same window.\n- Confirmed finding: NATS consumer lag on checkout.events peaked at 4,200 messages but drained after rollback.\n- Confirmed finding: database connection pool saturation was observed on the order writer, but it started after retry amplification.\n- Evidence: Grafana latency panels, Valkey exporter metrics, NATS JetStream consumer lag, deployment diff, gateway retry logs, and order-writer connection pool traces.\n- Mitigation decision: rollback checkout-api to release 2026.04.10.4.\n- Mitigation decision: disable payment-intent-batching through feature flag while the rollback propagates.\n- Mitigation decision: route 30% of traffic to eu-central-1 for 10 minutes while eu-west-1 drains.\n- Constraint: do not purge idempotency keys because active payment callbacks still depend on them.\n- Follow-up task: raise the idempotency cache TTL back to 300s and add an alert for TTL changes below 120s.\n- Follow-up task: add canary validation that compares gateway callback latency with idempotency TTL before enabling batching.\n- Follow-up task: add a JetStream lag burn-rate panel for checkout.events.\n- Communication: oncall posted status to incident channel and tagged payments-provider liaison.\n\nUse deterministic node ids:\n- root: incident-2026-04-10-checkout-degradation\n- finding:checkout:gateway-retry-amplification\n- finding:checkout:valkey-cpu-evictions\n- finding:checkout:nats-consumer-lag\n- finding:checkout:db-pool-saturation\n- evidence:checkout:deployment-diff\n- evidence:checkout:grafana-latency\n- evidence:checkout:gateway-retry-logs\n- evidence:checkout:valkey-exporter\n- evidence:checkout:nats-jetstream-lag\n- decision:checkout:rollback-2026041005\n- decision:checkout:disable-batching-flag\n- decision:checkout:traffic-shift-euc1\n- constraint:checkout:no-idempotency-purge\n- task:checkout:restore-ttl-alert\n- task:checkout:canary-ttl-validation\n\nConstraints:\n- Use `incident-2026-04-10-checkout-degradation` as the root node id.\n- Include exactly 16 nodes: the root plus the 15 deterministic non-root ids listed above.\n- Include exactly 18 relations.\n- Include at least one relation from the root to every non-root node.\n- Include 3 additional semantically distinct relations between non-root nodes.\n- Use `semantic_class=causal` for confirmed findings that explain the incident. Use `semantic_class=evidential` for evidence nodes that support those findings.\n- Use `semantic_class=motivational` for relations that explain why a mitigation decision was selected. Use `semantic_class=procedural` only for follow-up tasks, runbook steps, or execution sequence.\n- Include exactly 8 node details for non-root nodes only.\n- Keep titles and summaries concise.\n"
+    }
+  ],
+  "response_format": {
+    "type": "json_schema",
+    "json_schema": {
+      "name": "llm-graph-batch-large-incident",
+      "strict": true,
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "root_node_id",
+          "nodes",
+          "relations",
+          "node_details"
+        ],
+        "properties": {
+          "root_node_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "correlation_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "causation_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "occurred_at": {
+            "type": "string"
+          },
+          "nodes": {
+            "type": "array",
+            "minItems": 16,
+            "maxItems": 16,
+            "items": {
+              "$ref": "#/$defs/node"
+            }
+          },
+          "relations": {
+            "type": "array",
+            "minItems": 18,
+            "maxItems": 18,
+            "items": {
+              "$ref": "#/$defs/relation"
+            }
+          },
+          "node_details": {
+            "type": "array",
+            "minItems": 8,
+            "maxItems": 8,
+            "items": {
+              "$ref": "#/$defs/node_detail"
+            }
+          }
+        },
+        "$defs": {
+          "confidence": {
+            "type": "string",
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ]
+          },
+          "semantic_class": {
+            "type": "string",
+            "enum": [
+              "structural",
+              "causal",
+              "motivational",
+              "procedural",
+              "evidential",
+              "constraint"
+            ]
+          },
+          "node": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "node_id",
+              "node_kind",
+              "title",
+              "summary",
+              "status",
+              "labels",
+              "properties"
+            ],
+            "properties": {
+              "node_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "node_kind": {
+                "type": "string",
+                "minLength": 1
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1
+              },
+              "summary": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "minLength": 1
+              },
+              "labels": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "properties": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "source_kind": {
+                "type": "string",
+                "enum": [
+                  "human",
+                  "agent",
+                  "projection",
+                  "derived"
+                ]
+              },
+              "source_agent": {
+                "type": "string",
+                "minLength": 1
+              },
+              "observed_at": {
+                "type": "string"
+              }
+            }
+          },
+          "relation": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "source_node_id",
+              "target_node_id",
+              "relation_type",
+              "semantic_class",
+              "rationale",
+              "evidence",
+              "confidence",
+              "sequence"
+            ],
+            "properties": {
+              "source_node_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "target_node_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "relation_type": {
+                "type": "string",
+                "minLength": 1
+              },
+              "semantic_class": {
+                "$ref": "#/$defs/semantic_class"
+              },
+              "rationale": {
+                "type": "string",
+                "minLength": 1
+              },
+              "motivation": {
+                "type": "string",
+                "minLength": 1
+              },
+              "method": {
+                "type": "string",
+                "minLength": 1
+              },
+              "decision_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "caused_by_node_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "evidence": {
+                "type": "string",
+                "minLength": 1
+              },
+              "confidence": {
+                "$ref": "#/$defs/confidence"
+              },
+              "sequence": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          },
+          "node_detail": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "node_id",
+              "detail",
+              "revision"
+            ],
+            "properties": {
+              "node_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "detail": {
+                "type": "string",
+                "minLength": 1
+              },
+              "content_hash": {
+                "type": "string",
+                "minLength": 1
+              },
+              "revision": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

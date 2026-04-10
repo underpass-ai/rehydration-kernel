@@ -15,6 +15,12 @@ data:
   LLM_JUDGE_ENDPOINT: http://vllm-judge:8000/v1/chat/completions
   LLM_JUDGE_MODEL: Qwen/Qwen3.5-9B
   LLM_JUDGE_PROVIDER: openai
+  # The semantic classifier can stay on chat/completions, or point to a
+  # dedicated vLLM reranker /score endpoint.
+  LLM_SEMANTIC_CLASSIFIER_ENDPOINT: http://vllm-semantic-reranker:8000/score
+  LLM_SEMANTIC_CLASSIFIER_MODEL: Qwen/Qwen3-Reranker-0.6B
+  LLM_SEMANTIC_CLASSIFIER_PROVIDER: openai
+  LLM_SEMANTIC_CLASSIFIER_MODE: score
 ---
 apiVersion: v1
 kind: Secret
@@ -25,3 +31,4 @@ type: Opaque
 stringData:
   LLM_API_KEY: ""
   LLM_JUDGE_API_KEY: ""
+  LLM_SEMANTIC_CLASSIFIER_API_KEY: ""
