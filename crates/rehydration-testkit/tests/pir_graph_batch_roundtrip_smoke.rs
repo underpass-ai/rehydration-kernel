@@ -35,6 +35,16 @@ struct ExecutedWave {
     rendered_context: Option<String>,
 }
 
+struct LiveWaveRequest<'a> {
+    label: &'a str,
+    payload: &'a str,
+    node_namespace: &'a str,
+    run_id: &'a str,
+    detail_node_base_id: Option<&'a str>,
+    include_rendered_content: bool,
+    rehydration_mode: Option<&'a str>,
+}
+
 #[test]
 fn pir_graph_batch_roundtrip_smoke_succeeds_against_live_kernel() -> TestResult<()> {
     if env::var(RUN_ENV).as_deref() != Ok("1") {
@@ -119,13 +129,15 @@ async fn pir_graph_batch_incremental_context_consumption_smoke_succeeds_against_
 
     let wave_one = execute_live_wave(
         &config,
-        "wave-1",
-        &wave_one_payload,
-        &node_namespace,
-        &first_run_id,
-        None,
-        false,
-        None,
+        LiveWaveRequest {
+            label: "wave-1",
+            payload: &wave_one_payload,
+            node_namespace: &node_namespace,
+            run_id: &first_run_id,
+            detail_node_base_id: None,
+            include_rendered_content: false,
+            rehydration_mode: None,
+        },
     )
     .await?;
     let summary_one = &wave_one.summary;
@@ -141,13 +153,15 @@ async fn pir_graph_batch_incremental_context_consumption_smoke_succeeds_against_
 
     let wave_two = execute_live_wave(
         &config,
-        "wave-2",
-        &wave_two_payload,
-        &node_namespace,
-        &second_run_id,
-        None,
-        true,
-        Some("reason_preserving"),
+        LiveWaveRequest {
+            label: "wave-2",
+            payload: &wave_two_payload,
+            node_namespace: &node_namespace,
+            run_id: &second_run_id,
+            detail_node_base_id: None,
+            include_rendered_content: true,
+            rehydration_mode: Some("reason_preserving"),
+        },
     )
     .await?;
     let summary_two = &wave_two.summary;
@@ -180,13 +194,15 @@ async fn pir_graph_batch_incremental_context_consumption_smoke_succeeds_against_
     );
     let wave_three = execute_live_wave(
         &config,
-        "wave-3",
-        &wave_three_payload,
-        &node_namespace,
-        &third_run_id,
-        Some(SECOND_WAVE_TASK_NODE_ID),
-        true,
-        Some("reason_preserving"),
+        LiveWaveRequest {
+            label: "wave-3",
+            payload: &wave_three_payload,
+            node_namespace: &node_namespace,
+            run_id: &third_run_id,
+            detail_node_base_id: Some(SECOND_WAVE_TASK_NODE_ID),
+            include_rendered_content: true,
+            rehydration_mode: Some("reason_preserving"),
+        },
     )
     .await?;
     let summary_three = &wave_three.summary;
@@ -278,42 +294,37 @@ async fn pir_graph_batch_incremental_context_consumption_smoke_succeeds_against_
 
 async fn execute_live_wave(
     config: &LlmEvaluatorConfig,
-    label: &str,
-    payload: &str,
-    node_namespace: &str,
-    run_id: &str,
-    detail_node_base_id: Option<&str>,
-    include_rendered_content: bool,
-    rehydration_mode: Option<&str>,
+    request: LiveWaveRequest<'_>,
 ) -> TestResult<ExecutedWave> {
-    let mut batch = parse_graph_batch(payload)?;
-    namespace_graph_batch(&mut batch, node_namespace);
-    let detail_node_id = detail_node_base_id
+    let mut batch = parse_graph_batch(request.payload)?;
+    namespace_graph_batch(&mut batch, request.node_namespace);
+    let detail_node_id = request
+        .detail_node_base_id
         .map(|base_id| resolve_namespaced_node_id(&batch, base_id))
         .transpose()?;
-    let classified = classify_batch_with_semantic_reranker(config, &batch, run_id).await?;
+    let classified = classify_batch_with_semantic_reranker(config, &batch, request.run_id).await?;
     let batch = classified.batch.clone();
     let summary = run_roundtrip(
         &serde_json::to_vec(&batch)?,
-        run_id,
+        request.run_id,
         detail_node_id.as_deref(),
-        include_rendered_content,
-        rehydration_mode,
+        request.include_rendered_content,
+        request.rehydration_mode,
     )?;
     let rendered_context = summary
         .get("rendered_content")
         .and_then(Value::as_str)
         .map(ToOwned::to_owned);
     emit_wave_evidence(
-        label,
-        run_id,
+        request.label,
+        request.run_id,
         &batch,
         &classified,
         &summary,
         rendered_context.as_deref(),
     );
     Ok(ExecutedWave {
-        run_id: run_id.to_string(),
+        run_id: request.run_id.to_string(),
         batch,
         summary,
         rendered_context,
@@ -563,7 +574,12 @@ fn resolve_namespaced_node_id(batch: &GraphBatch, base_id: &str) -> TestResult<S
         .nodes
         .iter()
         .map(|node| node.node_id.as_str())
-        .chain(batch.node_details.iter().map(|detail| detail.node_id.as_str()))
+        .chain(
+            batch
+                .node_details
+                .iter()
+                .map(|detail| detail.node_id.as_str()),
+        )
         .find(|node_id| *node_id == base_id || node_id.starts_with(&format!("{base_id}--")))
         .map(ToOwned::to_owned)
         .ok_or_else(|| format!("missing namespaced node id for `{base_id}`").into())

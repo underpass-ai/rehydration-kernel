@@ -326,9 +326,9 @@ async fn pir_graph_batch_corrective_wave_updates_existing_nodes_without_graph_gr
     assert_eq!(final_role_bundle.node_details.len(), 4);
     assert_eq!(root_node.status, "STABILIZING");
     assert!(
-        root_node
-            .summary
-            .contains("returned below 1.1 seconds after rollback, reroute, and the retry-cap rollout")
+        root_node.summary.contains(
+            "returned below 1.1 seconds after rollback, reroute, and the retry-cap rollout"
+        )
     );
 
     let retry_cap_task = final_role_bundle
@@ -363,7 +363,10 @@ async fn pir_graph_batch_corrective_wave_updates_existing_nodes_without_graph_gr
         Some(2)
     );
     assert_eq!(
-        task_detail.detail.as_ref().map(|detail| detail.detail.as_str()),
+        task_detail
+            .detail
+            .as_ref()
+            .map(|detail| detail.detail.as_str()),
         Some(
             "The retry-cap change was completed with limit 2 and full jitter. Request concurrency and DB wait time fell back toward normal within minutes."
         )
@@ -377,7 +380,10 @@ async fn pir_graph_batch_corrective_wave_updates_existing_nodes_without_graph_gr
         Some(2)
     );
     assert_eq!(
-        finding_detail.detail.as_ref().map(|detail| detail.detail.as_str()),
+        finding_detail
+            .detail
+            .as_ref()
+            .map(|detail| detail.detail.as_str()),
         Some(
             "The retry storm remained the secondary amplifier of the incident. After the retry-cap rollout, request concurrency fell back toward baseline and queue growth stopped."
         )
@@ -476,12 +482,12 @@ async fn wait_for_corrective_context(
             && let Some(role_bundle) = bundle.bundles.first()
         {
             let root_is_corrected = role_bundle.root_node.as_ref().is_some_and(|node| {
-                node.status == "STABILIZING"
-                    && node.summary.contains("returned below 1.1 seconds")
+                node.status == "STABILIZING" && node.summary.contains("returned below 1.1 seconds")
             });
-            let task_is_corrected = role_bundle.neighbor_nodes.iter().any(|node| {
-                node.node_id == SECOND_WAVE_TASK_NODE_ID && node.status == "COMPLETED"
-            });
+            let task_is_corrected = role_bundle
+                .neighbor_nodes
+                .iter()
+                .any(|node| node.node_id == SECOND_WAVE_TASK_NODE_ID && node.status == "COMPLETED");
 
             if role_bundle.neighbor_nodes.len() == 4
                 && role_bundle.relationships.len() == 4
