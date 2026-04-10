@@ -45,6 +45,7 @@ formal ADRs. See [adr/README.md](adr/README.md) for the source PRs.
 |:---------|:--------|
 | [kernel-node-centric-integration-contract.md](migration/kernel-node-centric-integration-contract.md) | Public gRPC + async contract for consumers |
 | [kernel-runtime-integration-reference.md](migration/kernel-runtime-integration-reference.md) | Recommended consumer runtime shape |
+| [pir-kernel-real-integration-plan.md](migration/pir-kernel-real-integration-plan.md) | Execution plan and slice order before wiring the real PIR runtime |
 | [graph-batch-ingestion-api.md](graph-batch-ingestion-api.md) | Experimental ingress API proposal over GraphBatch |
 
 ## Research
