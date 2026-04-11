@@ -14,6 +14,9 @@ use rehydration_testkit::{
 const DEFAULT_REQUEST_FIXTURE: &str = include_str!(
     "../../../../api/examples/inference-prompts/vllm-graph-materialization.request.json"
 );
+const BLIND_REQUEST_FIXTURE: &str = include_str!(
+    "../../../../api/examples/inference-prompts/vllm-graph-materialization.blind.request.json"
+);
 const LARGE_INCIDENT_REQUEST_FIXTURE: &str = include_str!(
     "../../../../api/examples/inference-prompts/vllm-graph-materialization.large-incident.request.json"
 );
@@ -32,6 +35,7 @@ struct Args {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RequestKind {
     Default,
+    Blind,
     LargeIncident,
 }
 
@@ -120,6 +124,7 @@ fn read_request_fixture(
         Some(path) => Ok(fs::read_to_string(path)?),
         None => Ok(match request_kind {
             RequestKind::Default => DEFAULT_REQUEST_FIXTURE,
+            RequestKind::Blind => BLIND_REQUEST_FIXTURE,
             RequestKind::LargeIncident => LARGE_INCIDENT_REQUEST_FIXTURE,
         }
         .to_string()),
@@ -144,6 +149,7 @@ fn parse_args(
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--request-fixture" => request_fixture = Some(required_flag_value(&mut args, &arg)?),
+            "--blind" => request_kind = RequestKind::Blind,
             "--large-incident" => request_kind = RequestKind::LargeIncident,
             "--subject-prefix" => subject_prefix = required_flag_value(&mut args, &arg)?,
             "--run-id" => run_id = Some(required_flag_value(&mut args, &arg)?),
@@ -195,7 +201,7 @@ fn unix_timestamp_secs() -> u64 {
 
 fn print_usage() {
     eprintln!(
-        "usage: graph_batch_vllm_request [--request-fixture <path>|--large-incident] [--subject-prefix <prefix>] [--run-id <id>] [--use-repair-judge] [--use-semantic-classifier] [--namespace-node-ids]"
+        "usage: graph_batch_vllm_request [--request-fixture <path>|--blind|--large-incident] [--subject-prefix <prefix>] [--run-id <id>] [--use-repair-judge] [--use-semantic-classifier] [--namespace-node-ids]"
     );
 }
 
@@ -222,6 +228,7 @@ mod tests {
             [
                 "--request-fixture",
                 "request.json",
+                "--blind",
                 "--large-incident",
                 "--subject-prefix",
                 "custom",
@@ -248,5 +255,14 @@ mod tests {
                 namespace_node_ids: true,
             }
         );
+    }
+
+    #[test]
+    fn parse_args_supports_blind_fixture() {
+        let args = parse_args(["--blind"].into_iter().map(ToString::to_string))
+            .expect("args should parse");
+
+        assert_eq!(args.request_fixture, None);
+        assert_eq!(args.request_kind, RequestKind::Blind);
     }
 }
