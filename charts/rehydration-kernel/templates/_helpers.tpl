@@ -239,6 +239,14 @@ underpassai
 {{- end -}}
 {{- end -}}
 
+{{- define "rehydration-kernel.otel.fullname" -}}
+{{- printf "%s-otel" (include "rehydration-kernel.fullname" .) -}}
+{{- end -}}
+
+{{- define "rehydration-kernel.otelCollector.fullname" -}}
+{{- printf "%s-otel-collector" (include "rehydration-kernel.fullname" .) -}}
+{{- end -}}
+
 {{- define "rehydration-kernel.inlineValkeyUri" -}}
 {{- $uri := .uri -}}
 {{- $tls := .tls -}}

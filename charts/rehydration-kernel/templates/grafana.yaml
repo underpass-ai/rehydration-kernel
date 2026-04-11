@@ -73,7 +73,7 @@ data:
       - name: Prometheus
         type: prometheus
         access: proxy
-        url: http://{{ include "rehydration-kernel.fullname" . }}-otel-collector:9090
+        url: http://{{ include "rehydration-kernel.otel.fullname" . }}:9090
         editable: false
       {{- end }}
 {{- end }}

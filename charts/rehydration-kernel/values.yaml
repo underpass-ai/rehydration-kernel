@@ -157,6 +157,8 @@ grafana:
 # Receives OTLP from the kernel and exports metrics as Prometheus.
 otelCollector:
   enabled: false
+  traces:
+    enabled: false
   image:
     repository: docker.io/otel/opentelemetry-collector-contrib
     tag: "0.127.0"

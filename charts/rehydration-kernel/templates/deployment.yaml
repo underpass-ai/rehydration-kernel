@@ -62,9 +62,16 @@ spec:
               value: {{ .Values.config.eventsPrefix | quote }}
             - name: REHYDRATION_LOG_FORMAT
               value: {{ .Values.observability.logFormat | quote }}
+            {{- $otelCollector := .Values.otelCollector | default dict }}
+            {{- $otelCollectorTraces := get $otelCollector "traces" | default (dict "enabled" false) }}
+            {{- $otelTracesEnabled := get $otelCollectorTraces "enabled" | default false }}
             {{- if .Values.otelCollector.enabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: {{ printf "%s://%s-otel-collector:4317" (ternary "https" "http" .Values.otelCollector.tls.enabled) (include "rehydration-kernel.fullname" .) | quote }}
+              value: {{ printf "%s://%s:4317" (ternary "https" "http" .Values.otelCollector.tls.enabled) (include "rehydration-kernel.otel.fullname" .) | quote }}
+            {{- if not $otelTracesEnabled }}
+            - name: OTEL_TRACES_EXPORTER
+              value: "none"
+            {{- end }}
             {{- else if ne (default "" .Values.observability.otlpEndpoint) "" }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.observability.otlpEndpoint | quote }}

@@ -15,7 +15,8 @@ graph LR
     K -- TLS + mTLS --> OT[OTel Collector]
 ```
 
-> For the in-chart collector, Helm auto-wires the OTLP endpoint and uses
+> For the in-chart collector, Helm auto-wires the OTLP endpoint to the
+> `<release>-otel` service alias and uses
 > `https://...:4317` when `otelCollector.tls.enabled=true`. The kernel still
 > needs `OTEL_EXPORTER_OTLP_{CA,CERT,KEY}_PATH` to point at the mounted client
 > certificate material.

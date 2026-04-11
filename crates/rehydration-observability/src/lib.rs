@@ -24,9 +24,11 @@ pub struct ObservabilityGuard {
 ///
 /// - `RUST_LOG`: log level filter (default: `info`)
 /// - `REHYDRATION_LOG_FORMAT`: `json` | `pretty` | compact (default)
-/// - `OTEL_EXPORTER_OTLP_ENDPOINT`: OTLP endpoint for trace and metric export
-///   (e.g. `http://localhost:4317`). When set, traces and metrics are exported
-///   via gRPC OTLP. When unset, only local logging is active.
+/// - `OTEL_EXPORTER_OTLP_ENDPOINT`: OTLP endpoint for metric export and, when
+///   enabled, trace export (e.g. `http://localhost:4317`)
+/// - `OTEL_TRACES_EXPORTER`: standard OTel traces exporter selector. When set
+///   to `none`, trace export is disabled even if OTLP metrics remain enabled.
+///   When unset, traces follow the OTLP endpoint configuration.
 pub fn init_observability(service_name: &str) -> ObservabilityGuard {
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
     let log_format = std::env::var("REHYDRATION_LOG_FORMAT").unwrap_or_default();
@@ -86,9 +88,13 @@ pub fn init_observability(service_name: &str) -> ObservabilityGuard {
 
 fn init_otel_tracer(service_name: &str) -> Option<SdkTracerProvider> {
     let endpoint = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").ok()?;
-    if endpoint.trim().is_empty() {
+    if !traces_export_enabled(
+        std::env::var("OTEL_TRACES_EXPORTER").ok().as_deref(),
+        Some(endpoint.as_str()),
+    ) {
         return None;
     }
+    let endpoint = endpoint.trim().to_string();
 
     let mut builder = opentelemetry_otlp::SpanExporter::builder()
         .with_tonic()
@@ -108,6 +114,21 @@ fn init_otel_tracer(service_name: &str) -> Option<SdkTracerProvider> {
         .build();
 
     Some(provider)
+}
+
+fn traces_export_enabled(traces_exporter: Option<&str>, endpoint: Option<&str>) -> bool {
+    let Some(endpoint) = endpoint.map(str::trim).filter(|value| !value.is_empty()) else {
+        return false;
+    };
+    let _ = endpoint;
+
+    !matches!(
+        traces_exporter
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|value| value.to_ascii_lowercase()),
+        Some(value) if value == "none"
+    )
 }
 
 /// Build a TLS config for OTLP exporters from environment variables.
@@ -172,5 +193,31 @@ mod tests {
         metrics.rendered_tokens.record(100, &[]);
         metrics.truncation_total.add(1, &[]);
         metrics.projection_lag.record(0.05, &[]);
+    }
+
+    #[test]
+    fn traces_export_is_disabled_when_exporter_is_none() {
+        assert!(!traces_export_enabled(
+            Some("none"),
+            Some("https://collector:4317")
+        ));
+    }
+
+    #[test]
+    fn traces_export_is_disabled_without_endpoint() {
+        assert!(!traces_export_enabled(Some("otlp"), None));
+        assert!(!traces_export_enabled(None, Some("   ")));
+    }
+
+    #[test]
+    fn traces_export_defaults_to_enabled_when_endpoint_exists() {
+        assert!(traces_export_enabled(
+            None,
+            Some("https://collector:4317")
+        ));
+        assert!(traces_export_enabled(
+            Some("otlp"),
+            Some("https://collector:4317")
+        ));
     }
 }

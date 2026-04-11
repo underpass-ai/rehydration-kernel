@@ -74,7 +74,8 @@ otelCollector:
 ```
 
 When `otelCollector.enabled=true`, the deployment auto-wires
-`OTEL_EXPORTER_OTLP_ENDPOINT` to the in-chart collector service.
+`OTEL_EXPORTER_OTLP_ENDPOINT` to the in-chart collector service alias
+`<release>-otel`.
 
 Grafana auto-provisions Loki + Prometheus datasources.
 
