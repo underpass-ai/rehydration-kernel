@@ -211,10 +211,7 @@ mod tests {
 
     #[test]
     fn traces_export_defaults_to_enabled_when_endpoint_exists() {
-        assert!(traces_export_enabled(
-            None,
-            Some("https://collector:4317")
-        ));
+        assert!(traces_export_enabled(None, Some("https://collector:4317")));
         assert!(traces_export_enabled(
             Some("otlp"),
             Some("https://collector:4317")
