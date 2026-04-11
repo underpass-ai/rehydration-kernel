@@ -1,6 +1,6 @@
 # PIR Kernel Real Integration Plan
 
-Status: Active execution plan  
+Status: contract-validation phase largely complete; real adapter phase next
 Scope: slices required before wiring the real `PIR` runtime to the kernel
 
 ## Intent
@@ -15,13 +15,42 @@ This document complements, but does not replace:
 The reference defines the contract. This plan defines the order in which we
 prove that the contract is good enough for the real integration.
 
+## Progress Snapshot
+
+Current status against the planned slices:
+
+- `Slice 1`: complete
+- `Slice 2`: complete
+- `Slice 3`: complete
+- `Slice 4`: complete
+- `Slice 5`: complete
+- `Slice 6`: not started
+
+Evidence already captured:
+
+- live PIR incremental roundtrip + consumption:
+  [`pir-kernel-live-context-consumption-evidence.md`](pir-kernel-live-context-consumption-evidence.md)
+- blind structural evaluation:
+  [`pir-kernel-blind-structural-evidence.md`](pir-kernel-blind-structural-evidence.md)
+- blind context consumption:
+  [`pir-kernel-blind-context-consumption-evidence.md`](pir-kernel-blind-context-consumption-evidence.md)
+
+Operational support already in place:
+
+- in-cluster contract runner for sync and async paths:
+  [`e2e/kernel-runner/`](../../e2e/kernel-runner/)
+- example job manifest:
+  [`k8s/rehydration-kernel-e2e-runner.example.yaml`](../../k8s/rehydration-kernel-e2e-runner.example.yaml)
+
 ## What We Are Validating First
 
 Current phase:
 
-- the kernel contract is usable by a model-driven producer
+- the kernel contract has been validated for strong and weaker fixtures
 - the kernel can rehydrate and return useful context for a PIR consumer
 - the `semantic_class` path is stable enough when assisted by the reranker
+- the next phase is no longer contract proof; it is the first real `PIR`
+  adapter using the already-proven boundary
 
 Current phase is **not** trying to prove:
 
@@ -87,18 +116,27 @@ Each slice below therefore has two outputs:
 
 ### Slice 1. Live PIR incremental roundtrip + consumption
 
+Status:
+
+- complete
+- evidence:
+  [`pir-kernel-live-context-consumption-evidence.md`](pir-kernel-live-context-consumption-evidence.md)
+
 Goal:
 
-- prove the full PIR contract on a real cluster with two materialization waves
+- prove the full PIR contract on a real cluster with incremental
+  materialization waves
 
 Shape:
 
 - wave 1 publishes a stable incident root plus initial findings and decisions
 - wave 2 reuses the same incident identity, expands the graph, and rehydrates
   the enriched context
-- both waves use distinct `run_id` values
-- both waves use the semantic reranker before publish
-- the second-wave `rendered.content` is passed back to the LLM
+- wave 3 keeps the same graph shape but corrects current state and detail
+  revisions
+- all waves use distinct `run_id` values
+- all waves use the semantic reranker before publish
+- the final-wave `rendered.content` is passed back to the LLM
 
 Evidence required:
 
@@ -124,6 +162,12 @@ Design implication:
 
 ### Slice 2. Practical evidence report
 
+Status:
+
+- complete
+- evidence:
+  [`pir-kernel-live-context-consumption-evidence.md`](pir-kernel-live-context-consumption-evidence.md)
+
 Goal:
 
 - answer the core questions with concrete artifacts instead of only `test passed`
@@ -147,6 +191,12 @@ Design implication:
   shape without hand-waving
 
 ### Slice 3. Blind extraction fixture
+
+Status:
+
+- complete
+- implementation:
+  [`vllm-graph-materialization.blind.request.json`](../../api/examples/inference-prompts/vllm-graph-materialization.blind.request.json)
 
 Goal:
 
@@ -174,6 +224,12 @@ Design implication:
   comes from over-specified PIR prompting
 
 ### Slice 4. Structural extraction evaluation
+
+Status:
+
+- complete
+- evidence:
+  [`pir-kernel-blind-structural-evidence.md`](pir-kernel-blind-structural-evidence.md)
 
 Goal:
 
@@ -203,6 +259,12 @@ Design implication:
 
 ### Slice 5. Blind context consumption
 
+Status:
+
+- complete
+- evidence:
+  [`pir-kernel-blind-context-consumption-evidence.md`](pir-kernel-blind-context-consumption-evidence.md)
+
 Goal:
 
 - test whether the model can understand kernel context without relying on
@@ -229,6 +291,11 @@ Design implication:
 
 ### Slice 6. Real PIR adapter start
 
+Status:
+
+- next
+- no runtime implementation yet
+
 Goal:
 
 - move from test fixtures to the first real PIR-produced `GraphBatch`
@@ -251,14 +318,14 @@ Design implication:
 - marks the point where PIR iteration moves from fixture design to runtime
   adapter design
 
-## Execution Order
+## Execution Status
 
-1. Finish Slice 1 and keep the artifacts.
-2. Write the Slice 2 evidence report.
-3. Build the blind extraction fixture.
-4. Add structural evaluation for blind extraction.
-5. Add blind context-consumption evaluation.
-6. Start the real PIR adapter against the already-proven contract.
+1. `Slice 1`: complete.
+2. `Slice 2`: complete.
+3. `Slice 3`: complete.
+4. `Slice 4`: complete.
+5. `Slice 5`: complete.
+6. `Slice 6`: pending.
 
 ## Suggested Success Matrix
 
@@ -284,17 +351,37 @@ For each slice, capture these seven items:
 6. what this does not prove
 7. PIR design change, if any
 
-## Immediate Next Step
+## Next Steps
 
-Run Slice 1 as the first full live proof:
+Immediate next step:
 
-- two PIR waves
-- stable incident identity
-- reranker on both waves
-- kernel rehydration
-- `rendered.content` consumed by the LLM
+- start `Slice 6`: first real `PIR` adapter against the already-proven kernel
+  boundary
 
-If Slice 1 passes, the next work should not jump straight to "real PIR". The
-next correct move is Slice 2 plus the blind extraction fixture, so we know
-which part of the result comes from the contract and which part comes from
-over-specified prompts.
+Suggested concrete order:
+
+1. define the minimum adapter shape:
+   - obtain a `GraphBatch` from `PIR`
+   - local validation
+   - publish over NATS
+   - query `GetContext` and `GetNodeDetail`
+2. wire one real incident from `PIR` into the kernel without changing the
+   external kernel contract
+3. run the same in-cluster runner path used in the earlier slices
+4. capture one evidence document for the first real `PIR` incident
+5. only after that, expand from one incident to a small family of incidents
+
+Open questions to answer in `Slice 6`:
+
+- which facts `PIR` should emit as nodes versus `node_details`
+- whether `PIR` should keep deterministic ids for findings, tasks, and
+  decisions, or only for the root incident
+- whether the reranker stays mandatory in the first adapter version
+- whether `reason_preserving` should be the default read mode for `PIR`
+
+What should not happen next:
+
+- do not jump to autonomy claims
+- do not broaden to many incidents before the first real adapter works
+- do not change the kernel boundary unless the first adapter exposes a real
+  contract flaw
