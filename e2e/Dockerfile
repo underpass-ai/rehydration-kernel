@@ -1,6 +1,7 @@
-# Unified E2E test runner for rehydration-kernel.
+# Legacy gRPC-only E2E test runner for rehydration-kernel.
 # Select test via TEST_ID env var (01, 02, 03, 04).
 # All tests use grpcurl with mTLS — fail-fast, no fallbacks.
+# For async GraphBatch + NATS + gRPC contract coverage, use e2e/kernel-runner/.
 FROM docker.io/fullstorydev/grpcurl:v1.9.3 AS grpcurl
 
 FROM docker.io/library/alpine:3.21

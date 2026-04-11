@@ -348,9 +348,13 @@ otelCollector:
 ```
 
 When `otelCollector.enabled=true`, the kernel deployment automatically sets
-`OTEL_EXPORTER_OTLP_ENDPOINT` to the in-chart collector. Helm uses
+`OTEL_EXPORTER_OTLP_ENDPOINT` to the in-chart collector service alias
+`<release>-otel`. Helm uses
 `http://...:4317` in plaintext mode and `https://...:4317` when
 `otelCollector.tls.enabled=true`.
+For the in-chart collector, traces are disabled by default via
+`OTEL_TRACES_EXPORTER=none` because the bundled collector config only routes
+metrics and optional Loki-bound logs.
 
 The OTel Collector exports:
 - **Metrics** → Prometheus endpoint (always active when collector is enabled)

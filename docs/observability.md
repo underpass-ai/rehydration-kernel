@@ -183,13 +183,16 @@ otelCollector:
 ```
 
 When `otelCollector.enabled=true`, the kernel deployment automatically sets
-`OTEL_EXPORTER_OTLP_ENDPOINT` to the in-chart collector service. Helm uses
+`OTEL_EXPORTER_OTLP_ENDPOINT` to the in-chart collector service alias
+`<release>-otel`. Helm uses
 `http://...:4317` in plaintext mode and `https://...:4317` when
 `otelCollector.tls.enabled=true`.
+The in-chart collector currently runs metrics by default and optional logs via
+Loki; traces are disabled by default by setting `OTEL_TRACES_EXPORTER=none`.
 
 Grafana auto-provisions two datasources:
 - **Loki** at `http://<release>-loki:3100`
-- **Prometheus** at `http://<release>-otel-collector:9090` (when OTel enabled)
+- **Prometheus** at `http://<release>-otel:9090` (when OTel enabled)
 
 ### Accessing Grafana
 
@@ -207,6 +210,7 @@ kubectl port-forward svc/<release>-grafana 3000:3000 -n <namespace>
 |:---------|:--------|:------------|
 | `REHYDRATION_LOG_FORMAT` | `compact` | Log format: `json` (for Loki), `pretty`, `compact` |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | — | OTLP gRPC endpoint (auto-set when otelCollector enabled) |
+| `OTEL_TRACES_EXPORTER` | — | Standard OTel traces exporter selector. Set to `none` to disable trace export while keeping metrics enabled |
 | `OTEL_EXPORTER_OTLP_CA_PATH` | — | CA certificate for OTLP server verification |
 | `OTEL_EXPORTER_OTLP_CERT_PATH` | — | Client certificate for OTLP mTLS |
 | `OTEL_EXPORTER_OTLP_KEY_PATH` | — | Client key for OTLP mTLS |

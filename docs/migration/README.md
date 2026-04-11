@@ -19,6 +19,8 @@ an integrating product:
 - `pir-kernel-integration-reference.md`
 - `pir-kernel-real-integration-plan.md`
 - `pir-kernel-live-context-consumption-evidence.md`
+- `pir-kernel-blind-structural-evidence.md`
+- `pir-kernel-blind-context-consumption-evidence.md`
 - `llm-response-determinism-strategy.md`
 
 Historical closeout and compatibility planning material belongs in

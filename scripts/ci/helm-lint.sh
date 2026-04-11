@@ -178,7 +178,7 @@ grep -q "service.beta.kubernetes.io/aws-load-balancer-scheme: internal" /tmp/reh
 grep -q "host: \"rehydration-kernel.underpassai.com\"" /tmp/rehydration-kernel-helm-underpass-runtime-template.yaml
 grep -q "nginx.ingress.kubernetes.io/backend-protocol: GRPC" /tmp/rehydration-kernel-helm-underpass-runtime-template.yaml
 grep -q "OTEL_EXPORTER_OTLP_ENDPOINT" /tmp/rehydration-kernel-helm-underpass-runtime-mtls-template.yaml
-grep -q "value: \"https://rehydration-kernel-otel-collector:4317\"" /tmp/rehydration-kernel-helm-underpass-runtime-mtls-template.yaml
+grep -q "value: \"https://rehydration-kernel-otel:4317\"" /tmp/rehydration-kernel-helm-underpass-runtime-mtls-template.yaml
 grep -q "name: otel-tls" /tmp/rehydration-kernel-helm-underpass-runtime-mtls-template.yaml
 grep -q "mountPath: \"/var/run/rehydration-kernel/otel-tls\"" /tmp/rehydration-kernel-helm-underpass-runtime-mtls-template.yaml
 grep -q "secretName: \"rehydration-kernel-otel-tls\"" /tmp/rehydration-kernel-helm-underpass-runtime-mtls-template.yaml

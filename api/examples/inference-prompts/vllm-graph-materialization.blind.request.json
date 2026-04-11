@@ -1,0 +1,283 @@
+{
+  "model": "Qwen/Qwen3.5-9B",
+  "temperature": 0.0,
+  "max_tokens": 2048,
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a precise graph extraction engine. Return valid JSON only."
+    },
+    {
+      "role": "user",
+      "content": "You are extracting graph updates for the rehydration kernel from partially observed incident notes.\n\nReturn JSON only. Do not wrap the answer in markdown fences.\nDo not emit NATS subjects, event IDs, or transport envelopes.\nTreat the output as one bounded aggregate update around `root_node_id`.\nReturn exactly one object with this shape:\n\n{\n  \"root_node_id\": \"string\",\n  \"nodes\": [\n    {\n      \"node_id\": \"string\",\n      \"node_kind\": \"string\",\n      \"title\": \"string\",\n      \"summary\": \"string\",\n      \"status\": \"string\",\n      \"labels\": [\"string\"],\n      \"properties\": { \"key\": \"value\" },\n      \"source_kind\": \"human|agent|projection|derived\",\n      \"source_agent\": \"string\",\n      \"observed_at\": \"ISO-8601 timestamp\"\n    }\n  ],\n  \"relations\": [\n    {\n      \"source_node_id\": \"string\",\n      \"target_node_id\": \"string\",\n      \"relation_type\": \"string\",\n      \"semantic_class\": \"structural|causal|motivational|procedural|evidential|constraint\",\n      \"rationale\": \"string\",\n      \"motivation\": \"string\",\n      \"method\": \"string\",\n      \"decision_id\": \"string\",\n      \"caused_by_node_id\": \"string\",\n      \"evidence\": \"string\",\n      \"confidence\": \"high|medium|low\",\n      \"sequence\": 1\n    }\n  ],\n  \"node_details\": [\n    {\n      \"node_id\": \"string\",\n      \"detail\": \"string\",\n      \"revision\": 1\n    }\n  ]\n}\n\nRules:\n- Include the root node itself inside `nodes`.\n- Emit relations outward from `root_node_id` toward the nodes that explain, mitigate, constrain, or otherwise contextualize that root.\n- Every non-root node must be reachable from `root_node_id` through the outward relations you emit.\n- Every `source_node_id`, `target_node_id`, and `node_detail.node_id` must refer to an existing node.\n- Put one fact per node when possible; keep `summary` short and move long evidence to `node_details`.\n- Use `semantic_class=causal` only when the text supports an actual cause.\n- Choose `semantic_class` with this rubric:\n  - `causal`: an actual cause/effect is stated or strongly supported. Prefer this when the relation explains the incident rather than just an operator action.\n  - `evidential`: a log, dashboard, metric, trace, diff, or inspection supports a finding or decision.\n  - `motivational`: explains why a decision or mitigation was chosen, including tradeoffs or intent.\n  - `procedural`: an ordered step, method, runbook action, implementation step, or execution sequence. It describes what to do/how to do it, not why the incident happened.\n  - `constraint`: a rule, safety boundary, dependency, or operational limit that must be respected.\n  - `structural`: containment, reference, grouping, or generic association with no explanatory claim.\n- If the relation contains causal wording (`caused`, `led to`, `triggered`, `because`) or `caused_by_node_id`, prefer `causal` over `procedural`.\n- For every non-structural relation, include `confidence` as `high`, `medium`, or `low`.\n- For every non-structural relation, include at least one support field: `rationale`, `motivation`, `method`, or `evidence`.\n- Emit only accepted graph facts. Do not emit duplicate relations or speculative alternatives unless they are semantically distinct and explicitly carry lower confidence.\n- Keep the graph local to this update. Do not emit disconnected nodes.\n- Omit fields you do not know rather than fabricating them.\n\nSource notes:\n- Incident ID: incident-2026-04-08-payments-latency\n- Service: payments-api\n- Region: eu-west-1\n- Symptom: P95 latency exceeded 2s and error rate rose above 15% after rollout 2026.04.08.3.\n- Observations:\n  - rollout 2026.04.08.3 changed DB maxConnections from 50 to 5 in the config map.\n  - pod env inspection on two replicas showed DB_MAX_CONNECTIONS=5.\n  - DB wait time and error rate rose within minutes of the rollout.\n  - oncall started rollback and shifted most traffic to the secondary region while rollback propagated.\n  - latency improved as rollback completed and the traffic shift took effect.\n- Constraints:\n  - keep the graph local to this update\n  - prefer only facts directly supported by the notes\n  - do not assume a cause is confirmed unless the notes say it directly\n  - if you encode a likely cause, use confidence that matches the notes\n\nShape constraints:\n- Use `incident-2026-04-08-payments-latency` as the root node id.\n- Include exactly 4 nodes: the root plus 3 supported non-root nodes.\n- Include exactly 3 relations, all sourced from the root node.\n- Include exactly 2 node details for non-root nodes only.\n- At least one non-root node must capture supporting evidence or inspection.\n- At least one non-root node must capture an action already taken during the incident.\n- Do not require deterministic non-root node ids. Use stable descriptive ids based on the facts you include.\n- Keep titles and summaries concise.\n"
+    }
+  ],
+  "response_format": {
+    "type": "json_schema",
+    "json_schema": {
+      "name": "llm-graph-batch-blind",
+      "strict": true,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "root_node_id",
+          "nodes",
+          "relations",
+          "node_details"
+        ],
+        "properties": {
+          "root_node_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "correlation_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "causation_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "nodes": {
+            "type": "array",
+            "minItems": 4,
+            "maxItems": 4,
+            "items": {
+              "$ref": "#/$defs/node"
+            }
+          },
+          "relations": {
+            "type": "array",
+            "minItems": 3,
+            "maxItems": 3,
+            "items": {
+              "$ref": "#/$defs/relation"
+            }
+          },
+          "node_details": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "items": {
+              "$ref": "#/$defs/node_detail"
+            }
+          }
+        },
+        "$defs": {
+          "confidence": {
+            "type": "string",
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ]
+          },
+          "semantic_class": {
+            "type": "string",
+            "enum": [
+              "structural",
+              "causal",
+              "motivational",
+              "procedural",
+              "evidential",
+              "constraint"
+            ]
+          },
+          "node": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "node_id",
+              "node_kind",
+              "title",
+              "summary",
+              "status",
+              "labels",
+              "properties"
+            ],
+            "properties": {
+              "node_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "node_kind": {
+                "type": "string",
+                "minLength": 1
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1
+              },
+              "summary": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "minLength": 1
+              },
+              "labels": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "properties": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "source_kind": {
+                "type": "string",
+                "enum": [
+                  "human",
+                  "agent",
+                  "projection",
+                  "derived"
+                ]
+              },
+              "source_agent": {
+                "type": "string",
+                "minLength": 1
+              },
+              "observed_at": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          },
+          "relation": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "source_node_id",
+              "target_node_id",
+              "relation_type",
+              "semantic_class"
+            ],
+            "properties": {
+              "source_node_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "target_node_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "relation_type": {
+                "type": "string",
+                "minLength": 1
+              },
+              "semantic_class": {
+                "$ref": "#/$defs/semantic_class"
+              },
+              "rationale": {
+                "type": "string",
+                "minLength": 1
+              },
+              "motivation": {
+                "type": "string",
+                "minLength": 1
+              },
+              "method": {
+                "type": "string",
+                "minLength": 1
+              },
+              "decision_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "caused_by_node_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "evidence": {
+                "type": "string",
+                "minLength": 1
+              },
+              "confidence": {
+                "$ref": "#/$defs/confidence"
+              },
+              "sequence": {
+                "type": "integer",
+                "minimum": 1
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "semantic_class": {
+                      "const": "structural"
+                    }
+                  },
+                  "required": [
+                    "semantic_class"
+                  ]
+                },
+                "then": {},
+                "else": {
+                  "required": [
+                    "confidence"
+                  ],
+                  "anyOf": [
+                    {
+                      "required": [
+                        "rationale"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "motivation"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "method"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "evidence"
+                      ]
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "node_detail": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "node_id",
+              "detail",
+              "revision"
+            ],
+            "properties": {
+              "node_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "detail": {
+                "type": "string",
+                "minLength": 1
+              },
+              "revision": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

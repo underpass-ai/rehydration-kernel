@@ -116,6 +116,14 @@ cargo test -p rehydration-tests-kernel \
 RUN_VLLM_SMOKE=1 cargo test -p rehydration-testkit \
   vllm_graph_prompt_smoke -- --nocapture
 
+# Live blind vLLM smoke: weaker fixture, still bounded GraphBatch contract
+RUN_VLLM_BLIND_SMOKE=1 cargo test -p rehydration-testkit \
+  vllm_graph_blind_prompt_smoke -- --nocapture
+
+# Live blind structural smoke: evaluate graph structure before/after reranker
+RUN_VLLM_BLIND_STRUCTURAL_SMOKE=1 cargo test -p rehydration-testkit \
+  vllm_graph_blind_structural_smoke -- --nocapture
+
 # Optional: exercise the dedicated repair judge too
 RUN_VLLM_SMOKE=1 \
 LLM_GRAPH_BATCH_USE_REPAIR_JUDGE=1 \
@@ -178,6 +186,96 @@ graph_batch_vllm_request --large-incident --run-id vllm-live-large-001 \
       --nats-tls-key-path /var/run/rehydration-kernel/nats-tls/tls.key \
       --rehydration-mode reason_preserving \
       --include-rendered-content
+
+# Manual blind extraction variant.
+graph_batch_vllm_request --blind --run-id vllm-blind-001
+```
+
+### Kubernetes Contract Runner
+
+The legacy [`e2e/Dockerfile`](../e2e/Dockerfile) remains intentionally narrow:
+it is a gRPC-only transport probe based on `grpcurl`.
+
+For contract-level cluster tests that need:
+
+- gRPC for synchronous reads
+- NATS for asynchronous publish/projection paths
+- `graph_batch_roundtrip` for fixture-driven async validation
+- `graph_batch_vllm_request` for model-driven async validation
+
+use the new runner in [`e2e/kernel-runner/`](../e2e/kernel-runner/).
+
+Build the image:
+
+```bash
+bash scripts/ci/e2e-kernel-runner-image.sh rehydration-kernel-e2e-runner:dev
+```
+
+Cluster job template:
+
+- [`k8s/rehydration-kernel-e2e-runner.example.yaml`](../k8s/rehydration-kernel-e2e-runner.example.yaml)
+
+Supported `TEST_ID` values:
+
+- `sync-grpc-handshake`
+- `sync-mtls-enforcement`
+- `async-graph-batch-roundtrip`
+- `async-vllm-graph-batch-roundtrip`
+- `async-vllm-blind-context-consumption`
+
+Example async fixture-driven run inside the cluster:
+
+```bash
+TEST_ID=async-graph-batch-roundtrip
+PIR_GRAPH_BATCH_NATS_URL=nats://rehydration-kernel-nats:4222
+PIR_GRAPH_BATCH_GRPC_ENDPOINT=https://rehydration-kernel:50054
+PIR_GRAPH_BATCH_GRPC_TLS_CA_PATH=/var/run/rehydration-kernel/tls/ca.crt
+PIR_GRAPH_BATCH_GRPC_TLS_CERT_PATH=/var/run/rehydration-kernel/tls/tls.crt
+PIR_GRAPH_BATCH_GRPC_TLS_KEY_PATH=/var/run/rehydration-kernel/tls/tls.key
+PIR_GRAPH_BATCH_GRPC_TLS_DOMAIN_NAME=rehydration-kernel
+PIR_GRAPH_BATCH_NATS_TLS_CA_PATH=/var/run/rehydration-kernel/nats-tls/ca.crt
+PIR_GRAPH_BATCH_NATS_TLS_CERT_PATH=/var/run/rehydration-kernel/nats-tls/tls.crt
+PIR_GRAPH_BATCH_NATS_TLS_KEY_PATH=/var/run/rehydration-kernel/nats-tls/tls.key
+```
+
+Example model-driven async run inside the cluster:
+
+```bash
+TEST_ID=async-vllm-graph-batch-roundtrip
+VLLM_REQUEST_KIND=blind
+VLLM_REQUEST_USE_SEMANTIC_CLASSIFIER=true
+VLLM_REQUEST_NAMESPACE_NODE_IDS=true
+LLM_ENDPOINT=http://vllm-qwen35-9b:8000/v1/chat/completions
+LLM_MODEL=Qwen/Qwen3.5-9B
+LLM_PROVIDER=openai
+LLM_ENABLE_THINKING=false
+LLM_SEMANTIC_CLASSIFIER_ENDPOINT=http://vllm-semantic-reranker:8000/score
+LLM_SEMANTIC_CLASSIFIER_MODEL=Qwen/Qwen3-Reranker-0.6B
+LLM_SEMANTIC_CLASSIFIER_PROVIDER=openai
+LLM_SEMANTIC_CLASSIFIER_MODE=score
+PIR_GRAPH_BATCH_NATS_URL=nats://rehydration-kernel-nats:4222
+PIR_GRAPH_BATCH_GRPC_ENDPOINT=https://rehydration-kernel:50054
+```
+
+Example model-driven blind context-consumption run inside the cluster:
+
+```bash
+TEST_ID=async-vllm-blind-context-consumption
+VLLM_REQUEST_KIND=blind
+VLLM_REQUEST_USE_SEMANTIC_CLASSIFIER=true
+VLLM_REQUEST_NAMESPACE_NODE_IDS=true
+PIR_GRAPH_BATCH_INCLUDE_RENDERED_CONTENT=true
+PIR_GRAPH_BATCH_REHYDRATION_MODE=reason_preserving
+LLM_ENDPOINT=http://vllm-qwen35-9b:8000/v1/chat/completions
+LLM_MODEL=Qwen/Qwen3.5-9B
+LLM_PROVIDER=openai
+LLM_ENABLE_THINKING=false
+LLM_SEMANTIC_CLASSIFIER_ENDPOINT=http://vllm-semantic-reranker:8000/score
+LLM_SEMANTIC_CLASSIFIER_MODEL=Qwen/Qwen3-Reranker-0.6B
+LLM_SEMANTIC_CLASSIFIER_PROVIDER=openai
+LLM_SEMANTIC_CLASSIFIER_MODE=score
+PIR_GRAPH_BATCH_NATS_URL=nats://rehydration-kernel-nats:4222
+PIR_GRAPH_BATCH_GRPC_ENDPOINT=https://rehydration-kernel:50054
 ```
 
 For `underpass-runtime`, the live PIR smoke should use:
@@ -205,6 +303,40 @@ and the final `rendered.content` is fed back to the LLM.
 The single-wave live smokes namespace GraphBatch node ids with the test `run_id`
 before publishing. This prevents a repeated run from passing against a graph
 that was already projected by an earlier attempt.
+
+The blind extraction fixture is intentionally only partially blind. It removes
+`Confirmed finding`, `Mitigation decision`, and deterministic non-root node
+ids, but it still constrains root identity and graph size so the result stays
+bounded and parsable for contract testing. A pass on this blind smoke means the
+model can still emit a valid local `GraphBatch` under weaker hints. It does not
+mean the model diagnosed the incident autonomously.
+
+The blind structural smoke is the next slice after that. It keeps the same
+blind fixture, then scores the emitted graph in two stages:
+
+- primary model output
+- reranked output after `semantic_class` reclassification
+
+The scorecard checks:
+
+- root node present
+- graph connected from the root
+- at least one finding candidate node
+- at least one evidence candidate node
+- at least one action candidate node
+- detail attachment targets
+- relation `semantic_class` coverage before and after the reranker
+
+This smoke is intentionally honest about scope. It evaluates kernel-friendly
+graph structure and semantic-class usefulness. It still does **not** prove that
+the model solved the incident autonomously.
+
+The next blind slice is downstream consumption. It takes that weaker graph,
+publishes it through the kernel, requests `rendered_content` with
+`reason_preserving`, and then asks the model a non-literal question about cause
+and mitigation. A pass on that slice means the weaker graph still carries
+enough information for the kernel to support a correct downstream answer. It
+still does **not** prove autonomous incident diagnosis.
 
 The incremental PIR smoke uses a different pattern: one stable node namespace
 shared by all waves, plus a distinct `run_id` per wave. That mirrors the PIR
@@ -507,6 +639,22 @@ Thinking/no-thinking is controlled **client-side** via `LLM_ENABLE_THINKING`:
 |:----------------------:|----------|
 | unset or `true` | Qwen3 thinks (default). No `chat_template_kwargs` sent. |
 | `false` | Thinking disabled. Sends `chat_template_kwargs: {enable_thinking: false}`. |
+
+Operational note:
+short DNS or liveness probes against Qwen3-compatible `chat/completions`
+endpoints can return `content: null` with `finish_reason: "length"` even when
+the service is healthy. That usually means the model spent the small output
+budget on reasoning. For short probes, disable thinking explicitly with
+`chat_template_kwargs: {enable_thinking: false}`. Reserve thinking mode for
+real extraction/evaluation requests with enough `max_tokens`.
+
+Status note:
+the public DNS path has been smoke-tested with thinking disabled for short
+probes, but thinking mode over that path is not yet validated end-to-end. Do
+not assume reasoning is operational there just because `/v1/models` and a short
+no-thinking completion succeed. Depending on the vLLM image, parser support,
+and runtime flags, additional server-side action may still be required to
+enable or stabilize this capability.
 
 Deploying a model:
 
