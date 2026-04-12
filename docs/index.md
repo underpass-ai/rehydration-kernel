@@ -47,6 +47,10 @@ formal ADRs. See [adr/README.md](adr/README.md) for the source PRs.
 | [kernel-runtime-integration-reference.md](migration/kernel-runtime-integration-reference.md) | Recommended consumer runtime shape |
 | [pir-kernel-real-integration-plan.md](migration/pir-kernel-real-integration-plan.md) | Execution plan and slice order before wiring the real PIR runtime |
 | [pir-kernel-live-context-consumption-evidence.md](migration/pir-kernel-live-context-consumption-evidence.md) | Live two-wave PIR evidence: publish, rehydrate, and answer from rendered context |
+| [pir-kernel-graph-inspection-smoke-reranker.md](migration/pir-kernel-graph-inspection-smoke-reranker.md) | Full kernel graph dump for one live PIR incident, with node details, diagram, and analysis |
+| [pir-kernel-graph-inspection-smoke-late-waves.md](migration/pir-kernel-graph-inspection-smoke-late-waves.md) | Full kernel graph dump for one live PIR incident after late operational waves and truthful post-stage root projection |
+| [pir-first-event-driven-agent-plan.md](migration/pir-first-event-driven-agent-plan.md) | Detailed next-session plan for the first event-driven PIR agent with runtime, local graph reads, bounded iterations, and escalation on unresolved tasks |
+| [pir-kernel-sequential-graph-shape-proposal.md](migration/pir-kernel-sequential-graph-shape-proposal.md) | Proposed shift from incident-star graphs to a finding→decision→task→verification semantic spine |
 | [pir-kernel-blind-structural-evidence.md](migration/pir-kernel-blind-structural-evidence.md) | Live blind-structure evidence: weaker fixture, scorecard before/after reranking |
 | [pir-kernel-blind-context-consumption-evidence.md](migration/pir-kernel-blind-context-consumption-evidence.md) | Live blind-consumption evidence: weaker graph, kernel rehydration, and correct downstream answer |
 | [graph-batch-ingestion-api.md](graph-batch-ingestion-api.md) | Experimental ingress API proposal over GraphBatch |

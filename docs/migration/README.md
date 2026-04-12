@@ -19,6 +19,16 @@ an integrating product:
 - `pir-kernel-integration-reference.md`
 - `pir-kernel-real-integration-plan.md`
 - `pir-kernel-live-context-consumption-evidence.md`
+- `pir-fix-planning-live-smoke-failure-report-2026-04-12.md`
+- `pir-fix-planning-long-budget-retry-plan.md`
+- `pir-fix-planning-model-research-notes.md`
+- `pir-fix-planning-experiment-matrix.md`
+- `pir-fix-planning-a0-repeatability-report-2026-04-12.md`
+- `qwen35-configuration-reference.md`
+- `pir-kernel-graph-inspection-smoke-reranker.md`
+- `pir-kernel-graph-inspection-smoke-late-waves.md`
+- `pir-first-event-driven-agent-plan.md`
+- `pir-kernel-sequential-graph-shape-proposal.md`
 - `pir-kernel-blind-structural-evidence.md`
 - `pir-kernel-blind-context-consumption-evidence.md`
 - `llm-response-determinism-strategy.md`

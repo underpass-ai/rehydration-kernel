@@ -1,6 +1,6 @@
 # PIR Kernel Real Integration Plan
 
-Status: contract-validation phase largely complete; real adapter phase next
+Status: contract-validation phase complete; real adapter phase in progress
 Scope: slices required before wiring the real `PIR` runtime to the kernel
 
 ## Intent
@@ -24,7 +24,7 @@ Current status against the planned slices:
 - `Slice 3`: complete
 - `Slice 4`: complete
 - `Slice 5`: complete
-- `Slice 6`: not started
+- `Slice 6`: in progress
 
 Evidence already captured:
 
@@ -34,6 +34,8 @@ Evidence already captured:
   [`pir-kernel-blind-structural-evidence.md`](pir-kernel-blind-structural-evidence.md)
 - blind context consumption:
   [`pir-kernel-blind-context-consumption-evidence.md`](pir-kernel-blind-context-consumption-evidence.md)
+- real PIR graph inspection with late operational waves:
+  [`pir-kernel-graph-inspection-smoke-late-waves.md`](pir-kernel-graph-inspection-smoke-late-waves.md)
 
 Operational support already in place:
 
@@ -49,8 +51,9 @@ Current phase:
 - the kernel contract has been validated for strong and weaker fixtures
 - the kernel can rehydrate and return useful context for a PIR consumer
 - the `semantic_class` path is stable enough when assisted by the reranker
-- the next phase is no longer contract proof; it is the first real `PIR`
-  adapter using the already-proven boundary
+- the first real `PIR` adapter is now live against the already-proven boundary
+- the next phase is proving runtime behavior and then introducing truly
+  event-driven agents on top of that adapter
 
 Current phase is **not** trying to prove:
 
@@ -106,6 +109,9 @@ The most important `PIR` design knobs to iterate are:
 - what gets rendered into `node_details` versus short summaries
 - query profile: role, scopes, depth, token budget, and rehydration mode
 - whether semantic reranking is mandatory or advisory
+- whether direct root edges are a long-term design choice or a temporary
+  reachability bridge for the stage-driven phase
+- per-agent iteration budget, retry policy, and task wall-clock budget
 
 Each slice below therefore has two outputs:
 
@@ -293,8 +299,9 @@ Design implication:
 
 Status:
 
-- next
-- no runtime implementation yet
+- in progress
+- live adapter path already validated for publish and read
+- runtime and event-driven phases still pending
 
 Goal:
 
@@ -312,11 +319,17 @@ Exit criteria:
 
 - one real PIR-produced incident can be materialized and read back using the
   same contract and retry rules proven in earlier slices
+- root lifecycle state remains truthful after later operational waves
+- late operational waves are present in the kernel graph
+- runtime contribution is captured in formal tests, not only in live wiring
+- first event-driven agent path is exercised against the same kernel boundary
 
 Design implication:
 
 - marks the point where PIR iteration moves from fixture design to runtime
   adapter design
+- exposes the next design questions: root-edge reduction, runtime query policy,
+  token control before truncation, and per-agent iteration/retry budgets
 
 ## Execution Status
 
@@ -325,7 +338,7 @@ Design implication:
 3. `Slice 3`: complete.
 4. `Slice 4`: complete.
 5. `Slice 5`: complete.
-6. `Slice 6`: pending.
+6. `Slice 6`: in progress.
 
 ## Suggested Success Matrix
 
@@ -355,21 +368,25 @@ For each slice, capture these seven items:
 
 Immediate next step:
 
-- start `Slice 6`: first real `PIR` adapter against the already-proven kernel
-  boundary
+- finish `Slice 6a`: runtime in tests against the already-proven `PIR -> kernel`
+  adapter
 
 Suggested concrete order:
 
-1. define the minimum adapter shape:
-   - obtain a `GraphBatch` from `PIR`
-   - local validation
-   - publish over NATS
-   - query `GetContext` and `GetNodeDetail`
-2. wire one real incident from `PIR` into the kernel without changing the
-   external kernel contract
-3. run the same in-cluster runner path used in the earlier slices
-4. capture one evidence document for the first real `PIR` incident
-5. only after that, expand from one incident to a small family of incidents
+1. `Slice 6a`: runtime in tests
+   - assert runtime session/recommendation behavior in formal tests
+   - capture one live evidence path where runtime, graph read, and graph write
+     all occur in the same task lifecycle
+2. `Slice 6b`: first event-driven agent in `PIR`
+   - one agent only
+   - graph-local read from its node plus clear boundaries
+   - same kernel contract, no boundary expansion
+3. `Slice 6c`: agent budget policy
+   - define per-agent max iterations
+   - define retry versus escalate versus stop
+   - define timing budget across runtime, graph read, LLM, reranker, and
+     publish
+4. only after that, expand from one incident to a small family of incidents
 
 Open questions to answer in `Slice 6`:
 
@@ -378,6 +395,10 @@ Open questions to answer in `Slice 6`:
   decisions, or only for the root incident
 - whether the reranker stays mandatory in the first adapter version
 - whether `reason_preserving` should be the default read mode for `PIR`
+- whether direct root edges are still needed once agents become truly
+  event-driven and consume graph-local context
+- what policy should limit token growth before truncation
+- what policy should limit agent iterations and retries per task
 
 What should not happen next:
 
