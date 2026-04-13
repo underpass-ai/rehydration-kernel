@@ -273,3 +273,108 @@ Interpretation:
 - duplicate external `.failed` publishes do not create duplicate retry tasks
 - `A0.2` is now closed for both paths that were operationally relevant:
   duplicate `.escalated` and duplicate retryable `.failed`
+
+## A0.3 Execution Evidence And YAML Scenarios
+
+`A0.3` was implemented after `A0.2` to expose internal planner sub-attempts as
+first-class execution evidence and to move deployed smokes onto a named YAML
+scenario catalog.
+
+### What Changed
+
+- `fixplanning-deployed-smoke` can now load named scenarios from
+  `fixplanning-deployed-smoke-scenarios.yaml`
+- the smoke summary now includes an `execution_evidence` block derived from
+  `llm_traces` for the exact `task_id` under test
+- that block exposes:
+  - `internal_attempt_count`
+  - `operation_totals`
+  - per-sub-attempt duration
+  - per-sub-attempt operation list
+  - `prompt_tokens`, `completion_tokens`, and `finish_reasons`
+  - failure reasons when a sub-attempt fails
+
+This closes one of the main interpretability gaps left open by `A0.1`:
+successful runs can now be explained without querying raw traces manually.
+
+### Named Scenario Validation
+
+The YAML catalog was validated locally with:
+
+- `go run ./cmd/fixplanning-deployed-smoke -scenario-file ./docs/fixplanning-deployed-smoke-scenarios.yaml -list-scenarios`
+
+Observed scenario ids:
+
+- `cache-stampede`
+- `connection-pool-exhaustion`
+- `queue-backlog`
+
+### Live Scenario Run
+
+One deployed live smoke was then executed against the valid `pir` deployment:
+
+- scenario id: `cache-stampede`
+- incident_run_id: `3b0ec071-53f4-4cf7-9267-e0142ff34c18`
+- incident_id: `4b2aeafd-153d-4d01-9606-78635977fabd`
+- task_id: `352fd2c0-09e4-4b73-9161-477327f4c998`
+- published_event: `payments.incident.fix-planning.completed`
+- run_status: `mitigating`
+- run_stage: `patch_application`
+- relationships_ok: `true`
+
+Kernel read-back remained valid:
+
+- `decision:4b2aeafd-153d-4d01-9606-78635977fabd:fix-planning`
+- `ADDRESSES` present
+- `BASED_ON` present
+
+### Execution Evidence Observed
+
+The smoke output for that run now exposed:
+
+- `internal_attempt_count = 4`
+- `task_attempt = 1`
+- `latest_stage_task_attempt = 1`
+
+Interpretation:
+
+- the workflow-visible specialist task still completed in its first workflow
+  attempt
+- inside that task, the planner used bounded internal sub-attempts exactly as
+  designed by `executeWithPolicy(...)`
+- those internal sub-attempts are now visible directly in the smoke output
+
+Observed attempt pattern:
+
+- attempt 1:
+  - `generate` + `judge`
+  - semantic classifier activity during publish
+  - long duration (`331623ms`)
+- attempt 2:
+  - `generate`
+  - failed with `context deadline exceeded`
+- attempt 3:
+  - `generate` + `judge`
+  - successful continuation
+- attempt 4:
+  - `generate` + `judge`
+  - final accepted output
+
+Important consequence:
+
+- the earlier ambiguity around "extra generate/judge calls" is no longer a
+  forensic-only question
+- the current deployed smoke can now distinguish:
+  - workflow-level retries
+  - planner sub-attempts inside one workflow task
+
+### Resulting A0 Status
+
+After `A0.1`, `A0.2`, and now `A0.3`, the current baseline is stronger than the
+original experiment intent:
+
+- deployed `A0` can complete truthfully
+- deployed `A0` has passed an initial `5/5` repeatability sample
+- duplicate `.escalated` and `.failed` delivery is validated as idempotent
+- internal planner sub-attempts are now visible as first-class run evidence
+- named YAML scenarios now exist for broader repeatability coverage

@@ -74,16 +74,41 @@ What is already true now:
   service
 - the deployed `PIR` has now produced at least one real `fix_planning.completed`
   outcome under the long-budget `A0` policy, with valid kernel read-back
+- internal planner sub-attempts are now exposed as first-class execution
+  evidence in the deployed smoke output
+- the deployed smoke can now load named YAML scenarios instead of relying on
+  only one built-in hardcoded incident shape
+- the first widened YAML scenario batch has now completed `3/3` truthful live
+  runs on the deployed `A0` baseline
 
 What is still open:
 
 - fallback model support is not yet wired
 - specialized graph roles are not yet showing meaningful divergence in the live
   graph
-- delivery idempotency is now validated for duplicated
-  `payments.incident.fix-planning.escalated` on the deployed `pir`, but the
-  same level of dedicated smoke coverage does not yet exist for every terminal
-  subject
+- wider scenario coverage has not yet been sampled enough to declare `A0`
+  robust across incident families
+- we still do not have a promotion decision between staying on `A0` longer and
+  moving forward to `D1` or `A1`
+
+## Latest Decision After First Valid `D1`
+
+The first valid `D1` run did not change the baseline decision.
+
+Observed outcome:
+
+- `D1` executed correctly end-to-end
+- it failed truthfully on proposal quality, not on infrastructure
+- it added useful diagnostic signal, especially around weak evidence grounding
+  and weak rollback quality
+- it did not outperform `A0`
+
+Operational conclusion:
+
+- `A0` remains the baseline that should be protected
+- `D1` remains experimental
+- the next work should improve the common planner-quality layer before spending
+  more effort on reranker-specific routing
 
 ## Delivery Hardening Update
 
@@ -110,6 +135,48 @@ Implication:
   planner stack forward, not on re-litigating these specific duplicate-delivery
   regressions
 
+## Execution Evidence Update
+
+`A0.3` is now materially implemented.
+
+Evidence:
+
+- deployed smokes can now emit a compact `execution_evidence` block for the
+  exact `task_id`
+- that block exposes internal sub-attempt count, durations, operations, token
+  usage, finish reasons, and failure reasons
+- the smoke catalog is now backed by named YAML scenarios
+- a live `cache-stampede` run completed truthfully while surfacing four internal
+  planner sub-attempts inside one workflow-visible task attempt
+
+Implication:
+
+- one of the most important interpretability gaps in `A0` is now closed
+- the next iteration should use this evidence to widen coverage, not just add
+  more infrastructure
+
+## Scenario Matrix Update
+
+`A0.4` is now also completed.
+
+Evidence:
+
+- the deployed smoke ran the full YAML scenario catalog in one batch
+- `cache-stampede`, `connection-pool-exhaustion`, and `queue-backlog` all ended
+  in truthful `.completed`
+- all three preserved kernel read-back semantics
+- all three completed in `task_attempt = 1`
+- all three also completed in `internal_attempt_count = 1`
+
+Implication:
+
+- the current `A0` baseline now has first breadth evidence, not only repeated
+  evidence on one fixture
+- the next iteration no longer needs to prove that `A0` works across more than
+  one scenario family at all
+- the next decision is whether to deepen `A0` further or spend the next slice
+  on a support-sidecar or stronger planner experiment
+
 ## Latest Live Outcome
 
 The latest deployed `A0` smoke materially changed the state of this plan.
@@ -131,8 +198,7 @@ Important inference:
   response-shape constraints
 
 That means the next iteration should not immediately jump to a larger planner.
-It should first turn this one live success into operationally interpretable
-evidence.
+It should first use the now-improved evidence layer to test breadth.
 
 ## Key Decision For The Next Series
 
@@ -155,6 +221,14 @@ Reason:
 - we should first find out what the current local graph path can do when given a
   realistic autonomy budget
 
+Updated reading after `A0.3`:
+
+- budget, retries, delivery hardening, and execution evidence are now all good
+  enough to treat `A0` as a real baseline
+- the next uncertainty is no longer "what happened inside one run?"
+- the next uncertainty is "how broad is the working envelope across incident
+  families?"
+
 ## Important Operational Constraint
 
 Longer LLM budgets require an accompanying transport decision.
@@ -175,6 +249,57 @@ For the next practical slice, the simpler path is:
 
 - keep the current consumer architecture
 - raise `AckWait` to match the new stage budget with safety margin
+
+## New Concurrency Constraint From Live Smokes
+
+The latest in-cluster smoke exposed a different class of bottleneck:
+
+- a long-running `payments.incident.*.requested` message can keep the only
+  active consumer busy for minutes
+- while that happens, a fast terminal event like
+  `payments.incident.fix-planning.escalated` from another incident can remain
+  pending even though it is already in the stream
+
+This is not primarily an LLM-quality problem.
+It is a consumer-topology problem.
+
+Operational reading:
+
+- global FIFO across all incident messages is not acceptable
+- FIFO should hold per `incident_run_id`, not across unrelated incidents
+- `request` and `result` traffic should not share the same critical lane
+
+Near-term architectural direction:
+
+1. split consumers by event class:
+   - `alerts`
+   - `stage requests`
+   - `stage results`
+2. preserve ordering semantics per `incident_run_id`
+3. keep stage-result handling on a fast lane so terminal transitions do not sit
+   behind old long-running planner work
+
+## `Envoy` Note
+
+`Envoy` is now recorded as a possible later hardening layer for:
+
+- transport retries
+- rate limiting and quotas
+- circuit breaking
+- mTLS normalization across runtime, kernel, and model endpoints
+
+But it is not the next fix for the current live blockage.
+
+Reason:
+
+- `Envoy` can improve transport policy
+- it does not solve event-lane contention or global FIFO between incidents
+
+So the intended order remains:
+
+1. fix consumer topology and per-incident ordering first
+2. only then consider whether `Envoy` adds enough value to justify its
+   operational complexity
 
 ## Proposed Policy Revision
 

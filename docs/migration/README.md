@@ -24,6 +24,9 @@ an integrating product:
 - `pir-fix-planning-model-research-notes.md`
 - `pir-fix-planning-experiment-matrix.md`
 - `pir-fix-planning-a0-repeatability-report-2026-04-12.md`
+- `pir-fix-planning-a0-scenario-matrix-report-2026-04-12.md`
+- `pir-fix-planning-d1-live-failure-analysis-2026-04-12.md`
+- `pir-fix-planning-next-session-handoff-2026-04-12.md`
 - `qwen35-configuration-reference.md`
 - `pir-kernel-graph-inspection-smoke-reranker.md`
 - `pir-kernel-graph-inspection-smoke-late-waves.md`

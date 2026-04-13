@@ -204,9 +204,17 @@ Current note for `A0`:
 
 - Gate 1 is now satisfied
 - Gate 2 is now also satisfied on the first five-run live sample
-- the next decision is not "switch models now"
-- the next decision is whether to harden idempotency and duplicate-delivery
-  semantics before touching larger planners
+- `A0.2` duplicate-delivery hardening is now complete for both `.escalated` and
+  retryable `.failed`
+- `A0.3` execution evidence is now exposed directly in deployed smoke output
+- named YAML scenarios now exist for widening `A0` coverage
+- `A0.4` has now produced `3/3` truthful completions across the first widened
+  YAML scenario batch
+- the next decision is still not "switch models now"
+- the next decision is whether wider scenario coverage keeps `A0` convincing
+  enough to delay `A1`
+- after the first valid `D1` run, `A0` still remains the operational baseline
+  because `D1` added diagnostic value but did not improve acceptance
 
 ### Phase B: Planner Plus Structure Repair
 
@@ -249,6 +257,19 @@ successful completions.
 | `D2` | best planner from earlier phases | [Qwen/Qwen3-Reranker-4B](https://hf.co/Qwen/Qwen3-Reranker-4B) | `20m`, `4` retries | `H` | heavier reranking may outperform the cheap reranker | materially better ranking signal than `D1` | more cost with no quality gain |
 | `D3` | best planner from earlier phases | [Skywork/Skywork-Reward-V2-Qwen3-8B](https://hf.co/Skywork/Skywork-Reward-V2-Qwen3-8B) as acceptance sidecar | `20m`, `4` retries | `H` | reward scoring may outperform chat-judge heuristics | fewer false acceptances without harming completion rate | classifier integration cost exceeds quality gain |
 
+Current note for `D1`:
+
+- the first valid live `D1` run ended in truthful escalation, not completion
+- raw `llm_traces` show valid JSON and `response_code=200` on all planner,
+  reranker, and judge calls
+- the failure surface was semantic:
+  - rollback plan too vague or operationally unsafe
+  - patch still too generic on one attempt
+  - reranker showed strong `finding` alignment but weak `evidence` alignment
+- the next best move is not another reranker experiment first
+- the next best move is planner-contract hardening that benefits both `A0` and
+  `D1`, then re-testing `A0` before retrying `D1`
+
 ## Deferred Or Explicitly Out-Of-Scope Experiments
 
 These should not be run before the earlier phases:
@@ -266,14 +287,15 @@ These should not be run before the earlier phases:
 Run the first wave in this order:
 
 1. `A0.2` duplicate-delivery and terminal-path hardening
-2. keep the current deployed planner fixed while validating the cleaner path
-3. only if `A0` regresses or cannot hold the result, move to `A1`
-4. then `A2`
-5. then `A3`
-6. choose best planner
-7. `B2`
-8. only if still needed, `C1` then `C2`
-9. only after planner success exists, `D1` or `D3`
+2. `A0.3` execution evidence plus YAML scenario coverage
+3. keep the current deployed planner fixed while validating the cleaner path
+4. only if `A0` regresses or cannot hold the result, move to `A1`
+5. then `A2`
+6. then `A3`
+7. choose best planner
+8. `B2`
+9. only if still needed, `C1` then `C2`
+10. only after planner success exists, `D1` or `D3`
 
 This ordering matters because it isolates variables:
 
@@ -317,16 +339,21 @@ Stay on `A0` for one more hardening iteration.
 
 Immediate next task:
 
-- harden duplicate-delivery and terminal-path semantics while keeping the
-  current working planner unchanged
+- harden the common planner-quality layer first:
+  - stronger `fix_planning` schema
+  - deterministic local rollback validation
+  - regression fixture from the first valid `D1` failure
+  - then re-test `A0`
+  - only then re-test `D1`
 
 Reason:
 
 - `A0` has already shown `5/5` truthful `.completed` live runs in the first
   repeatability pass
-- LLM observability is now live
-- the next highest-return work is to remove duplicate or noisy delivery behavior
-  before changing planner size or topology
+- `A0` also passed the first widened YAML scenario batch
+- `D1` produced diagnostic value but not better acceptance
+- the next highest-return work is to strengthen planner output quality before
+  changing model size or adding more support topology
 
 Only if `A0` fails Gate 2 after that should we spend time deploying larger
 planner candidates.
