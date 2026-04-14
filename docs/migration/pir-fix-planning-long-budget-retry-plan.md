@@ -177,6 +177,112 @@ Implication:
 - the next decision is whether to deepen `A0` further or spend the next slice
   on a support-sidecar or stronger planner experiment
 
+## Queue Topology Update
+
+The queue-topology hypothesis is now partially validated in live execution.
+
+Evidence:
+
+- `PIR` now runs separate JetStream durables for:
+  - alerts
+  - stage results
+  - stage requests
+- those consumers now use `DeliverPolicy = New`, so a freshly created durable
+  no longer replays historical request backlog by default
+- a deployed smoke with two concurrent `fix_planning.requested` runs proved
+  that the old replay bug is gone
+- the same concurrent smoke also proved that the current `request` lane is
+  still effectively single-threaded at the worker level:
+  - both requests were delivered into the lane
+  - one run moved to `running`
+  - the other remained in `requested`
+
+Implication:
+
+- separating `request` and `result` traffic was the correct first fix
+- it removes the cross-lane head-of-line blocking that was delaying terminal
+  transitions
+- the next architectural question became how to preserve FIFO semantics per
+  `incident_run_id` while allowing different incidents to advance concurrently
+
+Follow-up result:
+
+- `PIR` now dispatches `request`-lane work by `incident_run_id`
+- ordering is preserved per key inside the worker
+- unrelated incident runs can now start specialist execution concurrently on
+  the same pod
+- a repeated live smoke with two `fix_planning.requested` events confirmed that
+  both runs now move from `requested` to `running` within the same short window
+
+Remaining note:
+
+- this closes the immediate single-pod head-of-line blocking problem on the
+  `request` lane
+- any future horizontal-scale semantics across multiple `PIR` pods should be
+  evaluated separately if and when replica count increases
+
+## `A0.v3` Budget Update
+
+The current deployed baseline is now:
+
+- `agent_version = fix-planning/2026-04-13.generate-budget.a0.v3`
+- `stageBudget = 24m`
+- `attemptPhaseBudget = 6m`
+- `llmGenerateBudget = 5m`
+
+Latest confirmed behavior:
+
+- the widened `generate` budget materially improved the baseline
+- `fix_planning` no longer fails only because the planner never answers
+- live runs now show mixed behavior:
+  - some attempts still time out in `generate`
+  - other attempts complete `generate -> repair -> judge`
+  - successful runs can now complete `fix_planning` and advance the workflow
+
+Operational conclusion:
+
+- `A0` remains the correct baseline
+- the next hardening work should focus on planner-quality and contract quality,
+  not on replacing the planner family yet
+
+## Planner Hardening Candidates To Try Next
+
+The latest live evidence narrows the common failure mode to rollback quality and
+planner variability, not queueing or hook mechanics.
+
+Recommended hardening candidates:
+
+1. require rollback steps to name the exact change being reverted
+2. require rollback steps to include an explicit verification step
+3. require rollback preconditions to include an abort condition
+4. require evidence basis to reference the concrete finding or evidence signal
+5. reject plans that introduce ungrounded mechanisms such as cache warming
+6. require the rollback to be the inverse of the proposed patch, not a generic
+   recovery action
+7. reject plans whose rollback language is reversible in prose but not
+   operationally actionable
+8. feed the precise local rejection reason back into the next retry, not only a
+   generic malformed-or-low-confidence message
+
+More concrete examples for the next slice:
+
+- if `patch_description` says to stagger invalidation, `rollback_steps` should
+  say how to restore the prior invalidation behavior
+- if a rollback mentions cache safety, it should also mention a verification
+  signal such as miss rate, latency, or consistency
+- if a plan implies a capability like an admin endpoint, cache warmer, or
+  feature flag, that capability must be supported by the evidence or it should
+  move into `assumptions`
+
+What not to confuse with hardening:
+
+- bigger planner models
+- more graph roles
+- reranker-specific routing
+- transport proxy work such as `Envoy`
+
+Those may still matter later, but they are not the next common-layer fix.
+
 ## Latest Live Outcome
 
 The latest deployed `A0` smoke materially changed the state of this plan.

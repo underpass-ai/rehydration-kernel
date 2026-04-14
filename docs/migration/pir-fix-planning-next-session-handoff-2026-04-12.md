@@ -185,6 +185,137 @@ After that is stable, `Envoy` can be reconsidered as a transport and policy
 layer, especially if retries, quotas, and mTLS behavior become complex enough
 to justify it.
 
+## Queue Finding Confirmed In Live Smoke
+
+This is no longer only a design concern; it has now been reproduced in a live
+concurrent smoke.
+
+Observed result:
+
+- two `fix_planning.requested` events were seeded at nearly the same time
+- both were delivered into `incident-stage-requests-v2`
+- one run moved from `requested` to `running` within seconds
+- the other remained in `requested` while the first consumed planner time
+
+What this means:
+
+- the lane split fixed the earlier control-plane problem
+- `result` traffic is no longer sharing the same critical lane with long
+  `request` work
+- the original `request` lane was effectively serial per worker / pod
+
+Follow-up status:
+
+- `PIR` now dispatches `request` work by `incident_run_id`
+- unit tests cover serial execution for the same run key and concurrent
+  execution for different run keys
+- a live concurrent smoke confirmed that two independent
+  `fix_planning.requested` runs now both move to `running`
+
+Current interpretation:
+
+- the immediate queue-topology issue is materially resolved for the current
+  single-pod deployment model
+- `result fast lane` remains necessary and correct
+- the next queue-related question, if needed later, is behavior under
+  horizontal scale rather than the original single-worker head-of-line bug
+
+Recommended next move after reopening the session:
+
+1. keep the current `request` / `result` split
+2. treat per-`incident_run_id` dispatch as the current baseline
+3. return focus to planner-quality and stage-level behavior unless replica
+   count or queue behavior changes again
+
+## Current `A0` Baseline To Carry Forward
+
+Current deployed baseline:
+
+- `agent_version = fix-planning/2026-04-13.generate-budget.a0.v3`
+- widened long-budget policy is now part of the baseline, not an experiment
+- `helm test` smoke wrapper now runs as a test `Pod`, so successful runs return
+  cleanly with logs
+
+Important practical conclusion:
+
+- `A0` is still the baseline
+- the next work is hardening planner quality inside `A0`
+- do not treat the remaining failures as a reason to jump to a new planner
+  family yet
+
+## Hardening Candidates To Try Next
+
+These are the specific planner-contract hardenings now worth trying:
+
+1. require rollback steps to name the exact change being reverted
+2. require rollback steps to include explicit verification
+3. require rollback preconditions to include an abort condition
+4. require evidence grounding to cite the actual finding or evidence signal
+5. reject ungrounded mechanisms like cache warming unless evidence confirms
+   them
+6. require rollback to be the inverse of the proposed patch, not a generic
+   mitigation
+7. make retry feedback include the exact local rejection reason
+
+Current live evidence behind this list:
+
+- some `A0.v3` attempts now complete `generate -> repair -> judge`
+- failed attempts are no longer dominated only by planner timeout
+- the most useful next leverage is better rollback/action quality, not more
+  transport or queue work
+
+## Candidate Planner Document Restructure
+
+Another change worth trying next is structural, not only validator-driven.
+
+Current planner output still mixes:
+
+- assessment
+- proposed change
+- execution details
+- rollback details
+- risk framing
+
+Recommended next schema direction:
+
+1. `incident_assessment`
+   - `hypothesis`
+   - `evidence_basis`
+   - `assumptions`
+   - `confidence`
+2. `proposed_change`
+   - `goal`
+   - `change_summary`
+   - `expected_effect`
+   - `blast_radius`
+3. `execution_plan`
+   - `preconditions`
+   - `steps`
+   - `success_signals`
+4. `rollback_plan`
+   - `trigger_conditions`
+   - `revert_steps`
+   - `rollback_verification`
+5. `risk_review`
+   - `main_risks`
+   - `unknowns`
+   - `why_this_is_safe_enough`
+
+Why this is attractive:
+
+- it separates change from rollback more cleanly
+- it gives the validator clearer targets
+- it forces explicit success and rollback verification signals
+- it moves the planner output closer to an operational runbook shape
+
+Recommended minimal structural version if the full reshape feels too large:
+
+- keep the current top-level schema
+- split rollback into:
+  - `rollback_trigger_conditions`
+  - `rollback_revert_steps`
+  - `rollback_verification`
+
 ## First Command To Resume Tomorrow
 
 Start by reopening these three docs in this order:
