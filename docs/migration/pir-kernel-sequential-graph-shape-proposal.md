@@ -4,6 +4,19 @@ Status: proposed
 Date: 2026-04-12
 Scope: proposed next iteration of the `PIR -> kernel` graph builder
 
+Implementation status note (`2026-04-14`):
+
+- this direction is now partially implemented in `PIR`, but not completed
+- the live graph already contains part of the intended semantic spine:
+  - `incident -HAS_FINDING-> finding`
+  - `decision -ADDRESSES-> finding`
+  - `decision -BASED_ON-> rehydration evidence`
+  - `verification_evidence -VERIFIES-> patch task` as the current emitted form
+- the live builder still keeps several root-attached primary edges, so the
+  graph is not yet fully migrated away from the star topology
+- the exact target taxonomy in this document is therefore still a real pending
+  refactor, not only historical proposal
+
 This document proposes a concrete change in graph shape for `PIR`.
 
 Current live graphs are operationally correct, but they are still too
@@ -298,6 +311,57 @@ In short:
 
 - star graphs are easy to publish
 - sequential-semantic graphs are more useful to consume
+
+## Follow-On Kernel Enrichments For Better LLM Interventions
+
+The sequential spine is necessary, but it is not the whole next step.
+
+If the goal is to improve downstream intervention quality for `fix_planning`
+and later stages, the kernel should also evolve in these directions:
+
+1. typed intervention memory
+   - preserve not only findings and decisions, but also intervention outcomes
+   - examples:
+     - `decision -IMPLEMENTED_BY-> task`
+     - `task -VERIFIED_BY-> evidence`
+     - `decision -WORSENED-> finding`
+     - `decision -ROLLED_BACK_BY-> task`
+   - goal: let the LLM see what was attempted, what worked, and what had to be
+     reverted
+
+2. negative evidence and unsupported capabilities
+   - represent when an action is not supported or not evidenced by the graph
+   - examples:
+     - `finding -NO_EVIDENCE_FOR-> capability`
+     - `constraint -NOT_SUPPORTED_BY-> runtime_capability`
+     - `evidence -CONTRADICTS-> decision`
+   - goal: reduce invented admin endpoints, fake rollback paths, or ungrounded
+     operational assumptions
+
+3. stage-aware and retry-aware rehydration
+   - `fix_planning`, `verification`, and later `recovery_confirmation` should
+     not ask for the same context shape
+   - retry attempts should be able to request context biased toward the known
+     failure mode, for example:
+     - rollback quality
+     - evidence grounding
+     - unsupported capability use
+   - goal: make the kernel adapt the neighborhood to the failure being
+     corrected, not only to the incident root
+
+4. verification-centered intervention data
+   - store explicit success signals, abort conditions, and rollback validation
+     signals as first-class graph content
+   - goal: make interventions operationally checkable, not only plausible in
+     prose
+
+5. runtime affordance projection
+   - project confirmed runtime or policy affordances into the graph when useful
+   - examples:
+     - allowed tool families
+     - environment constraints
+     - confirmed execution capabilities
+   - goal: keep the planner closer to what can actually be executed safely
 
 ## Migration Strategy
 

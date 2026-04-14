@@ -331,6 +331,19 @@ Design implication:
 - exposes the next design questions: root-edge reduction, runtime query policy,
   token control before truncation, and per-agent iteration/retry budgets
 
+Additional next-step note (`2026-04-14`):
+
+- improving LLM intervention quality now depends less on transport maturity and
+  more on graph shape and intervention semantics
+- the next kernel-facing opportunities are:
+  - completing the shift from star topology to the sequential intervention
+    spine
+  - introducing typed intervention-memory relations, not only stage artifacts
+  - adding negative evidence / unsupported-capability representation
+  - supporting stage-aware and retry-aware rehydration shapes
+  - enriching verification and rollback signals so downstream planners can
+    propose operationally safer interventions
+
 ## Execution Status
 
 1. `Slice 1`: complete.
