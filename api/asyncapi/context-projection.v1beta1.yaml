@@ -22,6 +22,13 @@ channels:
       summary: Consume normalized graph nodes and relations into the projection model.
       message:
         $ref: '#/components/messages/GraphNodeMaterialized'
+  graph.relation.materialized:
+    description: Upstream system emits a normalized relation between existing or future graph nodes.
+    subscribe:
+      operationId: onGraphRelationMaterialized
+      summary: Consume normalized graph relations into the projection model without re-materializing the source node.
+      message:
+        $ref: '#/components/messages/GraphRelationMaterialized'
   node.detail.materialized:
     description: Upstream system emits expanded detail for a single node.
     subscribe:
@@ -43,6 +50,11 @@ components:
       title: graph.node.materialized
       payload:
         $ref: '#/components/schemas/GraphNodeMaterializedEvent'
+    GraphRelationMaterialized:
+      name: GraphRelationMaterialized
+      title: graph.relation.materialized
+      payload:
+        $ref: '#/components/schemas/GraphRelationMaterializedEvent'
     NodeDetailMaterialized:
       name: NodeDetailMaterialized
       title: node.detail.materialized
@@ -96,6 +108,15 @@ components:
           properties:
             data:
               $ref: '#/components/schemas/GraphNodeMaterializedData'
+    GraphRelationMaterializedEvent:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelope'
+        - type: object
+          required:
+            - data
+          properties:
+            data:
+              $ref: '#/components/schemas/GraphRelationMaterializedData'
     GraphNodeMaterializedData:
       type: object
       required:
@@ -125,6 +146,22 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/RelatedNodeReference'
+    GraphRelationMaterializedData:
+      type: object
+      required:
+        - source_node_id
+        - target_node_id
+        - relation_type
+        - explanation
+      properties:
+        source_node_id:
+          type: string
+        target_node_id:
+          type: string
+        relation_type:
+          type: string
+        explanation:
+          $ref: '#/components/schemas/RelatedNodeExplanation'
     RelatedNodeReference:
       type: object
       required:

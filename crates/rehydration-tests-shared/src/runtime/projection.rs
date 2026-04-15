@@ -32,6 +32,12 @@ impl RunningProjectionRuntime {
         let graph_subscription = client
             .subscribe(prefixed_subject(subject_prefix, "graph.node.materialized"))
             .await?;
+        let relation_subscription = client
+            .subscribe(prefixed_subject(
+                subject_prefix,
+                "graph.relation.materialized",
+            ))
+            .await?;
         let detail_subscription = client
             .subscribe(prefixed_subject(subject_prefix, "node.detail.materialized"))
             .await?;
@@ -51,6 +57,12 @@ impl RunningProjectionRuntime {
                 graph_subscription,
                 "graph.node.materialized",
             );
+            let relation_loop = run_subscription_loop(
+                consumer.clone(),
+                Arc::clone(&handler),
+                relation_subscription,
+                "graph.relation.materialized",
+            );
             let detail_loop = run_subscription_loop(
                 consumer,
                 handler,
@@ -58,7 +70,7 @@ impl RunningProjectionRuntime {
                 "node.detail.materialized",
             );
 
-            tokio::try_join!(graph_loop, detail_loop)?;
+            tokio::try_join!(graph_loop, relation_loop, detail_loop)?;
             Ok(())
         });
 

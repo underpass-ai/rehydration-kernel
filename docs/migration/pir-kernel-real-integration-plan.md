@@ -343,6 +343,11 @@ Additional next-step note (`2026-04-14`):
   - supporting stage-aware and retry-aware rehydration shapes
   - enriching verification and rollback signals so downstream planners can
     propose operationally safer interventions
+- the main contract question for the sequential spine is now explicit:
+  - if `PIR` wants to stop re-emitting anchor nodes across waves, the kernel
+    likely needs an additive async relation-materialization boundary
+  - see:
+    [`pir-kernel-relation-materialized-rfc.md`](./pir-kernel-relation-materialized-rfc.md)
 
 ## Execution Status
 
@@ -410,6 +415,9 @@ Open questions to answer in `Slice 6`:
 - whether `reason_preserving` should be the default read mode for `PIR`
 - whether direct root edges are still needed once agents become truly
   event-driven and consume graph-local context
+- whether the kernel should add `graph.relation.materialized` as an
+  experimental additive async subject to complete the sequential spine without
+  anchor-node patching
 - what policy should limit token growth before truncation
 - what policy should limit agent iterations and retries per task
 

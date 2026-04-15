@@ -9,7 +9,8 @@ use rehydration_domain::ProjectionEventHandler;
 use crate::consumer::NatsProjectionConsumer;
 use crate::runtime::connect_options::{NatsClientTlsConfig, connect_nats_client};
 use crate::runtime::projection_stream::{
-    DETAIL_SUBJECT, GRAPH_SUBJECT, ensure_detail_consumer, ensure_graph_consumer, ensure_stream,
+    DETAIL_SUBJECT, GRAPH_SUBJECT, RELATION_SUBJECT, ensure_detail_consumer, ensure_graph_consumer,
+    ensure_relation_consumer, ensure_stream,
 };
 use crate::runtime::runtime_error::NatsRuntimeError;
 
@@ -18,6 +19,7 @@ pub struct NatsProjectionRuntime<H> {
     consumer: NatsProjectionConsumer,
     handler: Arc<H>,
     graph_consumer: jetstream::consumer::PullConsumer,
+    relation_consumer: jetstream::consumer::PullConsumer,
     detail_consumer: jetstream::consumer::PullConsumer,
 }
 
@@ -39,6 +41,7 @@ where
             consumer: NatsProjectionConsumer::new(subject_prefix.to_string()),
             handler: Arc::new(handler),
             graph_consumer: ensure_graph_consumer(&stream, subject_prefix).await?,
+            relation_consumer: ensure_relation_consumer(&stream, subject_prefix).await?,
             detail_consumer: ensure_detail_consumer(&stream, subject_prefix).await?,
         })
     }
@@ -51,9 +54,14 @@ where
     }
 
     pub async fn run(self) -> Result<(), NatsRuntimeError> {
+        let graph_consumer = self.consumer.clone();
+        let relation_consumer = self.consumer.clone();
+        let graph_handler = Arc::clone(&self.handler);
+        let relation_handler = Arc::clone(&self.handler);
+
         let graph_task = run_subject_loop(
-            self.consumer.clone(),
-            Arc::clone(&self.handler),
+            graph_consumer,
+            graph_handler,
             self.graph_consumer,
             GRAPH_SUBJECT,
         );
@@ -63,8 +71,14 @@ where
             self.detail_consumer,
             DETAIL_SUBJECT,
         );
+        let relation_task = run_subject_loop(
+            relation_consumer,
+            relation_handler,
+            self.relation_consumer,
+            RELATION_SUBJECT,
+        );
 
-        tokio::try_join!(graph_task, detail_task)?;
+        tokio::try_join!(graph_task, relation_task, detail_task)?;
         Ok(())
     }
 }

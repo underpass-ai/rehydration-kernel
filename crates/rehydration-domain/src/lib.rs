@@ -10,10 +10,11 @@ pub use model::{
 };
 pub use projection::{
     ContextPathNeighborhood, GraphNodeMaterializedData, GraphNodeMaterializedEvent,
-    NodeDetailMaterializedData, NodeDetailMaterializedEvent, NodeDetailProjection,
-    NodeNeighborhood, NodeProjection, NodeRelationProjection, ProjectionCheckpoint,
-    ProjectionEnvelope, ProjectionEvent, ProjectionEventHandler, ProjectionHandlingRequest,
-    ProjectionHandlingResult, ProjectionMutation, RelatedNodeExplanationData, RelatedNodeReference,
+    GraphRelationMaterializedData, GraphRelationMaterializedEvent, NodeDetailMaterializedData,
+    NodeDetailMaterializedEvent, NodeDetailProjection, NodeNeighborhood, NodeProjection,
+    NodeRelationProjection, ProjectionCheckpoint, ProjectionEnvelope, ProjectionEvent,
+    ProjectionEventHandler, ProjectionHandlingRequest, ProjectionHandlingResult,
+    ProjectionMutation, RelatedNodeExplanationData, RelatedNodeReference,
 };
 pub use repositories::{
     ContextEventChange, ContextEventStore, ContextUpdatedEvent, GraphNeighborhoodReader,

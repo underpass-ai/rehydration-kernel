@@ -23,6 +23,13 @@ fn asyncapi_exposes_generic_kernel_subjects_with_expected_directions() {
         graph_node_channel.contains(&"        $ref: '#/components/messages/GraphNodeMaterialized'")
     );
 
+    let graph_relation_channel = top_level_block("  graph.relation.materialized:");
+    assert!(graph_relation_channel.contains(&"    subscribe:"));
+    assert!(
+        graph_relation_channel
+            .contains(&"        $ref: '#/components/messages/GraphRelationMaterialized'")
+    );
+
     let node_detail_channel = top_level_block("  node.detail.materialized:");
     assert!(node_detail_channel.contains(&"    subscribe:"));
     assert!(
@@ -79,11 +86,21 @@ fn context_bundle_generated_payload_uses_root_node_id_semantics() {
 #[test]
 fn graph_node_and_detail_payloads_remain_generic() {
     let graph_node = top_level_block("    GraphNodeMaterializedData:");
+    let graph_relation = top_level_block("    GraphRelationMaterializedData:");
     let node_detail = top_level_block("    NodeDetailMaterializedData:");
 
     assert_eq!(
         nested_sequence_entries(&graph_node, "      required:"),
         vec!["node_id", "node_kind", "title"]
+    );
+    assert_eq!(
+        nested_sequence_entries(&graph_relation, "      required:"),
+        vec![
+            "source_node_id",
+            "target_node_id",
+            "relation_type",
+            "explanation",
+        ]
     );
     assert_eq!(
         nested_sequence_entries(&node_detail, "      required:"),

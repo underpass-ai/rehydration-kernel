@@ -1,0 +1,82 @@
+{
+  "root_node_id": "incident:pir-legacy-cache-stampede",
+  "correlation_id": "pir-legacy-cache-stampede",
+  "causation_id": "pir-legacy-cache-stampede-wave-1",
+  "occurred_at": "2026-04-14T19:00:00Z",
+  "nodes": [
+    {
+      "node_id": "incident:pir-legacy-cache-stampede",
+      "node_kind": "incident",
+      "title": "Payments cache stampede",
+      "summary": "Cache stampede increased checkout latency after invalidation behavior changed.",
+      "status": "ACTIVE",
+      "labels": ["incident", "payments"],
+      "properties": {
+        "service": "payments-api"
+      },
+      "source_kind": "agent",
+      "source_agent": "pir",
+      "observed_at": "2026-04-14T19:00:00Z"
+    },
+    {
+      "node_id": "finding:pir-legacy-cache-stampede:stampede",
+      "node_kind": "finding",
+      "title": "Cache stampede on invalidation",
+      "summary": "Synchronized invalidation drove miss-rate spikes and elevated checkout p95.",
+      "status": "ACTIVE",
+      "labels": ["finding"],
+      "properties": {
+        "family": "cache-stampede"
+      },
+      "source_kind": "agent",
+      "source_agent": "pir",
+      "observed_at": "2026-04-14T19:00:05Z"
+    },
+    {
+      "node_id": "decision:pir-legacy-cache-stampede:enable-jitter",
+      "node_kind": "decision",
+      "title": "Enable cache jitter",
+      "summary": "Introduce jittered invalidation to desynchronize misses while keeping rollback reversible.",
+      "status": "PROPOSED",
+      "labels": ["decision", "fix-planning"],
+      "properties": {
+        "stage": "fix_planning"
+      },
+      "source_kind": "agent",
+      "source_agent": "pir",
+      "observed_at": "2026-04-14T19:00:10Z"
+    }
+  ],
+  "relations": [
+    {
+      "source_node_id": "incident:pir-legacy-cache-stampede",
+      "target_node_id": "finding:pir-legacy-cache-stampede:stampede",
+      "relation_type": "HAS_FINDING",
+      "semantic_class": "evidential",
+      "rationale": "The incident includes a confirmed cache stampede finding.",
+      "confidence": "high",
+      "sequence": 1
+    },
+    {
+      "source_node_id": "incident:pir-legacy-cache-stampede",
+      "target_node_id": "decision:pir-legacy-cache-stampede:enable-jitter",
+      "relation_type": "MITIGATED_BY",
+      "semantic_class": "procedural",
+      "rationale": "The incident is being mitigated by a jitter rollout decision.",
+      "confidence": "high",
+      "sequence": 2
+    }
+  ],
+  "node_details": [
+    {
+      "node_id": "finding:pir-legacy-cache-stampede:stampede",
+      "detail": "Redis miss rate jumped from 4% to 38% immediately after the invalidation rollout. Checkout p95 rose above 2.1s.",
+      "revision": 1
+    },
+    {
+      "node_id": "decision:pir-legacy-cache-stampede:enable-jitter",
+      "detail": "Apply a bounded jitter window to cache invalidation, then verify miss rate and checkout p95 before widening rollout.",
+      "revision": 1
+    }
+  ]
+}

@@ -216,6 +216,37 @@ Artifact: `artifacts/e2e-runs/2026-03-29_153051`
 | Extract RESP protocol | adapter-valkey/io.rs | 663 | Shared module for RESP encoding |
 | Extract TLS config | transport/grpc_server.rs | 222 | Separate TLS module |
 
+### P1 — Additive relation-materialized async boundary for PIR sequential spine
+
+The current async boundary is node-centric:
+
+- `graph.node.materialized`
+- `node.detail.materialized`
+
+That shape is sufficient for root-attached and single-wave graphs, but it is
+awkward for incremental producers such as `PIR` when a later wave needs to add
+an edge whose source node already exists from an earlier wave.
+
+The practical example is the desired sequential intervention spine:
+
+- `finding -> SUPPORTED_BY -> evidence`
+- `decision -> IMPLEMENTED_BY -> task`
+- `task -> VERIFIED_BY -> evidence`
+
+without re-materializing earlier source nodes just to attach outgoing edges.
+
+Planned next step:
+
+- evaluate `graph.relation.materialized` as an additive experimental async
+  subject
+- keep `graph.node.materialized` and `node.detail.materialized` unchanged
+- validate with PIR-like container E2E and live in-cluster smokes before any
+  contract freeze
+
+Reference:
+
+- [`pir-kernel-relation-materialized-rfc.md`](../migration/pir-kernel-relation-materialized-rfc.md)
+
 ### P1 — async-nats version conflict in TLS test fixtures (done)
 
 - [x] Bump `rehydration-tests-kernel` dev-dependency from async-nats 0.39 → 0.46

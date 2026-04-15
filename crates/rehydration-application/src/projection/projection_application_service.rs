@@ -78,6 +78,23 @@ where
                 );
                 mutations
             }
+            ProjectionEvent::GraphRelationMaterialized(event) => {
+                vec![ProjectionMutation::UpsertNodeRelation(
+                    NodeRelationProjection {
+                        source_node_id: event.data.source_node_id.clone(),
+                        target_node_id: event.data.target_node_id.clone(),
+                        relation_type: event.data.relation_type.clone(),
+                        explanation: event.data.explanation.clone().try_into().map_err(
+                            |error| {
+                                PortError::InvalidState(format!(
+                                    "invalid relation explanation for `{}` -> `{}`: {error}",
+                                    event.data.source_node_id, event.data.target_node_id
+                                ))
+                            },
+                        )?,
+                    },
+                )]
+            }
             ProjectionEvent::NodeDetailMaterialized(event) => {
                 vec![ProjectionMutation::UpsertNodeDetail(NodeDetailProjection {
                     node_id: event.data.node_id.clone(),
@@ -87,6 +104,156 @@ where
                 })]
             }
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use rehydration_domain::{
+        GraphRelationMaterializedData, GraphRelationMaterializedEvent, PortError,
+        ProcessedEventStore, ProjectionCheckpoint, ProjectionCheckpointStore, ProjectionEnvelope,
+        ProjectionEvent, ProjectionEventHandler, ProjectionHandlingRequest, ProjectionMutation,
+        ProjectionWriter, RelatedNodeExplanationData, RelationSemanticClass,
+    };
+    use tokio::sync::Mutex;
+
+    use super::ProjectionApplicationService;
+
+    #[derive(Debug, Default, Clone)]
+    struct RecordingProjectionWriter {
+        mutations: Arc<Mutex<Vec<ProjectionMutation>>>,
+    }
+
+    impl RecordingProjectionWriter {
+        async fn mutations(&self) -> Vec<ProjectionMutation> {
+            self.mutations.lock().await.clone()
+        }
+    }
+
+    impl ProjectionWriter for RecordingProjectionWriter {
+        async fn apply_mutations(
+            &self,
+            mutations: Vec<ProjectionMutation>,
+        ) -> Result<(), PortError> {
+            self.mutations.lock().await.extend(mutations);
+            Ok(())
+        }
+    }
+
+    #[derive(Debug, Default, Clone)]
+    struct RecordingProcessedEventStore {
+        processed: Arc<Mutex<Vec<(String, String)>>>,
+    }
+
+    impl ProcessedEventStore for RecordingProcessedEventStore {
+        async fn has_processed(
+            &self,
+            consumer_name: &str,
+            event_id: &str,
+        ) -> Result<bool, PortError> {
+            Ok(self
+                .processed
+                .lock()
+                .await
+                .iter()
+                .any(|(consumer, event)| consumer == consumer_name && event == event_id))
+        }
+
+        async fn record_processed(
+            &self,
+            consumer_name: &str,
+            event_id: &str,
+        ) -> Result<(), PortError> {
+            self.processed
+                .lock()
+                .await
+                .push((consumer_name.to_string(), event_id.to_string()));
+            Ok(())
+        }
+    }
+
+    #[derive(Debug, Default, Clone)]
+    struct RecordingCheckpointStore {
+        checkpoints: Arc<Mutex<Vec<ProjectionCheckpoint>>>,
+    }
+
+    impl ProjectionCheckpointStore for RecordingCheckpointStore {
+        async fn save_checkpoint(&self, checkpoint: ProjectionCheckpoint) -> Result<(), PortError> {
+            self.checkpoints.lock().await.push(checkpoint);
+            Ok(())
+        }
+
+        async fn load_checkpoint(
+            &self,
+            _consumer_name: &str,
+            _stream_name: &str,
+        ) -> Result<Option<ProjectionCheckpoint>, PortError> {
+            Ok(self.checkpoints.lock().await.last().cloned())
+        }
+    }
+
+    #[tokio::test]
+    async fn relation_materialized_event_upserts_relation_directly() {
+        let writer = RecordingProjectionWriter::default();
+        let service = ProjectionApplicationService::new(
+            writer.clone(),
+            RecordingProcessedEventStore::default(),
+            RecordingCheckpointStore::default(),
+        );
+
+        let request = ProjectionHandlingRequest {
+            consumer_name: "projection-consumer".to_string(),
+            stream_name: "rehydration.events".to_string(),
+            subject: "graph.relation.materialized".to_string(),
+            event: ProjectionEvent::GraphRelationMaterialized(GraphRelationMaterializedEvent {
+                envelope: ProjectionEnvelope {
+                    event_id: "evt-relation-1".to_string(),
+                    correlation_id: "corr-1".to_string(),
+                    causation_id: "cmd-1".to_string(),
+                    occurred_at: "2026-04-14T18:45:00Z".to_string(),
+                    aggregate_id: "relation:decision|addresses|finding".to_string(),
+                    aggregate_type: "node_relation".to_string(),
+                    schema_version: "v1beta1".to_string(),
+                },
+                data: GraphRelationMaterializedData {
+                    source_node_id: "decision-1".to_string(),
+                    target_node_id: "finding-1".to_string(),
+                    relation_type: "addresses".to_string(),
+                    explanation: RelatedNodeExplanationData {
+                        semantic_class: RelationSemanticClass::Causal,
+                        rationale: Some("decision addresses finding".to_string()),
+                        motivation: None,
+                        method: None,
+                        decision_id: Some("decision-1".to_string()),
+                        caused_by_node_id: None,
+                        evidence: None,
+                        confidence: Some("high".to_string()),
+                        sequence: Some(2),
+                    },
+                },
+            }),
+        };
+
+        let result = service
+            .handle_projection_event(request)
+            .await
+            .expect("relation event should apply");
+
+        assert_eq!(result.subject, "graph.relation.materialized");
+        assert_eq!(result.applied_mutations, 1);
+
+        let mutations = writer.mutations().await;
+        assert_eq!(mutations.len(), 1);
+        match &mutations[0] {
+            ProjectionMutation::UpsertNodeRelation(relation) => {
+                assert_eq!(relation.source_node_id, "decision-1");
+                assert_eq!(relation.target_node_id, "finding-1");
+                assert_eq!(relation.relation_type, "addresses");
+            }
+            mutation => panic!("unexpected mutation: {mutation:?}"),
+        }
     }
 }
 

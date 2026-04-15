@@ -32,6 +32,7 @@ an integrating product:
 - `pir-kernel-graph-inspection-smoke-late-waves.md`
 - `pir-first-event-driven-agent-plan.md`
 - `pir-kernel-sequential-graph-shape-proposal.md`
+- `pir-kernel-relation-materialized-rfc.md`
 - `pir-kernel-blind-structural-evidence.md`
 - `pir-kernel-blind-context-consumption-evidence.md`
 - `llm-response-determinism-strategy.md`

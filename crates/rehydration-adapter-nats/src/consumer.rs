@@ -24,7 +24,8 @@ impl NatsProjectionConsumer {
 
     pub fn describe(&self) -> String {
         format!(
-            "nats projection consumer routing {}graph.node.materialized and {}node.detail.materialized for {}",
+            "nats projection consumer routing {}graph.node.materialized, {}graph.relation.materialized, and {}node.detail.materialized for {}",
+            subject_prefix_pattern(&self.subject_prefix),
             subject_prefix_pattern(&self.subject_prefix),
             subject_prefix_pattern(&self.subject_prefix),
             self.consumer_name,

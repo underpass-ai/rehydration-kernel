@@ -15,6 +15,8 @@ const UPDATE_CONTEXT_REQUEST_FIXTURE: &str =
     include_str!("../../../api/examples/kernel/v1beta1/grpc/update-context.request.json");
 const GRAPH_NODE_MATERIALIZED_FIXTURE: &str =
     include_str!("../../../api/examples/kernel/v1beta1/async/graph.node.materialized.json");
+const GRAPH_RELATION_MATERIALIZED_FIXTURE: &str =
+    include_str!("../../../api/examples/kernel/v1beta1/async/graph.relation.materialized.json");
 const NODE_DETAIL_MATERIALIZED_FIXTURE: &str =
     include_str!("../../../api/examples/kernel/v1beta1/async/node.detail.materialized.json");
 const CONTEXT_BUNDLE_GENERATED_FIXTURE: &str =
@@ -77,6 +79,25 @@ fn async_reference_fixtures_use_generic_event_envelope_and_node_centric_payloads
         ],
     );
     assert_async_fixture_matches_expected_shape(
+        parse_fixture(GRAPH_RELATION_MATERIALIZED_FIXTURE),
+        &[
+            "event_id",
+            "correlation_id",
+            "causation_id",
+            "occurred_at",
+            "aggregate_id",
+            "aggregate_type",
+            "schema_version",
+            "data",
+        ],
+        &[
+            "source_node_id",
+            "target_node_id",
+            "relation_type",
+            "explanation",
+        ],
+    );
+    assert_async_fixture_matches_expected_shape(
         parse_fixture(NODE_DETAIL_MATERIALIZED_FIXTURE),
         &[
             "event_id",
@@ -120,6 +141,7 @@ fn reference_fixtures_do_not_reintroduce_legacy_product_nouns() {
         parse_fixture(REHYDRATE_SESSION_REQUEST_FIXTURE),
         parse_fixture(UPDATE_CONTEXT_REQUEST_FIXTURE),
         parse_fixture(GRAPH_NODE_MATERIALIZED_FIXTURE),
+        parse_fixture(GRAPH_RELATION_MATERIALIZED_FIXTURE),
         parse_fixture(NODE_DETAIL_MATERIALIZED_FIXTURE),
         parse_fixture(CONTEXT_BUNDLE_GENERATED_FIXTURE),
     ];

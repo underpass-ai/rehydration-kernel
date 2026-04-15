@@ -2,6 +2,8 @@
 
 use std::time::Duration;
 
+use async_nats::jetstream;
+use async_nats::jetstream::stream::Config as StreamConfig;
 use rehydration_adapter_nats::{NatsClientTlsConfig, NatsProjectionRuntime, NatsRuntimeError};
 use rehydration_domain::{
     PortError, ProjectionEventHandler, ProjectionHandlingRequest, ProjectionHandlingResult,
@@ -64,6 +66,7 @@ async fn projection_runtime_processes_graph_and_detail_events() {
         .await
         .expect("projection runtime should connect");
     assert!(runtime.describe().contains("graph.node.materialized"));
+    assert!(runtime.describe().contains("graph.relation.materialized"));
     let runtime_handle = tokio::spawn(runtime.run());
     let client = connect_with_retry(&url)
         .await
@@ -81,6 +84,16 @@ async fn projection_runtime_processes_graph_and_detail_events() {
         .expect("graph publish should succeed");
     client
         .publish(
+            "rehydration.graph.relation.materialized".to_string(),
+            projection_relation_payload("evt-relation")
+                .to_string()
+                .into_bytes()
+                .into(),
+        )
+        .await
+        .expect("relation publish should succeed");
+    client
+        .publish(
             "rehydration.node.detail.materialized".to_string(),
             projection_detail_payload("evt-detail")
                 .to_string()
@@ -94,7 +107,7 @@ async fn projection_runtime_processes_graph_and_detail_events() {
     let requests = timeout(Duration::from_secs(10), async {
         loop {
             let requests = handler.requests().await;
-            if requests.len() == 2 {
+            if requests.len() == 3 {
                 break requests;
             }
             sleep(Duration::from_millis(100)).await;
@@ -114,10 +127,68 @@ async fn projection_runtime_processes_graph_and_detail_events() {
         .collect();
     assert_eq!(
         subjects,
-        std::collections::BTreeSet::from(["graph.node.materialized", "node.detail.materialized",])
+        std::collections::BTreeSet::from([
+            "graph.node.materialized",
+            "graph.relation.materialized",
+            "node.detail.materialized",
+        ])
     );
 
     runtime_handle.abort();
+}
+
+#[tokio::test]
+async fn projection_runtime_reconciles_existing_stream_subjects() {
+    let container = start_nats_container()
+        .await
+        .expect("container should start");
+    let port = container
+        .get_host_port_ipv4(NATS_INTERNAL_PORT.tcp())
+        .await
+        .expect("nats port should resolve");
+    let url = format!("nats://127.0.0.1:{port}");
+    let client = connect_with_retry(&url)
+        .await
+        .expect("client should connect");
+    let jetstream = jetstream::new(client);
+
+    jetstream
+        .create_stream(StreamConfig {
+            name: "REHYDRATION_PROJECTION_REHYDRATION".to_string(),
+            subjects: vec![
+                "rehydration.graph.node.materialized".to_string(),
+                "rehydration.node.detail.materialized".to_string(),
+            ],
+            ..Default::default()
+        })
+        .await
+        .expect("legacy stream should be created");
+
+    let runtime = connect_projection_runtime_with_retry(
+        &url,
+        "rehydration",
+        RecordingProjectionHandler::default(),
+    )
+    .await
+    .expect("projection runtime should connect");
+
+    let mut stream = jetstream
+        .get_stream("REHYDRATION_PROJECTION_REHYDRATION")
+        .await
+        .expect("stream should exist");
+    let subjects = stream
+        .info()
+        .await
+        .expect("stream info should refresh")
+        .config
+        .subjects
+        .clone();
+
+    assert!(subjects.contains(&"rehydration.graph.node.materialized".to_string()));
+    assert!(subjects.contains(&"rehydration.graph.relation.materialized".to_string()));
+    assert!(subjects.contains(&"rehydration.node.detail.materialized".to_string()));
+
+    drop(runtime);
 }
 
 #[tokio::test]
@@ -257,6 +328,27 @@ fn projection_detail_payload(event_id: &str) -> Value {
             "detail": "Expanded node detail",
             "content_hash": "hash-123",
             "revision": 2
+        }
+    })
+}
+
+fn projection_relation_payload(event_id: &str) -> Value {
+    json!({
+        "event_id": event_id,
+        "correlation_id": format!("corr-{event_id}"),
+        "causation_id": format!("cmd-{event_id}"),
+        "occurred_at": "2026-03-12T00:00:00Z",
+        "aggregate_id": "relation:node-root|depends_on|node-detail",
+        "aggregate_type": "node_relation",
+        "schema_version": "v1beta1",
+        "data": {
+            "source_node_id": "node-root",
+            "target_node_id": "node-detail",
+            "relation_type": "depends_on",
+            "explanation": {
+                "semantic_class": "constraint",
+                "sequence": 1
+            }
         }
     })
 }

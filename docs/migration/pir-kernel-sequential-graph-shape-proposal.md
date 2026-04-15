@@ -19,6 +19,13 @@ Implementation status note (`2026-04-14`):
 
 This document proposes a concrete change in graph shape for `PIR`.
 
+Companion boundary note:
+
+- completing this shape without re-materializing anchor nodes likely requires
+  an additive async boundary for relation-only materialization
+- see:
+  [`pir-kernel-relation-materialized-rfc.md`](./pir-kernel-relation-materialized-rfc.md)
+
 Current live graphs are operationally correct, but they are still too
 incident-centric:
 

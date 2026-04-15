@@ -25,6 +25,12 @@ case "${test_id}" in
   11|async-graph-batch-roundtrip)
     script="/app/tests/async-graph-batch-roundtrip.sh"
     ;;
+  14|async-graph-relation-roundtrip)
+    script="/app/tests/async-graph-relation-roundtrip.sh"
+    ;;
+  15|async-vllm-spine-ab-comparison)
+    script="/app/tests/async-vllm-spine-ab-comparison.sh"
+    ;;
   12|async-vllm-graph-batch-roundtrip)
     script="/app/tests/async-vllm-graph-batch-roundtrip.sh"
     ;;
@@ -37,6 +43,8 @@ Supported TEST_ID values:
   01 | sync-grpc-handshake
   02 | sync-mtls-enforcement
   11 | async-graph-batch-roundtrip
+  14 | async-graph-relation-roundtrip
+  15 | async-vllm-spine-ab-comparison
   12 | async-vllm-graph-batch-roundtrip
   13 | async-vllm-blind-context-consumption
 EOF
@@ -49,6 +57,8 @@ Supported TEST_ID values:
   01 | sync-grpc-handshake
   02 | sync-mtls-enforcement
   11 | async-graph-batch-roundtrip
+  14 | async-graph-relation-roundtrip
+  15 | async-vllm-spine-ab-comparison
   12 | async-vllm-graph-batch-roundtrip
   13 | async-vllm-blind-context-consumption
 EOF

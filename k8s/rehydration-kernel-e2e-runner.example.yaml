@@ -20,6 +20,8 @@ spec:
             #   sync-grpc-handshake
             #   sync-mtls-enforcement
             #   async-graph-batch-roundtrip
+            #   async-graph-relation-roundtrip
+            #   async-vllm-spine-ab-comparison
             #   async-vllm-graph-batch-roundtrip
             #   async-vllm-blind-context-consumption
             - name: TEST_ID
@@ -56,6 +58,32 @@ spec:
               value: /var/run/rehydration-kernel/nats-tls/tls.crt
             - name: PIR_GRAPH_BATCH_NATS_TLS_KEY_PATH
               value: /var/run/rehydration-kernel/nats-tls/tls.key
+            # - name: TEST_ID
+            #   value: async-graph-relation-roundtrip
+            # - name: GRAPH_RELATION_INPUT
+            #   value: /app/api/examples/kernel/v1beta1/async/pir-sequential-spine.relation-roundtrip.json
+            #
+            # Uncomment for legacy-vs-spine A/B comparison with vLLM + judge.
+            # - name: TEST_ID
+            #   value: async-vllm-spine-ab-comparison
+            # - name: LEGACY_GRAPH_BATCH_INPUT
+            #   value: /app/api/examples/kernel/v1beta1/async/pir-sequential-spine.legacy-batch.json
+            # - name: GRAPH_RELATION_INPUT
+            #   value: /app/api/examples/kernel/v1beta1/async/pir-sequential-spine.relation-roundtrip.json
+            # - name: LLM_ENDPOINT
+            #   value: http://vllm-qwen35-9b:8000/v1/chat/completions
+            # - name: LLM_MODEL
+            #   value: Qwen/Qwen3.5-9B
+            # - name: LLM_PROVIDER
+            #   value: openai
+            # - name: LLM_ENABLE_THINKING
+            #   value: "false"
+            # - name: LLM_JUDGE_ENDPOINT
+            #   value: http://vllm-judge:8000/v1/chat/completions
+            # - name: LLM_JUDGE_MODEL
+            #   value: Qwen/Qwen3.5-9B
+            # - name: LLM_JUDGE_PROVIDER
+            #   value: openai
 
             # Uncomment for model-driven async runs.
             # - name: TEST_ID

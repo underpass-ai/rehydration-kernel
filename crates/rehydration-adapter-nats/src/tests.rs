@@ -135,6 +135,50 @@ async fn consume_routes_node_detail_subject_without_prefix() {
 }
 
 #[tokio::test]
+async fn consume_routes_graph_relation_subject_without_prefix() {
+    let consumer = NatsProjectionConsumer::new(String::new());
+    let handler = RecordingHandler::default();
+    let payload = json!({
+        "event_id": "evt-2b",
+        "correlation_id": "corr-2b",
+        "causation_id": "cmd-2b",
+        "occurred_at": "2026-03-07T20:01:30Z",
+        "aggregate_id": "relation:decision|addresses|finding",
+        "aggregate_type": "node_relation",
+        "schema_version": "v1beta1",
+        "data": {
+            "source_node_id": "decision-123",
+            "target_node_id": "finding-123",
+            "relation_type": "addresses",
+            "explanation": {
+                "semantic_class": "causal",
+                "decision_id": "decision-123",
+                "sequence": 2
+            }
+        }
+    });
+
+    consumer
+        .consume(
+            &handler,
+            "graph.relation.materialized",
+            payload.to_string().as_bytes(),
+        )
+        .await
+        .expect("graph relation event should be routed");
+
+    let requests = handler.requests().await;
+    match &requests[0].event {
+        ProjectionEvent::GraphRelationMaterialized(event) => {
+            assert_eq!(event.data.source_node_id, "decision-123");
+            assert_eq!(event.data.target_node_id, "finding-123");
+            assert_eq!(event.data.relation_type, "addresses");
+        }
+        event => panic!("unexpected event: {event:?}"),
+    }
+}
+
+#[tokio::test]
 async fn consume_rejects_unsupported_subject() {
     let consumer = NatsProjectionConsumer::new("rehydration".to_string());
     let handler = RecordingHandler::default();

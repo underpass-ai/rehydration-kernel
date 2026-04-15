@@ -1,5 +1,6 @@
 use rehydration_domain::{
-    GraphNodeMaterializedEvent, NodeDetailMaterializedEvent, ProjectionEvent,
+    GraphNodeMaterializedEvent, GraphRelationMaterializedEvent, NodeDetailMaterializedEvent,
+    ProjectionEvent,
 };
 
 use super::error::NatsConsumerError;
@@ -13,6 +14,11 @@ pub(crate) fn decode_projection_event(
         ProjectionSubject::GraphNodeMaterialized => {
             serde_json::from_slice::<GraphNodeMaterializedEvent>(payload)
                 .map(ProjectionEvent::GraphNodeMaterialized)
+                .map_err(|error| NatsConsumerError::InvalidPayload(error.to_string()))
+        }
+        ProjectionSubject::GraphRelationMaterialized => {
+            serde_json::from_slice::<GraphRelationMaterializedEvent>(payload)
+                .map(ProjectionEvent::GraphRelationMaterialized)
                 .map_err(|error| NatsConsumerError::InvalidPayload(error.to_string()))
         }
         ProjectionSubject::NodeDetailMaterialized => {

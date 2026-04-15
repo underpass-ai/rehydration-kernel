@@ -105,6 +105,44 @@ build_graph_batch_roundtrip_command() {
   out_ref=("${args[@]}")
 }
 
+build_graph_relation_roundtrip_command() {
+  local -n out_ref="$1"
+  local input_path="$2"
+  local run_id="$3"
+  local -a args
+
+  require_env PIR_GRAPH_BATCH_NATS_URL
+  require_env PIR_GRAPH_BATCH_GRPC_ENDPOINT
+
+  args=(
+    /usr/local/bin/graph_relation_roundtrip
+    --input "${input_path}"
+    --nats-url "${PIR_GRAPH_BATCH_NATS_URL}"
+    --grpc-endpoint "${PIR_GRAPH_BATCH_GRPC_ENDPOINT}"
+    --run-id "${run_id}"
+    --role "${PIR_GRAPH_BATCH_ROLE:-incident-commander}"
+  )
+
+  append_requested_scopes args
+  append_optional_flag args PIR_GRAPH_BATCH_DEPTH --depth
+  append_optional_flag args PIR_GRAPH_BATCH_TOKEN_BUDGET --token-budget
+  append_optional_flag args PIR_GRAPH_BATCH_REHYDRATION_MODE --rehydration-mode
+  append_optional_flag args PIR_GRAPH_BATCH_DETAIL_NODE_ID --detail-node-id
+  append_optional_flag args PIR_GRAPH_BATCH_WAIT_TIMEOUT_SECS --wait-timeout-secs
+  append_optional_flag args PIR_GRAPH_BATCH_POLL_INTERVAL_MS --poll-interval-ms
+  append_optional_flag args PIR_GRAPH_BATCH_GRPC_TLS_CA_PATH --grpc-tls-ca-path
+  append_optional_flag args PIR_GRAPH_BATCH_GRPC_TLS_CERT_PATH --grpc-tls-cert-path
+  append_optional_flag args PIR_GRAPH_BATCH_GRPC_TLS_KEY_PATH --grpc-tls-key-path
+  append_optional_flag args PIR_GRAPH_BATCH_GRPC_TLS_DOMAIN_NAME --grpc-tls-domain-name
+  append_optional_flag args PIR_GRAPH_BATCH_NATS_TLS_CA_PATH --nats-tls-ca-path
+  append_optional_flag args PIR_GRAPH_BATCH_NATS_TLS_CERT_PATH --nats-tls-cert-path
+  append_optional_flag args PIR_GRAPH_BATCH_NATS_TLS_KEY_PATH --nats-tls-key-path
+  append_optional_bool_flag args PIR_GRAPH_BATCH_NATS_TLS_FIRST --nats-tls-first
+  append_optional_bool_flag args PIR_GRAPH_BATCH_INCLUDE_RENDERED_CONTENT --include-rendered-content
+
+  out_ref=("${args[@]}")
+}
+
 build_graph_batch_vllm_request_command() {
   local -n out_ref="$1"
   local run_id="$2"

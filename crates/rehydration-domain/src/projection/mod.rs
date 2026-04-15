@@ -9,10 +9,10 @@ pub mod projection_mutation;
 
 pub use context_path_neighborhood::ContextPathNeighborhood;
 pub use events::{
-    GraphNodeMaterializedData, GraphNodeMaterializedEvent, NodeDetailMaterializedData,
-    NodeDetailMaterializedEvent, ProjectionEnvelope, ProjectionEvent, ProjectionEventHandler,
-    ProjectionHandlingRequest, ProjectionHandlingResult, RelatedNodeExplanationData,
-    RelatedNodeReference,
+    GraphNodeMaterializedData, GraphNodeMaterializedEvent, GraphRelationMaterializedData,
+    GraphRelationMaterializedEvent, NodeDetailMaterializedData, NodeDetailMaterializedEvent,
+    ProjectionEnvelope, ProjectionEvent, ProjectionEventHandler, ProjectionHandlingRequest,
+    ProjectionHandlingResult, RelatedNodeExplanationData, RelatedNodeReference,
 };
 pub use node_detail_projection::NodeDetailProjection;
 pub use node_neighborhood::NodeNeighborhood;

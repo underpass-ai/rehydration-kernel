@@ -1,0 +1,154 @@
+{
+  "root_node_id": "incident:pir-{{RUN_ID}}:cache-stampede",
+  "detail_node_id": "decision:pir-{{RUN_ID}}:enable-jitter",
+  "events": [
+    {
+      "subject": "graph.node.materialized",
+      "payload": {
+        "event_id": "evt-root-{{RUN_ID}}",
+        "correlation_id": "corr-root-{{RUN_ID}}",
+        "causation_id": "cmd-root-{{RUN_ID}}",
+        "occurred_at": "2026-04-14T19:00:00Z",
+        "aggregate_id": "incident:pir-{{RUN_ID}}:cache-stampede",
+        "aggregate_type": "node",
+        "schema_version": "v1beta1",
+        "data": {
+          "node_id": "incident:pir-{{RUN_ID}}:cache-stampede",
+          "node_kind": "incident",
+          "title": "Payments cache stampede",
+          "summary": "Cache stampede increased checkout latency after invalidation behavior changed.",
+          "status": "ACTIVE",
+          "labels": ["incident", "payments"],
+          "properties": {
+            "service": "payments-api"
+          },
+          "related_nodes": [
+            {
+              "node_id": "finding:pir-{{RUN_ID}}:cache-stampede:stampede",
+              "relation_type": "HAS_FINDING",
+              "explanation": {
+                "semantic_class": "evidential",
+                "sequence": 1
+              }
+            },
+            {
+              "node_id": "decision:pir-{{RUN_ID}}:enable-jitter",
+              "relation_type": "MITIGATED_BY",
+              "explanation": {
+                "semantic_class": "procedural",
+                "sequence": 2
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "subject": "graph.node.materialized",
+      "payload": {
+        "event_id": "evt-finding-{{RUN_ID}}",
+        "correlation_id": "corr-root-{{RUN_ID}}",
+        "causation_id": "cmd-root-{{RUN_ID}}",
+        "occurred_at": "2026-04-14T19:00:05Z",
+        "aggregate_id": "finding:pir-{{RUN_ID}}:cache-stampede:stampede",
+        "aggregate_type": "node",
+        "schema_version": "v1beta1",
+        "data": {
+          "node_id": "finding:pir-{{RUN_ID}}:cache-stampede:stampede",
+          "node_kind": "finding",
+          "title": "Cache stampede on invalidation",
+          "summary": "Synchronized invalidation drove miss-rate spikes and elevated checkout p95.",
+          "status": "ACTIVE",
+          "labels": ["finding"],
+          "properties": {
+            "family": "cache-stampede"
+          },
+          "related_nodes": []
+        }
+      }
+    },
+    {
+      "subject": "node.detail.materialized",
+      "payload": {
+        "event_id": "evt-finding-detail-{{RUN_ID}}",
+        "correlation_id": "corr-root-{{RUN_ID}}",
+        "causation_id": "cmd-root-{{RUN_ID}}",
+        "occurred_at": "2026-04-14T19:00:06Z",
+        "aggregate_id": "finding:pir-{{RUN_ID}}:cache-stampede:stampede",
+        "aggregate_type": "node",
+        "schema_version": "v1beta1",
+        "data": {
+          "node_id": "finding:pir-{{RUN_ID}}:cache-stampede:stampede",
+          "detail": "Redis miss rate jumped from 4% to 38% immediately after the invalidation rollout. Checkout p95 rose above 2.1s.",
+          "content_hash": "hash-finding-{{RUN_ID}}",
+          "revision": 1
+        }
+      }
+    },
+    {
+      "subject": "graph.node.materialized",
+      "payload": {
+        "event_id": "evt-decision-{{RUN_ID}}",
+        "correlation_id": "corr-root-{{RUN_ID}}",
+        "causation_id": "cmd-root-{{RUN_ID}}",
+        "occurred_at": "2026-04-14T19:00:10Z",
+        "aggregate_id": "decision:pir-{{RUN_ID}}:enable-jitter",
+        "aggregate_type": "node",
+        "schema_version": "v1beta1",
+        "data": {
+          "node_id": "decision:pir-{{RUN_ID}}:enable-jitter",
+          "node_kind": "decision",
+          "title": "Enable cache jitter",
+          "summary": "Introduce jittered invalidation to desynchronize misses while keeping rollback reversible.",
+          "status": "PROPOSED",
+          "labels": ["decision", "fix-planning"],
+          "properties": {
+            "stage": "fix_planning"
+          },
+          "related_nodes": []
+        }
+      }
+    },
+    {
+      "subject": "node.detail.materialized",
+      "payload": {
+        "event_id": "evt-decision-detail-{{RUN_ID}}",
+        "correlation_id": "corr-root-{{RUN_ID}}",
+        "causation_id": "cmd-root-{{RUN_ID}}",
+        "occurred_at": "2026-04-14T19:00:11Z",
+        "aggregate_id": "decision:pir-{{RUN_ID}}:enable-jitter",
+        "aggregate_type": "node",
+        "schema_version": "v1beta1",
+        "data": {
+          "node_id": "decision:pir-{{RUN_ID}}:enable-jitter",
+          "detail": "Apply a bounded jitter window to cache invalidation, then verify miss rate and checkout p95 before widening rollout.",
+          "content_hash": "hash-decision-{{RUN_ID}}",
+          "revision": 1
+        }
+      }
+    },
+    {
+      "subject": "graph.relation.materialized",
+      "payload": {
+        "event_id": "evt-relation-{{RUN_ID}}",
+        "correlation_id": "corr-root-{{RUN_ID}}",
+        "causation_id": "cmd-root-{{RUN_ID}}",
+        "occurred_at": "2026-04-14T19:00:12Z",
+        "aggregate_id": "relation:decision:pir-{{RUN_ID}}:enable-jitter|ADDRESSES|finding:pir-{{RUN_ID}}:cache-stampede:stampede",
+        "aggregate_type": "node_relation",
+        "schema_version": "v1beta1",
+        "data": {
+          "source_node_id": "decision:pir-{{RUN_ID}}:enable-jitter",
+          "target_node_id": "finding:pir-{{RUN_ID}}:cache-stampede:stampede",
+          "relation_type": "ADDRESSES",
+          "explanation": {
+            "semantic_class": "causal",
+            "rationale": "the mitigation decision targets the cache stampede finding directly",
+            "decision_id": "decision:pir-{{RUN_ID}}:enable-jitter",
+            "sequence": 3
+          }
+        }
+      }
+    }
+  ]
+}

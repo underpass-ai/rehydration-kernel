@@ -94,6 +94,46 @@ slices:
 2. **Incremental-wave E2E** — same incident root, new nodes and details over time.
 3. **Live roundtrip smoke** — publish fixture to NATS and read it back from a live kernel.
 
+### Planned relation-boundary coverage
+
+Status: proposed, not implemented yet.
+
+If the kernel adopts the additive async subject proposed in
+[`pir-kernel-relation-materialized-rfc.md`](migration/pir-kernel-relation-materialized-rfc.md),
+the next kernel-owned coverage should mirror the PIR sequential spine as
+closely as possible.
+
+Planned tests:
+
+| Test | Purpose | Infra |
+|------|---------|-------|
+| `relation_materialization_integration` | Add a relation across waves without re-materializing the source node | Neo4j + Valkey + NATS + gRPC |
+| `relation_materialization_out_of_order_integration` | Prove convergence when a relation arrives before one or both node events | Neo4j + Valkey + NATS + gRPC |
+| `pir_sequential_spine_relation_integration` | Reproduce the full `incident -> finding -> decision -> task -> verification` spine with relation-only waves where needed | Neo4j + Valkey + NATS + gRPC |
+| `relation_materialization_idempotency_integration` | Prove duplicate relation events do not create duplicate edges | Neo4j + Valkey + NATS + gRPC |
+| `placeholder_filtering_integration` | Prove convergence placeholders do not leak into default rendered context | Neo4j + Valkey + NATS + gRPC |
+| `graph_relation_roundtrip_smoke` | Minimal live cluster smoke for one relation-only event | live kernel + live NATS |
+| `pir_sequential_spine_roundtrip_smoke` | Live PIR-like multi-wave smoke validating the full spine end to end | live kernel + live NATS |
+
+Design rule for those tests:
+
+- they should stay contract-oriented
+- they should use the same kernel-owned harness style as the current
+  roundtrip smokes
+- and they should prefer PIR-like stable ids and wave ordering over synthetic
+  graph toy cases whenever possible
+
+Suggested homes:
+
+- contract/unit tests:
+  `crates/rehydration-proto/`, `crates/rehydration-adapter-nats/`,
+  `crates/rehydration-application/`
+- container E2E:
+  `crates/rehydration-tests-kernel/tests/`
+- live roundtrip and smoke orchestration:
+  `crates/rehydration-testkit/tests/`, `crates/rehydration-testkit/src/bin/`,
+  `e2e/kernel-runner/tests/`
+
 Commands:
 
 ```bash
@@ -201,6 +241,7 @@ For contract-level cluster tests that need:
 - gRPC for synchronous reads
 - NATS for asynchronous publish/projection paths
 - `graph_batch_roundtrip` for fixture-driven async validation
+- `graph_relation_roundtrip` for raw projection-event async validation
 - `graph_batch_vllm_request` for model-driven async validation
 
 use the new runner in [`e2e/kernel-runner/`](../e2e/kernel-runner/).
@@ -220,6 +261,8 @@ Supported `TEST_ID` values:
 - `sync-grpc-handshake`
 - `sync-mtls-enforcement`
 - `async-graph-batch-roundtrip`
+- `async-graph-relation-roundtrip`
+- `async-vllm-spine-ab-comparison`
 - `async-vllm-graph-batch-roundtrip`
 - `async-vllm-blind-context-consumption`
 
@@ -227,6 +270,47 @@ Example async fixture-driven run inside the cluster:
 
 ```bash
 TEST_ID=async-graph-batch-roundtrip
+PIR_GRAPH_BATCH_NATS_URL=nats://rehydration-kernel-nats:4222
+PIR_GRAPH_BATCH_GRPC_ENDPOINT=https://rehydration-kernel:50054
+PIR_GRAPH_BATCH_GRPC_TLS_CA_PATH=/var/run/rehydration-kernel/tls/ca.crt
+PIR_GRAPH_BATCH_GRPC_TLS_CERT_PATH=/var/run/rehydration-kernel/tls/tls.crt
+PIR_GRAPH_BATCH_GRPC_TLS_KEY_PATH=/var/run/rehydration-kernel/tls/tls.key
+PIR_GRAPH_BATCH_GRPC_TLS_DOMAIN_NAME=rehydration-kernel
+PIR_GRAPH_BATCH_NATS_TLS_CA_PATH=/var/run/rehydration-kernel/nats-tls/ca.crt
+PIR_GRAPH_BATCH_NATS_TLS_CERT_PATH=/var/run/rehydration-kernel/nats-tls/tls.crt
+PIR_GRAPH_BATCH_NATS_TLS_KEY_PATH=/var/run/rehydration-kernel/nats-tls/tls.key
+```
+
+Example raw relation-materialization run inside the cluster:
+
+```bash
+TEST_ID=async-graph-relation-roundtrip
+GRAPH_RELATION_INPUT=/app/api/examples/kernel/v1beta1/async/pir-sequential-spine.relation-roundtrip.json
+PIR_GRAPH_BATCH_NATS_URL=nats://rehydration-kernel-nats:4222
+PIR_GRAPH_BATCH_GRPC_ENDPOINT=https://rehydration-kernel:50054
+PIR_GRAPH_BATCH_GRPC_TLS_CA_PATH=/var/run/rehydration-kernel/tls/ca.crt
+PIR_GRAPH_BATCH_GRPC_TLS_CERT_PATH=/var/run/rehydration-kernel/tls/tls.crt
+PIR_GRAPH_BATCH_GRPC_TLS_KEY_PATH=/var/run/rehydration-kernel/tls/tls.key
+PIR_GRAPH_BATCH_GRPC_TLS_DOMAIN_NAME=rehydration-kernel
+PIR_GRAPH_BATCH_NATS_TLS_CA_PATH=/var/run/rehydration-kernel/nats-tls/ca.crt
+PIR_GRAPH_BATCH_NATS_TLS_CERT_PATH=/var/run/rehydration-kernel/nats-tls/tls.crt
+PIR_GRAPH_BATCH_NATS_TLS_KEY_PATH=/var/run/rehydration-kernel/nats-tls/tls.key
+```
+
+Example legacy-vs-spine A/B comparison with `vLLM` plus a judge:
+
+```bash
+TEST_ID=async-vllm-spine-ab-comparison
+LEGACY_GRAPH_BATCH_INPUT=/app/api/examples/kernel/v1beta1/async/pir-sequential-spine.legacy-batch.json
+GRAPH_RELATION_INPUT=/app/api/examples/kernel/v1beta1/async/pir-sequential-spine.relation-roundtrip.json
+PIR_GRAPH_BATCH_INCLUDE_RENDERED_CONTENT=true
+LLM_ENDPOINT=http://vllm-qwen35-9b:8000/v1/chat/completions
+LLM_MODEL=Qwen/Qwen3.5-9B
+LLM_PROVIDER=openai
+LLM_ENABLE_THINKING=false
+LLM_JUDGE_ENDPOINT=http://vllm-judge:8000/v1/chat/completions
+LLM_JUDGE_MODEL=Qwen/Qwen3.5-9B
+LLM_JUDGE_PROVIDER=openai
 PIR_GRAPH_BATCH_NATS_URL=nats://rehydration-kernel-nats:4222
 PIR_GRAPH_BATCH_GRPC_ENDPOINT=https://rehydration-kernel:50054
 PIR_GRAPH_BATCH_GRPC_TLS_CA_PATH=/var/run/rehydration-kernel/tls/ca.crt

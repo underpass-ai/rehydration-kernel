@@ -266,6 +266,108 @@ RETURN count(edge) AS edge_count,
 }
 
 #[tokio::test]
+async fn relation_only_mutation_creates_explicit_placeholder_nodes()
+-> Result<(), Box<dyn Error + Send + Sync>> {
+    run_with_timeout(async {
+        let container = start_neo4j_container().await?;
+        let host = container.get_host().await?;
+        let port = container.get_host_port_ipv4(NEO4J_INTERNAL_PORT).await?;
+        let graph =
+            connect_with_retry(format!("neo4j://{host}:{port}"), "neo4j", NEO4J_PASSWORD).await?;
+        graph.run(query("MATCH (n) DETACH DELETE n")).await?;
+
+        let store =
+            Neo4jProjectionReader::new(format!("neo4j://neo4j:{NEO4J_PASSWORD}@{host}:{port}"))?;
+        store
+            .apply_mutations(vec![ProjectionMutation::UpsertNodeRelation(
+                NodeRelationProjection {
+                    source_node_id: "decision-missing".to_string(),
+                    target_node_id: "finding-missing".to_string(),
+                    relation_type: "ADDRESSES".to_string(),
+                    explanation: RelationExplanation::new(RelationSemanticClass::Causal)
+                        .with_rationale("decision addresses finding"),
+                },
+            )])
+            .await?;
+
+        let source_row = single_row(
+            &graph,
+            query(
+                "
+MATCH (node:ProjectionNode {node_id: $node_id})
+RETURN node.node_kind AS node_kind,
+       node.title AS title,
+       node.summary AS summary,
+       node.status AS status,
+       node.node_labels AS node_labels,
+       node.properties_json AS properties_json
+                ",
+            )
+            .param("node_id", "decision-missing"),
+        )
+        .await?;
+
+        let target_row = single_row(
+            &graph,
+            query(
+                "
+MATCH (node:ProjectionNode {node_id: $node_id})
+RETURN node.node_kind AS node_kind,
+       node.title AS title,
+       node.summary AS summary,
+       node.status AS status,
+       node.node_labels AS node_labels,
+       node.properties_json AS properties_json
+                ",
+            )
+            .param("node_id", "finding-missing"),
+        )
+        .await?;
+
+        let source_node_kind: String = source_row.get("node_kind")?;
+        let source_title: String = source_row.get("title")?;
+        let source_summary: String = source_row.get("summary")?;
+        let source_status: String = source_row.get("status")?;
+        let source_labels: Vec<String> = source_row.get("node_labels")?;
+        let source_properties_json: String = source_row.get("properties_json")?;
+
+        let target_node_kind: String = target_row.get("node_kind")?;
+        let target_title: String = target_row.get("title")?;
+        let target_summary: String = target_row.get("summary")?;
+        let target_status: String = target_row.get("status")?;
+        let target_labels: Vec<String> = target_row.get("node_labels")?;
+        let target_properties_json: String = target_row.get("properties_json")?;
+
+        assert_eq!(source_node_kind, "placeholder");
+        assert_eq!(source_title, "[unmaterialized node]");
+        assert_eq!(
+            source_summary,
+            "Referenced by relation before node materialization"
+        );
+        assert_eq!(source_status, "UNMATERIALIZED");
+        assert_eq!(source_labels, vec!["placeholder".to_string()]);
+        assert!(source_properties_json.contains("\"placeholder\":\"true\""));
+        assert!(
+            source_properties_json
+                .contains("\"placeholder_reason\":\"relation_materialized_before_node\"")
+        );
+
+        assert_eq!(target_node_kind, "placeholder");
+        assert_eq!(target_title, "[unmaterialized node]");
+        assert_eq!(
+            target_summary,
+            "Referenced by relation before node materialization"
+        );
+        assert_eq!(target_status, "UNMATERIALIZED");
+        assert_eq!(target_labels, vec!["placeholder".to_string()]);
+        assert!(target_properties_json.contains("\"placeholder\":\"true\""));
+
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn load_context_path_returns_shortest_path_and_target_subtree()
 -> Result<(), Box<dyn Error + Send + Sync>> {
     run_with_timeout(async {

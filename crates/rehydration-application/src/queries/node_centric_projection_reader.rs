@@ -3,7 +3,8 @@ use std::time::Instant;
 
 use rehydration_domain::{
     BundleMetadata, BundleNode, BundleNodeDetail, BundleRelationship, CaseId,
-    GraphNeighborhoodReader, NodeDetailReader, NodeNeighborhood, RehydrationBundle, Role,
+    GraphNeighborhoodReader, NodeDetailReader, NodeNeighborhood, NodeProjection, RehydrationBundle,
+    Role,
 };
 
 use crate::ApplicationError;
@@ -61,7 +62,10 @@ where
         else {
             return Ok((None, QueryTimingBreakdown::not_found(graph_start.elapsed())));
         };
-        let neighborhood = ordered_neighborhood(neighborhood);
+        if is_placeholder_projection_node(&neighborhood.root) {
+            return Ok((None, QueryTimingBreakdown::not_found(graph_start.elapsed())));
+        }
+        let neighborhood = ordered_neighborhood(filter_placeholder_nodes(neighborhood));
         let graph_load = graph_start.elapsed();
 
         let batch_size = 1 + neighborhood.neighbors.len();
@@ -106,7 +110,10 @@ where
         else {
             return Ok((None, QueryTimingBreakdown::not_found(graph_start.elapsed())));
         };
-        let neighborhood = ordered_neighborhood(neighborhood);
+        if is_placeholder_projection_node(&neighborhood.root) {
+            return Ok((None, QueryTimingBreakdown::not_found(graph_start.elapsed())));
+        }
+        let neighborhood = ordered_neighborhood(filter_placeholder_nodes(neighborhood));
         let graph_load = graph_start.elapsed();
 
         let batch_size = 1 + neighborhood.neighbors.len();
@@ -160,12 +167,29 @@ where
             return Ok((None, QueryTimingBreakdown::not_found(graph_start.elapsed())));
         };
 
-        let path_node_ids = path_neighborhood.path_node_ids.clone();
-        let neighborhood = ordered_neighborhood(NodeNeighborhood {
+        if is_placeholder_projection_node(&path_neighborhood.root) {
+            return Ok((None, QueryTimingBreakdown::not_found(graph_start.elapsed())));
+        }
+
+        let neighborhood = filter_placeholder_nodes(NodeNeighborhood {
             root: path_neighborhood.root,
             neighbors: path_neighborhood.neighbors,
             relations: path_neighborhood.relations,
         });
+        let allowed_node_ids: BTreeSet<String> = std::iter::once(neighborhood.root.node_id.clone())
+            .chain(
+                neighborhood
+                    .neighbors
+                    .iter()
+                    .map(|node| node.node_id.clone()),
+            )
+            .collect();
+        let path_node_ids = path_neighborhood
+            .path_node_ids
+            .into_iter()
+            .filter(|node_id| allowed_node_ids.contains(node_id))
+            .collect::<Vec<_>>();
+        let neighborhood = ordered_neighborhood(neighborhood);
         let graph_load = graph_start.elapsed();
 
         let batch_size = path_node_ids.len();
@@ -194,6 +218,45 @@ where
 
         Ok((Some(bundle), timing))
     }
+}
+
+fn filter_placeholder_nodes(neighborhood: NodeNeighborhood) -> NodeNeighborhood {
+    let placeholder_ids: BTreeSet<String> = neighborhood
+        .neighbors
+        .iter()
+        .filter(|node| is_placeholder_projection_node(node))
+        .map(|node| node.node_id.clone())
+        .collect();
+
+    if placeholder_ids.is_empty() {
+        return neighborhood;
+    }
+
+    NodeNeighborhood {
+        root: neighborhood.root,
+        neighbors: neighborhood
+            .neighbors
+            .into_iter()
+            .filter(|node| !placeholder_ids.contains(&node.node_id))
+            .collect(),
+        relations: neighborhood
+            .relations
+            .into_iter()
+            .filter(|relation| {
+                !placeholder_ids.contains(&relation.source_node_id)
+                    && !placeholder_ids.contains(&relation.target_node_id)
+            })
+            .collect(),
+    }
+}
+
+fn is_placeholder_projection_node(node: &NodeProjection) -> bool {
+    node.node_kind == "placeholder"
+        || node.labels.iter().any(|label| label == "placeholder")
+        || node
+            .properties
+            .get("placeholder")
+            .is_some_and(|value| value == "true")
 }
 
 async fn load_node_details<D>(
@@ -423,6 +486,190 @@ mod tests {
         assert_eq!(bundle.neighbor_nodes().len(), 1);
         assert_eq!(bundle.relationships().len(), 1);
         assert_eq!(bundle.node_details().len(), 1);
+    }
+
+    struct PlaceholderRootGraphReader;
+
+    impl rehydration_domain::GraphNeighborhoodReader for PlaceholderRootGraphReader {
+        async fn load_neighborhood(
+            &self,
+            _root_node_id: &str,
+            _depth: u32,
+        ) -> Result<Option<NodeNeighborhood>, PortError> {
+            Ok(Some(NodeNeighborhood {
+                root: NodeProjection {
+                    node_id: "node-root".to_string(),
+                    node_kind: "placeholder".to_string(),
+                    title: "[unmaterialized node]".to_string(),
+                    summary: "Referenced by relation before node materialization".to_string(),
+                    status: "UNMATERIALIZED".to_string(),
+                    labels: vec!["placeholder".to_string()],
+                    properties: BTreeMap::from([("placeholder".to_string(), "true".to_string())]),
+                    provenance: None,
+                },
+                neighbors: Vec::new(),
+                relations: Vec::new(),
+            }))
+        }
+
+        async fn load_context_path(
+            &self,
+            _root_node_id: &str,
+            _target_node_id: &str,
+            _subtree_depth: u32,
+        ) -> Result<Option<ContextPathNeighborhood>, PortError> {
+            Ok(None)
+        }
+    }
+
+    #[tokio::test]
+    async fn load_bundle_returns_none_for_placeholder_root() {
+        let reader = NodeCentricProjectionReader::new(PlaceholderRootGraphReader, StubDetailReader);
+        let (bundle, _timing) = reader
+            .load_bundle("node-root", "developer", "0.1.0")
+            .await
+            .expect("bundle load should succeed");
+
+        assert!(bundle.is_none());
+    }
+
+    struct PlaceholderNeighborGraphReader;
+
+    impl rehydration_domain::GraphNeighborhoodReader for PlaceholderNeighborGraphReader {
+        async fn load_neighborhood(
+            &self,
+            _root_node_id: &str,
+            _depth: u32,
+        ) -> Result<Option<NodeNeighborhood>, PortError> {
+            Ok(Some(NodeNeighborhood {
+                root: NodeProjection {
+                    node_id: "node-root".to_string(),
+                    node_kind: "incident".to_string(),
+                    title: "Incident".to_string(),
+                    summary: "Root summary".to_string(),
+                    status: "ACTIVE".to_string(),
+                    labels: vec!["incident".to_string()],
+                    properties: BTreeMap::new(),
+                    provenance: None,
+                },
+                neighbors: vec![
+                    NodeProjection {
+                        node_id: "node-real".to_string(),
+                        node_kind: "decision".to_string(),
+                        title: "Real node".to_string(),
+                        summary: "Real summary".to_string(),
+                        status: "ACTIVE".to_string(),
+                        labels: vec!["decision".to_string()],
+                        properties: BTreeMap::new(),
+                        provenance: None,
+                    },
+                    NodeProjection {
+                        node_id: "node-placeholder".to_string(),
+                        node_kind: "placeholder".to_string(),
+                        title: "[unmaterialized node]".to_string(),
+                        summary: "Referenced by relation before node materialization".to_string(),
+                        status: "UNMATERIALIZED".to_string(),
+                        labels: vec!["placeholder".to_string()],
+                        properties: BTreeMap::from([(
+                            "placeholder".to_string(),
+                            "true".to_string(),
+                        )]),
+                        provenance: None,
+                    },
+                ],
+                relations: vec![
+                    NodeRelationProjection {
+                        source_node_id: "node-root".to_string(),
+                        target_node_id: "node-real".to_string(),
+                        relation_type: "RELATES_TO".to_string(),
+                        explanation: structural_explanation(),
+                    },
+                    NodeRelationProjection {
+                        source_node_id: "node-root".to_string(),
+                        target_node_id: "node-placeholder".to_string(),
+                        relation_type: "RELATES_TO".to_string(),
+                        explanation: structural_explanation(),
+                    },
+                ],
+            }))
+        }
+
+        async fn load_context_path(
+            &self,
+            _root_node_id: &str,
+            _target_node_id: &str,
+            _subtree_depth: u32,
+        ) -> Result<Option<ContextPathNeighborhood>, PortError> {
+            Ok(None)
+        }
+    }
+
+    struct PlaceholderDetailReader;
+
+    impl rehydration_domain::NodeDetailReader for PlaceholderDetailReader {
+        async fn load_node_detail(
+            &self,
+            node_id: &str,
+        ) -> Result<Option<NodeDetailProjection>, PortError> {
+            Ok(match node_id {
+                "node-root" => Some(NodeDetailProjection {
+                    node_id: node_id.to_string(),
+                    detail: "Expanded detail".to_string(),
+                    content_hash: "hash-root".to_string(),
+                    revision: 1,
+                }),
+                "node-real" => Some(NodeDetailProjection {
+                    node_id: node_id.to_string(),
+                    detail: "Real detail".to_string(),
+                    content_hash: "hash-real".to_string(),
+                    revision: 1,
+                }),
+                "node-placeholder" => Some(NodeDetailProjection {
+                    node_id: node_id.to_string(),
+                    detail: "Placeholder detail".to_string(),
+                    content_hash: "hash-placeholder".to_string(),
+                    revision: 1,
+                }),
+                _ => None,
+            })
+        }
+
+        async fn load_node_details_batch(
+            &self,
+            node_ids: Vec<String>,
+        ) -> Result<Vec<Option<NodeDetailProjection>>, PortError> {
+            let mut results = Vec::with_capacity(node_ids.len());
+            for node_id in &node_ids {
+                results.push(self.load_node_detail(node_id).await?);
+            }
+            Ok(results)
+        }
+    }
+
+    #[tokio::test]
+    async fn load_bundle_filters_placeholder_neighbors_relations_and_details() {
+        let reader = NodeCentricProjectionReader::new(
+            PlaceholderNeighborGraphReader,
+            PlaceholderDetailReader,
+        );
+        let (bundle, _timing) = reader
+            .load_bundle("node-root", "developer", "0.1.0")
+            .await
+            .expect("bundle load should succeed");
+        let bundle = bundle.expect("bundle should exist");
+
+        assert_eq!(bundle.neighbor_nodes().len(), 1);
+        assert_eq!(bundle.neighbor_nodes()[0].node_id(), "node-real");
+        assert_eq!(bundle.relationships().len(), 1);
+        assert_eq!(bundle.relationships()[0].target_node_id(), "node-real");
+        assert_eq!(
+            bundle
+                .node_details()
+                .iter()
+                .map(|detail| detail.node_id())
+                .collect::<Vec<_>>(),
+            vec!["node-root", "node-real"]
+        );
     }
 
     struct RecordingGraphReader {

@@ -10,10 +10,11 @@ pub use commands::{
     UpdateContextOutcome, UpdateContextUseCase,
 };
 pub use projection::{
-    GraphNodeMaterializedData, GraphNodeMaterializedEvent, NodeDetailMaterializedData,
-    NodeDetailMaterializedEvent, ProjectionApplicationService, ProjectionEnvelope, ProjectionEvent,
-    ProjectionEventHandler, ProjectionHandlingRequest, ProjectionHandlingResult,
-    RelatedNodeExplanationData, RelatedNodeReference, RoutingProjectionWriter,
+    GraphNodeMaterializedData, GraphNodeMaterializedEvent, GraphRelationMaterializedData,
+    GraphRelationMaterializedEvent, NodeDetailMaterializedData, NodeDetailMaterializedEvent,
+    ProjectionApplicationService, ProjectionEnvelope, ProjectionEvent, ProjectionEventHandler,
+    ProjectionHandlingRequest, ProjectionHandlingResult, RelatedNodeExplanationData,
+    RelatedNodeReference, RoutingProjectionWriter,
 };
 pub use queries::{
     BundleAssembler, ContextRenderOptions, DEFAULT_NATIVE_GRAPH_TRAVERSAL_DEPTH, EndpointHint,

@@ -88,6 +88,21 @@ pub struct GraphNodeMaterializedEvent {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GraphRelationMaterializedData {
+    pub source_node_id: String,
+    pub target_node_id: String,
+    pub relation_type: String,
+    pub explanation: RelatedNodeExplanationData,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GraphRelationMaterializedEvent {
+    #[serde(flatten)]
+    pub envelope: ProjectionEnvelope,
+    pub data: GraphRelationMaterializedData,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NodeDetailMaterializedData {
     pub node_id: String,
     pub detail: String,
@@ -105,6 +120,7 @@ pub struct NodeDetailMaterializedEvent {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProjectionEvent {
     GraphNodeMaterialized(GraphNodeMaterializedEvent),
+    GraphRelationMaterialized(GraphRelationMaterializedEvent),
     NodeDetailMaterialized(NodeDetailMaterializedEvent),
 }
 
@@ -112,6 +128,7 @@ impl ProjectionEvent {
     pub fn event_id(&self) -> &str {
         match self {
             Self::GraphNodeMaterialized(event) => &event.envelope.event_id,
+            Self::GraphRelationMaterialized(event) => &event.envelope.event_id,
             Self::NodeDetailMaterialized(event) => &event.envelope.event_id,
         }
     }
@@ -119,6 +136,7 @@ impl ProjectionEvent {
     pub fn envelope(&self) -> &ProjectionEnvelope {
         match self {
             Self::GraphNodeMaterialized(event) => &event.envelope,
+            Self::GraphRelationMaterialized(event) => &event.envelope,
             Self::NodeDetailMaterialized(event) => &event.envelope,
         }
     }

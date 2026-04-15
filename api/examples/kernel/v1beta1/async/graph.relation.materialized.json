@@ -1,0 +1,20 @@
+{
+  "event_id": "evt-graph-relation-4242",
+  "correlation_id": "corr-4242",
+  "causation_id": "cause-4242",
+  "occurred_at": "2026-03-10T10:31:00Z",
+  "aggregate_id": "relation:node:decision:reroute-secondary|addresses|node:finding:db-pool-typo",
+  "aggregate_type": "node_relation",
+  "schema_version": "v1beta1",
+  "data": {
+    "source_node_id": "node:decision:reroute-secondary",
+    "target_node_id": "node:finding:db-pool-typo",
+    "relation_type": "addresses",
+    "explanation": {
+      "semantic_class": "causal",
+      "rationale": "the mitigation decision directly targets the finding that triggered planning",
+      "decision_id": "node:decision:reroute-secondary",
+      "sequence": 2
+    }
+  }
+}

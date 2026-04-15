@@ -187,18 +187,35 @@ async fn pir_graph_batch_incremental_waves_expand_the_same_incident() {
         .await
         .expect("second wave should publish");
 
-    let final_context =
-        wait_for_corrective_context(query_client.clone(), INCIDENT_ROOT_NODE_ID).await;
+    let final_context = wait_for_graph_shape(
+        query_client.clone(),
+        INCIDENT_ROOT_NODE_ID,
+        4,
+        4,
+        4,
+        &[
+            FIRST_FINDING_NODE_ID,
+            "decision:pir-2026-04-09-payments-latency:reroute-secondary",
+            SECOND_WAVE_FINDING_NODE_ID,
+            SECOND_WAVE_TASK_NODE_ID,
+        ],
+    )
+    .await;
     let final_bundle = final_context.bundle.expect("final bundle should exist");
     let final_role_bundle = final_bundle
         .bundles
         .first()
         .expect("final role bundle should exist");
+    let root_node = final_role_bundle
+        .root_node
+        .as_ref()
+        .expect("root node should exist");
 
     assert_eq!(final_bundle.root_node_id, INCIDENT_ROOT_NODE_ID);
     assert_eq!(final_role_bundle.neighbor_nodes.len(), 4);
     assert_eq!(final_role_bundle.relationships.len(), 4);
     assert_eq!(final_role_bundle.node_details.len(), 4);
+    assert_eq!(root_node.status, "MITIGATING");
     assert!(
         final_context
             .rendered
@@ -227,6 +244,10 @@ async fn pir_graph_batch_incremental_waves_expand_the_same_incident() {
     assert_eq!(
         detail.node.as_ref().map(|node| node.node_id.as_str()),
         Some(SECOND_WAVE_TASK_NODE_ID)
+    );
+    assert_eq!(
+        detail.node.as_ref().map(|node| node.status.as_str()),
+        Some("PLANNED")
     );
     assert_eq!(
         detail.detail.as_ref().map(|detail| detail.detail.as_str()),

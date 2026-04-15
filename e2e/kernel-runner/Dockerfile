@@ -13,6 +13,7 @@ COPY vendor ./vendor
 
 RUN cargo build --locked --release \
     -p rehydration-testkit --bin graph_batch_roundtrip \
+    -p rehydration-testkit --bin graph_relation_roundtrip \
     -p rehydration-testkit --bin graph_batch_vllm_request
 
 FROM docker.io/fullstorydev/grpcurl:v1.9.3 AS grpcurl
@@ -26,6 +27,7 @@ RUN apt-get update \
 
 COPY --from=grpcurl /bin/grpcurl /usr/local/bin/grpcurl
 COPY --from=builder /workspace/target/release/graph_batch_roundtrip /usr/local/bin/graph_batch_roundtrip
+COPY --from=builder /workspace/target/release/graph_relation_roundtrip /usr/local/bin/graph_relation_roundtrip
 COPY --from=builder /workspace/target/release/graph_batch_vllm_request /usr/local/bin/graph_batch_vllm_request
 
 COPY api /app/api
