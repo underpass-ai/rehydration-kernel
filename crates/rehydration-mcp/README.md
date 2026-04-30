@@ -33,6 +33,12 @@ Minimal smoke request:
 {"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}
 ```
 
+Repo smoke script:
+
+```bash
+bash scripts/mcp/kmp-stdio-smoke.sh
+```
+
 Tool call example:
 
 ```json

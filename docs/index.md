@@ -32,6 +32,7 @@ Current integration stance:
 |:---------|:--------|
 | [kubernetes-deploy.md](operations/kubernetes-deploy.md) | Helm deployment, values, TLS, observability stack |
 | [container-image.md](operations/container-image.md) | OCI image, environment variables, tags |
+| [mcp-stdio.md](operations/mcp-stdio.md) | Local stdio MCP adapter for Kernel Memory Protocol tools |
 | [kubernetes-transport-smoke.md](operations/kubernetes-transport-smoke.md) | In-cluster TLS smoke test |
 | [deployment-boundary.md](operations/deployment-boundary.md) | What this repo owns vs. what it does not |
 
