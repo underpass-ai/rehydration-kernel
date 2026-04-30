@@ -23,7 +23,8 @@ Current integration stance:
 
 | Document | Content |
 |:---------|:--------|
-| [kernel-context-traversal-and-mcp-action-plan.md](product/kernel-context-traversal-and-mcp-action-plan.md) | Public Kernel 1.0 plan for context traversal, MCP tools, and honest benchmark follow-up |
+| [kernel-context-traversal-and-mcp-action-plan.md](product/kernel-context-traversal-and-mcp-action-plan.md) | Public Kernel 1.0 plan for Kernel Memory Protocol, MCP tools, and honest benchmark follow-up |
+| [kernel-context-api-design.md](product/kernel-context-api-design.md) | Kernel Memory Protocol design: remember, wake, ask, trace, inspect, and MCP/gRPC/NATS bindings |
 
 ## Operations
 

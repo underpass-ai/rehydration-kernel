@@ -1,14 +1,14 @@
-# Kernel Context Traversal And MCP Action Plan
+# Kernel Memory Protocol And MCP Action Plan
 
 Date: 2026-04-30
 
 ## Purpose
 
-This document defines the next capability the kernel must provide: simple,
-generic, database-like context ingestion and exploration.
+This document defines the next capability the kernel must provide: a public
+memory protocol for agents and humans.
 
-The kernel should let any Underpass project write context once and later explore
-it by:
+The kernel should let any Underpass project remember what happened and later
+wake up, ask, trace, or inspect that memory by:
 
 - anchor;
 - scope;
@@ -24,7 +24,7 @@ actions, workflow attempts, benchmark records, and future applications.
 The core rule is:
 
 ```text
-Simple API outside, rich traversal inside.
+Memory moves outside, rich traversal inside.
 ```
 
 ## Public Status
@@ -42,9 +42,9 @@ Kernel 1.0 already has:
 
 Kernel 1.0 does not yet have:
 
-- a simple public context database API;
-- first-class `anchor/scope/entry` ingestion;
-- MCP tools for generic context exploration;
+- a simple public memory protocol;
+- first-class memory capsule ingestion mapped to `anchor/scope/entry`;
+- MCP tools for wake-up, evidence-backed answers, tracing, and inspection;
 - generic temporal traversal across scopes;
 - a public, honest demo that proves before/after, update, and multi-scope
   retrieval without app-specific code.
@@ -59,16 +59,17 @@ The kernel remains application-agnostic, but it must become traversal-aware.
 
 Applications should not need to reconstruct context from their own databases
 before the kernel can be useful. They may keep their own domain databases, but
-once context is ingested into the kernel, the kernel must be able to explore it
-as a context database.
+once memory is recorded into the kernel, the kernel must be able to wake a
+caller up, answer with proof, trace why, and show what is missing.
 
 The kernel should behave like:
 
 ```text
-write context
-index context
-query by anchor, scope, dimension, time, relation, provenance
-return answerable context, evidence, path, and position
+remember claims, links, evidence, time, and provenance
+wake a caller with the state needed to continue
+answer with proof or say unknown
+trace the causal/evidential path
+inspect the raw substrate when needed
 ```
 
 The kernel should not behave like:
@@ -82,9 +83,9 @@ dump a flat bundle of text and force the caller to understand the storage graph
 The honest public promise is:
 
 ```text
-If you ingest context with anchors, scopes, entries, relations, timestamps, and
-details, the kernel can later recover where an answer came from, what happened
-before or after it, and which path or evidence supports it.
+If you record memory with claims, links, evidence, time, and provenance, the
+kernel can later wake up a caller, answer with proof, trace why, and show what
+is missing.
 ```
 
 The promise is not:
@@ -201,26 +202,35 @@ ingest timestamp/order -> read before/after position
 
 The caller should not learn one model for writing and another model for reading.
 
-### 3. Simple Public API
+### 3. Simple Public Memory Moves
 
 Most callers should only need:
 
 ```text
-kernel_ingest_context
-kernel_explore_context
-kernel_get_context
-kernel_inspect_context
+kernel_remember
+kernel_wake
+kernel_ask
+kernel_trace
+kernel_inspect
 ```
 
-Lower-level tools can exist for advanced/debug use, but the common path must be
-small and stable.
+These are not CRUD endpoints. They are memory moves:
+
+- `remember` records claims, links, evidence, and provenance;
+- `wake` returns the compact state needed to continue;
+- `ask` answers with proof or says unknown;
+- `trace` explains the relationship path;
+- `inspect` exposes the raw stored facts.
+
+Lower-level tools can exist for advanced/debug use, but the common path must
+feel like memory, not storage plumbing.
 
 ### 4. CPU/I/O By Default
 
 Graph traversal is not a GPU workload.
 
 Traversal by anchor, dimension, scope, timestamp, sequence, relation type, or
-provenance path is a CPU and storage/index workload, like querying a database.
+provenance path is CPU and storage/index work.
 
 GPU is only needed when the flow explicitly asks for model inference:
 
@@ -368,98 +378,126 @@ The important behavior is not the final text alone. The kernel must explain
 where the datum lives, whether it is before or after another datum, and which
 scope/dimension/path proves it.
 
-## Simple Ingestion Contract
+## Memory Capsule Contract
 
-Primary write tool:
+Primary write move:
 
 ```text
-kernel_ingest_context
+kernel_remember
 ```
 
 Minimal input:
 
 ```json
 {
-  "anchor": {
-    "id": "question:830ce83f",
-    "dimension": "question",
-    "timestamp": "2023-06-13T15:15:00Z",
-    "text": "Where did Rachel move to after her recent relocation?"
-  },
-  "scopes": [
-    {
-      "id": "answer_0b1a0942_1",
+  "about": "question:830ce83f",
+  "capsule": {
+    "scope": {
+      "id": "conversation:answer-0b1a0942",
       "dimension": "conversation",
-      "timestamp": "2023-05-24T22:23:00Z",
-      "entries": [
-        {
-          "index": 4,
-          "role": "user",
-          "timestamp": "2023-05-24T22:23:00Z",
-          "text": "She moved to Chicago."
-        }
-      ]
-    }
-  ],
-  "relations": []
+      "title": "Rachel relocation discussion"
+    },
+    "claims": [
+      {
+        "id": "claim:rachel-chicago",
+        "text": "She moved to Chicago.",
+        "time": "2023-05-24T22:23:00Z",
+        "sequence": 4
+      }
+    ],
+    "links": [],
+    "evidence": []
+  },
+  "idempotency_key": "remember:830ce83f:1"
 }
 ```
 
-Optional semantic relation:
+Optional semantic link:
 
 ```json
 {
-  "from": "scope:answer_0b1a0942_1:entry:4",
-  "to": "scope:answer_0b1a0942_2:entry:2",
-  "type": "UPDATES_PREVIOUS_FACT",
+  "from": "claim:rachel-suburbs",
+  "to": "claim:rachel-chicago",
+  "rel": "supersedes",
   "class": "evidential",
-  "evidence": "The later statement updates the earlier location."
+  "why": "The later statement updates the earlier location.",
+  "evidence": "My friend Rachel actually just moved back to the suburbs again.",
+  "confidence": "high"
 }
 ```
 
-Ingestion defaults:
+Remember defaults:
 
 - preserve raw order inside each scope;
-- assign `entry.index` when omitted;
-- infer `NEXT_ENTRY` order inside a scope;
-- preserve full text as detail payload;
-- index anchor id, scope id, dimension, timestamp, sequence, and relation type;
-- accept optional semantic relations;
-- allow later enrichment to add relations after raw ingestion.
+- assign sequence when omitted;
+- preserve full text as evidence/detail payload;
+- index `about`, scope id, dimension, time, sequence, relation type, and
+  provenance;
+- accept producer-provided semantic links;
+- allow later enrichment to add links after raw memory is recorded.
 
-### Ingestion Modes
+### Remember Modes
 
 Raw mode:
 
-- caller provides scopes and entries only;
+- caller provides scope and claims only;
 - kernel stores traversable raw context;
 - use for transcripts, logs, histories, and benchmark haystacks.
 
 Semantic mode:
 
-- caller provides relations and selected evidence;
+- caller provides links and selected evidence;
 - kernel stores sparse, answer-oriented graph paths;
 - use when an app or LLM already computed relevant relations.
 
 Hybrid mode:
 
-- caller provides raw scopes plus selected semantic relations;
-- kernel keeps auditability while normal reads stay semantic and scoped.
+- caller provides raw claims plus selected semantic links;
+- kernel keeps auditability while normal reads stay proof-oriented and scoped.
 
-## Simple Reading Contract
+## Wake And Ask Contract
 
-Primary read tool:
+Primary continuation move:
 
 ```text
-kernel_explore_context
+kernel_wake
 ```
 
 Minimal input:
 
 ```json
 {
-  "anchor": "question:830ce83f",
-  "ask": "Where did Rachel move after her recent relocation?"
+  "about": "question:830ce83f",
+  "intent": "answer the relocation question",
+  "budget": {
+    "tokens": 1200
+  }
+}
+```
+
+`wake` should return:
+
+- objective;
+- current state;
+- causal/evidential spine;
+- open loops;
+- next actions;
+- guardrails;
+- proof and missing evidence.
+
+Primary question move:
+
+```text
+kernel_ask
+```
+
+Minimal input:
+
+```json
+{
+  "about": "question:830ce83f",
+  "question": "Where did Rachel move after her recent relocation?",
+  "answer_policy": "evidence_or_unknown"
 }
 ```
 
@@ -467,20 +505,25 @@ The kernel should decide by default:
 
 - which dimensions to inspect;
 - how much temporal context to include;
-- which relation paths are relevant;
-- whether raw neighboring entries are useful;
+- which link paths are relevant;
+- whether raw neighboring claims are useful;
 - whether the answer needs aggregation, update resolution, or temporal ordering.
 
 Optional constraints:
 
 ```json
 {
-  "anchor": "question:830ce83f",
-  "ask": "Was the suburbs statement before or after the Chicago statement?",
+  "about": "question:830ce83f",
+  "question": "Was the suburbs statement before or after the Chicago statement?",
+  "answer_policy": "evidence_or_unknown",
   "dimensions": "all",
-  "include_path": true,
-  "include_evidence": true,
-  "token_budget": 4096
+  "include": {
+    "path": true,
+    "evidence": true
+  },
+  "budget": {
+    "tokens": 4096
+  }
 }
 ```
 
@@ -488,16 +531,27 @@ Expected output:
 
 ```json
 {
+  "summary": "The suburbs statement was after the Chicago statement.",
   "answer": "The suburbs statement was after the Chicago statement.",
-  "position": {
-    "temporal": "after",
-    "scope_id": "answer_0b1a0942_2",
-    "entry_index": 2,
-    "timestamp": "2023-05-27T04:45:00Z"
+  "because": [
+    {
+      "claim": "Rachel moved back to the suburbs.",
+      "evidence": "My friend Rachel actually just moved back to the suburbs again.",
+      "ref": "claim:rachel-suburbs"
+    }
+  ],
+  "proof": {
+    "position": {
+      "temporal": "after",
+      "scope_id": "answer_0b1a0942_2",
+      "sequence": 2,
+      "timestamp": "2023-05-27T04:45:00Z"
+    },
+    "path": [],
+    "conflicts": [],
+    "missing": [],
+    "confidence": "high"
   },
-  "path": [],
-  "evidence": [],
-  "confidence": "high",
   "warnings": []
 }
 ```
@@ -505,25 +559,33 @@ Expected output:
 Reading defaults:
 
 - `dimensions="all"` unless restricted;
-- semantic path first;
-- raw neighboring entries only when useful or requested;
+- proof path first;
+- raw neighboring claims only when useful or requested;
 - bounded output by token budget;
-- current/superseding facts preferred when update relations exist;
+- current/superseding facts preferred when update links exist;
 - ambiguity surfaced explicitly when facts conflict.
 
-## Public MCP/API Surface
+## Public Memory Protocol Surface
 
-### `kernel_ingest_context`
+Detailed request and response shapes are specified in
+[`kernel-context-api-design.md`](kernel-context-api-design.md).
 
-Simple context ingestion.
+### `kernel_remember`
+
+Stores a memory capsule: claims, links, evidence, and provenance.
 
 Input:
 
 ```json
 {
-  "anchor": {},
-  "scopes": [],
-  "relations": []
+  "about": "question:830ce83f",
+  "capsule": {
+    "scope": {},
+    "claims": [],
+    "links": [],
+    "evidence": []
+  },
+  "idempotency_key": "remember:830ce83f:1"
 }
 ```
 
@@ -531,69 +593,93 @@ Output:
 
 ```json
 {
-  "anchor_id": "question:830ce83f",
-  "ingested": {
-    "scopes": 2,
-    "entries": 10,
-    "relations": 3
+  "summary": "Remembered 2 claims, 1 link, and 1 evidence item for question:830ce83f.",
+  "memory": {
+    "about": "question:830ce83f",
+    "capsule_id": "capsule:830ce83f:1"
   },
   "warnings": []
 }
 ```
 
-### `kernel_explore_context`
+### `kernel_wake`
 
-Default exploration tool. Use this when the caller has a question or wants a
-position/provenance answer.
-
-Input:
-
-```json
-{
-  "anchor": "question:830ce83f",
-  "ask": "Where did Rachel move after her recent relocation?",
-  "dimensions": "all",
-  "token_budget": 4096
-}
-```
-
-### `kernel_get_context`
-
-Simple retrieval tool. Use when the caller already knows the anchor and wants a
-context bundle.
+Default continuation tool. Use this when a human or agent needs to resume work.
 
 Input:
 
 ```json
 {
-  "anchor": "incident:checkout-latency-2026-04-30",
-  "dimensions": "all",
-  "token_budget": 4096
+  "about": "project:kernel-memory-protocol",
+  "role": "implementer",
+  "intent": "continue designing the public API",
+  "budget": {
+    "tokens": 1600
+  }
 }
 ```
 
-### `kernel_inspect_context`
+### `kernel_ask`
 
-Debug/audit tool for an anchor, scope, entry, relation path, node id, or
+Evidence-backed question tool. Use this when the caller needs an answer from
+memory.
+
+Input:
+
+```json
+{
+  "about": "question:830ce83f",
+  "question": "Where did Rachel move after her recent relocation?",
+  "answer_policy": "evidence_or_unknown"
+}
+```
+
+### `kernel_trace`
+
+Proof-path tool. Use this when the caller needs to know why a memory answer is
+true.
+
+Input:
+
+```json
+{
+  "from": "claim:rachel-austin",
+  "to": "claim:rachel-denver",
+  "goal": "explain_update"
+}
+```
+
+### `kernel_inspect`
+
+Raw audit tool for an anchor, scope, claim, entry, relation path, node id, or
 correlation id.
 
 Input:
 
 ```json
 {
-  "id": "question:830ce83f",
-  "include_raw": true
+  "ref": "claim:rachel-austin",
+  "include": {
+    "incoming": true,
+    "outgoing": true,
+    "details": true,
+    "raw": true
+  }
 }
 ```
 
-### Advanced Tools
+### Advanced/Alias Tools
 
-Advanced/debug tools may exist, but should not be the normal caller path:
+Advanced tools or migration aliases may exist, but should not be the normal
+caller path:
 
 ```text
+kernel_ingest_context     -> alias for kernel_remember
+kernel_explore_context    -> alias for kernel_ask
+kernel_get_context        -> alias for kernel_wake or advanced bundle read
+kernel_inspect_context    -> alias for kernel_inspect
 kernel_get_context_window
 kernel_get_context_path
-kernel_rehydrate_scope
 kernel_search_context
 kernel_publish_graph_batch
 ```
@@ -661,7 +747,7 @@ path reconstruction
 detail fetch
 ```
 
-This is database-like work. It should not require GPU.
+This is index and traversal work. It should not require GPU.
 
 GPU or external model API is only required for explicit inference:
 
@@ -727,8 +813,8 @@ Exit criteria:
 Deliver:
 
 - RFC/ADR for the traversal contract;
-- schemas for `kernel_ingest_context`, `kernel_explore_context`,
-  `kernel_get_context`, and `kernel_inspect_context`;
+- schemas for `kernel_remember`, `kernel_wake`, `kernel_ask`, `kernel_trace`,
+  and `kernel_inspect`;
 - examples for conversation, incident, workflow, and benchmark records;
 - migration note for legacy API names that still say "session"; new kernel
   vocabulary should use "scope".
@@ -754,10 +840,11 @@ Also deliver:
 
 Expose:
 
-- `kernel_ingest_context`;
-- `kernel_explore_context`;
-- `kernel_get_context`;
-- `kernel_inspect_context`;
+- `kernel_remember`;
+- `kernel_wake`;
+- `kernel_ask`;
+- `kernel_trace`;
+- `kernel_inspect`;
 - advanced/debug tools only where needed.
 
 Also deliver:
@@ -864,8 +951,8 @@ The kernel should not hard-code:
 - incident business rules;
 - app-specific schemas as mandatory global schema.
 
-Applications map their domain into kernel coordinates. The kernel provides
-generic ingestion, traversal, inspection, and provenance.
+Applications map their domain into kernel memory capsules. The kernel provides
+remember, wake, ask, trace, inspect, and provenance.
 
 ## Decision
 
@@ -873,17 +960,17 @@ The kernel remains domain-agnostic, but becomes traversal-aware.
 
 Events and gRPC remain valid transports.
 
-MCP becomes the simple protocol for context ingestion, exploration, and
-inspection across Underpass.
+Kernel Memory Protocol becomes the product surface. MCP, gRPC, and NATS become
+bindings for the same memory moves across Underpass.
 
 The first public step should be narrow and verifiable: make Kernel 1.0 expose
-context traversal as a simple API, then measure the benchmark again against that
-capability. Do not claim the benchmark is solved before the traversal contract
-and MCP tools exist.
+memory moves as a simple protocol, then measure the benchmark again against that
+capability. Do not claim the benchmark is solved before the memory protocol and
+MCP tools exist.
 
 The principle to implement:
 
 ```text
-Any context ingested by the kernel must be recoverable by time, dimension,
-relation path, and raw inspection scope through a simple API.
+Any memory recorded by the kernel must be recoverable as wake state, answer
+proof, trace path, and raw inspection scope through one protocol.
 ```
