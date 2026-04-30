@@ -19,6 +19,9 @@ use tokio::time::sleep;
 use tonic::Code;
 use tonic::transport::{Certificate, Channel, ClientTlsConfig, Endpoint, Identity};
 
+type AppError = Box<dyn Error + Send + Sync>;
+type ProjectionMessage = (String, Vec<u8>);
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Args {
     input: String,
@@ -160,7 +163,7 @@ fn substitute_run_id(payload: &str, run_id: &str) -> String {
 fn projection_messages(
     fixture: &RelationRoundtripFixture,
     subject_prefix: &str,
-) -> Result<Vec<(String, Vec<u8>)>, Box<dyn Error + Send + Sync>> {
+) -> Result<Vec<ProjectionMessage>, AppError> {
     fixture
         .events
         .iter()

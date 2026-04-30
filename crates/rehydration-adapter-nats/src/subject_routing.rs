@@ -2,27 +2,27 @@ use super::error::NatsConsumerError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ProjectionSubject {
-    GraphNodeMaterialized,
-    GraphRelationMaterialized,
-    NodeDetailMaterialized,
+    GraphNode,
+    GraphRelation,
+    NodeDetail,
 }
 
 impl ProjectionSubject {
     pub(crate) fn parse(subject_prefix: &str, subject: &str) -> Result<Self, NatsConsumerError> {
         let normalized = normalize_subject(subject_prefix, subject)?;
         match normalized.as_str() {
-            "graph.node.materialized" => Ok(Self::GraphNodeMaterialized),
-            "graph.relation.materialized" => Ok(Self::GraphRelationMaterialized),
-            "node.detail.materialized" => Ok(Self::NodeDetailMaterialized),
+            "graph.node.materialized" => Ok(Self::GraphNode),
+            "graph.relation.materialized" => Ok(Self::GraphRelation),
+            "node.detail.materialized" => Ok(Self::NodeDetail),
             _ => Err(NatsConsumerError::UnsupportedSubject(normalized)),
         }
     }
 
     pub(crate) fn as_str(self) -> &'static str {
         match self {
-            Self::GraphNodeMaterialized => "graph.node.materialized",
-            Self::GraphRelationMaterialized => "graph.relation.materialized",
-            Self::NodeDetailMaterialized => "node.detail.materialized",
+            Self::GraphNode => "graph.node.materialized",
+            Self::GraphRelation => "graph.relation.materialized",
+            Self::NodeDetail => "node.detail.materialized",
         }
     }
 }

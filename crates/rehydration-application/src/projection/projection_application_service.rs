@@ -107,6 +107,62 @@ where
     }
 }
 
+impl<W, P, C> ProjectionEventHandler for ProjectionApplicationService<W, P, C>
+where
+    W: ProjectionWriter + Send + Sync,
+    P: ProcessedEventStore + Send + Sync,
+    C: ProjectionCheckpointStore + Send + Sync,
+{
+    async fn handle_projection_event(
+        &self,
+        request: ProjectionHandlingRequest,
+    ) -> Result<ProjectionHandlingResult, PortError> {
+        let event_id = request.event.event_id().to_string();
+        if self
+            .processed_event_store
+            .has_processed(&request.consumer_name, &event_id)
+            .await?
+        {
+            return Ok(ProjectionHandlingResult {
+                event_id,
+                subject: request.subject,
+                duplicate: true,
+                applied_mutations: 0,
+                checkpoint: None,
+            });
+        }
+
+        let mutations = self.mutations_for_event(&request.event).await?;
+        self.projection_writer
+            .apply_mutations(mutations.clone())
+            .await?;
+        self.processed_event_store
+            .record_processed(&request.consumer_name, &event_id)
+            .await?;
+        let checkpoint = ProjectionCheckpoint {
+            consumer_name: request.consumer_name,
+            stream_name: request.stream_name,
+            last_subject: request.subject.clone(),
+            last_event_id: event_id.clone(),
+            last_correlation_id: request.event.envelope().correlation_id.clone(),
+            last_occurred_at: request.event.envelope().occurred_at.clone(),
+            processed_events: 1,
+            updated_at: std::time::SystemTime::now(),
+        };
+        self.checkpoint_store
+            .save_checkpoint(checkpoint.clone())
+            .await?;
+
+        Ok(ProjectionHandlingResult {
+            event_id,
+            subject: request.subject,
+            duplicate: false,
+            applied_mutations: mutations.len(),
+            checkpoint: Some(checkpoint),
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -254,61 +310,5 @@ mod tests {
             }
             mutation => panic!("unexpected mutation: {mutation:?}"),
         }
-    }
-}
-
-impl<W, P, C> ProjectionEventHandler for ProjectionApplicationService<W, P, C>
-where
-    W: ProjectionWriter + Send + Sync,
-    P: ProcessedEventStore + Send + Sync,
-    C: ProjectionCheckpointStore + Send + Sync,
-{
-    async fn handle_projection_event(
-        &self,
-        request: ProjectionHandlingRequest,
-    ) -> Result<ProjectionHandlingResult, PortError> {
-        let event_id = request.event.event_id().to_string();
-        if self
-            .processed_event_store
-            .has_processed(&request.consumer_name, &event_id)
-            .await?
-        {
-            return Ok(ProjectionHandlingResult {
-                event_id,
-                subject: request.subject,
-                duplicate: true,
-                applied_mutations: 0,
-                checkpoint: None,
-            });
-        }
-
-        let mutations = self.mutations_for_event(&request.event).await?;
-        self.projection_writer
-            .apply_mutations(mutations.clone())
-            .await?;
-        self.processed_event_store
-            .record_processed(&request.consumer_name, &event_id)
-            .await?;
-        let checkpoint = ProjectionCheckpoint {
-            consumer_name: request.consumer_name,
-            stream_name: request.stream_name,
-            last_subject: request.subject.clone(),
-            last_event_id: event_id.clone(),
-            last_correlation_id: request.event.envelope().correlation_id.clone(),
-            last_occurred_at: request.event.envelope().occurred_at.clone(),
-            processed_events: 1,
-            updated_at: std::time::SystemTime::now(),
-        };
-        self.checkpoint_store
-            .save_checkpoint(checkpoint.clone())
-            .await?;
-
-        Ok(ProjectionHandlingResult {
-            event_id,
-            subject: request.subject,
-            duplicate: false,
-            applied_mutations: mutations.len(),
-            checkpoint: Some(checkpoint),
-        })
     }
 }

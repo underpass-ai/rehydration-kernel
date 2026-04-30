@@ -11,17 +11,17 @@ pub(crate) fn decode_projection_event(
     payload: &[u8],
 ) -> Result<ProjectionEvent, NatsConsumerError> {
     match subject {
-        ProjectionSubject::GraphNodeMaterialized => {
+        ProjectionSubject::GraphNode => {
             serde_json::from_slice::<GraphNodeMaterializedEvent>(payload)
                 .map(ProjectionEvent::GraphNodeMaterialized)
                 .map_err(|error| NatsConsumerError::InvalidPayload(error.to_string()))
         }
-        ProjectionSubject::GraphRelationMaterialized => {
+        ProjectionSubject::GraphRelation => {
             serde_json::from_slice::<GraphRelationMaterializedEvent>(payload)
                 .map(ProjectionEvent::GraphRelationMaterialized)
                 .map_err(|error| NatsConsumerError::InvalidPayload(error.to_string()))
         }
-        ProjectionSubject::NodeDetailMaterialized => {
+        ProjectionSubject::NodeDetail => {
             serde_json::from_slice::<NodeDetailMaterializedEvent>(payload)
                 .map(ProjectionEvent::NodeDetailMaterialized)
                 .map_err(|error| NatsConsumerError::InvalidPayload(error.to_string()))
