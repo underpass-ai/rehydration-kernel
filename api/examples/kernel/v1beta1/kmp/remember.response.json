@@ -1,0 +1,14 @@
+{
+  "summary": "Remembered 2 claims, 1 link, and 1 evidence item for question:830ce83f.",
+  "memory": {
+    "about": "question:830ce83f",
+    "capsule_id": "capsule:830ce83f:1",
+    "accepted": {
+      "claims": 2,
+      "links": 1,
+      "evidence": 1
+    },
+    "read_after_write_ready": false
+  },
+  "warnings": []
+}

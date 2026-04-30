@@ -1,0 +1,9 @@
+{
+  "ref": "claim:rachel-austin",
+  "include": {
+    "incoming": true,
+    "outgoing": true,
+    "details": true,
+    "raw": true
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "about": "question:830ce83f",
+  "question": "Where did Rachel move after her recent relocation?",
+  "answer_policy": "evidence_or_unknown",
+  "prefer": {
+    "time": "latest",
+    "relations": [
+      "supersedes",
+      "supports"
+    ]
+  }
+}

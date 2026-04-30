@@ -1,0 +1,9 @@
+{
+  "about": "project:kernel-memory-protocol",
+  "role": "implementer",
+  "intent": "continue designing the public API",
+  "budget": {
+    "tokens": 1600,
+    "detail": "compact"
+  }
+}

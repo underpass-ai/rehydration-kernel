@@ -814,7 +814,8 @@ Deliver:
 
 - RFC/ADR for the traversal contract;
 - schemas for `kernel_remember`, `kernel_wake`, `kernel_ask`, `kernel_trace`,
-  and `kernel_inspect`;
+  and `kernel_inspect` under
+  [`api/examples/kernel/v1beta1/kmp`](../../api/examples/kernel/v1beta1/kmp);
 - examples for conversation, incident, workflow, and benchmark records;
 - migration note for legacy API names that still say "session"; new kernel
   vocabulary should use "scope".

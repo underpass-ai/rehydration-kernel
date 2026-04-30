@@ -1,0 +1,53 @@
+{
+  "about": "question:830ce83f",
+  "capsule": {
+    "scope": {
+      "id": "conversation:rachel-2026-04-12",
+      "dimension": "conversation",
+      "title": "Rachel relocation discussion"
+    },
+    "claims": [
+      {
+        "id": "claim:rachel-denver",
+        "text": "Rachel said she was moving to Denver.",
+        "time": "2026-04-12T15:00:00Z",
+        "sequence": 1
+      },
+      {
+        "id": "claim:rachel-austin",
+        "text": "Rachel later corrected the destination to Austin.",
+        "time": "2026-04-12T15:05:00Z",
+        "sequence": 2
+      }
+    ],
+    "links": [
+      {
+        "from": "claim:rachel-austin",
+        "to": "claim:rachel-denver",
+        "rel": "supersedes",
+        "class": "evidential",
+        "why": "The later statement corrects the earlier destination.",
+        "evidence": "Later she corrected it: the move is to Austin.",
+        "confidence": "high"
+      }
+    ],
+    "evidence": [
+      {
+        "id": "evidence:rachel-turn-2",
+        "supports": [
+          "claim:rachel-austin"
+        ],
+        "text": "Later she corrected it: the move is to Austin.",
+        "source": "conversation turn 2"
+      }
+    ]
+  },
+  "provenance": {
+    "source_kind": "agent",
+    "source_agent": "longmemeval-adapter",
+    "observed_at": "2026-04-30T10:20:03Z",
+    "correlation_id": "corr:830ce83f",
+    "causation_id": "eval:item:830ce83f"
+  },
+  "idempotency_key": "remember:830ce83f:1"
+}

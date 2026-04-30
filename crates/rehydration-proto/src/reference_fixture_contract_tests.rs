@@ -21,6 +21,28 @@ const NODE_DETAIL_MATERIALIZED_FIXTURE: &str =
     include_str!("../../../api/examples/kernel/v1beta1/async/node.detail.materialized.json");
 const CONTEXT_BUNDLE_GENERATED_FIXTURE: &str =
     include_str!("../../../api/examples/kernel/v1beta1/async/context.bundle.generated.json");
+const KMP_SCHEMA_FIXTURE: &str =
+    include_str!("../../../api/examples/kernel/v1beta1/kmp/kernel-memory-protocol.schema.json");
+const KMP_REMEMBER_REQUEST_FIXTURE: &str =
+    include_str!("../../../api/examples/kernel/v1beta1/kmp/remember.request.json");
+const KMP_REMEMBER_RESPONSE_FIXTURE: &str =
+    include_str!("../../../api/examples/kernel/v1beta1/kmp/remember.response.json");
+const KMP_WAKE_REQUEST_FIXTURE: &str =
+    include_str!("../../../api/examples/kernel/v1beta1/kmp/wake.request.json");
+const KMP_WAKE_RESPONSE_FIXTURE: &str =
+    include_str!("../../../api/examples/kernel/v1beta1/kmp/wake.response.json");
+const KMP_ASK_REQUEST_FIXTURE: &str =
+    include_str!("../../../api/examples/kernel/v1beta1/kmp/ask.request.json");
+const KMP_ASK_RESPONSE_FIXTURE: &str =
+    include_str!("../../../api/examples/kernel/v1beta1/kmp/ask.response.json");
+const KMP_TRACE_REQUEST_FIXTURE: &str =
+    include_str!("../../../api/examples/kernel/v1beta1/kmp/trace.request.json");
+const KMP_TRACE_RESPONSE_FIXTURE: &str =
+    include_str!("../../../api/examples/kernel/v1beta1/kmp/trace.response.json");
+const KMP_INSPECT_REQUEST_FIXTURE: &str =
+    include_str!("../../../api/examples/kernel/v1beta1/kmp/inspect.request.json");
+const KMP_INSPECT_RESPONSE_FIXTURE: &str =
+    include_str!("../../../api/examples/kernel/v1beta1/kmp/inspect.response.json");
 
 #[test]
 fn grpc_reference_fixtures_match_protojson_contract() {
@@ -134,6 +156,81 @@ fn async_reference_fixtures_use_generic_event_envelope_and_node_centric_payloads
 }
 
 #[test]
+fn kmp_reference_fixtures_are_valid_json_and_memory_shaped() {
+    let schema = parse_fixture(KMP_SCHEMA_FIXTURE);
+    assert_eq!(
+        schema.get("title").and_then(Value::as_str),
+        Some("KernelMemoryProtocol")
+    );
+    assert!(
+        fixture_object_field(&schema, "$defs")
+            .get("remember_request")
+            .is_some()
+    );
+    assert!(
+        fixture_object_field(&schema, "$defs")
+            .get("wake_request")
+            .is_some()
+    );
+    assert!(
+        fixture_object_field(&schema, "$defs")
+            .get("ask_request")
+            .is_some()
+    );
+    assert!(
+        fixture_object_field(&schema, "$defs")
+            .get("trace_request")
+            .is_some()
+    );
+    assert!(
+        fixture_object_field(&schema, "$defs")
+            .get("inspect_request")
+            .is_some()
+    );
+
+    assert_eq!(
+        sorted_keys(object_keys(&parse_fixture(KMP_REMEMBER_REQUEST_FIXTURE))),
+        sorted_strs(&["about", "capsule", "provenance", "idempotency_key"])
+    );
+    assert_eq!(
+        sorted_keys(object_keys(&parse_fixture(KMP_REMEMBER_RESPONSE_FIXTURE))),
+        sorted_strs(&["summary", "memory", "warnings"])
+    );
+    assert_eq!(
+        sorted_keys(object_keys(&parse_fixture(KMP_WAKE_REQUEST_FIXTURE))),
+        sorted_strs(&["about", "role", "intent", "budget"])
+    );
+    assert_eq!(
+        sorted_keys(object_keys(&parse_fixture(KMP_WAKE_RESPONSE_FIXTURE))),
+        sorted_strs(&["summary", "wake", "proof", "warnings"])
+    );
+    assert_eq!(
+        sorted_keys(object_keys(&parse_fixture(KMP_ASK_REQUEST_FIXTURE))),
+        sorted_strs(&["about", "question", "answer_policy", "prefer"])
+    );
+    assert_eq!(
+        sorted_keys(object_keys(&parse_fixture(KMP_ASK_RESPONSE_FIXTURE))),
+        sorted_strs(&["summary", "answer", "because", "proof", "warnings"])
+    );
+    assert_eq!(
+        sorted_keys(object_keys(&parse_fixture(KMP_TRACE_REQUEST_FIXTURE))),
+        sorted_strs(&["from", "to", "goal", "include"])
+    );
+    assert_eq!(
+        sorted_keys(object_keys(&parse_fixture(KMP_TRACE_RESPONSE_FIXTURE))),
+        sorted_strs(&["summary", "trace", "warnings"])
+    );
+    assert_eq!(
+        sorted_keys(object_keys(&parse_fixture(KMP_INSPECT_REQUEST_FIXTURE))),
+        sorted_strs(&["ref", "include"])
+    );
+    assert_eq!(
+        sorted_keys(object_keys(&parse_fixture(KMP_INSPECT_RESPONSE_FIXTURE))),
+        sorted_strs(&["summary", "object", "links", "evidence", "warnings"])
+    );
+}
+
+#[test]
 fn reference_fixtures_do_not_reintroduce_legacy_product_nouns() {
     let fixtures = [
         parse_fixture(GET_CONTEXT_REQUEST_FIXTURE),
@@ -144,6 +241,16 @@ fn reference_fixtures_do_not_reintroduce_legacy_product_nouns() {
         parse_fixture(GRAPH_RELATION_MATERIALIZED_FIXTURE),
         parse_fixture(NODE_DETAIL_MATERIALIZED_FIXTURE),
         parse_fixture(CONTEXT_BUNDLE_GENERATED_FIXTURE),
+        parse_fixture(KMP_REMEMBER_REQUEST_FIXTURE),
+        parse_fixture(KMP_REMEMBER_RESPONSE_FIXTURE),
+        parse_fixture(KMP_WAKE_REQUEST_FIXTURE),
+        parse_fixture(KMP_WAKE_RESPONSE_FIXTURE),
+        parse_fixture(KMP_ASK_REQUEST_FIXTURE),
+        parse_fixture(KMP_ASK_RESPONSE_FIXTURE),
+        parse_fixture(KMP_TRACE_REQUEST_FIXTURE),
+        parse_fixture(KMP_TRACE_RESPONSE_FIXTURE),
+        parse_fixture(KMP_INSPECT_REQUEST_FIXTURE),
+        parse_fixture(KMP_INSPECT_RESPONSE_FIXTURE),
     ];
 
     let legacy_keys = [

@@ -10,6 +10,8 @@ They are split by transport and version:
 - `kernel/v1beta1/async`: JSON examples for the generic AsyncAPI subjects,
   plus the schema-constrained `vLLM` graph batch fixture and a stable
   incident-style GraphBatch smoke fixture
+- `kernel/v1beta1/kmp`: transport-neutral Kernel Memory Protocol draft
+  fixtures for `remember`, `wake`, `ask`, `trace`, and `inspect`
 - `runtime-reference/v1`: consumer-side runtime examples used by the agentic
   integration reference
 

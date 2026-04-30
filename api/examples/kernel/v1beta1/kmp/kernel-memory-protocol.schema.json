@@ -1,0 +1,795 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://underpass.ai/schemas/rehydration-kernel/v1beta1/kernel-memory-protocol.schema.json",
+  "title": "KernelMemoryProtocol",
+  "description": "Transport-neutral Kernel Memory Protocol draft contract for remember, wake, ask, trace, and inspect moves.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/remember_request"
+    },
+    {
+      "$ref": "#/$defs/remember_response"
+    },
+    {
+      "$ref": "#/$defs/wake_request"
+    },
+    {
+      "$ref": "#/$defs/wake_response"
+    },
+    {
+      "$ref": "#/$defs/ask_request"
+    },
+    {
+      "$ref": "#/$defs/ask_response"
+    },
+    {
+      "$ref": "#/$defs/trace_request"
+    },
+    {
+      "$ref": "#/$defs/trace_response"
+    },
+    {
+      "$ref": "#/$defs/inspect_request"
+    },
+    {
+      "$ref": "#/$defs/inspect_response"
+    }
+  ],
+  "$defs": {
+    "non_empty_string": {
+      "type": "string",
+      "minLength": 1
+    },
+    "date_time": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "confidence": {
+      "type": "string",
+      "enum": [
+        "high",
+        "medium",
+        "low",
+        "unknown"
+      ]
+    },
+    "semantic_class": {
+      "type": "string",
+      "enum": [
+        "structural",
+        "causal",
+        "motivational",
+        "procedural",
+        "evidential",
+        "constraint"
+      ]
+    },
+    "answer_policy": {
+      "type": "string",
+      "enum": [
+        "evidence_or_unknown",
+        "show_conflicts",
+        "best_effort"
+      ]
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_kind",
+        "source_agent",
+        "observed_at"
+      ],
+      "properties": {
+        "source_kind": {
+          "type": "string",
+          "enum": [
+            "human",
+            "agent",
+            "projection",
+            "derived"
+          ]
+        },
+        "source_agent": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "observed_at": {
+          "$ref": "#/$defs/date_time"
+        },
+        "correlation_id": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "causation_id": {
+          "$ref": "#/$defs/non_empty_string"
+        }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "dimension"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "dimension": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "title": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "time": {
+          "$ref": "#/$defs/date_time"
+        },
+        "metadata": {
+          "$ref": "#/$defs/metadata"
+        }
+      }
+    },
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "text"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "text": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "time": {
+          "$ref": "#/$defs/date_time"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "metadata": {
+          "$ref": "#/$defs/metadata"
+        }
+      }
+    },
+    "link": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "from",
+        "to",
+        "rel",
+        "class"
+      ],
+      "properties": {
+        "from": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "to": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "rel": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "class": {
+          "$ref": "#/$defs/semantic_class"
+        },
+        "why": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "evidence": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "class": {
+                "const": "structural"
+              }
+            },
+            "required": [
+              "class"
+            ]
+          },
+          "then": true,
+          "else": {
+            "required": [
+              "confidence"
+            ],
+            "anyOf": [
+              {
+                "required": [
+                  "why"
+                ]
+              },
+              {
+                "required": [
+                  "evidence"
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "evidence_item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "text"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "supports": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/non_empty_string"
+          }
+        },
+        "text": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "source": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "time": {
+          "$ref": "#/$defs/date_time"
+        },
+        "metadata": {
+          "$ref": "#/$defs/metadata"
+        }
+      }
+    },
+    "capsule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scope",
+        "claims"
+      ],
+      "properties": {
+        "scope": {
+          "$ref": "#/$defs/scope"
+        },
+        "claims": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/claim"
+          }
+        },
+        "links": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/link"
+          }
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evidence_item"
+          }
+        }
+      }
+    },
+    "accepted_counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "claims",
+        "links",
+        "evidence"
+      ],
+      "properties": {
+        "claims": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "links": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "evidence": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "warning_list": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/non_empty_string"
+      }
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tokens": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "detail": {
+          "type": "string",
+          "enum": [
+            "compact",
+            "balanced",
+            "full"
+          ]
+        }
+      }
+    },
+    "proof": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "confidence"
+      ],
+      "properties": {
+        "path": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/link"
+          }
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evidence_item"
+          }
+        },
+        "conflicts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/non_empty_string"
+          }
+        },
+        "missing": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/non_empty_string"
+          }
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        }
+      }
+    },
+    "remember_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "about",
+        "capsule",
+        "idempotency_key"
+      ],
+      "properties": {
+        "about": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "capsule": {
+          "$ref": "#/$defs/capsule"
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        },
+        "idempotency_key": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "dry_run": {
+          "type": "boolean"
+        }
+      }
+    },
+    "remember_response": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "summary",
+        "memory",
+        "warnings"
+      ],
+      "properties": {
+        "summary": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "memory": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "about",
+            "capsule_id",
+            "accepted",
+            "read_after_write_ready"
+          ],
+          "properties": {
+            "about": {
+              "$ref": "#/$defs/non_empty_string"
+            },
+            "capsule_id": {
+              "$ref": "#/$defs/non_empty_string"
+            },
+            "accepted": {
+              "$ref": "#/$defs/accepted_counts"
+            },
+            "read_after_write_ready": {
+              "type": "boolean"
+            }
+          }
+        },
+        "warnings": {
+          "$ref": "#/$defs/warning_list"
+        }
+      }
+    },
+    "wake_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "about"
+      ],
+      "properties": {
+        "about": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "role": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "intent": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "budget": {
+          "$ref": "#/$defs/budget"
+        }
+      }
+    },
+    "wake_response": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "summary",
+        "wake",
+        "proof",
+        "warnings"
+      ],
+      "properties": {
+        "summary": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "wake": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "objective",
+            "current_state",
+            "causal_spine",
+            "open_loops",
+            "next_actions",
+            "guardrails"
+          ],
+          "properties": {
+            "objective": {
+              "$ref": "#/$defs/non_empty_string"
+            },
+            "current_state": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/non_empty_string"
+              }
+            },
+            "causal_spine": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "claim",
+                  "because"
+                ],
+                "properties": {
+                  "claim": {
+                    "$ref": "#/$defs/non_empty_string"
+                  },
+                  "because": {
+                    "$ref": "#/$defs/non_empty_string"
+                  },
+                  "evidence_ref": {
+                    "$ref": "#/$defs/non_empty_string"
+                  }
+                }
+              }
+            },
+            "open_loops": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/non_empty_string"
+              }
+            },
+            "next_actions": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/non_empty_string"
+              }
+            },
+            "guardrails": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/non_empty_string"
+              }
+            }
+          }
+        },
+        "proof": {
+          "$ref": "#/$defs/proof"
+        },
+        "warnings": {
+          "$ref": "#/$defs/warning_list"
+        }
+      }
+    },
+    "ask_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "about",
+        "question"
+      ],
+      "properties": {
+        "about": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "question": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "answer_policy": {
+          "$ref": "#/$defs/answer_policy"
+        },
+        "prefer": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "time": {
+              "type": "string",
+              "enum": [
+                "latest",
+                "earliest",
+                "as_of"
+              ]
+            },
+            "relations": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/non_empty_string"
+              }
+            }
+          }
+        },
+        "budget": {
+          "$ref": "#/$defs/budget"
+        }
+      }
+    },
+    "ask_response": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "summary",
+        "answer",
+        "because",
+        "proof",
+        "warnings"
+      ],
+      "properties": {
+        "summary": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "answer": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "because": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "claim",
+              "evidence",
+              "ref"
+            ],
+            "properties": {
+              "claim": {
+                "$ref": "#/$defs/non_empty_string"
+              },
+              "evidence": {
+                "$ref": "#/$defs/non_empty_string"
+              },
+              "ref": {
+                "$ref": "#/$defs/non_empty_string"
+              }
+            }
+          }
+        },
+        "proof": {
+          "$ref": "#/$defs/proof"
+        },
+        "warnings": {
+          "$ref": "#/$defs/warning_list"
+        }
+      }
+    },
+    "trace_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "from",
+        "to"
+      ],
+      "properties": {
+        "from": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "to": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "goal": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "include": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "evidence": {
+              "type": "boolean"
+            },
+            "raw_refs": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    "trace_response": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "summary",
+        "trace",
+        "warnings"
+      ],
+      "properties": {
+        "summary": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "trace": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/link"
+          }
+        },
+        "warnings": {
+          "$ref": "#/$defs/warning_list"
+        }
+      }
+    },
+    "inspect_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ref"
+      ],
+      "properties": {
+        "ref": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "include": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "incoming": {
+              "type": "boolean"
+            },
+            "outgoing": {
+              "type": "boolean"
+            },
+            "details": {
+              "type": "boolean"
+            },
+            "raw": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    "inspect_response": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "summary",
+        "object",
+        "links",
+        "evidence",
+        "warnings"
+      ],
+      "properties": {
+        "summary": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "object": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ref",
+            "kind"
+          ],
+          "properties": {
+            "ref": {
+              "$ref": "#/$defs/non_empty_string"
+            },
+            "kind": {
+              "$ref": "#/$defs/non_empty_string"
+            },
+            "text": {
+              "$ref": "#/$defs/non_empty_string"
+            }
+          }
+        },
+        "links": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "incoming",
+            "outgoing"
+          ],
+          "properties": {
+            "incoming": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/link"
+              }
+            },
+            "outgoing": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/link"
+              }
+            }
+          }
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evidence_item"
+          }
+        },
+        "warnings": {
+          "$ref": "#/$defs/warning_list"
+        }
+      }
+    }
+  }
+}

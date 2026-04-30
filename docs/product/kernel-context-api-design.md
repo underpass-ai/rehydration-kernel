@@ -823,7 +823,8 @@ Recommended order:
 
 1. Rename the public API direction to Kernel Memory Protocol in product docs.
 2. Add JSON schemas for `kernel_remember`, `kernel_wake`, `kernel_ask`,
-   `kernel_trace`, and `kernel_inspect`.
+   `kernel_trace`, and `kernel_inspect`. Draft fixtures live under
+   [`api/examples/kernel/v1beta1/kmp`](../../api/examples/kernel/v1beta1/kmp).
 3. Add examples for conversation memory, incident memory, workflow memory, and
    benchmark memory.
 4. Implement local stdio MCP read moves first: `wake`, `ask`, `trace`,
