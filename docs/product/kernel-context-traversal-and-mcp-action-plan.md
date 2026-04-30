@@ -859,6 +859,8 @@ Also deliver:
 MVP cut:
 
 - local stdio MCP first;
+- initial fixture-backed stdio adapter in
+  [`crates/rehydration-mcp`](../../crates/rehydration-mcp);
 - auth/TLS/Kubernetes after local behavior is proven;
 - read/explore tools can ship before full write-side ingestion if they wrap
   existing gRPC/query services cleanly.

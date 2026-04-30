@@ -2182,6 +2182,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rehydration-mcp"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
 name = "rehydration-observability"
 version = "0.1.0"
 dependencies = [
