@@ -2185,7 +2185,10 @@ dependencies = [
 name = "rehydration-mcp"
 version = "0.1.0"
 dependencies = [
+ "rehydration-proto",
  "serde_json",
+ "tokio",
+ "tonic 0.12.3",
 ]
 
 [[package]]

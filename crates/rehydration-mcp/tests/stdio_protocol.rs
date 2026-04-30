@@ -2,13 +2,27 @@ use rehydration_mcp::KernelMcpServer;
 use serde_json::{Value, json};
 
 #[test]
-fn initialize_declares_tools_capability() {
+fn backend_selection_defaults_to_fixtures_without_endpoint() {
+    let server = KernelMcpServer::from_optional_endpoint(None);
+    assert_eq!(server.backend_name(), "fixture");
+}
+
+#[test]
+fn backend_selection_uses_grpc_when_endpoint_is_present() {
+    let server =
+        KernelMcpServer::from_optional_endpoint(Some("http://127.0.0.1:50051".to_string()));
+    assert_eq!(server.backend_name(), "grpc");
+}
+
+#[tokio::test]
+async fn initialize_declares_tools_capability() {
     let response = handle(json!({
         "jsonrpc": "2.0",
         "id": 1,
         "method": "initialize",
         "params": {}
-    }));
+    }))
+    .await;
 
     assert_eq!(response["jsonrpc"], "2.0");
     assert_eq!(response["id"], 1);
@@ -16,17 +30,19 @@ fn initialize_declares_tools_capability() {
         response["result"]["serverInfo"]["name"],
         "rehydration-kernel-kmp"
     );
+    assert_eq!(response["result"]["metadata"]["backend"], "fixture");
     assert!(response["result"]["capabilities"].get("tools").is_some());
 }
 
-#[test]
-fn tools_list_exposes_read_only_kmp_tools() {
+#[tokio::test]
+async fn tools_list_exposes_read_only_kmp_tools() {
     let response = handle(json!({
         "jsonrpc": "2.0",
         "id": 2,
         "method": "tools/list",
         "params": {}
-    }));
+    }))
+    .await;
 
     let tool_names = response["result"]["tools"]
         .as_array()
@@ -46,8 +62,8 @@ fn tools_list_exposes_read_only_kmp_tools() {
     );
 }
 
-#[test]
-fn kernel_ask_returns_fixture_backed_structured_content() {
+#[tokio::test]
+async fn kernel_ask_returns_fixture_backed_structured_content() {
     let response = handle(json!({
         "jsonrpc": "2.0",
         "id": 3,
@@ -60,7 +76,8 @@ fn kernel_ask_returns_fixture_backed_structured_content() {
                 "answer_policy": "evidence_or_unknown"
             }
         }
-    }));
+    }))
+    .await;
 
     assert_eq!(response["result"]["isError"], false);
     assert_eq!(response["result"]["structuredContent"]["answer"], "Austin");
@@ -70,8 +87,36 @@ fn kernel_ask_returns_fixture_backed_structured_content() {
     );
 }
 
-#[test]
-fn invalid_tool_arguments_return_tool_error() {
+#[tokio::test]
+async fn grpc_backend_returns_tool_error_when_live_kernel_is_unavailable() {
+    let server = KernelMcpServer::grpc("http://127.0.0.1:1");
+    let response = handle_with(
+        &server,
+        json!({
+            "jsonrpc": "2.0",
+            "id": 31,
+            "method": "tools/call",
+            "params": {
+                "name": "kernel_inspect",
+                "arguments": {
+                    "ref": "node:missing"
+                }
+            }
+        }),
+    )
+    .await;
+
+    assert_eq!(response["result"]["isError"], true);
+    assert!(
+        response["result"]["content"][0]["text"]
+            .as_str()
+            .expect("tool error should include text")
+            .contains("failed to connect to kernel gRPC endpoint")
+    );
+}
+
+#[tokio::test]
+async fn invalid_tool_arguments_return_tool_error() {
     let response = handle(json!({
         "jsonrpc": "2.0",
         "id": 4,
@@ -82,7 +127,8 @@ fn invalid_tool_arguments_return_tool_error() {
                 "from": "claim:rachel-austin"
             }
         }
-    }));
+    }))
+    .await;
 
     assert_eq!(response["result"]["isError"], true);
     assert!(
@@ -93,25 +139,32 @@ fn invalid_tool_arguments_return_tool_error() {
     );
 }
 
-#[test]
-fn initialized_notification_has_no_response() {
-    let server = KernelMcpServer;
-    let response = server.handle_json_line(
-        &json!({
-            "jsonrpc": "2.0",
-            "method": "notifications/initialized",
-            "params": {}
-        })
-        .to_string(),
-    );
+#[tokio::test]
+async fn initialized_notification_has_no_response() {
+    let server = KernelMcpServer::fixture();
+    let response = server
+        .handle_json_line(
+            &json!({
+                "jsonrpc": "2.0",
+                "method": "notifications/initialized",
+                "params": {}
+            })
+            .to_string(),
+        )
+        .await;
 
     assert!(response.is_none());
 }
 
-fn handle(request: Value) -> Value {
-    let server = KernelMcpServer;
+async fn handle(request: Value) -> Value {
+    let server = KernelMcpServer::fixture();
+    handle_with(&server, request).await
+}
+
+async fn handle_with(server: &KernelMcpServer, request: Value) -> Value {
     let response = server
         .handle_json_line(&request.to_string())
+        .await
         .expect("request should produce a response");
     serde_json::from_str(&response).expect("response should be JSON")
 }

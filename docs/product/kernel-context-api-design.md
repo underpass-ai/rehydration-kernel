@@ -828,8 +828,10 @@ Recommended order:
 3. Add examples for conversation memory, incident memory, workflow memory, and
    benchmark memory.
 4. Implement local stdio MCP read moves first: `wake`, `ask`, `trace`,
-   `inspect`. The first fixture-backed adapter lives in
-   [`crates/rehydration-mcp`](../../crates/rehydration-mcp).
+   `inspect`. The first adapter lives in
+   [`crates/rehydration-mcp`](../../crates/rehydration-mcp) and supports
+   fixture-backed mode plus live gRPC reads through
+   `REHYDRATION_KERNEL_GRPC_ENDPOINT`.
 5. Map read moves onto existing `GetContext`, `GetContextPath`, and
    `GetNodeDetail`.
 6. Add capsule-to-projection translation for `remember`.
