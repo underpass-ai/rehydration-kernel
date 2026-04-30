@@ -19,6 +19,12 @@ Current integration stance:
 | [testing.md](testing.md) | Unit, integration, benchmark, live vLLM smoke, and experimental repair-judge coverage |
 | [observability.md](observability.md) | Quality metrics, OTel, Loki, Grafana stack |
 
+## Product Plans
+
+| Document | Content |
+|:---------|:--------|
+| [kernel-context-traversal-and-mcp-action-plan.md](product/kernel-context-traversal-and-mcp-action-plan.md) | Public Kernel 1.0 plan for context traversal, MCP tools, and honest benchmark follow-up |
+
 ## Operations
 
 | Document | Content |

@@ -4,4 +4,5 @@
 /to-delete-when-finish-the-standalone-extraction/
 /artifacts/e2e-runs/
 /.codex
+/.rehydration
 *.pyc
