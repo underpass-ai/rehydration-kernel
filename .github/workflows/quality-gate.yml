@@ -343,7 +343,7 @@ jobs:
             -Dsonar.qualitygate.wait=true
             -Dsonar.qualitygate.timeout=300
 
-  enforce-external-checks:
+  wait-codeql-checks:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     if: always() && github.event_name == 'pull_request' && !(github.event.pull_request.head.repo.fork || false)
@@ -353,7 +353,7 @@ jobs:
       checks: read
       contents: read
     steps:
-      - name: Wait for external code quality checks
+      - name: Wait for CodeQL checks
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea
         with:
           script: |
@@ -361,7 +361,6 @@ jobs:
             const repo = context.repo.repo;
             const ref = context.payload.pull_request.head.sha;
             const requiredChecks = new Map([
-              ["SonarCloud Code Analysis", "success"],
               ["CodeQL", "success"],
             ]);
             const codeQlAnalysisChecks = ["Analyze (actions)", "Analyze (rust)"];
@@ -412,17 +411,17 @@ jobs:
               }
 
               if (failures.length > 0) {
-                core.setFailed(`External checks failed: ${failures.join(", ")}`);
+                core.setFailed(`CodeQL checks failed: ${failures.join(", ")}`);
                 return;
               }
 
               if (pending.length === 0) {
-                core.info(`All external checks succeeded: ${Array.from(requiredChecks.keys()).join(", ")}`);
+                core.info("All CodeQL checks succeeded");
                 return;
               }
 
-              core.info(`Waiting for external checks: ${pending.join(", ")}`);
+              core.info(`Waiting for CodeQL checks: ${pending.join(", ")}`);
               await sleep(15000);
             }
 
-            core.setFailed("Timed out waiting for external checks to complete");
+            core.setFailed("Timed out waiting for CodeQL checks to complete");
