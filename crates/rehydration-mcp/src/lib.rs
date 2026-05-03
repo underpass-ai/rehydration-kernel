@@ -2,6 +2,7 @@ mod args;
 mod backend;
 mod fixture;
 mod grpc;
+mod ingest;
 mod kmp;
 mod protocol;
 mod server;

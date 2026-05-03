@@ -1,19 +1,22 @@
 use std::collections::HashMap;
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use rehydration_mcp::{KernelMcpGrpcTlsConfig, KernelMcpServer};
 use rehydration_proto::v1beta1::{
-    BundleNodeDetail, BundleRenderFormat, BundleSection, GetContextPathRequest,
+    BundleNodeDetail, BundleRenderFormat, BundleSection, BundleVersion, GetContextPathRequest,
     GetContextPathResponse, GetContextRequest, GetContextResponse, GetNodeDetailRequest,
     GetNodeDetailResponse, GraphNode, GraphRelationship, GraphRelationshipExplanation,
     GraphRelationshipSemanticClass, GraphRoleBundle, RehydrateSessionRequest,
     RehydrateSessionResponse, RehydrationBundle, RehydrationMode, RenderedContext,
-    ValidateScopeRequest, ValidateScopeResponse,
+    UpdateContextRequest, UpdateContextResponse, ValidateScopeRequest, ValidateScopeResponse,
+    context_command_service_server::{ContextCommandService, ContextCommandServiceServer},
     context_query_service_server::{ContextQueryService, ContextQueryServiceServer},
 };
 use serde_json::{Value, json};
 use tokio::net::TcpListener;
+use tokio::sync::Mutex;
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::transport::{Certificate, Identity, ServerTlsConfig};
 use tonic::{Request, Response, Status};
@@ -137,6 +140,136 @@ async fn grpc_backend_maps_live_query_service_responses_to_kmp_tools() {
 }
 
 #[tokio::test]
+async fn grpc_backend_maps_kernel_ingest_to_update_context() {
+    let recorded_commands = RecordedCommands::default();
+    let endpoint = spawn_fake_kernel_server_with_commands(recorded_commands.clone()).await;
+    let server = KernelMcpServer::grpc(endpoint);
+
+    let ingest = call_tool(
+        &server,
+        5,
+        "kernel_ingest",
+        json!({
+            "about": "question:830ce83f",
+            "memory": {
+                "dimensions": [
+                    {
+                        "id": "conversation:rachel",
+                        "kind": "conversation"
+                    }
+                ],
+                "entries": [
+                    {
+                        "id": "claim:rachel-austin",
+                        "kind": "claim",
+                        "text": "Rachel moved to Austin.",
+                        "coordinates": [
+                            {
+                                "dimension": "conversation",
+                                "scope_id": "conversation:rachel",
+                                "sequence": 1
+                            }
+                        ]
+                    }
+                ],
+                "relations": [
+                    {
+                        "from": "claim:rachel-austin",
+                        "to": "claim:rachel-denver",
+                        "rel": "supersedes",
+                        "class": "evidential",
+                        "why": "The later statement corrects the earlier one.",
+                        "evidence": "Rachel corrected the destination.",
+                        "confidence": "high"
+                    }
+                ],
+                "evidence": [
+                    {
+                        "id": "evidence:rachel-turn-2",
+                        "supports": ["claim:rachel-austin"],
+                        "text": "Rachel corrected the destination.",
+                        "source": "conversation turn 2"
+                    }
+                ]
+            },
+            "provenance": {
+                "source_agent": "longmemeval-adapter",
+                "correlation_id": "corr:830ce83f",
+                "causation_id": "eval:item:830ce83f"
+            },
+            "idempotency_key": "ingest:830ce83f:1"
+        }),
+    )
+    .await;
+
+    assert_eq!(ingest["result"]["isError"], false);
+    assert_eq!(
+        ingest["result"]["structuredContent"]["memory"]["memory_id"],
+        "memory:830ce83f:1"
+    );
+    assert_eq!(
+        ingest["result"]["structuredContent"]["memory"]["accepted"]["entries"],
+        1
+    );
+    assert_eq!(
+        ingest["result"]["structuredContent"]["memory"]["read_after_write_ready"],
+        false
+    );
+
+    let commands = recorded_commands.requests().await;
+    assert_eq!(commands.len(), 1);
+    let command = &commands[0];
+    assert_eq!(command.root_node_id, "question:830ce83f");
+    assert_eq!(command.role, "memory");
+    assert_eq!(command.work_item_id, "ingest:830ce83f:1");
+    assert_eq!(command.changes.len(), 4);
+    assert_eq!(command.changes[0].entity_kind, "memory_dimension");
+    assert_eq!(command.changes[1].entity_kind, "memory_entry");
+    assert_eq!(command.changes[2].entity_kind, "memory_relation");
+    assert_eq!(command.changes[3].entity_kind, "memory_evidence");
+    assert_eq!(
+        command
+            .metadata
+            .as_ref()
+            .expect("ingest should set command metadata")
+            .idempotency_key,
+        "ingest:830ce83f:1"
+    );
+}
+
+#[tokio::test]
+async fn grpc_backend_dry_run_ingest_does_not_call_update_context() {
+    let recorded_commands = RecordedCommands::default();
+    let endpoint = spawn_fake_kernel_server_with_commands(recorded_commands.clone()).await;
+    let server = KernelMcpServer::grpc(endpoint);
+
+    let ingest = call_tool(
+        &server,
+        6,
+        "kernel_ingest",
+        json!({
+            "about": "question:dry-run",
+            "memory": {
+                "dimensions": [{"id": "conversation:dry-run"}],
+                "entries": [{"id": "claim:dry-run", "text": "Dry run memory."}]
+            },
+            "idempotency_key": "ingest:dry-run:1",
+            "dry_run": true
+        }),
+    )
+    .await;
+
+    assert_eq!(ingest["result"]["isError"], false);
+    assert!(
+        ingest["result"]["structuredContent"]["warnings"][0]
+            .as_str()
+            .expect("dry run warning should be text")
+            .contains("dry_run=true")
+    );
+    assert!(recorded_commands.requests().await.is_empty());
+}
+
+#[tokio::test]
 async fn grpc_backend_connects_to_mutual_tls_query_service() {
     install_test_crypto_provider();
 
@@ -179,6 +312,17 @@ async fn spawn_fake_query_server_with_mutual_tls() -> String {
 }
 
 async fn spawn_fake_query_server_with_tls(tls_config: Option<ServerTlsConfig>) -> String {
+    spawn_fake_kernel_server_with_tls(tls_config, RecordedCommands::default()).await
+}
+
+async fn spawn_fake_kernel_server_with_commands(recorded_commands: RecordedCommands) -> String {
+    spawn_fake_kernel_server_with_tls(None, recorded_commands).await
+}
+
+async fn spawn_fake_kernel_server_with_tls(
+    tls_config: Option<ServerTlsConfig>,
+    recorded_commands: RecordedCommands,
+) -> String {
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .expect("fake gRPC server should bind to an ephemeral port");
@@ -197,6 +341,9 @@ async fn spawn_fake_query_server_with_tls(tls_config: Option<ServerTlsConfig>) -
 
         builder
             .add_service(ContextQueryServiceServer::new(FakeQueryService))
+            .add_service(ContextCommandServiceServer::new(FakeCommandService {
+                recorded_commands,
+            }))
             .serve_with_incoming(incoming)
             .await
             .expect("fake gRPC server should run");
@@ -226,6 +373,49 @@ async fn call_tool(server: &KernelMcpServer, id: u64, name: &str, arguments: Val
 }
 
 struct FakeQueryService;
+
+#[derive(Clone, Default)]
+struct RecordedCommands {
+    requests: Arc<Mutex<Vec<UpdateContextRequest>>>,
+}
+
+impl RecordedCommands {
+    async fn requests(&self) -> Vec<UpdateContextRequest> {
+        self.requests.lock().await.clone()
+    }
+}
+
+#[derive(Clone)]
+struct FakeCommandService {
+    recorded_commands: RecordedCommands,
+}
+
+#[tonic::async_trait]
+impl ContextCommandService for FakeCommandService {
+    async fn update_context(
+        &self,
+        request: Request<UpdateContextRequest>,
+    ) -> Result<Response<UpdateContextResponse>, Status> {
+        let request = request.into_inner();
+        self.recorded_commands
+            .requests
+            .lock()
+            .await
+            .push(request.clone());
+
+        Ok(Response::new(UpdateContextResponse {
+            accepted_version: Some(BundleVersion {
+                revision: 1,
+                content_hash: "sha256:ingest".to_string(),
+                schema_version: "v1beta1".to_string(),
+                projection_watermark: String::new(),
+                generated_at: None,
+                generator_version: "test".to_string(),
+            }),
+            warnings: Vec::new(),
+        }))
+    }
+}
 
 #[tonic::async_trait]
 impl ContextQueryService for FakeQueryService {

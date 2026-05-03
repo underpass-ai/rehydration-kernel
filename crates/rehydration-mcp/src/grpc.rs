@@ -2,11 +2,13 @@ use std::fs;
 use std::sync::Once;
 
 use rehydration_proto::v1beta1::{
-    GetContextPathRequest, GetContextRequest, GetNodeDetailRequest, RehydrationMode,
-    ResolutionTier, context_query_service_client::ContextQueryServiceClient,
+    CommandMetadata, ContextChange, ContextChangeOperation, GetContextPathRequest,
+    GetContextRequest, GetNodeDetailRequest, RehydrationMode, ResolutionTier, UpdateContextRequest,
+    context_command_service_client::ContextCommandServiceClient,
+    context_query_service_client::ContextQueryServiceClient,
 };
 use serde_json::{Value, json};
-use tonic::transport::{Certificate, ClientTlsConfig, Endpoint, Identity};
+use tonic::transport::{Certificate, Channel, ClientTlsConfig, Endpoint, Identity};
 
 use crate::args::{
     budget_tokens, optional_string, optional_u32, required_string, validate_required_arguments,
@@ -16,6 +18,7 @@ use crate::backend::{
     GRPC_TLS_MODE_ENV, KernelMcpGrpcTlsConfig, KernelMcpGrpcTlsMode, KernelMcpToolBackend,
     KernelMcpToolFuture, endpoint_uri_for_tls_mode,
 };
+use crate::ingest::{build_ingest_plan, ingest_response};
 use crate::kmp::{
     ask_from_get_context, bundle_relationships, inspect_from_get_node_detail, live_warnings,
     relationships_is_empty, rendered_summary, wake_from_get_context,
@@ -66,15 +69,62 @@ async fn grpc_tool_result(
     arguments: &Value,
 ) -> Result<Value, String> {
     match name {
+        "kernel_ingest" | "kernel_remember" | "kernel_ingest_context" => {
+            grpc_ingest(endpoint, tls, arguments).await
+        }
         "kernel_wake" => grpc_wake(endpoint, tls, arguments).await,
         "kernel_ask" => grpc_ask(endpoint, tls, arguments).await,
         "kernel_trace" => grpc_trace(endpoint, tls, arguments).await,
         "kernel_inspect" => grpc_inspect(endpoint, tls, arguments).await,
-        "kernel_ingest" | "kernel_remember" => {
-            Err("kernel_ingest is not implemented in the read-only MCP adapter".to_string())
-        }
         other => Err(format!("unknown KMP tool `{other}`")),
     }
+}
+
+async fn grpc_ingest(
+    endpoint: &str,
+    tls: &KernelMcpGrpcTlsConfig,
+    arguments: &Value,
+) -> Result<Value, String> {
+    let plan = build_ingest_plan(arguments)?;
+    if plan.dry_run {
+        return Ok(tool_success_result(ingest_response(&plan, Vec::new())));
+    }
+
+    let mut client = connect_command_client(endpoint, tls).await?;
+    let response = client
+        .update_context(UpdateContextRequest {
+            root_node_id: plan.about.clone(),
+            role: "memory".to_string(),
+            work_item_id: plan.idempotency_key.clone(),
+            changes: plan
+                .changes
+                .iter()
+                .map(|change| ContextChange {
+                    operation: ContextChangeOperation::Upsert as i32,
+                    entity_kind: change.entity_kind.clone(),
+                    entity_id: change.entity_id.clone(),
+                    payload_json: change.payload_json.clone(),
+                    reason: change.reason.clone(),
+                    scopes: change.scopes.clone(),
+                })
+                .collect(),
+            metadata: Some(CommandMetadata {
+                idempotency_key: plan.idempotency_key.clone(),
+                correlation_id: plan.correlation_id.clone().unwrap_or_default(),
+                causation_id: plan.causation_id.clone().unwrap_or_default(),
+                requested_by: plan.requested_by.clone().unwrap_or_default(),
+                requested_at: None,
+            }),
+            precondition: None,
+        })
+        .await
+        .map_err(|status| format!("UpdateContext failed for `{}`: {status}", plan.about))?
+        .into_inner();
+
+    Ok(tool_success_result(ingest_response(
+        &plan,
+        response.warnings,
+    )))
 }
 
 async fn grpc_wake(
@@ -208,6 +258,21 @@ async fn connect_query_client(
     endpoint: &str,
     tls: &KernelMcpGrpcTlsConfig,
 ) -> Result<ContextQueryServiceClient<tonic::transport::Channel>, String> {
+    connect_channel(endpoint, tls)
+        .await
+        .map(ContextQueryServiceClient::new)
+}
+
+async fn connect_command_client(
+    endpoint: &str,
+    tls: &KernelMcpGrpcTlsConfig,
+) -> Result<ContextCommandServiceClient<tonic::transport::Channel>, String> {
+    connect_channel(endpoint, tls)
+        .await
+        .map(ContextCommandServiceClient::new)
+}
+
+async fn connect_channel(endpoint: &str, tls: &KernelMcpGrpcTlsConfig) -> Result<Channel, String> {
     let endpoint_uri = endpoint_uri_for_tls_mode(endpoint, tls.mode);
     let mut endpoint = Endpoint::from_shared(endpoint_uri.clone()).map_err(|error| {
         format!("invalid kernel gRPC endpoint `{endpoint_uri}` from {GRPC_ENDPOINT_ENV}: {error}")
@@ -230,7 +295,6 @@ async fn connect_query_client(
                 tls.mode_name()
             )
         })
-        .map(ContextQueryServiceClient::new)
 }
 
 fn client_tls_config(tls: &KernelMcpGrpcTlsConfig) -> Result<ClientTlsConfig, String> {

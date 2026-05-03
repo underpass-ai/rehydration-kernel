@@ -16,7 +16,7 @@ use crate::containers::NEO4J_PASSWORD;
 use crate::debug::debug_enabled;
 use crate::tls::material::{TlsMaterial, ensure_crypto_provider};
 
-const NEO4J_IMAGE: &str = "docker.io/neo4j";
+const NEO4J_IMAGE: &str = "docker.io/library/neo4j";
 const NEO4J_TAG: &str = "5.26.0-community";
 const NEO4J_INTERNAL_PORT: u16 = 7687;
 const NEO4J_STARTUP_WAIT: Duration = Duration::from_secs(10);

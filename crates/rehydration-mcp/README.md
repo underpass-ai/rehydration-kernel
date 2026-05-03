@@ -4,11 +4,11 @@ Draft stdio MCP adapter for Kernel Memory Protocol (KMP).
 
 Current status:
 
-- exposes read-only tools: `kernel_wake`, `kernel_ask`, `kernel_trace`,
+- exposes `kernel_ingest`, `kernel_wake`, `kernel_ask`, `kernel_trace`, and
   `kernel_inspect`;
 - defaults to fixture-backed KMP responses from `api/examples/kernel/v1beta1/kmp`;
 - can use the live gRPC kernel when `REHYDRATION_KERNEL_GRPC_ENDPOINT` is set;
-- does not implement the future write tool `kernel_ingest` yet;
+- maps live `kernel_ingest` to `ContextCommandService.UpdateContext`;
 - live `kernel_ask` returns evidence/proof from `GetContext`, not a generated
   answer.
 
@@ -49,6 +49,7 @@ Live backend mapping:
 
 | Tool | Kernel read |
 |:-----|:------------|
+| `kernel_ingest` | `UpdateContext` |
 | `kernel_wake` | `GetContext` |
 | `kernel_ask` | `GetContext` |
 | `kernel_trace` | `GetContextPath` |

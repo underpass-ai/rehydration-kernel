@@ -2,8 +2,11 @@ use serde_json::Value;
 
 use crate::args::validate_required_arguments;
 use crate::backend::{KernelMcpToolBackend, KernelMcpToolFuture};
+use crate::ingest::build_ingest_plan;
 use crate::protocol::tool_success_result;
 
+const INGEST_RESPONSE_FIXTURE: &str =
+    include_str!("../../../api/examples/kernel/v1beta1/kmp/ingest.response.json");
 const WAKE_RESPONSE_FIXTURE: &str =
     include_str!("../../../api/examples/kernel/v1beta1/kmp/wake.response.json");
 const ASK_RESPONSE_FIXTURE: &str =
@@ -28,6 +31,10 @@ impl KernelMcpToolBackend for FixtureKernelMcpBackend {
 
 pub(crate) fn fixture_tool_result(name: &str, arguments: &Value) -> Result<Value, String> {
     match name {
+        "kernel_ingest" | "kernel_remember" | "kernel_ingest_context" => {
+            build_ingest_plan(arguments)?;
+            read_fixture_tool_result(arguments, &[], INGEST_RESPONSE_FIXTURE)
+        }
         "kernel_wake" => read_fixture_tool_result(arguments, &["about"], WAKE_RESPONSE_FIXTURE),
         "kernel_ask" => {
             read_fixture_tool_result(arguments, &["about", "question"], ASK_RESPONSE_FIXTURE)
@@ -36,9 +43,6 @@ pub(crate) fn fixture_tool_result(name: &str, arguments: &Value) -> Result<Value
             read_fixture_tool_result(arguments, &["from", "to"], TRACE_RESPONSE_FIXTURE)
         }
         "kernel_inspect" => read_fixture_tool_result(arguments, &["ref"], INSPECT_RESPONSE_FIXTURE),
-        "kernel_ingest" | "kernel_remember" => {
-            Err("kernel_ingest is not implemented in the read-only MCP adapter".to_string())
-        }
         other => Err(format!("unknown KMP tool `{other}`")),
     }
 }

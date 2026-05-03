@@ -38,7 +38,7 @@ fn stdio_binary_serves_fixture_jsonrpc_until_stdin_eof() {
     assert_eq!(responses[1]["id"], 2);
     assert_eq!(
         responses[1]["result"]["tools"][0]["name"],
-        Value::String("kernel_wake".to_string())
+        Value::String("kernel_ingest".to_string())
     );
 }
 

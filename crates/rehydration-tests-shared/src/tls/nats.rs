@@ -15,7 +15,7 @@ use tokio::time::{sleep, timeout};
 use crate::debug::{debug_log, debug_log_value};
 use crate::tls::material::{TlsMaterial, ensure_crypto_provider};
 
-pub const NATS_IMAGE: &str = "docker.io/nats";
+pub const NATS_IMAGE: &str = "docker.io/library/nats";
 pub const NATS_TAG: &str = "2.10-alpine";
 pub const NATS_INTERNAL_PORT: u16 = 4222;
 const NATS_STARTUP_WAIT: Duration = Duration::from_secs(2);
