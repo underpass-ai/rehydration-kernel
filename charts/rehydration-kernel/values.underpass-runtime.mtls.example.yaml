@@ -19,7 +19,13 @@ ingress:
   enabled: true
   className: nginx
   annotations:
-    nginx.ingress.kubernetes.io/backend-protocol: GRPC
+    nginx.ingress.kubernetes.io/backend-protocol: GRPCS
+    nginx.ingress.kubernetes.io/proxy-ssl-name: rehydration-kernel-grpc
+    nginx.ingress.kubernetes.io/proxy-ssl-secret: underpass-runtime/rehydration-kernel-client-tls
+    nginx.ingress.kubernetes.io/proxy-ssl-server-name: "on"
+    nginx.ingress.kubernetes.io/proxy-ssl-verify: "on"
+    nginx.ingress.kubernetes.io/proxy-ssl-verify-depth: "2"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
   hosts:
     - host: rehydration-kernel.underpassai.com
       paths:

@@ -1,3 +1,7 @@
+use std::fs;
+use std::path::PathBuf;
+use std::sync::Once;
+
 use rehydration_proto::v1beta1::{
     BundleNodeDetail, GetContextPathRequest, GetContextRequest, GetContextResponse,
     GetNodeDetailRequest, GetNodeDetailResponse, GraphRelationship, GraphRelationshipSemanticClass,
@@ -5,8 +9,14 @@ use rehydration_proto::v1beta1::{
     context_query_service_client::ContextQueryServiceClient,
 };
 use serde_json::{Value, json};
+use tonic::transport::{Certificate, ClientTlsConfig, Endpoint, Identity};
 
 pub const GRPC_ENDPOINT_ENV: &str = "REHYDRATION_KERNEL_GRPC_ENDPOINT";
+pub const GRPC_TLS_MODE_ENV: &str = "REHYDRATION_KERNEL_GRPC_TLS_MODE";
+pub const GRPC_TLS_CA_PATH_ENV: &str = "REHYDRATION_KERNEL_GRPC_TLS_CA_PATH";
+pub const GRPC_TLS_CERT_PATH_ENV: &str = "REHYDRATION_KERNEL_GRPC_TLS_CERT_PATH";
+pub const GRPC_TLS_KEY_PATH_ENV: &str = "REHYDRATION_KERNEL_GRPC_TLS_KEY_PATH";
+pub const GRPC_TLS_DOMAIN_NAME_ENV: &str = "REHYDRATION_KERNEL_GRPC_TLS_DOMAIN_NAME";
 
 const PROTOCOL_VERSION: &str = "2024-11-05";
 const SERVER_NAME: &str = "rehydration-kernel-kmp";
@@ -24,7 +34,116 @@ const INSPECT_RESPONSE_FIXTURE: &str =
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum KernelMcpBackend {
     Fixture,
-    Grpc { endpoint: String },
+    Grpc {
+        endpoint: String,
+        tls: KernelMcpGrpcTlsConfig,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct KernelMcpGrpcTlsConfig {
+    mode: KernelMcpGrpcTlsMode,
+    ca_path: Option<PathBuf>,
+    cert_path: Option<PathBuf>,
+    key_path: Option<PathBuf>,
+    domain_name: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum KernelMcpGrpcTlsMode {
+    Disabled,
+    Server,
+    Mutual,
+}
+
+impl KernelMcpGrpcTlsMode {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Disabled => "disabled",
+            Self::Server => "server",
+            Self::Mutual => "mutual",
+        }
+    }
+}
+
+impl KernelMcpGrpcTlsConfig {
+    pub fn disabled() -> Self {
+        Self {
+            mode: KernelMcpGrpcTlsMode::Disabled,
+            ca_path: None,
+            cert_path: None,
+            key_path: None,
+            domain_name: None,
+        }
+    }
+
+    pub fn server(ca_path: impl Into<PathBuf>, domain_name: Option<String>) -> Self {
+        Self {
+            mode: KernelMcpGrpcTlsMode::Server,
+            ca_path: Some(ca_path.into()),
+            cert_path: None,
+            key_path: None,
+            domain_name,
+        }
+    }
+
+    pub fn mutual(
+        ca_path: impl Into<PathBuf>,
+        cert_path: impl Into<PathBuf>,
+        key_path: impl Into<PathBuf>,
+        domain_name: Option<String>,
+    ) -> Self {
+        Self {
+            mode: KernelMcpGrpcTlsMode::Mutual,
+            ca_path: Some(ca_path.into()),
+            cert_path: Some(cert_path.into()),
+            key_path: Some(key_path.into()),
+            domain_name,
+        }
+    }
+
+    pub fn from_env_for_endpoint(endpoint: Option<&str>) -> Self {
+        let ca_path = optional_env_path(GRPC_TLS_CA_PATH_ENV);
+        let cert_path = optional_env_path(GRPC_TLS_CERT_PATH_ENV);
+        let key_path = optional_env_path(GRPC_TLS_KEY_PATH_ENV);
+        let domain_name = optional_env_string(GRPC_TLS_DOMAIN_NAME_ENV);
+        let mode = optional_env_string(GRPC_TLS_MODE_ENV)
+            .and_then(|value| parse_tls_mode(&value))
+            .unwrap_or_else(|| {
+                if cert_path.is_some() || key_path.is_some() {
+                    KernelMcpGrpcTlsMode::Mutual
+                } else if ca_path.is_some() || domain_name.is_some() {
+                    KernelMcpGrpcTlsMode::Server
+                } else if endpoint
+                    .map(|endpoint| endpoint.trim().starts_with("https://"))
+                    .unwrap_or(false)
+                {
+                    KernelMcpGrpcTlsMode::Server
+                } else {
+                    KernelMcpGrpcTlsMode::Disabled
+                }
+            });
+
+        Self {
+            mode,
+            ca_path,
+            cert_path,
+            key_path,
+            domain_name,
+        }
+    }
+
+    pub fn from_env() -> Self {
+        Self::from_env_for_endpoint(std::env::var(GRPC_ENDPOINT_ENV).ok().as_deref())
+    }
+
+    pub fn mode(&self) -> KernelMcpGrpcTlsMode {
+        self.mode
+    }
+
+    pub fn mode_name(&self) -> &'static str {
+        self.mode.as_str()
+    }
 }
 
 pub struct KernelMcpServer {
@@ -45,20 +164,34 @@ impl KernelMcpServer {
     }
 
     pub fn grpc(endpoint: impl Into<String>) -> Self {
+        Self::grpc_with_tls(endpoint, KernelMcpGrpcTlsConfig::disabled())
+    }
+
+    pub fn grpc_with_tls(endpoint: impl Into<String>, tls: KernelMcpGrpcTlsConfig) -> Self {
         Self {
             backend: KernelMcpBackend::Grpc {
                 endpoint: endpoint.into(),
+                tls,
             },
         }
     }
 
     pub fn from_env() -> Self {
-        Self::from_optional_endpoint(std::env::var(GRPC_ENDPOINT_ENV).ok())
+        let endpoint = std::env::var(GRPC_ENDPOINT_ENV).ok();
+        let tls = KernelMcpGrpcTlsConfig::from_env_for_endpoint(endpoint.as_deref());
+        Self::from_optional_endpoint_and_tls(endpoint, tls)
     }
 
     pub fn from_optional_endpoint(endpoint: Option<String>) -> Self {
+        Self::from_optional_endpoint_and_tls(endpoint, KernelMcpGrpcTlsConfig::disabled())
+    }
+
+    pub fn from_optional_endpoint_and_tls(
+        endpoint: Option<String>,
+        tls: KernelMcpGrpcTlsConfig,
+    ) -> Self {
         match endpoint.filter(|endpoint| !endpoint.trim().is_empty()) {
-            Some(endpoint) => Self::grpc(endpoint),
+            Some(endpoint) => Self::grpc_with_tls(endpoint, tls),
             None => Self::fixture(),
         }
     }
@@ -67,6 +200,13 @@ impl KernelMcpServer {
         match self.backend {
             KernelMcpBackend::Fixture => "fixture",
             KernelMcpBackend::Grpc { .. } => "grpc",
+        }
+    }
+
+    pub fn grpc_tls_mode_name(&self) -> &'static str {
+        match &self.backend {
+            KernelMcpBackend::Fixture => "disabled",
+            KernelMcpBackend::Grpc { tls, .. } => tls.mode_name(),
         }
     }
 
@@ -119,8 +259,8 @@ impl KernelMcpServer {
 
         let result = match &self.backend {
             KernelMcpBackend::Fixture => fixture_tool_result(name, arguments),
-            KernelMcpBackend::Grpc { endpoint } => {
-                grpc_tool_result(endpoint, name, arguments).await
+            KernelMcpBackend::Grpc { endpoint, tls } => {
+                grpc_tool_result(endpoint, tls, name, arguments).await
             }
         };
 
@@ -142,7 +282,8 @@ fn initialize_result(server: &KernelMcpServer) -> Value {
             "version": SERVER_VERSION
         },
         "metadata": {
-            "backend": server.backend_name()
+            "backend": server.backend_name(),
+            "grpc_tls": server.grpc_tls_mode_name()
         }
     })
 }
@@ -308,12 +449,17 @@ fn read_fixture_tool_result(
     Ok(tool_success_result(structured_content))
 }
 
-async fn grpc_tool_result(endpoint: &str, name: &str, arguments: &Value) -> Result<Value, String> {
+async fn grpc_tool_result(
+    endpoint: &str,
+    tls: &KernelMcpGrpcTlsConfig,
+    name: &str,
+    arguments: &Value,
+) -> Result<Value, String> {
     match name {
-        "kernel_wake" => grpc_wake(endpoint, arguments).await,
-        "kernel_ask" => grpc_ask(endpoint, arguments).await,
-        "kernel_trace" => grpc_trace(endpoint, arguments).await,
-        "kernel_inspect" => grpc_inspect(endpoint, arguments).await,
+        "kernel_wake" => grpc_wake(endpoint, tls, arguments).await,
+        "kernel_ask" => grpc_ask(endpoint, tls, arguments).await,
+        "kernel_trace" => grpc_trace(endpoint, tls, arguments).await,
+        "kernel_inspect" => grpc_inspect(endpoint, tls, arguments).await,
         "kernel_remember" => {
             Err("kernel_remember is not implemented in the read-only MCP adapter".to_string())
         }
@@ -321,9 +467,13 @@ async fn grpc_tool_result(endpoint: &str, name: &str, arguments: &Value) -> Resu
     }
 }
 
-async fn grpc_wake(endpoint: &str, arguments: &Value) -> Result<Value, String> {
+async fn grpc_wake(
+    endpoint: &str,
+    tls: &KernelMcpGrpcTlsConfig,
+    arguments: &Value,
+) -> Result<Value, String> {
     validate_required_arguments(arguments, &["about"])?;
-    let mut client = connect_query_client(endpoint).await?;
+    let mut client = connect_query_client(endpoint, tls).await?;
     let about = required_string(arguments, "about")?;
     let role = optional_string(arguments, "role").unwrap_or_else(|| "agent".to_string());
     let intent = optional_string(arguments, "intent")
@@ -350,9 +500,13 @@ async fn grpc_wake(endpoint: &str, arguments: &Value) -> Result<Value, String> {
     )))
 }
 
-async fn grpc_ask(endpoint: &str, arguments: &Value) -> Result<Value, String> {
+async fn grpc_ask(
+    endpoint: &str,
+    tls: &KernelMcpGrpcTlsConfig,
+    arguments: &Value,
+) -> Result<Value, String> {
     validate_required_arguments(arguments, &["about", "question"])?;
-    let mut client = connect_query_client(endpoint).await?;
+    let mut client = connect_query_client(endpoint, tls).await?;
     let about = required_string(arguments, "about")?;
     let question = required_string(arguments, "question")?;
     let token_budget = budget_tokens(arguments).unwrap_or(2400);
@@ -377,9 +531,13 @@ async fn grpc_ask(endpoint: &str, arguments: &Value) -> Result<Value, String> {
     )))
 }
 
-async fn grpc_trace(endpoint: &str, arguments: &Value) -> Result<Value, String> {
+async fn grpc_trace(
+    endpoint: &str,
+    tls: &KernelMcpGrpcTlsConfig,
+    arguments: &Value,
+) -> Result<Value, String> {
     validate_required_arguments(arguments, &["from", "to"])?;
-    let mut client = connect_query_client(endpoint).await?;
+    let mut client = connect_query_client(endpoint, tls).await?;
     let from = required_string(arguments, "from")?;
     let to = required_string(arguments, "to")?;
     let role = optional_string(arguments, "role").unwrap_or_else(|| "tracer".to_string());
@@ -414,9 +572,13 @@ async fn grpc_trace(endpoint: &str, arguments: &Value) -> Result<Value, String> 
     })))
 }
 
-async fn grpc_inspect(endpoint: &str, arguments: &Value) -> Result<Value, String> {
+async fn grpc_inspect(
+    endpoint: &str,
+    tls: &KernelMcpGrpcTlsConfig,
+    arguments: &Value,
+) -> Result<Value, String> {
     validate_required_arguments(arguments, &["ref"])?;
-    let mut client = connect_query_client(endpoint).await?;
+    let mut client = connect_query_client(endpoint, tls).await?;
     let ref_id = required_string(arguments, "ref")?;
 
     let response = client
@@ -434,14 +596,114 @@ async fn grpc_inspect(endpoint: &str, arguments: &Value) -> Result<Value, String
 
 async fn connect_query_client(
     endpoint: &str,
+    tls: &KernelMcpGrpcTlsConfig,
 ) -> Result<ContextQueryServiceClient<tonic::transport::Channel>, String> {
-    ContextQueryServiceClient::connect(endpoint.to_string())
+    let endpoint_uri = endpoint_uri_for_tls_mode(endpoint, tls.mode);
+    let mut endpoint = Endpoint::from_shared(endpoint_uri.clone()).map_err(|error| {
+        format!("invalid kernel gRPC endpoint `{endpoint_uri}` from {GRPC_ENDPOINT_ENV}: {error}")
+    })?;
+
+    if tls.mode != KernelMcpGrpcTlsMode::Disabled {
+        endpoint = endpoint.tls_config(client_tls_config(tls)?).map_err(|error| {
+            format!(
+                "invalid kernel gRPC TLS config from {GRPC_TLS_MODE_ENV}/{GRPC_TLS_CA_PATH_ENV}/{GRPC_TLS_CERT_PATH_ENV}/{GRPC_TLS_KEY_PATH_ENV}: {error}"
+            )
+        })?;
+    }
+
+    endpoint
+        .connect()
         .await
         .map_err(|error| {
             format!(
-                "failed to connect to kernel gRPC endpoint `{endpoint}` from {GRPC_ENDPOINT_ENV}: {error}"
+                "failed to connect to kernel gRPC endpoint `{endpoint_uri}` from {GRPC_ENDPOINT_ENV} with TLS mode `{}`: {error}; debug={error:?}",
+                tls.mode_name()
             )
         })
+        .map(ContextQueryServiceClient::new)
+}
+
+fn client_tls_config(tls: &KernelMcpGrpcTlsConfig) -> Result<ClientTlsConfig, String> {
+    install_rustls_crypto_provider();
+
+    let mut config = ClientTlsConfig::new().with_enabled_roots();
+
+    if let Some(ca_path) = tls.ca_path.as_ref() {
+        let ca_pem = fs::read(ca_path).map_err(|error| {
+            format!(
+                "failed to read {GRPC_TLS_CA_PATH_ENV} `{}`: {error}",
+                ca_path.display()
+            )
+        })?;
+        config = config.ca_certificate(Certificate::from_pem(ca_pem));
+    }
+
+    if let Some(domain_name) = tls.domain_name.as_deref() {
+        config = config.domain_name(domain_name.to_string());
+    }
+
+    if tls.mode == KernelMcpGrpcTlsMode::Mutual {
+        let cert_path = tls.cert_path.as_ref().ok_or_else(|| {
+            format!("{GRPC_TLS_CERT_PATH_ENV} is required when {GRPC_TLS_MODE_ENV}=mutual")
+        })?;
+        let key_path = tls.key_path.as_ref().ok_or_else(|| {
+            format!("{GRPC_TLS_KEY_PATH_ENV} is required when {GRPC_TLS_MODE_ENV}=mutual")
+        })?;
+        let cert_pem = fs::read(cert_path).map_err(|error| {
+            format!(
+                "failed to read {GRPC_TLS_CERT_PATH_ENV} `{}`: {error}",
+                cert_path.display()
+            )
+        })?;
+        let key_pem = fs::read(key_path).map_err(|error| {
+            format!(
+                "failed to read {GRPC_TLS_KEY_PATH_ENV} `{}`: {error}",
+                key_path.display()
+            )
+        })?;
+        config = config.identity(Identity::from_pem(cert_pem, key_pem));
+    }
+
+    Ok(config)
+}
+
+fn endpoint_uri_for_tls_mode(endpoint: &str, mode: KernelMcpGrpcTlsMode) -> String {
+    if mode == KernelMcpGrpcTlsMode::Disabled {
+        return endpoint.to_string();
+    }
+
+    endpoint
+        .strip_prefix("http://")
+        .map(|without_scheme| format!("https://{without_scheme}"))
+        .unwrap_or_else(|| endpoint.to_string())
+}
+
+fn parse_tls_mode(value: &str) -> Option<KernelMcpGrpcTlsMode> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "" => None,
+        "disabled" | "disable" | "off" | "false" | "none" => Some(KernelMcpGrpcTlsMode::Disabled),
+        "server" | "tls" => Some(KernelMcpGrpcTlsMode::Server),
+        "mutual" | "mtls" | "m-tls" => Some(KernelMcpGrpcTlsMode::Mutual),
+        _ => None,
+    }
+}
+
+fn optional_env_path(name: &str) -> Option<PathBuf> {
+    optional_env_string(name).map(PathBuf::from)
+}
+
+fn optional_env_string(name: &str) -> Option<String> {
+    std::env::var(name)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn install_rustls_crypto_provider() {
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        let _ = tokio_rustls::rustls::crypto::aws_lc_rs::default_provider().install_default();
+    });
 }
 
 fn wake_from_get_context(about: &str, intent: &str, response: &GetContextResponse) -> Value {

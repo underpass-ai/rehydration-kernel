@@ -22,6 +22,7 @@ rehydration-adapter-valkey.workspace = true
 rehydration-application.workspace = true
 rehydration-config.workspace = true
 rehydration-domain.workspace = true
+rehydration-mcp.workspace = true
 rehydration-proto.workspace = true
 rehydration-testkit.workspace = true
 rehydration-tests-shared.workspace = true
@@ -70,4 +71,9 @@ required-features = ["container-tests"]
 [[test]]
 name = "llm_graph_materialization_integration"
 path = "tests/llm_graph_materialization_integration.rs"
+required-features = ["container-tests"]
+
+[[test]]
+name = "mcp_real_kernel_integration"
+path = "tests/mcp_real_kernel_integration.rs"
 required-features = ["container-tests"]

@@ -862,6 +862,8 @@ MVP cut:
 - initial fixture-backed stdio adapter in
   [`crates/rehydration-mcp`](../../crates/rehydration-mcp);
 - live gRPC read mode via `REHYDRATION_KERNEL_GRPC_ENDPOINT`;
+- CI smoke that proves MCP tools read from a real containerized Kernel gRPC
+  server, not only from fixtures;
 - auth/TLS/Kubernetes after local behavior is proven;
 - read/explore tools can ship before full write-side ingestion if they wrap
   existing gRPC/query services cleanly.

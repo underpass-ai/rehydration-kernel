@@ -56,6 +56,10 @@ impl SeededKernelFixture {
         &mut self.command_client
     }
 
+    pub(crate) fn grpc_endpoint(&self) -> &str {
+        self.server.endpoint()
+    }
+
     pub(crate) async fn shutdown(self) -> Result<(), Box<dyn Error + Send + Sync>> {
         stop_server(self.server).await
     }

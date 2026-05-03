@@ -1,4 +1,4 @@
-use rehydration_mcp::KernelMcpServer;
+use rehydration_mcp::{KernelMcpGrpcTlsConfig, KernelMcpServer};
 use serde_json::{Value, json};
 
 #[test]
@@ -12,6 +12,17 @@ fn backend_selection_uses_grpc_when_endpoint_is_present() {
     let server =
         KernelMcpServer::from_optional_endpoint(Some("http://127.0.0.1:50051".to_string()));
     assert_eq!(server.backend_name(), "grpc");
+}
+
+#[test]
+fn backend_selection_reports_grpc_tls_mode() {
+    let server = KernelMcpServer::grpc_with_tls(
+        "https://rehydration-kernel.underpassai.com",
+        KernelMcpGrpcTlsConfig::server("/tmp/ca.crt", None),
+    );
+
+    assert_eq!(server.backend_name(), "grpc");
+    assert_eq!(server.grpc_tls_mode_name(), "server");
 }
 
 #[tokio::test]

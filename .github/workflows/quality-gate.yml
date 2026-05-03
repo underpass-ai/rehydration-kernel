@@ -189,6 +189,32 @@ jobs:
       - name: Run event-driven agentic integration tests
         run: bash scripts/ci/integration-agentic-event-context.sh
 
+  integration-mcp-real-kernel:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9
+        with:
+          toolchain: 1.90.0
+
+      - name: Install protoc
+        run: bash scripts/ci/install-protoc.sh
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5
+
+      - name: Verify Docker
+        run: docker version
+
+      - name: Run MCP real-kernel integration smoke
+        run: bash scripts/ci/integration-mcp-real-kernel.sh
+
   container-image:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
@@ -230,6 +256,7 @@ jobs:
       - integration-neo4j
       - integration-agentic-context
       - integration-agentic-event-context
+      - integration-mcp-real-kernel
       - container-image
       - helm-chart
     permissions:

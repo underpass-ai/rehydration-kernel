@@ -30,6 +30,25 @@ REHYDRATION_KERNEL_GRPC_ENDPOINT=http://127.0.0.1:50051 \
   cargo run -p rehydration-mcp --locked
 ```
 
+HTTPS endpoints automatically enable server TLS and use system/webpki roots:
+
+```bash
+REHYDRATION_KERNEL_GRPC_ENDPOINT=https://rehydration-kernel.underpassai.com \
+  cargo run -p rehydration-mcp --locked
+```
+
+Private CAs and direct mTLS are explicit:
+
+```bash
+REHYDRATION_KERNEL_GRPC_ENDPOINT=https://rehydration-kernel.underpass-runtime.svc:50054 \
+REHYDRATION_KERNEL_GRPC_TLS_MODE=mutual \
+REHYDRATION_KERNEL_GRPC_TLS_CA_PATH=/var/run/kernel-tls/ca.crt \
+REHYDRATION_KERNEL_GRPC_TLS_CERT_PATH=/var/run/kernel-tls/tls.crt \
+REHYDRATION_KERNEL_GRPC_TLS_KEY_PATH=/var/run/kernel-tls/tls.key \
+REHYDRATION_KERNEL_GRPC_TLS_DOMAIN_NAME=rehydration-kernel-grpc \
+  cargo run -p rehydration-mcp --locked
+```
+
 Live mapping:
 
 | MCP tool | Kernel read |
@@ -59,6 +78,16 @@ KMP_MCP_SMOKE_REF=node:mission:engine-core-failure \
 ```
 
 `KMP_MCP_SMOKE_REF` must be a node id that exists in the live kernel read model.
+
+Real kernel integration smoke:
+
+```bash
+bash scripts/ci/integration-mcp-real-kernel.sh
+```
+
+This starts the containerized Kernel test fixture, exposes its ephemeral gRPC
+endpoint to the MCP adapter, and verifies `kernel_wake`, `kernel_ask`,
+`kernel_trace`, and `kernel_inspect` against the live read model.
 
 ## Generic MCP Client Config
 

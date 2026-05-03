@@ -2187,7 +2187,9 @@ version = "0.1.0"
 dependencies = [
  "rehydration-proto",
  "serde_json",
+ "tempfile",
  "tokio",
+ "tokio-rustls",
  "tokio-stream",
  "tonic 0.12.3",
 ]
@@ -2277,6 +2279,7 @@ dependencies = [
  "rehydration-application",
  "rehydration-config",
  "rehydration-domain",
+ "rehydration-mcp",
  "rehydration-proto",
  "rehydration-testkit",
  "rehydration-tests-shared",
@@ -3213,6 +3216,7 @@ dependencies = [
  "tower-layer",
  "tower-service",
  "tracing",
+ "webpki-roots 0.26.11",
 ]
 
 [[package]]
