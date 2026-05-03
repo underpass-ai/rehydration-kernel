@@ -15,6 +15,9 @@ cargo test -p rehydration-tests-kernel --features container-tests -- --nocapture
 
 # Quality gate (pre-merge: format + clippy + contract + tests)
 bash scripts/ci/quality-gate.sh
+
+# Optional local pre-commit hook: clippy with the same deny-warnings mode as CI
+git config core.hooksPath .githooks
 ```
 
 ## Unit Tests

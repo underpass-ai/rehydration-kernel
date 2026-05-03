@@ -73,21 +73,26 @@ mod tests {
         });
 
         assert!(validate_required_arguments(&arguments, &["about", "question"]).is_ok());
-        assert_eq!(required_string(&arguments, "about").unwrap(), "node:root");
+        assert_eq!(
+            required_string(&arguments, "about").expect("valid about argument should be accepted"),
+            "node:root"
+        );
     }
 
     #[test]
     fn rejects_missing_blank_or_non_object_required_arguments() {
         assert_eq!(
-            validate_required_arguments(&Value::Null, &["about"]).unwrap_err(),
+            validate_required_arguments(&Value::Null, &["about"])
+                .expect_err("non-object arguments should be rejected"),
             "tool arguments must be a JSON object"
         );
         assert_eq!(
-            validate_required_arguments(&json!({"about": "  "}), &["about"]).unwrap_err(),
+            validate_required_arguments(&json!({"about": "  "}), &["about"])
+                .expect_err("blank about should be rejected"),
             "missing required argument `about`"
         );
         assert_eq!(
-            required_string(&json!({}), "about").unwrap_err(),
+            required_string(&json!({}), "about").expect_err("missing about should be rejected"),
             "missing required argument `about`"
         );
     }
