@@ -3,15 +3,21 @@
 Status: draft local adapter for Kernel Memory Protocol (KMP).
 
 The repo includes a stdio MCP server in
-[`crates/rehydration-mcp`](../../crates/rehydration-mcp). It exposes the
-read-only KMP tools:
+[`crates/rehydration-mcp`](../../crates/rehydration-mcp). It exposes the KMP
+tools:
 
+- `kernel_ingest`
 - `kernel_wake`
 - `kernel_ask`
 - `kernel_trace`
 - `kernel_inspect`
 
-The future write tool `kernel_ingest` is deliberately not implemented yet.
+In live mode, `kernel_ingest` submits memory through the existing gRPC
+`ContextCommandService.UpdateContext` command path. Acceptance means the kernel
+accepted the command and synchronously projected basic KMP `memory_*` changes
+into the read model. Successful live responses report
+`read_after_write_ready=true`; fixture and dry-run responses remain
+`read_after_write_ready=false`.
 
 ## Modes
 
@@ -23,7 +29,8 @@ server.
 cargo run -p rehydration-mcp --locked
 ```
 
-Live mode uses the existing gRPC `ContextQueryService`.
+Live mode uses the existing gRPC `ContextQueryService` and
+`ContextCommandService`.
 
 ```bash
 REHYDRATION_KERNEL_GRPC_ENDPOINT=http://127.0.0.1:50051 \
@@ -51,8 +58,9 @@ REHYDRATION_KERNEL_GRPC_TLS_DOMAIN_NAME=rehydration-kernel-grpc \
 
 Live mapping:
 
-| MCP tool | Kernel read |
+| MCP tool | Kernel binding |
 |:---------|:------------|
+| `kernel_ingest` | `UpdateContext` |
 | `kernel_wake` | `GetContext` |
 | `kernel_ask` | `GetContext` |
 | `kernel_trace` | `GetContextPath` |
@@ -86,8 +94,10 @@ bash scripts/ci/integration-mcp-real-kernel.sh
 ```
 
 This starts the containerized Kernel test fixture, exposes its ephemeral gRPC
-endpoint to the MCP adapter, and verifies `kernel_wake`, `kernel_ask`,
-`kernel_trace`, and `kernel_inspect` against the live read model.
+endpoint to the MCP adapter, verifies `kernel_ingest` against the live command
+service, verifies that the ingested memory can be read back with `kernel_wake`,
+and verifies `kernel_wake`, `kernel_ask`, `kernel_trace`, and `kernel_inspect`
+against the seeded live read model.
 
 ## Generic MCP Client Config
 

@@ -41,6 +41,12 @@ impl GraphNeighborhoodReader for InMemoryGraphNeighborhoodReader {
     }
 }
 
+impl ProjectionWriter for InMemoryGraphNeighborhoodReader {
+    async fn apply_mutations(&self, _mutations: Vec<ProjectionMutation>) -> Result<(), PortError> {
+        Ok(())
+    }
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct InMemoryNodeDetailReader {
     details: HashMap<String, NodeDetailProjection>,
@@ -74,6 +80,12 @@ impl NodeDetailReader for InMemoryNodeDetailReader {
             results.push(self.load_node_detail(node_id).await?);
         }
         Ok(results)
+    }
+}
+
+impl ProjectionWriter for InMemoryNodeDetailReader {
+    async fn apply_mutations(&self, _mutations: Vec<ProjectionMutation>) -> Result<(), PortError> {
+        Ok(())
     }
 }
 

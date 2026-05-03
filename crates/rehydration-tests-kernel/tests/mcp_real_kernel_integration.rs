@@ -39,9 +39,113 @@ async fn mcp_tools_read_from_live_kernel_grpc_server() -> Result<(), Box<dyn Err
             Some(&Value::String("grpc".to_string()))
         );
 
-        let wake = call_tool(
+        let ingest = call_tool(
             &server,
             2,
+            "kernel_ingest",
+            json!({
+                "about": "question:mcp-ingest-smoke",
+                "memory": {
+                    "dimensions": [
+                        {
+                            "id": "conversation:mcp-ingest-smoke",
+                            "kind": "conversation",
+                            "title": "MCP ingest smoke"
+                        }
+                    ],
+                    "entries": [
+                        {
+                            "id": "claim:mcp-ingest-smoke",
+                            "kind": "claim",
+                            "text": "The MCP adapter can submit memory through the live kernel command service.",
+                            "coordinates": [
+                                {
+                                    "dimension": "conversation",
+                                    "scope_id": "conversation:mcp-ingest-smoke",
+                                    "sequence": 1
+                                }
+                            ]
+                        }
+                    ],
+                    "relations": [],
+                    "evidence": [
+                        {
+                            "id": "evidence:mcp-ingest-smoke",
+                            "supports": ["claim:mcp-ingest-smoke"],
+                            "text": "The live smoke accepted kernel_ingest over gRPC.",
+                            "source": "mcp_real_kernel_integration"
+                        }
+                    ]
+                },
+                "provenance": {
+                    "source_kind": "test",
+                    "source_agent": "mcp-real-kernel-smoke",
+                    "correlation_id": "corr:mcp-ingest-smoke",
+                    "causation_id": "test:mcp-real-kernel-smoke"
+                },
+                "idempotency_key": "ingest:mcp-real-kernel-smoke:1"
+            }),
+        )
+        .await;
+        assert_tool_success(&ingest);
+        let ingest_content = structured_content(&ingest);
+        assert_eq!(
+            ingest_content.pointer("/memory/about"),
+            Some(&Value::String("question:mcp-ingest-smoke".to_string()))
+        );
+        assert_eq!(
+            ingest_content.pointer("/memory/accepted/entries"),
+            Some(&Value::from(1))
+        );
+        assert_eq!(
+            ingest_content.pointer("/memory/accepted/evidence"),
+            Some(&Value::from(1))
+        );
+        assert_eq!(
+            ingest_content.pointer("/memory/read_after_write_ready"),
+            Some(&Value::Bool(true))
+        );
+
+        let ingested_wake = call_tool(
+            &server,
+            3,
+            "kernel_wake",
+            json!({
+                "about": "question:mcp-ingest-smoke",
+                "role": "memory",
+                "intent": "read back the memory written through MCP",
+                "depth": 2,
+                "budget": {
+                    "tokens": 2048
+                }
+            }),
+        )
+        .await;
+        assert_tool_success(&ingested_wake);
+        let ingested_wake_content = structured_content(&ingested_wake);
+        assert_array_contains_relation(
+            ingested_wake_content,
+            "/proof/path",
+            "question:mcp-ingest-smoke",
+            "claim:mcp-ingest-smoke",
+            "records",
+        );
+        assert_array_contains_relation(
+            ingested_wake_content,
+            "/proof/path",
+            "evidence:mcp-ingest-smoke",
+            "claim:mcp-ingest-smoke",
+            "supports",
+        );
+        assert_array_contains_evidence(
+            ingested_wake_content,
+            "/proof/evidence",
+            "claim:mcp-ingest-smoke",
+        );
+
+        let wake = call_tool(
+            &server,
+            4,
             "kernel_wake",
             json!({
                 "about": ROOT_NODE_ID,
@@ -77,7 +181,7 @@ async fn mcp_tools_read_from_live_kernel_grpc_server() -> Result<(), Box<dyn Err
 
         let ask = call_tool(
             &server,
-            3,
+            5,
             "kernel_ask",
             json!({
                 "about": ROOT_NODE_ID,
@@ -102,7 +206,7 @@ async fn mcp_tools_read_from_live_kernel_grpc_server() -> Result<(), Box<dyn Err
 
         let trace = call_tool(
             &server,
-            4,
+            6,
             "kernel_trace",
             json!({
                 "from": ROOT_NODE_ID,
@@ -127,7 +231,7 @@ async fn mcp_tools_read_from_live_kernel_grpc_server() -> Result<(), Box<dyn Err
 
         let inspect = call_tool(
             &server,
-            5,
+            7,
             "kernel_inspect",
             json!({
                 "ref": DECISION_ID,
@@ -195,7 +299,8 @@ async fn call_json_rpc(server: &KernelMcpServer, id: u64, method: &str, params: 
 fn assert_tool_success(response: &Value) {
     assert_eq!(
         response.pointer("/result/isError"),
-        Some(&Value::Bool(false))
+        Some(&Value::Bool(false)),
+        "tool response should be successful: {response}"
     );
     assert!(
         response.pointer("/result/structuredContent").is_some(),

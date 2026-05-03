@@ -9,8 +9,9 @@ use rehydration_application::{
 use rehydration_domain::{
     BundleMetadata, BundleNode, BundleNodeDetail, BundleRelationship, CaseId,
     ContextPathNeighborhood, GraphNeighborhoodReader, NodeDetailProjection, NodeDetailReader,
-    NodeNeighborhood, NodeProjection, NodeRelationProjection, PortError, RehydrationBundle,
-    RelationExplanation, RelationSemanticClass, Role, SnapshotSaveOptions, SnapshotStore,
+    NodeNeighborhood, NodeProjection, NodeRelationProjection, PortError, ProjectionMutation,
+    ProjectionWriter, RehydrationBundle, RelationExplanation, RelationSemanticClass, Role,
+    SnapshotSaveOptions, SnapshotStore,
 };
 use rehydration_observability::quality_observers::NoopQualityObserver;
 use rehydration_proto::v1beta1::{
@@ -51,6 +52,12 @@ impl GraphNeighborhoodReader for EmptyGraphNeighborhoodReader {
         _subtree_depth: u32,
     ) -> Result<Option<ContextPathNeighborhood>, PortError> {
         Ok(None)
+    }
+}
+
+impl ProjectionWriter for EmptyGraphNeighborhoodReader {
+    async fn apply_mutations(&self, _mutations: Vec<ProjectionMutation>) -> Result<(), PortError> {
+        Ok(())
     }
 }
 
@@ -98,6 +105,12 @@ impl NodeDetailReader for EmptyNodeDetailReader {
             results.push(self.load_node_detail(node_id).await?);
         }
         Ok(results)
+    }
+}
+
+impl ProjectionWriter for EmptyNodeDetailReader {
+    async fn apply_mutations(&self, _mutations: Vec<ProjectionMutation>) -> Result<(), PortError> {
+        Ok(())
     }
 }
 

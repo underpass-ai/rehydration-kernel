@@ -125,6 +125,7 @@ async fn tools_list_exposes_read_only_kmp_tools() {
     assert_eq!(
         tool_names,
         vec![
+            "kernel_ingest",
             "kernel_wake",
             "kernel_ask",
             "kernel_trace",
@@ -134,7 +135,23 @@ async fn tools_list_exposes_read_only_kmp_tools() {
 }
 
 #[tokio::test]
-async fn fixture_tools_cover_wake_trace_and_inspect() {
+async fn fixture_tools_cover_ingest_wake_trace_and_inspect() {
+    let ingest = handle(json!({
+        "jsonrpc": "2.0",
+        "id": 23,
+        "method": "tools/call",
+        "params": {
+            "name": "kernel_ingest",
+            "arguments": sample_ingest_arguments()
+        }
+    }))
+    .await;
+    assert_eq!(ingest["result"]["isError"], false);
+    assert_eq!(
+        ingest["result"]["structuredContent"]["memory"]["memory_id"],
+        "memory:830ce83f:1"
+    );
+
     let wake = handle(json!({
         "jsonrpc": "2.0",
         "id": 24,
@@ -214,29 +231,50 @@ async fn kernel_ask_returns_fixture_backed_structured_content() {
 }
 
 #[tokio::test]
-async fn write_move_aliases_return_ingest_not_implemented_error() {
-    for name in ["kernel_ingest", "kernel_remember"] {
+async fn ingest_aliases_return_fixture_backed_structured_content() {
+    for name in ["kernel_remember", "kernel_ingest_context"] {
         let response = handle(json!({
             "jsonrpc": "2.0",
             "id": 27,
             "method": "tools/call",
             "params": {
                 "name": name,
-                "arguments": {
-                    "about": "question:830ce83f"
-                }
+                "arguments": sample_ingest_arguments()
             }
         }))
         .await;
 
-        assert_eq!(response["result"]["isError"], true);
-        assert!(
-            response["result"]["content"][0]["text"]
-                .as_str()
-                .expect("tool error should include text")
-                .contains("kernel_ingest is not implemented")
+        assert_eq!(response["result"]["isError"], false);
+        assert_eq!(
+            response["result"]["structuredContent"]["memory"]["accepted"]["entries"],
+            2
         );
     }
+}
+
+#[tokio::test]
+async fn invalid_ingest_arguments_return_tool_error() {
+    let response = handle(json!({
+        "jsonrpc": "2.0",
+        "id": 32,
+        "method": "tools/call",
+        "params": {
+            "name": "kernel_ingest",
+            "arguments": {
+                "about": "question:830ce83f",
+                "idempotency_key": "ingest:830ce83f:1"
+            }
+        }
+    }))
+    .await;
+
+    assert_eq!(response["result"]["isError"], true);
+    assert!(
+        response["result"]["content"][0]["text"]
+            .as_str()
+            .expect("tool error should include text")
+            .contains("missing required object argument `memory`")
+    );
 }
 
 #[tokio::test]
@@ -535,6 +573,13 @@ async fn call_named_tool(server: &KernelMcpServer, id: u64, name: &str) -> Value
         }),
     )
     .await
+}
+
+fn sample_ingest_arguments() -> Value {
+    serde_json::from_str(include_str!(
+        "../../../api/examples/kernel/v1beta1/kmp/ingest.request.json"
+    ))
+    .expect("ingest fixture request should be valid JSON")
 }
 
 struct StubBackend {

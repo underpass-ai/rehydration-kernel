@@ -25,6 +25,87 @@ pub(crate) fn tools_list_result() -> Value {
     json!({
         "tools": [
             tool_definition(
+                "kernel_ingest",
+                "Submit memory with dimensions, entries, relations, evidence, and provenance for later traversal.",
+                json!({
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["about", "memory", "idempotency_key"],
+                    "properties": {
+                        "about": string_schema("Memory anchor or root ref this memory should attach to."),
+                        "memory": {
+                            "type": "object",
+                            "additionalProperties": true,
+                            "required": ["dimensions", "entries"],
+                            "properties": {
+                                "dimensions": {
+                                    "type": "array",
+                                    "minItems": 1,
+                                    "items": {
+                                        "type": "object",
+                                        "additionalProperties": true,
+                                        "required": ["id"],
+                                        "properties": {
+                                            "id": string_schema("Dimension scope id."),
+                                            "kind": string_schema("Dimension kind."),
+                                            "title": string_schema("Optional dimension title.")
+                                        }
+                                    }
+                                },
+                                "entries": {
+                                    "type": "array",
+                                    "minItems": 1,
+                                    "items": {
+                                        "type": "object",
+                                        "additionalProperties": true,
+                                        "required": ["id", "text"],
+                                        "properties": {
+                                            "id": string_schema("Memory entry id."),
+                                            "kind": string_schema("Memory entry kind."),
+                                            "text": string_schema("Memory entry text.")
+                                        }
+                                    }
+                                },
+                                "relations": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "additionalProperties": true,
+                                        "required": ["from", "to", "rel"],
+                                        "properties": {
+                                            "from": string_schema("Source memory entry id."),
+                                            "to": string_schema("Target memory entry id."),
+                                            "rel": string_schema("Relationship type.")
+                                        }
+                                    }
+                                },
+                                "evidence": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "additionalProperties": true,
+                                        "required": ["id", "text"],
+                                        "properties": {
+                                            "id": string_schema("Evidence id."),
+                                            "text": string_schema("Evidence text."),
+                                            "source": string_schema("Evidence source.")
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "provenance": {
+                            "type": "object",
+                            "additionalProperties": true
+                        },
+                        "idempotency_key": string_schema("Required stable idempotency key for replay-safe ingest."),
+                        "dry_run": {
+                            "type": "boolean"
+                        }
+                    }
+                })
+            ),
+            tool_definition(
                 "kernel_wake",
                 "Return a compact Kernel Memory Protocol wake packet for continuing work from memory.",
                 json!({
@@ -223,11 +304,13 @@ mod tests {
             .as_array()
             .expect("tools should be an array");
 
-        assert_eq!(tools.len(), 4);
-        assert_eq!(tools[0]["name"], "kernel_wake");
-        assert_eq!(tools[0]["inputSchema"]["required"][0], "about");
-        assert_eq!(tools[1]["name"], "kernel_ask");
-        assert_eq!(tools[1]["inputSchema"]["required"][1], "question");
+        assert_eq!(tools.len(), 5);
+        assert_eq!(tools[0]["name"], "kernel_ingest");
+        assert_eq!(tools[0]["inputSchema"]["required"][1], "memory");
+        assert_eq!(tools[1]["name"], "kernel_wake");
+        assert_eq!(tools[1]["inputSchema"]["required"][0], "about");
+        assert_eq!(tools[2]["name"], "kernel_ask");
+        assert_eq!(tools[2]["inputSchema"]["required"][1], "question");
     }
 
     #[test]

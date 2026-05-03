@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use rehydration_application::{
-    CommandApplicationService, UpdateContextChange, UpdateContextCommand,
+    CommandApplicationService, NoopProjectionWriter, UpdateContextChange, UpdateContextCommand,
 };
-use rehydration_domain::ContextEventStore;
+use rehydration_domain::{ContextEventStore, ProjectionWriter};
 use rehydration_proto::v1beta1::{
     CommandMetadata, RevisionPrecondition, UpdateContextRequest, UpdateContextResponse,
     context_command_service_server::ContextCommandService,
@@ -14,20 +14,21 @@ use crate::transport::proto_mapping_v1beta1::proto_accepted_version_v1beta1;
 use crate::transport::support::map_application_error;
 
 #[derive(Debug, Clone)]
-pub struct CommandGrpcServiceV1Beta1<E> {
-    application: Arc<CommandApplicationService<E>>,
+pub struct CommandGrpcServiceV1Beta1<E, W = NoopProjectionWriter> {
+    application: Arc<CommandApplicationService<E, W>>,
 }
 
-impl<E> CommandGrpcServiceV1Beta1<E> {
-    pub fn new(application: Arc<CommandApplicationService<E>>) -> Self {
+impl<E, W> CommandGrpcServiceV1Beta1<E, W> {
+    pub fn new(application: Arc<CommandApplicationService<E, W>>) -> Self {
         Self { application }
     }
 }
 
 #[tonic::async_trait]
-impl<E> ContextCommandService for CommandGrpcServiceV1Beta1<E>
+impl<E, W> ContextCommandService for CommandGrpcServiceV1Beta1<E, W>
 where
     E: ContextEventStore + Send + Sync + 'static,
+    W: ProjectionWriter + Send + Sync + 'static,
 {
     #[tracing::instrument(skip(self, request), fields(rpc = "UpdateContext"))]
     async fn update_context(

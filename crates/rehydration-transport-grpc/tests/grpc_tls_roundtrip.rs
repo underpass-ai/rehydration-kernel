@@ -7,7 +7,8 @@ use std::sync::{Arc, Once};
 use rehydration_config::{AppConfig, GrpcTlsConfig, GrpcTlsMode};
 use rehydration_domain::{
     ContextPathNeighborhood, GraphNeighborhoodReader, NodeDetailProjection, NodeDetailReader,
-    NodeNeighborhood, PortError, RehydrationBundle, SnapshotSaveOptions, SnapshotStore,
+    NodeNeighborhood, PortError, ProjectionMutation, ProjectionWriter, RehydrationBundle,
+    SnapshotSaveOptions, SnapshotStore,
 };
 use rehydration_observability::quality_observers::NoopQualityObserver;
 use rehydration_proto::v1beta1::{
@@ -42,6 +43,12 @@ impl GraphNeighborhoodReader for EmptyGraphNeighborhoodReader {
     }
 }
 
+impl ProjectionWriter for EmptyGraphNeighborhoodReader {
+    async fn apply_mutations(&self, _mutations: Vec<ProjectionMutation>) -> Result<(), PortError> {
+        Ok(())
+    }
+}
+
 struct EmptyNodeDetailReader;
 
 impl NodeDetailReader for EmptyNodeDetailReader {
@@ -61,6 +68,12 @@ impl NodeDetailReader for EmptyNodeDetailReader {
             results.push(self.load_node_detail(node_id).await?);
         }
         Ok(results)
+    }
+}
+
+impl ProjectionWriter for EmptyNodeDetailReader {
+    async fn apply_mutations(&self, _mutations: Vec<ProjectionMutation>) -> Result<(), PortError> {
+        Ok(())
     }
 }
 

@@ -2,10 +2,12 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use rehydration_domain::{
-    CaseId, ContextEventChange, ContextEventStore, ContextUpdatedEvent, Role,
+    CaseId, ContextEventChange, ContextEventStore, ContextUpdatedEvent, PortError,
+    ProjectionMutation, ProjectionWriter, Role,
 };
 
 use crate::ApplicationError;
+use crate::commands::memory_projection::memory_projection_mutations;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UpdateContextChange {
@@ -43,18 +45,47 @@ pub struct UpdateContextOutcome {
 }
 
 #[derive(Debug)]
-pub struct UpdateContextUseCase<E> {
+pub struct UpdateContextUseCase<E, W = NoopProjectionWriter> {
     event_store: Arc<E>,
+    projection_writer: W,
     generator_version: &'static str,
 }
 
-impl<E> UpdateContextUseCase<E>
+#[derive(Debug, Clone, Copy, Default)]
+pub struct NoopProjectionWriter;
+
+impl ProjectionWriter for NoopProjectionWriter {
+    async fn apply_mutations(&self, _mutations: Vec<ProjectionMutation>) -> Result<(), PortError> {
+        Ok(())
+    }
+}
+
+impl<E> UpdateContextUseCase<E, NoopProjectionWriter>
 where
     E: ContextEventStore + Send + Sync,
 {
     pub fn new(event_store: Arc<E>, generator_version: &'static str) -> Self {
         Self {
             event_store,
+            projection_writer: NoopProjectionWriter,
+            generator_version,
+        }
+    }
+}
+
+impl<E, W> UpdateContextUseCase<E, W>
+where
+    E: ContextEventStore + Send + Sync,
+    W: ProjectionWriter + Send + Sync,
+{
+    pub fn new_with_projection_writer(
+        event_store: Arc<E>,
+        projection_writer: W,
+        generator_version: &'static str,
+    ) -> Self {
+        Self {
+            event_store,
+            projection_writer,
             generator_version,
         }
     }
@@ -149,6 +180,14 @@ where
         // Append with optimistic concurrency
         let new_revision = self.event_store.append(event, current_revision).await?;
 
+        let projection_mutations =
+            memory_projection_mutations(&command, new_revision, &content_hash)?;
+        if !projection_mutations.is_empty() {
+            self.projection_writer
+                .apply_mutations(projection_mutations)
+                .await?;
+        }
+
         Ok(UpdateContextOutcome {
             accepted_version: AcceptedVersion {
                 revision: new_revision,
@@ -178,7 +217,8 @@ fn compute_content_hash(changes: &[UpdateContextChange]) -> String {
 mod tests {
     use std::sync::Arc;
 
-    use rehydration_testkit::InMemoryContextEventStore;
+    use rehydration_domain::ProjectionMutation;
+    use rehydration_testkit::{InMemoryContextEventStore, InMemoryProjectionWriter};
 
     use super::*;
 
@@ -201,6 +241,43 @@ mod tests {
             reason: "test".to_string(),
             scopes: vec!["graph".to_string()],
         }
+    }
+
+    fn memory_changes() -> Vec<UpdateContextChange> {
+        vec![
+            UpdateContextChange {
+                operation: "UPSERT".to_string(),
+                entity_kind: "memory_dimension".to_string(),
+                entity_id: "conversation:mcp".to_string(),
+                payload_json: r#"{"id":"conversation:mcp","kind":"conversation","title":"MCP smoke"}"#.to_string(),
+                reason: "test dimension".to_string(),
+                scopes: vec!["memory".to_string()],
+            },
+            UpdateContextChange {
+                operation: "UPSERT".to_string(),
+                entity_kind: "memory_entry".to_string(),
+                entity_id: "claim:mcp".to_string(),
+                payload_json: r#"{"id":"claim:mcp","kind":"claim","text":"MCP ingest materializes into the read model.","coordinates":[{"dimension":"conversation","scope_id":"conversation:mcp","sequence":2}]}"#.to_string(),
+                reason: "test entry".to_string(),
+                scopes: vec!["memory".to_string()],
+            },
+            UpdateContextChange {
+                operation: "UPSERT".to_string(),
+                entity_kind: "memory_relation".to_string(),
+                entity_id: "relation:mcp".to_string(),
+                payload_json: r#"{"from":"claim:old","to":"claim:mcp","rel":"supersedes","class":"evidential","why":"The new memory updates the previous claim.","confidence":"high"}"#.to_string(),
+                reason: "test relation".to_string(),
+                scopes: vec!["memory".to_string()],
+            },
+            UpdateContextChange {
+                operation: "UPSERT".to_string(),
+                entity_kind: "memory_evidence".to_string(),
+                entity_id: "evidence:mcp".to_string(),
+                payload_json: r#"{"id":"evidence:mcp","supports":["claim:mcp"],"text":"Projection writer recorded the detail.","source":"unit-test"}"#.to_string(),
+                reason: "test evidence".to_string(),
+                scopes: vec!["memory".to_string()],
+            },
+        ]
     }
 
     #[tokio::test]
@@ -407,5 +484,103 @@ mod tests {
             .expect("correct hash should succeed");
 
         assert_eq!(ok.accepted_version.revision, 2);
+    }
+
+    #[tokio::test]
+    async fn execute_projects_memory_changes_into_read_model_mutations() {
+        let store = event_store();
+        let writer = InMemoryProjectionWriter::default();
+        let uc = UpdateContextUseCase::new_with_projection_writer(
+            Arc::clone(&store),
+            writer.clone(),
+            "0.1.0",
+        );
+
+        uc.execute(UpdateContextCommand {
+            root_node_id: "question:mcp".to_string(),
+            role: "memory".to_string(),
+            work_item_id: "ingest:mcp:1".to_string(),
+            changes: memory_changes(),
+            expected_revision: None,
+            expected_content_hash: None,
+            idempotency_key: Some("ingest:mcp:1".to_string()),
+            requested_by: Some("mcp-test".to_string()),
+        })
+        .await
+        .expect("memory ingest should succeed");
+
+        let mutations = writer.mutations().await;
+        assert!(mutations.iter().any(|mutation| matches!(
+            mutation,
+            ProjectionMutation::UpsertNode(node)
+                if node.node_id == "claim:mcp"
+                    && node.node_kind == "claim"
+                    && node.summary == "MCP ingest materializes into the read model."
+        )));
+        assert!(mutations.iter().any(|mutation| matches!(
+            mutation,
+            ProjectionMutation::UpsertNodeDetail(detail)
+                if detail.node_id == "claim:mcp"
+                    && detail.detail == "MCP ingest materializes into the read model."
+        )));
+        assert!(mutations.iter().any(|mutation| matches!(
+            mutation,
+            ProjectionMutation::UpsertNodeRelation(relation)
+                if relation.source_node_id == "question:mcp"
+                    && relation.target_node_id == "claim:mcp"
+                    && relation.relation_type == "records"
+        )));
+        assert!(mutations.iter().any(|mutation| matches!(
+            mutation,
+            ProjectionMutation::UpsertNodeRelation(relation)
+                if relation.source_node_id == "evidence:mcp"
+                    && relation.target_node_id == "claim:mcp"
+                    && relation.relation_type == "supports"
+        )));
+        assert!(mutations.iter().any(|mutation| matches!(
+            mutation,
+            ProjectionMutation::UpsertNodeRelation(relation)
+                if relation.source_node_id == "claim:old"
+                    && relation.target_node_id == "claim:mcp"
+                    && relation.relation_type == "supersedes"
+        )));
+    }
+
+    #[tokio::test]
+    async fn execute_does_not_reproject_duplicate_idempotency_key() {
+        let store = event_store();
+        let writer = InMemoryProjectionWriter::default();
+        let uc = UpdateContextUseCase::new_with_projection_writer(
+            Arc::clone(&store),
+            writer.clone(),
+            "0.1.0",
+        );
+
+        for _ in 0..2 {
+            uc.execute(UpdateContextCommand {
+                root_node_id: "question:mcp".to_string(),
+                role: "memory".to_string(),
+                work_item_id: "ingest:mcp:1".to_string(),
+                changes: memory_changes(),
+                expected_revision: None,
+                expected_content_hash: None,
+                idempotency_key: Some("ingest:mcp:1".to_string()),
+                requested_by: Some("mcp-test".to_string()),
+            })
+            .await
+            .expect("idempotent memory ingest should succeed");
+        }
+
+        let mutations = writer.mutations().await;
+        let claim_nodes = mutations
+            .iter()
+            .filter(|mutation| {
+                matches!(
+                    mutation,
+                    ProjectionMutation::UpsertNode(node) if node.node_id == "claim:mcp"
+                )
+            })
+            .count();
+        assert_eq!(claim_nodes, 1);
     }
 }

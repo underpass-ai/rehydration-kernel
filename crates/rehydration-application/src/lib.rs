@@ -6,8 +6,8 @@ pub mod rehydration_application;
 
 pub use application_error::ApplicationError;
 pub use commands::{
-    AcceptedVersion, CommandApplicationService, UpdateContextChange, UpdateContextCommand,
-    UpdateContextOutcome, UpdateContextUseCase,
+    AcceptedVersion, CommandApplicationService, NoopProjectionWriter, UpdateContextChange,
+    UpdateContextCommand, UpdateContextOutcome, UpdateContextUseCase,
 };
 pub use projection::{
     GraphNodeMaterializedData, GraphNodeMaterializedEvent, GraphRelationMaterializedData,

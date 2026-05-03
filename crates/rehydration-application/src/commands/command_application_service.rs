@@ -1,20 +1,23 @@
 use std::sync::Arc;
 
-use rehydration_domain::ContextEventStore;
+use rehydration_domain::{ContextEventStore, ProjectionWriter};
 
 use crate::ApplicationError;
-use crate::commands::{UpdateContextCommand, UpdateContextOutcome, UpdateContextUseCase};
+use crate::commands::{
+    NoopProjectionWriter, UpdateContextCommand, UpdateContextOutcome, UpdateContextUseCase,
+};
 
 #[derive(Debug)]
-pub struct CommandApplicationService<E> {
-    update_context: Arc<UpdateContextUseCase<E>>,
+pub struct CommandApplicationService<E, W = NoopProjectionWriter> {
+    update_context: Arc<UpdateContextUseCase<E, W>>,
 }
 
-impl<E> CommandApplicationService<E>
+impl<E, W> CommandApplicationService<E, W>
 where
     E: ContextEventStore + Send + Sync,
+    W: ProjectionWriter + Send + Sync,
 {
-    pub fn new(update_context: Arc<UpdateContextUseCase<E>>) -> Self {
+    pub fn new(update_context: Arc<UpdateContextUseCase<E, W>>) -> Self {
         Self { update_context }
     }
 

@@ -3,7 +3,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use rehydration_config::{AppConfig, GrpcTlsConfig};
-use rehydration_domain::{GraphNeighborhoodReader, NodeDetailReader, SnapshotStore};
+use rehydration_domain::{
+    GraphNeighborhoodReader, NodeDetailReader, ProjectionWriter, SnapshotStore,
+};
 use rehydration_observability::quality_observers::NoopQualityObserver;
 use rehydration_transport_grpc::GrpcServer;
 use tokio::net::TcpListener;
@@ -27,8 +29,8 @@ impl RunningTlsGrpcServer {
         grpc_tls: GrpcTlsConfig,
     ) -> Result<Self, Box<dyn Error + Send + Sync>>
     where
-        G: GraphNeighborhoodReader + Send + Sync + 'static,
-        D: NodeDetailReader + Send + Sync + 'static,
+        G: GraphNeighborhoodReader + ProjectionWriter + Send + Sync + 'static,
+        D: NodeDetailReader + ProjectionWriter + Send + Sync + 'static,
         S: SnapshotStore + Send + Sync + 'static,
     {
         let listener = TcpListener::bind("127.0.0.1:0").await?;

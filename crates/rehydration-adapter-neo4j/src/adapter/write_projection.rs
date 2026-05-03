@@ -2,7 +2,9 @@ use neo4rs::Graph;
 use rehydration_ports::{PortError, ProjectionMutation, ProjectionWriter};
 
 use super::projection_store::Neo4jProjectionStore;
-use super::queries::{upsert_node_projection_query, upsert_relation_projection_query};
+use super::queries::{
+    ensure_node_projection_query, upsert_node_projection_query, upsert_relation_projection_query,
+};
 
 impl Neo4jProjectionStore {
     async fn apply_node_projection(
@@ -14,6 +16,19 @@ impl Neo4jProjectionStore {
             graph,
             upsert_node_projection_query(node)?,
             &format!("apply node projection for `{}`", node.node_id),
+        )
+        .await
+    }
+
+    async fn ensure_node_projection(
+        &self,
+        graph: &Graph,
+        node: &rehydration_ports::NodeProjection,
+    ) -> Result<(), PortError> {
+        self.run_query(
+            graph,
+            ensure_node_projection_query(node)?,
+            &format!("ensure node projection for `{}`", node.node_id),
         )
         .await
     }
@@ -41,6 +56,9 @@ impl ProjectionWriter for Neo4jProjectionStore {
 
         for mutation in mutations {
             match mutation {
+                ProjectionMutation::EnsureNode(node) => {
+                    self.ensure_node_projection(&graph, &node).await?;
+                }
                 ProjectionMutation::UpsertNode(node) => {
                     self.apply_node_projection(&graph, &node).await?;
                 }

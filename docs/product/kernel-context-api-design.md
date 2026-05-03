@@ -131,6 +131,50 @@ the public API should let a caller think in memory.
 Dimensions say where memory lives. Time says how memory changes across those
 dimensions.
 
+A dimension is modeled as a graph path, not only as an entry property.
+
+The dimension object stores the path identity and metadata:
+
+```text
+conversation:rachel-2026-04-12 {
+  kind: "conversation",
+  title: "Rachel relocation discussion"
+}
+```
+
+The edge from the dimension/scope to the entry stores the entry's position on
+that path:
+
+```text
+conversation:rachel-2026-04-12
+  -[:CONTAINS_ENTRY {
+      dimension: "conversation",
+      scope_id: "conversation:rachel-2026-04-12",
+      sequence: 4,
+      occurred_at: "2026-04-12T15:30:00Z"
+    }]->
+claim:rachel-austin
+```
+
+This distinction matters because the same entry can belong to multiple
+dimensions with different coordinates:
+
+```text
+conversation:rachel-2026-04-12
+  -[:CONTAINS_ENTRY {sequence: 4}]-> claim:rachel-austin
+
+person:rachel
+  -[:CONTAINS_ENTRY {valid_from: "2026-04-12T15:30:00Z"}]->
+claim:rachel-austin
+
+longmemeval:item:830ce83f
+  -[:CONTAINS_ENTRY {rank: 2}]-> claim:rachel-austin
+```
+
+The claim can duplicate selected coordinate fields as node properties for
+filtering, but traversal semantics come from the dimension/scope path and its
+edge properties.
+
 Time is not just another dimension. It is a transversal axis over all dimensions
 of a memory. The same entry may have different temporal coordinates in different
 dimensions:
@@ -1179,7 +1223,7 @@ KMP maps memory onto those coordinates:
 | `memory.dimensions[].id` | `dimension_id` / `scope_id` |
 | `memory.dimensions[].kind` | `dimension` |
 | `memory.entries[]` | entries and/or graph nodes |
-| `memory.entries[].coordinates[]` | scope, dimension, sequence, and time coordinates |
+| `memory.entries[].coordinates[]` | `CONTAINS_ENTRY` relations from dimension/scope to entry, with scope, dimension, sequence, and time coordinates |
 | `memory.relations[]` | graph relationships |
 | `evidence[]` | node details and evidence records |
 | `provenance` | provenance on nodes, relations, details, and events |

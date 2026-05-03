@@ -6,12 +6,12 @@ use std::sync::Arc;
 
 use rehydration_application::{
     ApplicationError, CommandApplicationService, DEFAULT_NATIVE_GRAPH_TRAVERSAL_DEPTH,
-    QueryApplicationService, RehydrationApplication, UpdateContextUseCase,
+    QueryApplicationService, RehydrationApplication, RoutingProjectionWriter, UpdateContextUseCase,
 };
 use rehydration_config::{AppConfig, GrpcTlsConfig, GrpcTlsMode};
 use rehydration_domain::{
-    ContextEventStore, GraphNeighborhoodReader, NodeDetailReader, QualityMetricsObserver,
-    RehydrationBundle, SnapshotStore,
+    ContextEventStore, GraphNeighborhoodReader, NodeDetailReader, ProjectionWriter,
+    QualityMetricsObserver, RehydrationBundle, SnapshotStore,
 };
 use rehydration_proto::v1beta1::{
     FILE_DESCRIPTOR_SET, GetContextRequest,
@@ -24,11 +24,14 @@ use tonic::transport::{Certificate, Identity, Server, ServerTlsConfig};
 
 use crate::transport::{CommandGrpcService, QueryGrpcService};
 
+type ServerProjectionWriter<G, D> = RoutingProjectionWriter<Arc<G>, Arc<D>>;
+type ServerCommandApplication<E, G, D> = CommandApplicationService<E, ServerProjectionWriter<G, D>>;
+
 pub struct GrpcServer<G, D, S, E> {
     bind_addr: String,
     grpc_tls: GrpcTlsConfig,
     query_application: Arc<QueryApplicationService<G, D, S>>,
-    command_application: Arc<CommandApplicationService<E>>,
+    command_application: Arc<ServerCommandApplication<E, G, D>>,
     quality_observer: Arc<dyn QualityMetricsObserver>,
     capability_name: &'static str,
 }
@@ -36,7 +39,9 @@ pub struct GrpcServer<G, D, S, E> {
 impl<G, D, S, E> GrpcServer<G, D, S, E>
 where
     G: GraphNeighborhoodReader + Send + Sync + 'static,
+    G: ProjectionWriter + Send + Sync + 'static,
     D: NodeDetailReader + Send + Sync + 'static,
+    D: ProjectionWriter + Send + Sync + 'static,
     S: SnapshotStore + Send + Sync + 'static,
     E: ContextEventStore + Send + Sync + 'static,
 {
@@ -58,7 +63,13 @@ where
         let snapshot_store = Arc::new(snapshot_store);
         let event_store = Arc::new(event_store);
         let generator_version = env!("CARGO_PKG_VERSION");
-        let update_context = Arc::new(UpdateContextUseCase::new(event_store, generator_version));
+        let projection_writer =
+            RoutingProjectionWriter::new(Arc::clone(&graph_reader), Arc::clone(&detail_reader));
+        let update_context = Arc::new(UpdateContextUseCase::new_with_projection_writer(
+            event_store,
+            projection_writer,
+            generator_version,
+        ));
 
         Self {
             bind_addr: grpc_bind,
@@ -107,7 +118,7 @@ where
         )
     }
 
-    pub fn command_service(&self) -> CommandGrpcService<E> {
+    pub fn command_service(&self) -> CommandGrpcService<E, ServerProjectionWriter<G, D>> {
         CommandGrpcService::new(Arc::clone(&self.command_application))
     }
 
@@ -115,7 +126,7 @@ where
         Arc::clone(&self.query_application)
     }
 
-    pub fn command_application(&self) -> Arc<CommandApplicationService<E>> {
+    pub fn command_application(&self) -> Arc<ServerCommandApplication<E, G, D>> {
         Arc::clone(&self.command_application)
     }
 

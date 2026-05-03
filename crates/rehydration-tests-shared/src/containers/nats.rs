@@ -13,7 +13,7 @@ use crate::containers::ContainerEndpoint;
 use crate::debug::{debug_log, debug_log_value};
 use crate::error::BoxError;
 
-const NATS_IMAGE: &str = "docker.io/nats";
+const NATS_IMAGE: &str = "docker.io/library/nats";
 const NATS_TAG: &str = "2.10-alpine";
 const NATS_INTERNAL_PORT: u16 = 4222;
 const NATS_STARTUP_WAIT: Duration = Duration::from_secs(2);
