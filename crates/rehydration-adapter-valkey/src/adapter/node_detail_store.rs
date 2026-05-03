@@ -49,6 +49,12 @@ impl ProjectionWriter for ValkeyNodeDetailStore {
                     let payload = self.detail_payload(&detail)?;
                     self.execute_set_command(&key, &payload).await?;
                 }
+                ProjectionMutation::EnsureNode(node) => {
+                    return Err(PortError::InvalidState(format!(
+                        "valkey detail store does not persist graph node `{}`",
+                        node.node_id
+                    )));
+                }
                 ProjectionMutation::UpsertNode(node) => {
                     return Err(PortError::InvalidState(format!(
                         "valkey detail store does not persist graph node `{}`",

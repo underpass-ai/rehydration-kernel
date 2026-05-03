@@ -14,8 +14,10 @@ tools:
 
 In live mode, `kernel_ingest` submits memory through the existing gRPC
 `ContextCommandService.UpdateContext` command path. Acceptance means the kernel
-accepted the command; it does not guarantee immediate read-model projection, so
-responses report `read_after_write_ready=false`.
+accepted the command and synchronously projected basic KMP `memory_*` changes
+into the read model. Successful live responses report
+`read_after_write_ready=true`; fixture and dry-run responses remain
+`read_after_write_ready=false`.
 
 ## Modes
 
@@ -93,8 +95,9 @@ bash scripts/ci/integration-mcp-real-kernel.sh
 
 This starts the containerized Kernel test fixture, exposes its ephemeral gRPC
 endpoint to the MCP adapter, verifies `kernel_ingest` against the live command
-service, and verifies `kernel_wake`, `kernel_ask`, `kernel_trace`, and
-`kernel_inspect` against the live read model.
+service, verifies that the ingested memory can be read back with `kernel_wake`,
+and verifies `kernel_wake`, `kernel_ask`, `kernel_trace`, and `kernel_inspect`
+against the seeded live read model.
 
 ## Generic MCP Client Config
 

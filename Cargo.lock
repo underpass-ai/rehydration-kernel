@@ -2165,6 +2165,7 @@ dependencies = [
  "rehydration-domain",
  "rehydration-testkit",
  "serde",
+ "serde_json",
  "sha2",
  "tiktoken-rs",
  "tokio",

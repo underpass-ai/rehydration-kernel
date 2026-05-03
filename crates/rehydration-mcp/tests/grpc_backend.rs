@@ -213,7 +213,7 @@ async fn grpc_backend_maps_kernel_ingest_to_update_context() {
     );
     assert_eq!(
         ingest["result"]["structuredContent"]["memory"]["read_after_write_ready"],
-        false
+        true
     );
 
     let commands = recorded_commands.requests().await;

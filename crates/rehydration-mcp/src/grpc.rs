@@ -87,7 +87,11 @@ async fn grpc_ingest(
 ) -> Result<Value, String> {
     let plan = build_ingest_plan(arguments)?;
     if plan.dry_run {
-        return Ok(tool_success_result(ingest_response(&plan, Vec::new())));
+        return Ok(tool_success_result(ingest_response(
+            &plan,
+            Vec::new(),
+            false,
+        )));
     }
 
     let mut client = connect_command_client(endpoint, tls).await?;
@@ -124,6 +128,7 @@ async fn grpc_ingest(
     Ok(tool_success_result(ingest_response(
         &plan,
         response.warnings,
+        true,
     )))
 }
 

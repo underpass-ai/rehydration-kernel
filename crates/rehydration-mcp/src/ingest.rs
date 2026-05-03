@@ -139,7 +139,11 @@ pub(crate) fn build_ingest_plan(arguments: &Value) -> Result<KmpIngestPlan, Stri
     })
 }
 
-pub(crate) fn ingest_response(plan: &KmpIngestPlan, mut warnings: Vec<String>) -> Value {
+pub(crate) fn ingest_response(
+    plan: &KmpIngestPlan,
+    mut warnings: Vec<String>,
+    read_after_write_ready: bool,
+) -> Value {
     if plan.dry_run {
         warnings.push(
             "dry_run=true; validated and translated memory without sending a kernel command"
@@ -166,7 +170,7 @@ pub(crate) fn ingest_response(plan: &KmpIngestPlan, mut warnings: Vec<String>) -
                 "relations": plan.accepted.relations,
                 "evidence": plan.accepted.evidence
             },
-            "read_after_write_ready": false
+            "read_after_write_ready": read_after_write_ready
         },
         "warnings": warnings
     })
@@ -307,7 +311,7 @@ mod tests {
         let mut plan = build_ingest_plan(&sample_ingest_request()).expect("plan should build");
         plan.dry_run = true;
 
-        let response = ingest_response(&plan, vec!["kernel warning".to_string()]);
+        let response = ingest_response(&plan, vec!["kernel warning".to_string()], false);
 
         assert_eq!(response["memory"]["about"], "question:830ce83f");
         assert_eq!(response["memory"]["accepted"]["entries"], 1);

@@ -669,7 +669,8 @@ Output:
   "summary": "Ingested 2 entries, 1 relation, and 1 evidence item for question:830ce83f.",
   "memory": {
     "about": "question:830ce83f",
-    "memory_id": "memory:830ce83f:1"
+    "memory_id": "memory:830ce83f:1",
+    "read_after_write_ready": true
   },
   "warnings": []
 }
