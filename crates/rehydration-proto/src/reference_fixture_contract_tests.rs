@@ -23,10 +23,10 @@ const CONTEXT_BUNDLE_GENERATED_FIXTURE: &str =
     include_str!("../../../api/examples/kernel/v1beta1/async/context.bundle.generated.json");
 const KMP_SCHEMA_FIXTURE: &str =
     include_str!("../../../api/examples/kernel/v1beta1/kmp/kernel-memory-protocol.schema.json");
-const KMP_REMEMBER_REQUEST_FIXTURE: &str =
-    include_str!("../../../api/examples/kernel/v1beta1/kmp/remember.request.json");
-const KMP_REMEMBER_RESPONSE_FIXTURE: &str =
-    include_str!("../../../api/examples/kernel/v1beta1/kmp/remember.response.json");
+const KMP_INGEST_REQUEST_FIXTURE: &str =
+    include_str!("../../../api/examples/kernel/v1beta1/kmp/ingest.request.json");
+const KMP_INGEST_RESPONSE_FIXTURE: &str =
+    include_str!("../../../api/examples/kernel/v1beta1/kmp/ingest.response.json");
 const KMP_WAKE_REQUEST_FIXTURE: &str =
     include_str!("../../../api/examples/kernel/v1beta1/kmp/wake.request.json");
 const KMP_WAKE_RESPONSE_FIXTURE: &str =
@@ -35,6 +35,22 @@ const KMP_ASK_REQUEST_FIXTURE: &str =
     include_str!("../../../api/examples/kernel/v1beta1/kmp/ask.request.json");
 const KMP_ASK_RESPONSE_FIXTURE: &str =
     include_str!("../../../api/examples/kernel/v1beta1/kmp/ask.response.json");
+const KMP_GOTO_REQUEST_FIXTURE: &str =
+    include_str!("../../../api/examples/kernel/v1beta1/kmp/goto.request.json");
+const KMP_GOTO_RESPONSE_FIXTURE: &str =
+    include_str!("../../../api/examples/kernel/v1beta1/kmp/goto.response.json");
+const KMP_NEAR_REQUEST_FIXTURE: &str =
+    include_str!("../../../api/examples/kernel/v1beta1/kmp/near.request.json");
+const KMP_NEAR_RESPONSE_FIXTURE: &str =
+    include_str!("../../../api/examples/kernel/v1beta1/kmp/near.response.json");
+const KMP_REWIND_REQUEST_FIXTURE: &str =
+    include_str!("../../../api/examples/kernel/v1beta1/kmp/rewind.request.json");
+const KMP_REWIND_RESPONSE_FIXTURE: &str =
+    include_str!("../../../api/examples/kernel/v1beta1/kmp/rewind.response.json");
+const KMP_FORWARD_REQUEST_FIXTURE: &str =
+    include_str!("../../../api/examples/kernel/v1beta1/kmp/forward.request.json");
+const KMP_FORWARD_RESPONSE_FIXTURE: &str =
+    include_str!("../../../api/examples/kernel/v1beta1/kmp/forward.response.json");
 const KMP_TRACE_REQUEST_FIXTURE: &str =
     include_str!("../../../api/examples/kernel/v1beta1/kmp/trace.request.json");
 const KMP_TRACE_RESPONSE_FIXTURE: &str =
@@ -164,7 +180,7 @@ fn kmp_reference_fixtures_are_valid_json_and_memory_shaped() {
     );
     assert!(
         fixture_object_field(&schema, "$defs")
-            .get("remember_request")
+            .get("ingest_request")
             .is_some()
     );
     assert!(
@@ -179,6 +195,26 @@ fn kmp_reference_fixtures_are_valid_json_and_memory_shaped() {
     );
     assert!(
         fixture_object_field(&schema, "$defs")
+            .get("goto_request")
+            .is_some()
+    );
+    assert!(
+        fixture_object_field(&schema, "$defs")
+            .get("near_request")
+            .is_some()
+    );
+    assert!(
+        fixture_object_field(&schema, "$defs")
+            .get("rewind_request")
+            .is_some()
+    );
+    assert!(
+        fixture_object_field(&schema, "$defs")
+            .get("forward_request")
+            .is_some()
+    );
+    assert!(
+        fixture_object_field(&schema, "$defs")
             .get("trace_request")
             .is_some()
     );
@@ -189,11 +225,11 @@ fn kmp_reference_fixtures_are_valid_json_and_memory_shaped() {
     );
 
     assert_eq!(
-        sorted_keys(object_keys(&parse_fixture(KMP_REMEMBER_REQUEST_FIXTURE))),
-        sorted_strs(&["about", "capsule", "provenance", "idempotency_key"])
+        sorted_keys(object_keys(&parse_fixture(KMP_INGEST_REQUEST_FIXTURE))),
+        sorted_strs(&["about", "memory", "provenance", "idempotency_key"])
     );
     assert_eq!(
-        sorted_keys(object_keys(&parse_fixture(KMP_REMEMBER_RESPONSE_FIXTURE))),
+        sorted_keys(object_keys(&parse_fixture(KMP_INGEST_RESPONSE_FIXTURE))),
         sorted_strs(&["summary", "memory", "warnings"])
     );
     assert_eq!(
@@ -211,6 +247,46 @@ fn kmp_reference_fixtures_are_valid_json_and_memory_shaped() {
     assert_eq!(
         sorted_keys(object_keys(&parse_fixture(KMP_ASK_RESPONSE_FIXTURE))),
         sorted_strs(&["summary", "answer", "because", "proof", "warnings"])
+    );
+    assert_eq!(
+        sorted_keys(object_keys(&parse_fixture(KMP_GOTO_REQUEST_FIXTURE))),
+        sorted_strs(&["about", "at", "dimensions", "include"])
+    );
+    assert_eq!(
+        sorted_keys(object_keys(&parse_fixture(KMP_GOTO_RESPONSE_FIXTURE))),
+        sorted_strs(&[
+            "summary", "temporal", "coverage", "entries", "proof", "warnings"
+        ])
+    );
+    assert_eq!(
+        sorted_keys(object_keys(&parse_fixture(KMP_NEAR_REQUEST_FIXTURE))),
+        sorted_strs(&["about", "around", "window", "dimensions", "include"])
+    );
+    assert_eq!(
+        sorted_keys(object_keys(&parse_fixture(KMP_NEAR_RESPONSE_FIXTURE))),
+        sorted_strs(&[
+            "summary", "temporal", "coverage", "entries", "proof", "warnings"
+        ])
+    );
+    assert_eq!(
+        sorted_keys(object_keys(&parse_fixture(KMP_REWIND_REQUEST_FIXTURE))),
+        sorted_strs(&["about", "from", "dimensions", "limit", "include"])
+    );
+    assert_eq!(
+        sorted_keys(object_keys(&parse_fixture(KMP_REWIND_RESPONSE_FIXTURE))),
+        sorted_strs(&[
+            "summary", "temporal", "coverage", "entries", "proof", "warnings"
+        ])
+    );
+    assert_eq!(
+        sorted_keys(object_keys(&parse_fixture(KMP_FORWARD_REQUEST_FIXTURE))),
+        sorted_strs(&["about", "from", "dimensions", "limit"])
+    );
+    assert_eq!(
+        sorted_keys(object_keys(&parse_fixture(KMP_FORWARD_RESPONSE_FIXTURE))),
+        sorted_strs(&[
+            "summary", "temporal", "coverage", "entries", "proof", "warnings"
+        ])
     );
     assert_eq!(
         sorted_keys(object_keys(&parse_fixture(KMP_TRACE_REQUEST_FIXTURE))),
@@ -241,12 +317,20 @@ fn reference_fixtures_do_not_reintroduce_legacy_product_nouns() {
         parse_fixture(GRAPH_RELATION_MATERIALIZED_FIXTURE),
         parse_fixture(NODE_DETAIL_MATERIALIZED_FIXTURE),
         parse_fixture(CONTEXT_BUNDLE_GENERATED_FIXTURE),
-        parse_fixture(KMP_REMEMBER_REQUEST_FIXTURE),
-        parse_fixture(KMP_REMEMBER_RESPONSE_FIXTURE),
+        parse_fixture(KMP_INGEST_REQUEST_FIXTURE),
+        parse_fixture(KMP_INGEST_RESPONSE_FIXTURE),
         parse_fixture(KMP_WAKE_REQUEST_FIXTURE),
         parse_fixture(KMP_WAKE_RESPONSE_FIXTURE),
         parse_fixture(KMP_ASK_REQUEST_FIXTURE),
         parse_fixture(KMP_ASK_RESPONSE_FIXTURE),
+        parse_fixture(KMP_GOTO_REQUEST_FIXTURE),
+        parse_fixture(KMP_GOTO_RESPONSE_FIXTURE),
+        parse_fixture(KMP_NEAR_REQUEST_FIXTURE),
+        parse_fixture(KMP_NEAR_RESPONSE_FIXTURE),
+        parse_fixture(KMP_REWIND_REQUEST_FIXTURE),
+        parse_fixture(KMP_REWIND_RESPONSE_FIXTURE),
+        parse_fixture(KMP_FORWARD_REQUEST_FIXTURE),
+        parse_fixture(KMP_FORWARD_RESPONSE_FIXTURE),
         parse_fixture(KMP_TRACE_REQUEST_FIXTURE),
         parse_fixture(KMP_TRACE_RESPONSE_FIXTURE),
         parse_fixture(KMP_INSPECT_REQUEST_FIXTURE),

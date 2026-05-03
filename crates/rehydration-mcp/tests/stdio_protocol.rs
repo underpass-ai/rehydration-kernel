@@ -1,4 +1,8 @@
-use rehydration_mcp::KernelMcpServer;
+use std::sync::{Arc, Mutex};
+
+use rehydration_mcp::{
+    KernelMcpGrpcTlsConfig, KernelMcpServer, KernelMcpToolBackend, KernelMcpToolFuture,
+};
 use serde_json::{Value, json};
 
 #[test]
@@ -12,6 +16,23 @@ fn backend_selection_uses_grpc_when_endpoint_is_present() {
     let server =
         KernelMcpServer::from_optional_endpoint(Some("http://127.0.0.1:50051".to_string()));
     assert_eq!(server.backend_name(), "grpc");
+}
+
+#[test]
+fn backend_selection_reports_grpc_tls_mode() {
+    let server = KernelMcpServer::grpc_with_tls(
+        "https://rehydration-kernel.underpassai.com",
+        KernelMcpGrpcTlsConfig::server("/tmp/ca.crt", None),
+    );
+
+    assert_eq!(server.backend_name(), "grpc");
+    assert_eq!(server.grpc_tls_mode_name(), "server");
+}
+
+#[test]
+fn backend_selection_ignores_blank_endpoint() {
+    let server = KernelMcpServer::from_optional_endpoint(Some("   ".to_string()));
+    assert_eq!(server.backend_name(), "fixture");
 }
 
 #[tokio::test]
@@ -32,6 +53,56 @@ async fn initialize_declares_tools_capability() {
     );
     assert_eq!(response["result"]["metadata"]["backend"], "fixture");
     assert!(response["result"]["capabilities"].get("tools").is_some());
+}
+
+#[tokio::test]
+async fn malformed_json_returns_jsonrpc_parse_error() {
+    let server = KernelMcpServer::fixture();
+    let response = server
+        .handle_json_line("{not-json")
+        .await
+        .expect("malformed JSON should produce an error response");
+    let response = serde_json::from_str::<Value>(&response).expect("response should be JSON");
+
+    assert_eq!(response["error"]["code"], -32700);
+    assert!(
+        response["error"]["message"]
+            .as_str()
+            .expect("error should include message")
+            .contains("invalid JSON-RPC message")
+    );
+}
+
+#[tokio::test]
+async fn missing_method_returns_jsonrpc_request_error() {
+    let response = handle(json!({
+        "jsonrpc": "2.0",
+        "id": 21,
+        "params": {}
+    }))
+    .await;
+
+    assert_eq!(response["error"]["code"], -32600);
+    assert_eq!(response["error"]["message"], "missing JSON-RPC method");
+}
+
+#[tokio::test]
+async fn unsupported_method_returns_jsonrpc_method_error() {
+    let response = handle(json!({
+        "jsonrpc": "2.0",
+        "id": 22,
+        "method": "resources/list",
+        "params": {}
+    }))
+    .await;
+
+    assert_eq!(response["error"]["code"], -32601);
+    assert!(
+        response["error"]["message"]
+            .as_str()
+            .expect("error should include message")
+            .contains("unsupported JSON-RPC method")
+    );
 }
 
 #[tokio::test]
@@ -63,6 +134,61 @@ async fn tools_list_exposes_read_only_kmp_tools() {
 }
 
 #[tokio::test]
+async fn fixture_tools_cover_wake_trace_and_inspect() {
+    let wake = handle(json!({
+        "jsonrpc": "2.0",
+        "id": 24,
+        "method": "tools/call",
+        "params": {
+            "name": "kernel_wake",
+            "arguments": {
+                "about": "project:kernel-memory-protocol"
+            }
+        }
+    }))
+    .await;
+    assert_eq!(wake["result"]["isError"], false);
+    assert!(wake["result"]["structuredContent"]["wake"].is_object());
+
+    let trace = handle(json!({
+        "jsonrpc": "2.0",
+        "id": 25,
+        "method": "tools/call",
+        "params": {
+            "name": "kernel_trace",
+            "arguments": {
+                "from": "claim:rachel-austin",
+                "to": "claim:rachel-denver"
+            }
+        }
+    }))
+    .await;
+    assert_eq!(trace["result"]["isError"], false);
+    assert_eq!(
+        trace["result"]["structuredContent"]["trace"][0]["rel"],
+        "supersedes"
+    );
+
+    let inspect = handle(json!({
+        "jsonrpc": "2.0",
+        "id": 26,
+        "method": "tools/call",
+        "params": {
+            "name": "kernel_inspect",
+            "arguments": {
+                "ref": "claim:rachel-austin"
+            }
+        }
+    }))
+    .await;
+    assert_eq!(inspect["result"]["isError"], false);
+    assert_eq!(
+        inspect["result"]["structuredContent"]["object"]["ref"],
+        "claim:rachel-austin"
+    );
+}
+
+#[tokio::test]
 async fn kernel_ask_returns_fixture_backed_structured_content() {
     let response = handle(json!({
         "jsonrpc": "2.0",
@@ -85,6 +211,105 @@ async fn kernel_ask_returns_fixture_backed_structured_content() {
         response["result"]["structuredContent"]["proof"]["confidence"],
         "high"
     );
+}
+
+#[tokio::test]
+async fn write_move_aliases_return_ingest_not_implemented_error() {
+    for name in ["kernel_ingest", "kernel_remember"] {
+        let response = handle(json!({
+            "jsonrpc": "2.0",
+            "id": 27,
+            "method": "tools/call",
+            "params": {
+                "name": name,
+                "arguments": {
+                    "about": "question:830ce83f"
+                }
+            }
+        }))
+        .await;
+
+        assert_eq!(response["result"]["isError"], true);
+        assert!(
+            response["result"]["content"][0]["text"]
+                .as_str()
+                .expect("tool error should include text")
+                .contains("kernel_ingest is not implemented")
+        );
+    }
+}
+
+#[tokio::test]
+async fn unknown_tool_returns_tool_error() {
+    let response = handle(json!({
+        "jsonrpc": "2.0",
+        "id": 28,
+        "method": "tools/call",
+        "params": {
+            "name": "kernel_unknown",
+            "arguments": {}
+        }
+    }))
+    .await;
+
+    assert_eq!(response["result"]["isError"], true);
+    assert!(
+        response["result"]["content"][0]["text"]
+            .as_str()
+            .expect("tool error should include text")
+            .contains("unknown KMP tool")
+    );
+}
+
+#[tokio::test]
+async fn tools_call_requires_object_params_and_name() {
+    let missing_params = handle(json!({
+        "jsonrpc": "2.0",
+        "id": 29,
+        "method": "tools/call"
+    }))
+    .await;
+    assert_eq!(missing_params["error"]["code"], -32602);
+    assert_eq!(
+        missing_params["error"]["message"],
+        "tools/call requires object params"
+    );
+
+    let missing_name = handle(json!({
+        "jsonrpc": "2.0",
+        "id": 30,
+        "method": "tools/call",
+        "params": {}
+    }))
+    .await;
+    assert_eq!(missing_name["error"]["code"], -32602);
+    assert_eq!(
+        missing_name["error"]["message"],
+        "tools/call requires params.name"
+    );
+}
+
+#[tokio::test]
+async fn tools_call_without_id_has_no_response() {
+    let server = KernelMcpServer::fixture();
+    let response = server
+        .handle_json_line(
+            &json!({
+                "jsonrpc": "2.0",
+                "method": "tools/call",
+                "params": {
+                    "name": "kernel_ask",
+                    "arguments": {
+                        "about": "question:830ce83f",
+                        "question": "Where did Rachel move?"
+                    }
+                }
+            })
+            .to_string(),
+        )
+        .await;
+
+    assert!(response.is_none());
 }
 
 #[tokio::test]
@@ -156,6 +381,133 @@ async fn initialized_notification_has_no_response() {
     assert!(response.is_none());
 }
 
+#[tokio::test]
+async fn server_can_use_injected_stub_backend() {
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let server = KernelMcpServer::with_backend(StubBackend {
+        calls: Arc::clone(&calls),
+        backend_name: "stub",
+        grpc_tls_mode_name: "disabled",
+        response: Ok(json!({
+            "content": [
+                {
+                    "type": "text",
+                    "text": "stub response"
+                }
+            ],
+            "structuredContent": {
+                "source": "stub"
+            },
+            "isError": false
+        })),
+    });
+
+    let initialize = handle_with(
+        &server,
+        json!({
+            "jsonrpc": "2.0",
+            "id": 40,
+            "method": "initialize",
+            "params": {}
+        }),
+    )
+    .await;
+    assert_eq!(initialize["result"]["metadata"]["backend"], "stub");
+
+    let response = handle_with(
+        &server,
+        json!({
+            "jsonrpc": "2.0",
+            "id": 41,
+            "method": "tools/call",
+            "params": {
+                "name": "kernel_wake",
+                "arguments": {
+                    "about": "node:stub"
+                }
+            }
+        }),
+    )
+    .await;
+
+    assert_eq!(response["result"]["isError"], false);
+    assert_eq!(response["result"]["structuredContent"]["source"], "stub");
+    assert_eq!(
+        calls
+            .lock()
+            .expect("stub calls should be available")
+            .as_slice(),
+        [("kernel_wake".to_string(), json!({"about": "node:stub"}))]
+    );
+}
+
+#[tokio::test]
+async fn server_wraps_injected_backend_errors_as_mcp_tool_errors() {
+    let server = KernelMcpServer::with_backend(StubBackend {
+        calls: Arc::new(Mutex::new(Vec::new())),
+        backend_name: "stub",
+        grpc_tls_mode_name: "mutual",
+        response: Err("stub failure".to_string()),
+    });
+
+    assert_eq!(server.backend_name(), "stub");
+    assert_eq!(server.grpc_tls_mode_name(), "mutual");
+
+    let response = handle_with(
+        &server,
+        json!({
+            "jsonrpc": "2.0",
+            "id": 42,
+            "method": "tools/call",
+            "params": {
+                "name": "kernel_trace",
+                "arguments": {
+                    "from": "a",
+                    "to": "b"
+                }
+            }
+        }),
+    )
+    .await;
+
+    assert_eq!(response["result"]["isError"], true);
+    assert_eq!(response["result"]["content"][0]["text"], "stub failure");
+}
+
+#[tokio::test]
+async fn shared_stub_backend_can_be_reused_by_multiple_servers() {
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let backend = Arc::new(StubBackend {
+        calls: Arc::clone(&calls),
+        backend_name: "shared-stub",
+        grpc_tls_mode_name: "disabled",
+        response: Ok(json!({
+            "content": [],
+            "structuredContent": {
+                "shared": true
+            },
+            "isError": false
+        })),
+    });
+    let server_a = KernelMcpServer::with_shared_backend(backend.clone());
+    let server_b = KernelMcpServer::with_shared_backend(backend);
+
+    let response_a = call_named_tool(&server_a, 43, "kernel_inspect").await;
+    let response_b = call_named_tool(&server_b, 44, "kernel_ask").await;
+
+    assert_eq!(response_a["result"]["structuredContent"]["shared"], true);
+    assert_eq!(response_b["result"]["structuredContent"]["shared"], true);
+    assert_eq!(
+        calls
+            .lock()
+            .expect("shared stub calls should be available")
+            .iter()
+            .map(|(name, _)| name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["kernel_inspect", "kernel_ask"]
+    );
+}
+
 async fn handle(request: Value) -> Value {
     let server = KernelMcpServer::fixture();
     handle_with(&server, request).await
@@ -167,4 +519,46 @@ async fn handle_with(server: &KernelMcpServer, request: Value) -> Value {
         .await
         .expect("request should produce a response");
     serde_json::from_str(&response).expect("response should be JSON")
+}
+
+async fn call_named_tool(server: &KernelMcpServer, id: u64, name: &str) -> Value {
+    handle_with(
+        server,
+        json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "method": "tools/call",
+            "params": {
+                "name": name,
+                "arguments": {}
+            }
+        }),
+    )
+    .await
+}
+
+struct StubBackend {
+    calls: Arc<Mutex<Vec<(String, Value)>>>,
+    backend_name: &'static str,
+    grpc_tls_mode_name: &'static str,
+    response: Result<Value, String>,
+}
+
+impl KernelMcpToolBackend for StubBackend {
+    fn backend_name(&self) -> &'static str {
+        self.backend_name
+    }
+
+    fn grpc_tls_mode_name(&self) -> &'static str {
+        self.grpc_tls_mode_name
+    }
+
+    fn call_tool<'a>(&'a self, name: &'a str, arguments: &'a Value) -> KernelMcpToolFuture<'a> {
+        self.calls
+            .lock()
+            .expect("stub calls should be available")
+            .push((name.to_string(), arguments.clone()));
+        let response = self.response.clone();
+        Box::pin(async move { response })
+    }
 }

@@ -8,7 +8,7 @@ Current status:
   `kernel_inspect`;
 - defaults to fixture-backed KMP responses from `api/examples/kernel/v1beta1/kmp`;
 - can use the live gRPC kernel when `REHYDRATION_KERNEL_GRPC_ENDPOINT` is set;
-- does not implement `kernel_remember` yet;
+- does not implement the future write tool `kernel_ingest` yet;
 - live `kernel_ask` returns evidence/proof from `GetContext`, not a generated
   answer.
 

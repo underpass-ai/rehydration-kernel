@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+cd "${ROOT_DIR}"
+
+if [[ "${SKIP_CLIPPY_HOOK:-}" == "1" ]]; then
+  echo "pre-commit: skipping clippy because SKIP_CLIPPY_HOOK=1"
+else
+  echo "pre-commit: running cargo clippy --workspace --all-targets --locked -- -D warnings"
+  cargo clippy --workspace --all-targets --locked -- -D warnings
+fi
+
+if [[ "${SKIP_COVERAGE_HOOK:-}" == "1" ]]; then
+  echo "pre-commit: skipping local coverage because SKIP_COVERAGE_HOOK=1"
+  exit 0
+fi
+
+if ! cargo llvm-cov --version >/dev/null 2>&1; then
+  echo "pre-commit: cargo-llvm-cov is required for local coverage"
+  echo "pre-commit: install it with: cargo install cargo-llvm-cov"
+  exit 1
+fi
+
+if [[ -z "${LLVM_COV:-}" ]] && command -v llvm-cov >/dev/null 2>&1; then
+  export LLVM_COV
+  LLVM_COV="$(command -v llvm-cov)"
+fi
+
+if [[ -z "${LLVM_PROFDATA:-}" ]] && command -v llvm-profdata >/dev/null 2>&1; then
+  export LLVM_PROFDATA
+  LLVM_PROFDATA="$(command -v llvm-profdata)"
+fi
+
+COVERAGE_HOOK_MIN_LINES="${COVERAGE_HOOK_MIN_LINES:-80}"
+
+echo "pre-commit: running MCP local coverage with minimum ${COVERAGE_HOOK_MIN_LINES}% line coverage"
+cargo llvm-cov -p rehydration-mcp --locked --summary-only --fail-under-lines "${COVERAGE_HOOK_MIN_LINES}"

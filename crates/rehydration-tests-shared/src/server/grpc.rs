@@ -66,6 +66,10 @@ impl RunningGrpcServer {
         })
     }
 
+    pub fn endpoint(&self) -> &str {
+        &self.endpoint
+    }
+
     pub async fn connect_channel(&self) -> Result<Channel, BoxError> {
         let mut attempts = 0u8;
 

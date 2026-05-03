@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
-use rehydration_mcp::KernelMcpServer;
+use std::path::PathBuf;
+
+use rehydration_mcp::{KernelMcpGrpcTlsConfig, KernelMcpServer};
 use rehydration_proto::v1beta1::{
     BundleNodeDetail, BundleRenderFormat, BundleSection, GetContextPathRequest,
     GetContextPathResponse, GetContextRequest, GetContextResponse, GetNodeDetailRequest,
@@ -13,6 +15,7 @@ use rehydration_proto::v1beta1::{
 use serde_json::{Value, json};
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
+use tonic::transport::{Certificate, Identity, ServerTlsConfig};
 use tonic::{Request, Response, Status};
 
 #[tokio::test]
@@ -133,7 +136,49 @@ async fn grpc_backend_maps_live_query_service_responses_to_kmp_tools() {
     );
 }
 
+#[tokio::test]
+async fn grpc_backend_connects_to_mutual_tls_query_service() {
+    install_test_crypto_provider();
+
+    let certs = TestTlsFiles::write();
+    let endpoint = spawn_fake_query_server_with_mutual_tls().await;
+    let server = KernelMcpServer::grpc_with_tls(endpoint, certs.client_config());
+
+    let inspect = call_tool(
+        &server,
+        1,
+        "kernel_inspect",
+        json!({
+            "ref": "node:mtls"
+        }),
+    )
+    .await;
+
+    assert_eq!(inspect["result"]["isError"], false);
+    assert_eq!(
+        inspect["result"]["structuredContent"]["object"]["ref"],
+        "node:mtls"
+    );
+    assert_eq!(
+        inspect["result"]["structuredContent"]["evidence"][0]["text"],
+        "Node detail for node:mtls."
+    );
+}
+
 async fn spawn_fake_query_server() -> String {
+    spawn_fake_query_server_with_tls(None).await
+}
+
+async fn spawn_fake_query_server_with_mutual_tls() -> String {
+    spawn_fake_query_server_with_tls(Some(
+        ServerTlsConfig::new()
+            .identity(Identity::from_pem(TEST_SERVER_CERT, TEST_SERVER_KEY))
+            .client_ca_root(Certificate::from_pem(TEST_CA_CERT)),
+    ))
+    .await
+}
+
+async fn spawn_fake_query_server_with_tls(tls_config: Option<ServerTlsConfig>) -> String {
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .expect("fake gRPC server should bind to an ephemeral port");
@@ -143,7 +188,14 @@ async fn spawn_fake_query_server() -> String {
     let incoming = TcpListenerStream::new(listener);
 
     tokio::spawn(async move {
-        tonic::transport::Server::builder()
+        let mut builder = tonic::transport::Server::builder();
+        if let Some(tls_config) = tls_config {
+            builder = builder
+                .tls_config(tls_config)
+                .expect("fake gRPC server TLS config should be valid");
+        }
+
+        builder
             .add_service(ContextQueryServiceServer::new(FakeQueryService))
             .serve_with_incoming(incoming)
             .await
@@ -371,3 +423,99 @@ fn fake_relationship(source_node_id: &str, target_node_id: &str) -> GraphRelatio
         provenance: None,
     }
 }
+
+struct TestTlsFiles {
+    _dir: tempfile::TempDir,
+    ca_path: PathBuf,
+    cert_path: PathBuf,
+    key_path: PathBuf,
+}
+
+impl TestTlsFiles {
+    fn write() -> Self {
+        let dir = tempfile::tempdir().expect("test TLS tempdir should be created");
+        let ca_path = dir.path().join("ca.crt");
+        let cert_path = dir.path().join("client.crt");
+        let key_path = dir.path().join("client.key");
+
+        std::fs::write(&ca_path, TEST_CA_CERT).expect("test CA should be written");
+        std::fs::write(&cert_path, TEST_CLIENT_CERT).expect("test client cert should be written");
+        std::fs::write(&key_path, TEST_CLIENT_KEY).expect("test client key should be written");
+
+        Self {
+            _dir: dir,
+            ca_path,
+            cert_path,
+            key_path,
+        }
+    }
+
+    fn client_config(&self) -> KernelMcpGrpcTlsConfig {
+        KernelMcpGrpcTlsConfig::mutual(
+            self.ca_path.clone(),
+            self.cert_path.clone(),
+            self.key_path.clone(),
+            Some("localhost".to_string()),
+        )
+    }
+}
+
+fn install_test_crypto_provider() {
+    let _ = tokio_rustls::rustls::crypto::aws_lc_rs::default_provider().install_default();
+}
+
+// Static test-only certificates generated for the local mTLS fake server.
+// They are not trusted by production code and exist only to avoid shelling out
+// to OpenSSL during `cargo test`.
+const TEST_CA_CERT: &str = r#"-----BEGIN CERTIFICATE-----
+MIIBmDCCAT+gAwIBAgIUDrShLER4kZWk+jp6yLZMPVnc4KAwCgYIKoZIzj0EAwIw
+IjEgMB4GA1UEAwwXcmVoeWRyYXRpb24tbWNwLXRlc3QtY2EwHhcNMjYwNTAzMTc1
+NTMyWhcNMzYwNDMwMTc1NTMyWjAiMSAwHgYDVQQDDBdyZWh5ZHJhdGlvbi1tY3At
+dGVzdC1jYTBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABARF7qIfl/QvSiZvX8di
+hbYIuq/gzFG6qNa0v86901BvKM21S9zna0xfZbxodZd7mfwzvSDnHFJIAfymQ/a0
+SSmjUzBRMB0GA1UdDgQWBBSDc7yfQDotnauGfYkkeHrMc+gSBjAfBgNVHSMEGDAW
+gBSDc7yfQDotnauGfYkkeHrMc+gSBjAPBgNVHRMBAf8EBTADAQH/MAoGCCqGSM49
+BAMCA0cAMEQCIH0m3WBS/qGq20lcXg+iO+RFHkE768JcjuB/viffYkzuAiAZczMl
+OKRQEYO/3ZfaPZkHZsL99dUFy3czK6cAtly4Lg==
+-----END CERTIFICATE-----
+"#;
+
+const TEST_SERVER_CERT: &str = r#"-----BEGIN CERTIFICATE-----
+MIIBpTCCAUugAwIBAgIUDt2LOgaFR696iyRVM+ipq3EAEbcwCgYIKoZIzj0EAwIw
+IjEgMB4GA1UEAwwXcmVoeWRyYXRpb24tbWNwLXRlc3QtY2EwHhcNMjYwNTAzMTc1
+NjI3WhcNMzYwNDMwMTc1NjI3WjAUMRIwEAYDVQQDDAlsb2NhbGhvc3QwWTATBgcq
+hkjOPQIBBggqhkjOPQMBBwNCAAQZadG+mSPC5wBjpC4V3TUX7ZGXJ8ypWKo6Pmah
+zDGI2jVtXosZKtYkT7mrykgyO/U5lBMi4j6FZBR3ScXEYdzho20wazAUBgNVHREE
+DTALgglsb2NhbGhvc3QwEwYDVR0lBAwwCgYIKwYBBQUHAwEwHQYDVR0OBBYEFAvZ
+kmZyjsv0PhtiTOLZa2qQJhdbMB8GA1UdIwQYMBaAFINzvJ9AOi2dq4Z9iSR4esxz
+6BIGMAoGCCqGSM49BAMCA0gAMEUCIEJHCWnCaKr73gefBhAYNZQjPUh5IomVAI0F
+czqsWVUnAiEAyv098AZ9D0VKjWCNdfu+Q0jg96A4BD3SG+122qXiQgg=
+-----END CERTIFICATE-----
+"#;
+
+const TEST_SERVER_KEY: &str = r#"-----BEGIN PRIVATE KEY-----
+MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQg0ShbEuRisGPwMym1
+C0vGZ/hD1c91p9fA5nvtWKoNRYahRANCAAQZadG+mSPC5wBjpC4V3TUX7ZGXJ8yp
+WKo6PmahzDGI2jVtXosZKtYkT7mrykgyO/U5lBMi4j6FZBR3ScXEYdzh
+-----END PRIVATE KEY-----
+"#;
+
+const TEST_CLIENT_CERT: &str = r#"-----BEGIN CERTIFICATE-----
+MIIBoTCCAUegAwIBAgIUDt2LOgaFR696iyRVM+ipq3EAEbYwCgYIKoZIzj0EAwIw
+IjEgMB4GA1UEAwwXcmVoeWRyYXRpb24tbWNwLXRlc3QtY2EwHhcNMjYwNTAzMTc1
+NjAzWhcNMzYwNDMwMTc1NjAzWjAmMSQwIgYDVQQDDBtyZWh5ZHJhdGlvbi1tY3At
+dGVzdC1jbGllbnQwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAARbE50GqAcOulov
+ZQLg9fRjq1LTMvjC3mi/wb+E6QDWGw/nobEuShCwGt8UhaXv6x1iOzlwDt1pBPYi
+F9bXka0ho1cwVTATBgNVHSUEDDAKBggrBgEFBQcDAjAdBgNVHQ4EFgQU93T3BJ6O
+zaMFcyOIBZ9xKPxNnC0wHwYDVR0jBBgwFoAUg3O8n0A6LZ2rhn2JJHh6zHPoEgYw
+CgYIKoZIzj0EAwIDSAAwRQIgfG8Rt+loR9K/khgov0WMDLcMngb4y1aimUp92r+0
+l50CIQDuNxk8bkC5XbTX7JP29dAkyrc55Pf728d08jt1TlRQjw==
+-----END CERTIFICATE-----
+"#;
+
+const TEST_CLIENT_KEY: &str = r#"-----BEGIN PRIVATE KEY-----
+MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgNuVBGBwRhxnlxsLV
+qdYqw8bDQbReT4w+psRqj/cT1buhRANCAARbE50GqAcOulovZQLg9fRjq1LTMvjC
+3mi/wb+E6QDWGw/nobEuShCwGt8UhaXv6x1iOzlwDt1pBPYiF9bXka0h
+-----END PRIVATE KEY-----
+"#;

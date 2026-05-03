@@ -15,6 +15,10 @@ cargo test -p rehydration-tests-kernel --features container-tests -- --nocapture
 
 # Quality gate (pre-merge: format + clippy + contract + tests)
 bash scripts/ci/quality-gate.sh
+
+# Optional local pre-commit hook:
+# clippy with the same deny-warnings mode as CI, plus MCP coverage >= 80%
+git config core.hooksPath .githooks
 ```
 
 ## Unit Tests
@@ -62,6 +66,7 @@ bash scripts/ci/testcontainers-runtime.sh
 | `kernel_golden_integration` | Golden contract tests (4 RPCs) | Neo4j + Valkey + NATS + gRPC | — |
 | `agentic_integration` | Agent using kernel context | Neo4j + Valkey + NATS + gRPC | `scripts/ci/integration-agentic-context.sh` |
 | `agentic_event_integration` | Event-driven recording runtime | Neo4j + Valkey + NATS + gRPC | `scripts/ci/integration-agentic-event-context.sh` |
+| `mcp_real_kernel_integration` | MCP KMP tools reading from the live kernel gRPC server | Neo4j + Valkey + gRPC + MCP adapter | `scripts/ci/integration-mcp-real-kernel.sh` |
 | `tier_resolution_integration` | Multi-resolution tiers L0/L1/L2 | Neo4j + Valkey + NATS + gRPC | — |
 | `kernel_p1_performance_measurement` | Performance regression (batch vs N+1) | Neo4j + Valkey + NATS + gRPC | — |
 | `relationship_use_case_integration` | 4 paper use cases (failure, handoff, constraint, pressure) | Neo4j + Valkey + NATS + gRPC | `scripts/ci/integration-paper-use-cases.sh` |

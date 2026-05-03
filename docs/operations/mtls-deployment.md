@@ -119,6 +119,41 @@ aws route53 change-resource-record-sets --hosted-zone-id <ZONE_ID> --change-batc
 }'
 ```
 
+For ingress-nginx with a `GRPCS` backend and a mutual-TLS kernel, configure the
+Ingress with backend TLS annotations and make sure the controller emits gRPC
+upstream TLS directives. The upstream client secret must contain `ca.crt`,
+`tls.crt`, and `tls.key`.
+
+```yaml
+ingress:
+  annotations:
+    nginx.ingress.kubernetes.io/backend-protocol: GRPCS
+    nginx.ingress.kubernetes.io/proxy-ssl-secret: underpass-runtime/rehydration-kernel-client-tls
+    nginx.ingress.kubernetes.io/proxy-ssl-name: rehydration-kernel-grpc
+    nginx.ingress.kubernetes.io/proxy-ssl-server-name: "on"
+    nginx.ingress.kubernetes.io/proxy-ssl-verify: "on"
+    nginx.ingress.kubernetes.io/proxy-ssl-verify-depth: "2"
+```
+
+`proxy-ssl-*` loads the Secret into ingress-nginx, but the NGINX gRPC upstream
+module uses `grpc_ssl_*` directives for `grpc_pass grpcs://...`. Until the
+controller maps those annotations to `grpc_ssl_*`, persist the following
+controller config:
+
+```bash
+helm upgrade ingress-nginx ingress-nginx/ingress-nginx \
+  -n ingress-nginx \
+  --reuse-values \
+  --set-string controller.config.http-snippet='grpc_ssl_trusted_certificate /etc/ingress-controller/ssl/underpass-runtime-rehydration-kernel-client-tls.pem;
+grpc_ssl_certificate /etc/ingress-controller/ssl/underpass-runtime-rehydration-kernel-client-tls.pem;
+grpc_ssl_certificate_key /etc/ingress-controller/ssl/underpass-runtime-rehydration-kernel-client-tls.pem;
+grpc_ssl_verify on;
+grpc_ssl_verify_depth 2;
+grpc_ssl_name rehydration-kernel-grpc;
+grpc_ssl_server_name on;
+grpc_ssl_protocols TLSv1.2 TLSv1.3;'
+```
+
 ## Option B — Manual OpenSSL (development / air-gapped)
 
 For environments without cert-manager.

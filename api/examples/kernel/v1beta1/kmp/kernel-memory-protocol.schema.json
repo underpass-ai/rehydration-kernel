@@ -2,13 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://underpass.ai/schemas/rehydration-kernel/v1beta1/kernel-memory-protocol.schema.json",
   "title": "KernelMemoryProtocol",
-  "description": "Transport-neutral Kernel Memory Protocol draft contract for remember, wake, ask, trace, and inspect moves.",
+  "description": "Transport-neutral Kernel Memory Protocol draft contract for ingest, wake, ask, rewind, forward, trace, and inspect moves.",
   "oneOf": [
     {
-      "$ref": "#/$defs/remember_request"
+      "$ref": "#/$defs/ingest_request"
     },
     {
-      "$ref": "#/$defs/remember_response"
+      "$ref": "#/$defs/ingest_response"
     },
     {
       "$ref": "#/$defs/wake_request"
@@ -21,6 +21,30 @@
     },
     {
       "$ref": "#/$defs/ask_response"
+    },
+    {
+      "$ref": "#/$defs/goto_request"
+    },
+    {
+      "$ref": "#/$defs/goto_response"
+    },
+    {
+      "$ref": "#/$defs/near_request"
+    },
+    {
+      "$ref": "#/$defs/near_response"
+    },
+    {
+      "$ref": "#/$defs/rewind_request"
+    },
+    {
+      "$ref": "#/$defs/rewind_response"
+    },
+    {
+      "$ref": "#/$defs/forward_request"
+    },
+    {
+      "$ref": "#/$defs/forward_response"
     },
     {
       "$ref": "#/$defs/trace_request"
@@ -110,46 +134,55 @@
         }
       }
     },
-    "scope": {
+    "dimension": {
       "type": "object",
       "additionalProperties": false,
       "required": [
         "id",
-        "dimension"
+        "kind"
       ],
       "properties": {
         "id": {
           "$ref": "#/$defs/non_empty_string"
         },
-        "dimension": {
+        "kind": {
           "$ref": "#/$defs/non_empty_string"
         },
         "title": {
           "$ref": "#/$defs/non_empty_string"
-        },
-        "time": {
-          "$ref": "#/$defs/date_time"
         },
         "metadata": {
           "$ref": "#/$defs/metadata"
         }
       }
     },
-    "claim": {
+    "temporal_coordinate": {
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "id",
-        "text"
+        "dimension",
+        "scope_id"
       ],
       "properties": {
-        "id": {
+        "dimension": {
           "$ref": "#/$defs/non_empty_string"
         },
-        "text": {
+        "scope_id": {
           "$ref": "#/$defs/non_empty_string"
         },
-        "time": {
+        "occurred_at": {
+          "$ref": "#/$defs/date_time"
+        },
+        "observed_at": {
+          "$ref": "#/$defs/date_time"
+        },
+        "ingested_at": {
+          "$ref": "#/$defs/date_time"
+        },
+        "valid_from": {
+          "$ref": "#/$defs/date_time"
+        },
+        "valid_until": {
           "$ref": "#/$defs/date_time"
         },
         "sequence": {
@@ -161,7 +194,38 @@
         }
       }
     },
-    "link": {
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "text",
+        "coordinates"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "kind": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "text": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "coordinates": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/temporal_coordinate"
+          }
+        },
+        "metadata": {
+          "$ref": "#/$defs/metadata"
+        }
+      }
+    },
+    "relation": {
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -261,28 +325,32 @@
         }
       }
     },
-    "capsule": {
+    "memory": {
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "scope",
-        "claims"
+        "dimensions",
+        "entries"
       ],
       "properties": {
-        "scope": {
-          "$ref": "#/$defs/scope"
-        },
-        "claims": {
+        "dimensions": {
           "type": "array",
           "minItems": 1,
           "items": {
-            "$ref": "#/$defs/claim"
+            "$ref": "#/$defs/dimension"
           }
         },
-        "links": {
+        "entries": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/entry"
+          }
+        },
+        "relations": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/link"
+            "$ref": "#/$defs/relation"
           }
         },
         "evidence": {
@@ -297,16 +365,16 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "claims",
-        "links",
+        "entries",
+        "relations",
         "evidence"
       ],
       "properties": {
-        "claims": {
+        "entries": {
           "type": "integer",
           "minimum": 0
         },
-        "links": {
+        "relations": {
           "type": "integer",
           "minimum": 0
         },
@@ -340,6 +408,326 @@
         }
       }
     },
+    "dimension_selection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode"
+      ],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "all",
+            "only",
+            "except"
+          ]
+        },
+        "include": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/non_empty_string"
+          }
+        },
+        "exclude": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/non_empty_string"
+          }
+        }
+      }
+    },
+    "temporal_cursor": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ref": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "time": {
+          "$ref": "#/$defs/date_time"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "anyOf": [
+        {
+          "required": [
+            "ref"
+          ]
+        },
+        {
+          "required": [
+            "time"
+          ]
+        },
+        {
+          "required": [
+            "sequence"
+          ]
+        }
+      ]
+    },
+    "temporal_limit": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "entries": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "tokens": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "temporal_window": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "before_entries": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "after_entries": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "before_seconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "after_seconds": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "temporal_include": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "evidence": {
+          "type": "boolean"
+        },
+        "relations": {
+          "type": "boolean"
+        },
+        "raw_refs": {
+          "type": "boolean"
+        }
+      }
+    },
+    "temporal_move_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "about",
+        "from"
+      ],
+      "properties": {
+        "about": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "from": {
+          "$ref": "#/$defs/temporal_cursor"
+        },
+        "dimensions": {
+          "$ref": "#/$defs/dimension_selection"
+        },
+        "limit": {
+          "$ref": "#/$defs/temporal_limit"
+        },
+        "include": {
+          "$ref": "#/$defs/temporal_include"
+        }
+      }
+    },
+    "temporal_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ref",
+        "text",
+        "coordinates"
+      ],
+      "properties": {
+        "ref": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "text": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "position": {
+          "type": "string",
+          "enum": [
+            "before",
+            "at",
+            "after",
+            "near"
+          ]
+        },
+        "coordinates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/temporal_coordinate"
+          }
+        }
+      }
+    },
+    "temporal_move_response": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "summary",
+        "temporal",
+        "coverage",
+        "entries",
+        "proof",
+        "warnings"
+      ],
+      "properties": {
+        "summary": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "temporal": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "direction"
+          ],
+          "properties": {
+            "direction": {
+              "type": "string",
+              "enum": [
+                "goto",
+                "near",
+                "rewind",
+                "forward"
+              ]
+            },
+            "at": {
+              "$ref": "#/$defs/temporal_cursor"
+            },
+            "around": {
+              "$ref": "#/$defs/temporal_cursor"
+            },
+            "from": {
+              "$ref": "#/$defs/temporal_cursor"
+            },
+            "window": {
+              "$ref": "#/$defs/temporal_window"
+            }
+          }
+        },
+        "coverage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "requested",
+            "included",
+            "missing"
+          ],
+          "properties": {
+            "requested": {
+              "$ref": "#/$defs/dimension_selection"
+            },
+            "included": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/non_empty_string"
+              }
+            },
+            "missing": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/non_empty_string"
+              }
+            }
+          }
+        },
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/temporal_entry"
+          }
+        },
+        "proof": {
+          "$ref": "#/$defs/proof"
+        },
+        "warnings": {
+          "$ref": "#/$defs/warning_list"
+        }
+      }
+    },
+    "goto_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "about",
+        "at"
+      ],
+      "properties": {
+        "about": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "at": {
+          "$ref": "#/$defs/temporal_cursor"
+        },
+        "dimensions": {
+          "$ref": "#/$defs/dimension_selection"
+        },
+        "include": {
+          "$ref": "#/$defs/temporal_include"
+        }
+      }
+    },
+    "goto_response": {
+      "$ref": "#/$defs/temporal_move_response"
+    },
+    "near_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "about",
+        "around"
+      ],
+      "properties": {
+        "about": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "around": {
+          "$ref": "#/$defs/temporal_cursor"
+        },
+        "window": {
+          "$ref": "#/$defs/temporal_window"
+        },
+        "dimensions": {
+          "$ref": "#/$defs/dimension_selection"
+        },
+        "include": {
+          "$ref": "#/$defs/temporal_include"
+        }
+      }
+    },
+    "near_response": {
+      "$ref": "#/$defs/temporal_move_response"
+    },
+    "rewind_request": {
+      "$ref": "#/$defs/temporal_move_request"
+    },
+    "rewind_response": {
+      "$ref": "#/$defs/temporal_move_response"
+    },
+    "forward_request": {
+      "$ref": "#/$defs/temporal_move_request"
+    },
+    "forward_response": {
+      "$ref": "#/$defs/temporal_move_response"
+    },
     "proof": {
       "type": "object",
       "additionalProperties": false,
@@ -350,7 +738,7 @@
         "path": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/link"
+            "$ref": "#/$defs/relation"
           }
         },
         "evidence": {
@@ -376,20 +764,20 @@
         }
       }
     },
-    "remember_request": {
+    "ingest_request": {
       "type": "object",
       "additionalProperties": false,
       "required": [
         "about",
-        "capsule",
+        "memory",
         "idempotency_key"
       ],
       "properties": {
         "about": {
           "$ref": "#/$defs/non_empty_string"
         },
-        "capsule": {
-          "$ref": "#/$defs/capsule"
+        "memory": {
+          "$ref": "#/$defs/memory"
         },
         "provenance": {
           "$ref": "#/$defs/provenance"
@@ -402,7 +790,7 @@
         }
       }
     },
-    "remember_response": {
+    "ingest_response": {
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -419,7 +807,7 @@
           "additionalProperties": false,
           "required": [
             "about",
-            "capsule_id",
+            "memory_id",
             "accepted",
             "read_after_write_ready"
           ],
@@ -427,7 +815,7 @@
             "about": {
               "$ref": "#/$defs/non_empty_string"
             },
-            "capsule_id": {
+            "memory_id": {
               "$ref": "#/$defs/non_empty_string"
             },
             "accepted": {
@@ -461,6 +849,9 @@
         },
         "budget": {
           "$ref": "#/$defs/budget"
+        },
+        "dimensions": {
+          "$ref": "#/$defs/dimension_selection"
         }
       }
     },
@@ -587,6 +978,9 @@
         },
         "budget": {
           "$ref": "#/$defs/budget"
+        },
+        "dimensions": {
+          "$ref": "#/$defs/dimension_selection"
         }
       }
     },
@@ -687,7 +1081,7 @@
         "trace": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/link"
+            "$ref": "#/$defs/relation"
           }
         },
         "warnings": {
@@ -769,13 +1163,13 @@
             "incoming": {
               "type": "array",
               "items": {
-                "$ref": "#/$defs/link"
+                "$ref": "#/$defs/relation"
               }
             },
             "outgoing": {
               "type": "array",
               "items": {
-                "$ref": "#/$defs/link"
+                "$ref": "#/$defs/relation"
               }
             }
           }

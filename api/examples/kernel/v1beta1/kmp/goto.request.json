@@ -1,0 +1,13 @@
+{
+  "about": "question:830ce83f",
+  "at": {
+    "time": "2026-04-12T15:03:00Z"
+  },
+  "dimensions": {
+    "mode": "all"
+  },
+  "include": {
+    "evidence": true,
+    "relations": true
+  }
+}

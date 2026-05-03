@@ -7,8 +7,8 @@ Date: 2026-04-30
 This document defines the next capability the kernel must provide: a public
 memory protocol for agents and humans.
 
-The kernel should let any Underpass project remember what happened and later
-wake up, ask, trace, or inspect that memory by:
+The kernel should let any Underpass project ingest memory and later wake up,
+ask, goto, near, rewind, forward, trace, or inspect that memory by:
 
 - anchor;
 - scope;
@@ -17,6 +17,9 @@ wake up, ask, trace, or inspect that memory by:
 - sequence;
 - relation path;
 - provenance.
+
+Time is a transversal axis. It can move through one dimension, a chosen set of
+dimensions, or all dimensions of a memory.
 
 This must work for conversations, user history, production incidents, agent
 actions, workflow attempts, benchmark records, and future applications.
@@ -43,9 +46,9 @@ Kernel 1.0 already has:
 Kernel 1.0 does not yet have:
 
 - a simple public memory protocol;
-- first-class memory capsule ingestion mapped to `anchor/scope/entry`;
+- first-class memory ingestion mapped to `anchor/dimension/scope/entry`;
 - MCP tools for wake-up, evidence-backed answers, tracing, and inspection;
-- generic temporal traversal across scopes;
+- generic temporal traversal across one, several, or all memory dimensions;
 - a public, honest demo that proves before/after, update, and multi-scope
   retrieval without app-specific code.
 
@@ -65,9 +68,12 @@ caller up, answer with proof, trace why, and show what is missing.
 The kernel should behave like:
 
 ```text
-remember claims, links, evidence, time, and provenance
+ingest memory with dimensions, entries, relations, evidence, time, and provenance
 wake a caller with the state needed to continue
 answer with proof or say unknown
+goto a concrete moment across selected dimensions
+find memory near a concrete moment across selected dimensions
+rewind or forward through time across selected dimensions
 trace the causal/evidential path
 inspect the raw substrate when needed
 ```
@@ -83,7 +89,7 @@ dump a flat bundle of text and force the caller to understand the storage graph
 The honest public promise is:
 
 ```text
-If you record memory with claims, links, evidence, time, and provenance, the
+If you ingest memory with dimensions, entries, relations, evidence, time, and provenance, the
 kernel can later wake up a caller, answer with proof, trace why, and show what
 is missing.
 ```
@@ -118,9 +124,9 @@ Canonical kernel vocabulary:
 
 ```text
 anchor
+dimension
 scope
 entry
-dimension
 sequence
 timestamp
 relation
@@ -131,10 +137,10 @@ provenance
 Application vocabulary is mapped into kernel vocabulary at ingestion time:
 
 ```text
-application "session"       -> kernel scope with dimension="conversation"
+application "session"       -> kernel dimension kind "conversation" and scope
 application "turn"          -> kernel entry with sequence index
-application "attempt"       -> kernel scope with dimension="attempt"
-application "incident step" -> kernel entry with dimension="incident"
+application "attempt"       -> kernel dimension kind "attempt" and scope
+application "incident step" -> kernel entry in dimension kind "incident"
 ```
 
 This keeps the kernel agnostic while still allowing precise traversal.
@@ -143,7 +149,8 @@ This keeps the kernel agnostic while still allowing precise traversal.
 
 The first public slice should be intentionally small:
 
-1. Define the `anchor/scope/entry/relation/detail/provenance` contract.
+1. Define the `anchor/dimension/scope/entry/time/relation/detail/provenance`
+   contract.
 2. Add JSON schemas and examples for conversation, incident, workflow, and
    benchmark-like records.
 3. Add MCP tools that call Kernel 1.0 application services instead of
@@ -158,12 +165,15 @@ The demo should answer questions like:
 Was this statement before or after the earlier one?
 Which later entry superseded the previous fact?
 Which entries across scopes support this answer?
+What did memory know before this timestamp across all dimensions?
+What changed after this entry in only the workflow and incident dimensions?
 ```
 
 And it should return:
 
 - the answer;
 - the scope and entry position;
+- the dimension coverage;
 - the timestamp/order;
 - the path when a semantic path exists;
 - the evidence text;
@@ -193,6 +203,7 @@ The same concepts must round-trip:
 
 ```text
 ingest anchor          -> read anchor
+ingest dimension       -> read dimension
 ingest scope           -> read scope
 ingest entry           -> read entry
 ingest relation        -> read path
@@ -207,18 +218,27 @@ The caller should not learn one model for writing and another model for reading.
 Most callers should only need:
 
 ```text
-kernel_remember
+kernel_ingest
 kernel_wake
 kernel_ask
+kernel_goto
+kernel_near
+kernel_rewind
+kernel_forward
 kernel_trace
 kernel_inspect
 ```
 
 These are not CRUD endpoints. They are memory moves:
 
-- `remember` records claims, links, evidence, and provenance;
+- `ingest` accepts memory with dimensions, entries, relations, evidence, and
+  provenance;
 - `wake` returns the compact state needed to continue;
 - `ask` answers with proof or says unknown;
+- `goto` jumps to memory state at a concrete timestamp, sequence, or ref;
+- `near` returns the temporal neighborhood around a timestamp, sequence, or ref;
+- `rewind` moves backward through one, several, or all dimensions of a memory;
+- `forward` moves forward through one, several, or all dimensions of a memory;
 - `trace` explains the relationship path;
 - `inspect` exposes the raw stored facts.
 
@@ -263,14 +283,21 @@ must not duplicate kernel logic.
 
 ### Temporal Traversal
 
+Time is not a standalone application dimension. It is the axis that lets the
+kernel move through all memory dimensions.
+
 The kernel must answer:
 
 ```text
 what happened before this?
 what happened after this?
+what was the memory state at this exact time?
+what happened near this time?
 what was known at this time?
 which fact is latest before this timestamp?
 which later fact supersedes this earlier fact?
+what changed after this point in only these dimensions?
+what did all dimensions know before this timestamp?
 ```
 
 Supported forms:
@@ -283,6 +310,18 @@ before timestamp
 after timestamp
 latest before timestamp
 latest after timestamp
+goto timestamp
+goto sequence
+goto ref
+near timestamp
+near sequence
+near ref
+rewind one dimension
+rewind selected dimensions
+rewind all dimensions
+forward one dimension
+forward selected dimensions
+forward all dimensions
 ```
 
 ### Dimensional Traversal
@@ -304,7 +343,21 @@ benchmark_record
 ```
 
 If an application calls a grouping a "session", that term stays outside the
-kernel contract and is mapped to a kernel scope plus a dimension.
+kernel contract and is mapped to a kernel dimension plus a scope.
+
+Dimension selection is explicit:
+
+```json
+{ "mode": "all" }
+```
+
+```json
+{ "mode": "only", "include": ["conversation", "entity"] }
+```
+
+```json
+{ "mode": "except", "exclude": ["raw"] }
+```
 
 ### Semantic Traversal
 
@@ -378,12 +431,12 @@ The important behavior is not the final text alone. The kernel must explain
 where the datum lives, whether it is before or after another datum, and which
 scope/dimension/path proves it.
 
-## Memory Capsule Contract
+## Memory Ingest Contract
 
 Primary write move:
 
 ```text
-kernel_remember
+kernel_ingest
 ```
 
 Minimal input:
@@ -391,24 +444,42 @@ Minimal input:
 ```json
 {
   "about": "question:830ce83f",
-  "capsule": {
-    "scope": {
-      "id": "conversation:answer-0b1a0942",
-      "dimension": "conversation",
-      "title": "Rachel relocation discussion"
-    },
-    "claims": [
+  "memory": {
+    "dimensions": [
       {
-        "id": "claim:rachel-chicago",
-        "text": "She moved to Chicago.",
-        "time": "2023-05-24T22:23:00Z",
-        "sequence": 4
+        "id": "conversation:answer-0b1a0942",
+        "kind": "conversation",
+        "title": "Rachel relocation discussion"
+      },
+      {
+        "id": "person:rachel",
+        "kind": "entity"
       }
     ],
-    "links": [],
+    "entries": [
+      {
+        "id": "claim:rachel-chicago",
+        "kind": "claim",
+        "text": "She moved to Chicago.",
+        "coordinates": [
+          {
+            "dimension": "conversation",
+            "scope_id": "conversation:answer-0b1a0942",
+            "sequence": 4,
+            "occurred_at": "2023-05-24T22:23:00Z"
+          },
+          {
+            "dimension": "entity",
+            "scope_id": "person:rachel",
+            "valid_from": "2023-05-24T22:23:00Z"
+          }
+        ]
+      }
+    ],
+    "relations": [],
     "evidence": []
   },
-  "idempotency_key": "remember:830ce83f:1"
+  "idempotency_key": "ingest:830ce83f:1"
 }
 ```
 
@@ -426,33 +497,33 @@ Optional semantic link:
 }
 ```
 
-Remember defaults:
+Ingest defaults:
 
-- preserve raw order inside each scope;
+- preserve raw order inside each dimension and scope;
 - assign sequence when omitted;
 - preserve full text as evidence/detail payload;
-- index `about`, scope id, dimension, time, sequence, relation type, and
-  provenance;
-- accept producer-provided semantic links;
-- allow later enrichment to add links after raw memory is recorded.
+- index `about`, dimension kind/id, scope id, time, sequence, relation type,
+  and provenance;
+- accept producer-provided semantic relations;
+- allow later enrichment to add relations after raw memory is recorded.
 
-### Remember Modes
+### Ingest Modes
 
 Raw mode:
 
-- caller provides scope and claims only;
+- caller provides dimensions and entries only;
 - kernel stores traversable raw context;
 - use for transcripts, logs, histories, and benchmark haystacks.
 
 Semantic mode:
 
-- caller provides links and selected evidence;
+- caller provides relations and selected evidence;
 - kernel stores sparse, answer-oriented graph paths;
 - use when an app or LLM already computed relevant relations.
 
 Hybrid mode:
 
-- caller provides raw claims plus selected semantic links;
+- caller provides raw entries plus selected semantic relations;
 - kernel keeps auditability while normal reads stay proof-oriented and scoped.
 
 ## Wake And Ask Contract
@@ -516,7 +587,9 @@ Optional constraints:
   "about": "question:830ce83f",
   "question": "Was the suburbs statement before or after the Chicago statement?",
   "answer_policy": "evidence_or_unknown",
-  "dimensions": "all",
+  "dimensions": {
+    "mode": "all"
+  },
   "include": {
     "path": true,
     "evidence": true
@@ -558,11 +631,11 @@ Expected output:
 
 Reading defaults:
 
-- `dimensions="all"` unless restricted;
+- `dimensions.mode="all"` unless restricted;
 - proof path first;
 - raw neighboring claims only when useful or requested;
 - bounded output by token budget;
-- current/superseding facts preferred when update links exist;
+- current/superseding facts preferred when update relations exist;
 - ambiguity surfaced explicitly when facts conflict.
 
 ## Public Memory Protocol Surface
@@ -570,22 +643,22 @@ Reading defaults:
 Detailed request and response shapes are specified in
 [`kernel-context-api-design.md`](kernel-context-api-design.md).
 
-### `kernel_remember`
+### `kernel_ingest`
 
-Stores a memory capsule: claims, links, evidence, and provenance.
+Ingests memory: dimensions, entries, relations, evidence, and provenance.
 
 Input:
 
 ```json
 {
   "about": "question:830ce83f",
-  "capsule": {
-    "scope": {},
-    "claims": [],
-    "links": [],
+  "memory": {
+    "dimensions": [],
+    "entries": [],
+    "relations": [],
     "evidence": []
   },
-  "idempotency_key": "remember:830ce83f:1"
+  "idempotency_key": "ingest:830ce83f:1"
 }
 ```
 
@@ -593,10 +666,10 @@ Output:
 
 ```json
 {
-  "summary": "Remembered 2 claims, 1 link, and 1 evidence item for question:830ce83f.",
+  "summary": "Ingested 2 entries, 1 relation, and 1 evidence item for question:830ce83f.",
   "memory": {
     "about": "question:830ce83f",
-    "capsule_id": "capsule:830ce83f:1"
+    "memory_id": "memory:830ce83f:1"
   },
   "warnings": []
 }
@@ -631,6 +704,100 @@ Input:
   "about": "question:830ce83f",
   "question": "Where did Rachel move after her recent relocation?",
   "answer_policy": "evidence_or_unknown"
+}
+```
+
+### `kernel_goto`
+
+Temporal traversal tool. Use this when the caller needs memory state at a
+concrete timestamp, sequence, or ref.
+
+Input:
+
+```json
+{
+  "about": "question:830ce83f",
+  "at": {
+    "time": "2026-04-12T15:03:00Z"
+  },
+  "dimensions": {
+    "mode": "all"
+  }
+}
+```
+
+### `kernel_near`
+
+Temporal traversal tool. Use this when the caller needs the temporal
+neighborhood around a timestamp, sequence, or ref.
+
+Input:
+
+```json
+{
+  "about": "question:830ce83f",
+  "around": {
+    "time": "2026-04-12T15:03:00Z"
+  },
+  "window": {
+    "before_entries": 2,
+    "after_entries": 2
+  },
+  "dimensions": {
+    "mode": "only",
+    "include": ["conversation", "entity"]
+  }
+}
+```
+
+### `kernel_rewind`
+
+Temporal traversal tool. Use this when the caller needs to know what memory knew
+before a cursor, timestamp, or sequence point.
+
+Input:
+
+```json
+{
+  "about": "question:830ce83f",
+  "from": {
+    "ref": "claim:rachel-austin"
+  },
+  "dimensions": {
+    "mode": "only",
+    "include": ["conversation", "entity"]
+  },
+  "limit": {
+    "entries": 5
+  }
+}
+```
+
+`kernel_rewind` can apply to:
+
+- one dimension;
+- a selected set of dimensions;
+- all dimensions in the memory.
+
+### `kernel_forward`
+
+Temporal traversal tool. Use this when the caller needs to know what changed
+after a cursor, timestamp, or sequence point.
+
+Input:
+
+```json
+{
+  "about": "question:830ce83f",
+  "from": {
+    "ref": "claim:rachel-denver"
+  },
+  "dimensions": {
+    "mode": "all"
+  },
+  "limit": {
+    "entries": 5
+  }
 }
 ```
 
@@ -674,7 +841,8 @@ Advanced tools or migration aliases may exist, but should not be the normal
 caller path:
 
 ```text
-kernel_ingest_context     -> alias for kernel_remember
+kernel_remember           -> alias for kernel_ingest
+kernel_ingest_context     -> alias for kernel_ingest
 kernel_explore_context    -> alias for kernel_ask
 kernel_get_context        -> alias for kernel_wake or advanced bundle read
 kernel_inspect_context    -> alias for kernel_inspect
@@ -699,7 +867,7 @@ dimension
 dimension_id
 entry_index
 sequence
-timestamp / observed_at / occurred_at
+timestamp / observed_at / occurred_at / valid_from / valid_until
 relation_type
 semantic_class
 source_agent
@@ -813,8 +981,9 @@ Exit criteria:
 Deliver:
 
 - RFC/ADR for the traversal contract;
-- schemas for `kernel_remember`, `kernel_wake`, `kernel_ask`, `kernel_trace`,
-  and `kernel_inspect` under
+- schemas for `kernel_ingest`, `kernel_wake`, `kernel_ask`, `kernel_goto`,
+  `kernel_near`, `kernel_rewind`, `kernel_forward`, `kernel_trace`, and
+  `kernel_inspect` under
   [`api/examples/kernel/v1beta1/kmp`](../../api/examples/kernel/v1beta1/kmp);
 - examples for conversation, incident, workflow, and benchmark records;
 - migration note for legacy API names that still say "session"; new kernel
@@ -828,6 +997,7 @@ Deliver application services for:
 - context by dimension;
 - context window by time;
 - context window by sequence;
+- temporal goto/near/rewind/forward over one, selected, or all dimensions;
 - context path by relation type;
 - scoped raw inspection.
 
@@ -841,9 +1011,13 @@ Also deliver:
 
 Expose:
 
-- `kernel_remember`;
+- `kernel_ingest`;
 - `kernel_wake`;
 - `kernel_ask`;
+- `kernel_goto`;
+- `kernel_near`;
+- `kernel_rewind`;
+- `kernel_forward`;
 - `kernel_trace`;
 - `kernel_inspect`;
 - advanced/debug tools only where needed.
@@ -862,6 +1036,8 @@ MVP cut:
 - initial fixture-backed stdio adapter in
   [`crates/rehydration-mcp`](../../crates/rehydration-mcp);
 - live gRPC read mode via `REHYDRATION_KERNEL_GRPC_ENDPOINT`;
+- CI smoke that proves MCP tools read from a real containerized Kernel gRPC
+  server, not only from fixtures;
 - auth/TLS/Kubernetes after local behavior is proven;
 - read/explore tools can ship before full write-side ingestion if they wrap
   existing gRPC/query services cleanly.
@@ -883,6 +1059,7 @@ Evaluate against:
 - conversation multi-scope aggregation;
 - knowledge update / supersession;
 - temporal ordering;
+- temporal goto/near/rewind/forward across one, selected, and all dimensions;
 - production incident reconstruction;
 - agent attempt/retry reconstruction;
 - LongMemEval balanced subsets.
@@ -894,6 +1071,7 @@ single-scope recall remains high
 multi-scope aggregation improves materially
 knowledge-update chooses newest/superseding facts
 incident reconstruction can traverse before/after deployment/action/attempt
+goto/near/rewind/forward can scope to one dimension, selected dimensions, or all dimensions
 MCP clients can retrieve the same context as gRPC clients
 basic traversal remains CPU/I/O, not GPU-bound
 ```
@@ -955,8 +1133,8 @@ The kernel should not hard-code:
 - incident business rules;
 - app-specific schemas as mandatory global schema.
 
-Applications map their domain into kernel memory capsules. The kernel provides
-remember, wake, ask, trace, inspect, and provenance.
+Applications map their domain into kernel memory. The kernel provides ingest,
+wake, ask, goto, near, rewind, forward, trace, inspect, and provenance.
 
 ## Decision
 

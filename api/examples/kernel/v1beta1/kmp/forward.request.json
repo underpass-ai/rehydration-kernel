@@ -1,0 +1,12 @@
+{
+  "about": "question:830ce83f",
+  "from": {
+    "ref": "claim:rachel-denver"
+  },
+  "dimensions": {
+    "mode": "all"
+  },
+  "limit": {
+    "entries": 5
+  }
+}
