@@ -213,7 +213,63 @@ ingest timestamp/order -> read before/after position
 
 The caller should not learn one model for writing and another model for reading.
 
-### 3. Simple Public Memory Moves
+### 3. Dimensions Are Graph Paths
+
+A dimension is not just a property on an entry. A dimension is a first-class
+path through the graph.
+
+The entry:
+
+```text
+claim:rachel-chicago
+```
+
+can be placed on several memory paths at the same time:
+
+```text
+conversation:answer-0b1a0942 -> claim:rachel-chicago
+person:rachel                -> claim:rachel-chicago
+question:830ce83f            -> claim:rachel-chicago
+```
+
+Each path can carry its own traversal coordinates. `sequence` in a
+conversation, `valid_from` for an entity, and ranking inside a benchmark record
+are not global properties of the claim. They are properties of the position of
+that claim within a specific dimension/scope path.
+
+Graph shape:
+
+```text
+anchor
+  -[:HAS_DIMENSION]-> dimension/scope
+  -[:RECORDS]-> entry
+
+dimension/scope
+  -[:CONTAINS_ENTRY {
+      dimension,
+      scope_id,
+      sequence,
+      occurred_at,
+      valid_from,
+      valid_until
+    }]-> entry
+```
+
+Node properties can duplicate selected coordinates for indexing, but they are
+not the source of truth for traversal. The relation from dimension/scope to
+entry is where the entry's position in that memory path lives.
+
+This design lets the kernel traverse:
+
+```text
+rewind one conversation
+forward one entity history
+near a timestamp across selected dimensions
+goto the state of all dimensions at a moment
+trace why two entries are connected
+```
+
+### 4. Simple Public Memory Moves
 
 Most callers should only need:
 
@@ -245,7 +301,7 @@ These are not CRUD endpoints. They are memory moves:
 Lower-level tools can exist for advanced/debug use, but the common path must
 feel like memory, not storage plumbing.
 
-### 4. CPU/I/O By Default
+### 5. CPU/I/O By Default
 
 Graph traversal is not a GPU workload.
 
@@ -263,7 +319,7 @@ GPU is only needed when the flow explicitly asks for model inference:
 Basic context exploration should be cheap and scalable without GPU when the
 graph has the required structure and indexes.
 
-### 5. MCP Is A First-Class Protocol
+### 6. MCP Is A First-Class Protocol
 
 Existing event and gRPC paths remain valid.
 
