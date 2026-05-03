@@ -11,7 +11,7 @@ read-only KMP tools:
 - `kernel_trace`
 - `kernel_inspect`
 
-`kernel_remember` is deliberately not implemented yet.
+The future write tool `kernel_ingest` is deliberately not implemented yet.
 
 ## Modes
 

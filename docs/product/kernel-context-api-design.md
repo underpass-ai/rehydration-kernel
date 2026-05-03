@@ -11,9 +11,13 @@ around existing transport conventions.
 The kernel should define its own protocol for agent memory:
 
 ```text
-remember what happened
+ingest memory with dimensions, entries, relations, evidence, time, and provenance
 wake up with the right state
 ask memory for an evidence-backed answer
+goto a timestamp, sequence, or memory ref across one or more dimensions
+find memory near a timestamp, sequence, or memory ref
+rewind memory across one, several, or all dimensions
+forward memory across one, several, or all dimensions
 trace why the answer is true
 inspect the raw substrate when needed
 ```
@@ -59,13 +63,17 @@ MCP wrapper".
 
 ## Memory Moves
 
-KMP exposes five memory moves.
+KMP exposes nine memory moves.
 
 | Move | MCP tool | gRPC method | NATS subject | Purpose |
 |:-----|:---------|:------------|:-------------|:--------|
-| `remember` | `kernel_remember` | `Remember` | `kernel.memory.remember` | Store new memory capsules with claims, links, evidence, and provenance. |
+| `ingest` | `kernel_ingest` | `Ingest` | `kernel.memory.ingest` | Submit memory with dimensions, entries, relations, evidence, and provenance. |
 | `wake` | `kernel_wake` | `Wake` | Optional notification only | Return the compact state needed to continue work. |
 | `ask` | `kernel_ask` | `Ask` | Not recommended for async MVP | Answer a question from memory, or say what is missing. |
+| `goto` | `kernel_goto` | `Goto` | Not recommended for async MVP | Jump to memory state at a timestamp, sequence, or memory ref over selected dimensions. |
+| `near` | `kernel_near` | `Near` | Not recommended for async MVP | Return the temporal neighborhood around a timestamp, sequence, or memory ref. |
+| `rewind` | `kernel_rewind` | `Rewind` | Not recommended for async MVP | Move backward in time over one, several, or all dimensions of a memory. |
+| `forward` | `kernel_forward` | `Forward` | Not recommended for async MVP | Move forward in time over one, several, or all dimensions of a memory. |
 | `trace` | `kernel_trace` | `Trace` | Not recommended for async MVP | Return the relationship path and evidence trail behind an answer. |
 | `inspect` | `kernel_inspect` | `Inspect` | Not recommended for async MVP | Show raw graph/detail state for audits and debugging. |
 
@@ -73,20 +81,26 @@ The old descriptive names remain valid as aliases during migration:
 
 | Alias | Canonical move |
 |:------|:---------------|
-| `kernel_ingest_context` | `kernel_remember` |
+| `kernel_remember` | `kernel_ingest` |
+| `kernel_ingest_context` | `kernel_ingest` |
 | `kernel_explore_context` | `kernel_ask` |
 | `kernel_get_context` | `kernel_wake` or advanced bundle read |
 | `kernel_inspect_context` | `kernel_inspect` |
 
 ## Why These Moves
 
-`remember` is not "insert rows". It records experience.
+`ingest` is not "insert rows". It accepts validated memory and makes it
+traversable.
 
 `wake` is not "get context". It returns the minimal state needed to resume
 agency.
 
 `ask` is not search. It requires an answer policy: evidence-backed answer,
 conflict, or unknown.
+
+`goto`, `near`, `rewind`, and `forward` are not time filters. They move through
+memory over a dimension selection: one dimension, a set of dimensions, or every
+dimension of the memory.
 
 `trace` is not graph traversal for its own sake. It explains why memory reached
 a conclusion.
@@ -95,51 +109,137 @@ a conclusion.
 
 ## Public Mental Model
 
-The public model is a memory capsule.
+The public write model is `memory`.
 
-A memory capsule is the smallest useful packet a human or LLM can write:
+Memory is the smallest useful packet a human or LLM can ingest:
 
 ```text
 about      -> what this memory is anchored to
-scope      -> bounded region where it happened
-claims     -> statements worth remembering
-links      -> typed relationships between claims or objects
+dimensions -> application-neutral planes where entries can live
+entries    -> claims, observations, actions, tool calls, logs, or states
+relations  -> typed relationships between entries or objects
 evidence   -> text, event ids, tool outputs, logs, or observations
 provenance -> who produced it and when
 ```
 
-`anchor`, `scope`, `entry`, `relation`, and `detail` remain kernel coordinates.
-They are important for storage and traversal, but the public API should let a
-caller think in capsules.
+`anchor`, `dimension`, `scope`, `entry`, `time`, `relation`, and `detail`
+remain kernel coordinates. They are important for storage and traversal, but
+the public API should let a caller think in memory.
 
-## Memory Capsule Shape
+## Dimensions And Time
+
+Dimensions say where memory lives. Time says how memory changes across those
+dimensions.
+
+Time is not just another dimension. It is a transversal axis over all dimensions
+of a memory. The same entry may have different temporal coordinates in different
+dimensions:
+
+```text
+conversation sequence
+entity valid_from / valid_until
+workflow step order
+incident occurred_at
+kernel ingested_at
+producer observed_at
+```
+
+KMP must therefore support temporal traversal at three levels:
+
+```text
+one dimension
+a selected set of dimensions
+all dimensions of a memory
+```
+
+Temporal movement has three forms:
+
+```text
+goto   -> state at cursor
+near   -> neighborhood around cursor
+rewind -> state before cursor
+forward -> state after cursor
+```
+
+Supported temporal coordinates:
+
+| Coordinate | Meaning |
+|:-----------|:--------|
+| `occurred_at` | When the source event happened. |
+| `observed_at` | When the producer observed it. |
+| `ingested_at` | When the kernel accepted it. |
+| `valid_from` | When the entry became true or current. |
+| `valid_until` | When the entry stopped being true or current. |
+| `sequence` | Order within one scope or dimension. |
+
+## Memory Shape
 
 Canonical JSON:
 
 ```json
 {
   "about": "question:830ce83f",
-  "capsule": {
-    "scope": {
-      "id": "conversation:rachel-2026-04-12",
-      "dimension": "conversation",
-      "title": "Rachel relocation discussion"
-    },
-    "claims": [
+  "memory": {
+    "dimensions": [
+      {
+        "id": "conversation:rachel-2026-04-12",
+        "kind": "conversation",
+        "title": "Rachel relocation discussion"
+      },
+      {
+        "id": "person:rachel",
+        "kind": "entity",
+        "title": "Rachel"
+      },
+      {
+        "id": "longmemeval:item:830ce83f",
+        "kind": "benchmark_record"
+      }
+    ],
+    "entries": [
       {
         "id": "claim:rachel-denver",
+        "kind": "claim",
         "text": "Rachel said she was moving to Denver.",
-        "time": "2026-04-12T15:00:00Z",
-        "sequence": 1
+        "coordinates": [
+          {
+            "dimension": "conversation",
+            "scope_id": "conversation:rachel-2026-04-12",
+            "sequence": 1,
+            "occurred_at": "2026-04-12T15:00:00Z"
+          },
+          {
+            "dimension": "entity",
+            "scope_id": "person:rachel",
+            "valid_from": "2026-04-12T15:00:00Z"
+          }
+        ]
       },
       {
         "id": "claim:rachel-austin",
+        "kind": "claim",
         "text": "Rachel later corrected the destination to Austin.",
-        "time": "2026-04-12T15:05:00Z",
-        "sequence": 2
+        "coordinates": [
+          {
+            "dimension": "conversation",
+            "scope_id": "conversation:rachel-2026-04-12",
+            "sequence": 2,
+            "occurred_at": "2026-04-12T15:05:00Z"
+          },
+          {
+            "dimension": "entity",
+            "scope_id": "person:rachel",
+            "valid_from": "2026-04-12T15:05:00Z"
+          },
+          {
+            "dimension": "benchmark_record",
+            "scope_id": "longmemeval:item:830ce83f",
+            "sequence": 7
+          }
+        ]
       }
     ],
-    "links": [
+    "relations": [
       {
         "from": "claim:rachel-austin",
         "to": "claim:rachel-denver",
@@ -166,7 +266,7 @@ Canonical JSON:
     "correlation_id": "corr:830ce83f",
     "causation_id": "eval:item:830ce83f"
   },
-  "idempotency_key": "remember:830ce83f:1"
+  "idempotency_key": "ingest:830ce83f:1"
 }
 ```
 
@@ -218,12 +318,12 @@ verified_by
 
 This is not an ontology. It is a working language for memory.
 
-## Move: `remember`
+## Move: `ingest`
 
 Purpose:
 
 ```text
-Store a memory capsule.
+Submit memory for validation and traversal.
 ```
 
 MCP request:
@@ -231,20 +331,38 @@ MCP request:
 ```json
 {
   "about": "incident:checkout-latency-2026-04-30",
-  "capsule": {
-    "scope": {
-      "id": "incident:checkout-latency-2026-04-30:triage",
-      "dimension": "incident"
-    },
-    "claims": [
+  "memory": {
+    "dimensions": [
       {
-        "id": "claim:redis-timeouts-rise",
-        "text": "Redis timeout rate increased after the checkout rollout.",
-        "time": "2026-04-30T09:15:00Z",
-        "sequence": 1
+        "id": "incident:checkout-latency-2026-04-30:triage",
+        "kind": "incident"
+      },
+      {
+        "id": "deployment:checkout-rollout",
+        "kind": "deployment"
       }
     ],
-    "links": [
+    "entries": [
+      {
+        "id": "claim:redis-timeouts-rise",
+        "kind": "claim",
+        "text": "Redis timeout rate increased after the checkout rollout.",
+        "coordinates": [
+          {
+            "dimension": "incident",
+            "scope_id": "incident:checkout-latency-2026-04-30:triage",
+            "sequence": 1,
+            "occurred_at": "2026-04-30T09:15:00Z"
+          },
+          {
+            "dimension": "deployment",
+            "scope_id": "deployment:checkout-rollout",
+            "occurred_at": "2026-04-30T09:15:00Z"
+          }
+        ]
+      }
+    ],
+    "relations": [
       {
         "from": "claim:redis-timeouts-rise",
         "to": "incident:checkout-latency-2026-04-30",
@@ -264,7 +382,7 @@ MCP request:
       }
     ]
   },
-  "idempotency_key": "remember:checkout-latency:triage:1"
+  "idempotency_key": "ingest:checkout-latency:triage:1"
 }
 ```
 
@@ -272,13 +390,13 @@ MCP response:
 
 ```json
 {
-  "summary": "Remembered 1 claim, 1 link, and 1 evidence item for incident:checkout-latency-2026-04-30.",
+  "summary": "Ingested 1 entry, 1 relation, and 1 evidence item for incident:checkout-latency-2026-04-30.",
   "memory": {
     "about": "incident:checkout-latency-2026-04-30",
-    "capsule_id": "capsule:checkout-latency:triage:1",
+    "memory_id": "memory:checkout-latency:triage:1",
     "accepted": {
-      "claims": 1,
-      "links": 1,
+      "entries": 1,
+      "relations": 1,
       "evidence": 1
     },
     "read_after_write_ready": false
@@ -291,9 +409,9 @@ Rules:
 
 - `idempotency_key` is required for non-dry-run requests.
 - Acceptance is not read-model completion.
-- The same capsule replay with the same idempotency key returns the same
+- The same memory replay with the same idempotency key returns the same
   acceptance.
-- The same idempotency key with a different capsule is rejected.
+- The same idempotency key with different memory is rejected.
 - `dry_run=true` validates and returns the translated projection summary.
 
 ## Move: `wake`
@@ -451,6 +569,358 @@ Answer policy values:
 
 Default policy should be `evidence_or_unknown`.
 
+## Move: `goto`
+
+Purpose:
+
+```text
+Jump to the memory state at one concrete moment, across one, several, or all
+dimensions.
+```
+
+MCP request:
+
+```json
+{
+  "about": "question:830ce83f",
+  "at": {
+    "time": "2026-04-12T15:03:00Z"
+  },
+  "dimensions": {
+    "mode": "all"
+  },
+  "include": {
+    "evidence": true,
+    "relations": true
+  }
+}
+```
+
+MCP response:
+
+```json
+{
+  "summary": "At 2026-04-12T15:03:00Z, memory still supported Denver as Rachel's destination.",
+  "temporal": {
+    "direction": "goto",
+    "at": {
+      "time": "2026-04-12T15:03:00Z"
+    }
+  },
+  "coverage": {
+    "requested": {
+      "mode": "all"
+    },
+    "included": ["conversation", "entity", "benchmark_record"],
+    "missing": []
+  },
+  "entries": [
+    {
+      "ref": "claim:rachel-denver",
+      "text": "Rachel said she was moving to Denver.",
+      "coordinates": [
+        {
+          "dimension": "conversation",
+          "scope_id": "conversation:rachel-2026-04-12",
+          "sequence": 1,
+          "occurred_at": "2026-04-12T15:00:00Z"
+        },
+        {
+          "dimension": "entity",
+          "scope_id": "person:rachel",
+          "valid_from": "2026-04-12T15:00:00Z"
+        }
+      ]
+    }
+  ],
+  "proof": {
+    "path": [],
+    "evidence": [],
+    "conflicts": [],
+    "missing": [],
+    "confidence": "high"
+  },
+  "warnings": []
+}
+```
+
+## Move: `near`
+
+Purpose:
+
+```text
+Return the temporal neighborhood around one concrete moment, sequence, or ref,
+across one, several, or all dimensions.
+```
+
+Use `goto` when the caller needs the state at a point. Use `near` when the
+caller needs what happened around that point.
+
+MCP request:
+
+```json
+{
+  "about": "question:830ce83f",
+  "around": {
+    "time": "2026-04-12T15:03:00Z"
+  },
+  "window": {
+    "before_entries": 2,
+    "after_entries": 2
+  },
+  "dimensions": {
+    "mode": "only",
+    "include": ["conversation", "entity"]
+  },
+  "include": {
+    "evidence": true,
+    "relations": true
+  }
+}
+```
+
+MCP response:
+
+```json
+{
+  "summary": "Near 2026-04-12T15:03:00Z, Denver appeared before the cursor and Austin appeared after it.",
+  "temporal": {
+    "direction": "near",
+    "around": {
+      "time": "2026-04-12T15:03:00Z"
+    },
+    "window": {
+      "before_entries": 2,
+      "after_entries": 2
+    }
+  },
+  "coverage": {
+    "requested": {
+      "mode": "only",
+      "include": ["conversation", "entity"]
+    },
+    "included": ["conversation", "entity"],
+    "missing": []
+  },
+  "entries": [
+    {
+      "ref": "claim:rachel-denver",
+      "text": "Rachel said she was moving to Denver.",
+      "position": "before",
+      "coordinates": [
+        {
+          "dimension": "conversation",
+          "scope_id": "conversation:rachel-2026-04-12",
+          "sequence": 1,
+          "occurred_at": "2026-04-12T15:00:00Z"
+        }
+      ]
+    },
+    {
+      "ref": "claim:rachel-austin",
+      "text": "Rachel later corrected the destination to Austin.",
+      "position": "after",
+      "coordinates": [
+        {
+          "dimension": "conversation",
+          "scope_id": "conversation:rachel-2026-04-12",
+          "sequence": 2,
+          "occurred_at": "2026-04-12T15:05:00Z"
+        }
+      ]
+    }
+  ],
+  "proof": {
+    "path": [
+      {
+        "from": "claim:rachel-austin",
+        "to": "claim:rachel-denver",
+        "rel": "supersedes",
+        "class": "evidential",
+        "confidence": "high"
+      }
+    ],
+    "evidence": [],
+    "conflicts": [],
+    "missing": [],
+    "confidence": "high"
+  },
+  "warnings": []
+}
+```
+
+## Move: `rewind`
+
+Purpose:
+
+```text
+Move backward through memory before a cursor, across one, several, or all
+dimensions.
+```
+
+MCP request:
+
+```json
+{
+  "about": "question:830ce83f",
+  "from": {
+    "ref": "claim:rachel-austin"
+  },
+  "dimensions": {
+    "mode": "only",
+    "include": ["conversation", "entity"]
+  },
+  "limit": {
+    "entries": 5
+  },
+  "include": {
+    "evidence": true,
+    "relations": true
+  }
+}
+```
+
+MCP response:
+
+```json
+{
+  "summary": "Before claim:rachel-austin, the active supported location was Denver across conversation and entity dimensions.",
+  "temporal": {
+    "direction": "rewind",
+    "from": {
+      "ref": "claim:rachel-austin",
+      "time": "2026-04-12T15:05:00Z"
+    }
+  },
+  "coverage": {
+    "requested": {
+      "mode": "only",
+      "include": ["conversation", "entity"]
+    },
+    "included": ["conversation", "entity"],
+    "missing": []
+  },
+  "entries": [
+    {
+      "ref": "claim:rachel-denver",
+      "text": "Rachel said she was moving to Denver.",
+      "coordinates": [
+        {
+          "dimension": "conversation",
+          "scope_id": "conversation:rachel-2026-04-12",
+          "sequence": 1,
+          "occurred_at": "2026-04-12T15:00:00Z"
+        },
+        {
+          "dimension": "entity",
+          "scope_id": "person:rachel",
+          "valid_from": "2026-04-12T15:00:00Z"
+        }
+      ]
+    }
+  ],
+  "proof": {
+    "path": [],
+    "evidence": [],
+    "conflicts": [],
+    "missing": [],
+    "confidence": "high"
+  },
+  "warnings": []
+}
+```
+
+## Move: `forward`
+
+Purpose:
+
+```text
+Move forward through memory after a cursor, across one, several, or all
+dimensions.
+```
+
+MCP request:
+
+```json
+{
+  "about": "question:830ce83f",
+  "from": {
+    "ref": "claim:rachel-denver"
+  },
+  "dimensions": {
+    "mode": "all"
+  },
+  "limit": {
+    "entries": 5
+  }
+}
+```
+
+MCP response:
+
+```json
+{
+  "summary": "After claim:rachel-denver, claim:rachel-austin superseded it.",
+  "temporal": {
+    "direction": "forward",
+    "from": {
+      "ref": "claim:rachel-denver",
+      "time": "2026-04-12T15:00:00Z"
+    }
+  },
+  "coverage": {
+    "requested": {
+      "mode": "all"
+    },
+    "included": ["conversation", "entity", "benchmark_record"],
+    "missing": []
+  },
+  "entries": [
+    {
+      "ref": "claim:rachel-austin",
+      "text": "Rachel later corrected the destination to Austin.",
+      "coordinates": [
+        {
+          "dimension": "conversation",
+          "scope_id": "conversation:rachel-2026-04-12",
+          "sequence": 2,
+          "occurred_at": "2026-04-12T15:05:00Z"
+        },
+        {
+          "dimension": "entity",
+          "scope_id": "person:rachel",
+          "valid_from": "2026-04-12T15:05:00Z"
+        }
+      ]
+    }
+  ],
+  "proof": {
+    "path": [
+      {
+        "from": "claim:rachel-austin",
+        "to": "claim:rachel-denver",
+        "rel": "supersedes",
+        "class": "evidential",
+        "confidence": "high"
+      }
+    ],
+    "evidence": [],
+    "conflicts": [],
+    "missing": [],
+    "confidence": "high"
+  },
+  "warnings": []
+}
+```
+
+Dimension selection values:
+
+| Mode | Meaning |
+|:-----|:--------|
+| `all` | Traverse every dimension attached to the memory. |
+| `only` | Traverse only the listed dimensions. |
+| `except` | Traverse every dimension except the listed dimensions. |
+
 ## Move: `trace`
 
 Purpose:
@@ -555,9 +1025,13 @@ MCP is the first-class interactive binding.
 Required tools:
 
 ```text
-kernel_remember
+kernel_ingest
 kernel_wake
 kernel_ask
+kernel_goto
+kernel_near
+kernel_rewind
+kernel_forward
 kernel_trace
 kernel_inspect
 ```
@@ -581,9 +1055,13 @@ Recommended service:
 
 ```proto
 service KernelMemoryService {
-  rpc Remember(RememberRequest) returns (RememberResponse);
+  rpc Ingest(IngestRequest) returns (IngestResponse);
   rpc Wake(WakeRequest) returns (WakeResponse);
   rpc Ask(AskRequest) returns (AskResponse);
+  rpc Goto(TemporalMoveRequest) returns (TemporalMoveResponse);
+  rpc Near(TemporalNearRequest) returns (TemporalMoveResponse);
+  rpc Rewind(TemporalMoveRequest) returns (TemporalMoveResponse);
+  rpc Forward(TemporalMoveRequest) returns (TemporalMoveResponse);
   rpc Trace(TraceRequest) returns (TraceResponse);
   rpc Inspect(InspectRequest) returns (InspectResponse);
 }
@@ -602,7 +1080,7 @@ Existing RPCs remain valid:
 | `GetContextPath` | Low-level path read used by `trace`. |
 | `GetNodeDetail` | Low-level detail read used by `inspect`. |
 | `RehydrateSession` | Compatibility rehydration call; public product vocabulary should use `wake` and `scope`. |
-| `UpdateContext` | Generic command/event-store path; not the preferred memory capsule path. |
+| `UpdateContext` | Generic command/event-store path; not the preferred memory ingest path. |
 
 The proto should keep the transport typed, but not force the product back into
 CRUD names.
@@ -615,31 +1093,31 @@ Recommended subjects:
 
 | Subject | Direction | Purpose |
 |:--------|:----------|:--------|
-| `kernel.memory.remember` | kernel subscribes | Submit a memory capsule asynchronously. |
-| `kernel.memory.remembered` | kernel publishes | Capsule accepted after validation and idempotency. |
-| `kernel.memory.rejected` | kernel publishes | Capsule rejected with typed reasons. |
+| `kernel.memory.ingest` | kernel subscribes | Submit memory asynchronously. |
+| `kernel.memory.ingested` | kernel publishes | Memory accepted after validation and idempotency. |
+| `kernel.memory.rejected` | kernel publishes | Memory rejected with typed reasons. |
 | `kernel.memory.wake.generated` | kernel publishes | Optional notification that a wake packet was generated. |
 | `graph.node.materialized` | kernel subscribes | Existing low-level projection input. |
 | `graph.relation.materialized` | kernel subscribes | Existing relation-only projection input. |
 | `node.detail.materialized` | kernel subscribes | Existing detail projection input. |
 
-`kernel.memory.remember` is the simple async path. Existing `graph.*` and
+`kernel.memory.ingest` is the simple async path. Existing `graph.*` and
 `node.detail.*` subjects remain the lower-level projection contract.
 
 NATS envelope:
 
 ```json
 {
-  "event_id": "evt:memory:remember:830ce83f:1",
+  "event_id": "evt:memory:ingest:830ce83f:1",
   "correlation_id": "corr:830ce83f",
   "causation_id": "eval:item:830ce83f",
   "occurred_at": "2026-04-30T10:20:03Z",
   "schema_version": "kmp.v0",
-  "idempotency_key": "remember:830ce83f:1",
-  "move": "remember",
+  "idempotency_key": "ingest:830ce83f:1",
+  "move": "ingest",
   "data": {
     "about": "question:830ce83f",
-    "capsule": {},
+    "memory": {},
     "provenance": {}
   }
 }
@@ -649,18 +1127,18 @@ NATS acceptance:
 
 ```json
 {
-  "event_id": "evt:memory:remembered:830ce83f:1",
+  "event_id": "evt:memory:ingested:830ce83f:1",
   "correlation_id": "corr:830ce83f",
-  "causation_id": "evt:memory:remember:830ce83f:1",
+  "causation_id": "evt:memory:ingest:830ce83f:1",
   "occurred_at": "2026-04-30T10:20:04Z",
   "schema_version": "kmp.v0",
-  "move": "remembered",
+  "move": "ingested",
   "data": {
     "about": "question:830ce83f",
-    "capsule_id": "capsule:830ce83f:1",
+    "memory_id": "memory:830ce83f:1",
     "accepted": {
-      "claims": 2,
-      "links": 1,
+      "entries": 2,
+      "relations": 1,
       "evidence": 1
     },
     "read_after_write_ready": false,
@@ -671,7 +1149,7 @@ NATS acceptance:
 
 Rules:
 
-- `remembered` means accepted, not immediately readable.
+- `ingested` means accepted, not immediately readable.
 - Producers must send `idempotency_key`.
 - Rejections include `code`, `message`, `field`, `ref`, and `retryable`.
 - Async `ask` and `trace` are not part of the MVP. They can be added later if
@@ -693,15 +1171,16 @@ detail
 provenance
 ```
 
-KMP maps capsules onto those coordinates:
+KMP maps memory onto those coordinates:
 
-| Capsule field | Kernel coordinate |
+| Memory field | Kernel coordinate |
 |:--------------|:------------------|
 | `about` | `anchor_id` / root node id |
-| `scope.id` | `scope_id` |
-| `scope.dimension` | `dimension` |
-| `claims[]` | entries and/or graph nodes |
-| `links[]` | graph relationships |
+| `memory.dimensions[].id` | `dimension_id` / `scope_id` |
+| `memory.dimensions[].kind` | `dimension` |
+| `memory.entries[]` | entries and/or graph nodes |
+| `memory.entries[].coordinates[]` | scope, dimension, sequence, and time coordinates |
+| `memory.relations[]` | graph relationships |
 | `evidence[]` | node details and evidence records |
 | `provenance` | provenance on nodes, relations, details, and events |
 
@@ -745,16 +1224,17 @@ Required behavior:
 
 - require `idempotency_key`;
 - validate references before accepting;
-- reject duplicate links inside one capsule;
+- reject duplicate relations inside one memory ingest;
 - reject unresolved link refs unless pending refs are explicitly enabled;
+- reject entry coordinates that reference dimensions absent from the memory;
 - preserve provenance;
 - acknowledge acceptance separately from read-model completion;
 - expose dry-run validation.
 
 Dry-run behavior:
 
-- validates the capsule;
-- returns projected claims/links/evidence counts;
+- validates the memory;
+- returns projected entry/relation/evidence counts;
 - does not publish events;
 - does not update the read model.
 
@@ -810,6 +1290,7 @@ The differentiated product is:
 
 - memory moves instead of CRUD endpoints;
 - wake packets instead of context dumps;
+- temporal goto/near/rewind/forward across selected memory dimensions;
 - proof as a first-class response field;
 - unknown/conflict as honest first-class outcomes;
 - LLM-produced relations stored as inspectable facts;
@@ -822,8 +1303,10 @@ The differentiated product is:
 Recommended order:
 
 1. Rename the public API direction to Kernel Memory Protocol in product docs.
-2. Add JSON schemas for `kernel_remember`, `kernel_wake`, `kernel_ask`,
-   `kernel_trace`, and `kernel_inspect`. Draft fixtures live under
+2. Add JSON schemas for `kernel_ingest`, `kernel_wake`, `kernel_ask`,
+   `kernel_goto`, `kernel_near`, `kernel_rewind`, `kernel_forward`,
+   `kernel_trace`, and `kernel_inspect`.
+   Draft fixtures live under
    [`api/examples/kernel/v1beta1/kmp`](../../api/examples/kernel/v1beta1/kmp).
 3. Add examples for conversation memory, incident memory, workflow memory, and
    benchmark memory.
@@ -834,9 +1317,9 @@ Recommended order:
    `REHYDRATION_KERNEL_GRPC_ENDPOINT`.
 5. Map read moves onto existing `GetContext`, `GetContextPath`, and
    `GetNodeDetail`.
-6. Add capsule-to-projection translation for `remember`.
+6. Add memory-to-projection translation for `ingest`.
 7. Add typed gRPC `KernelMemoryService`.
-8. Add NATS `kernel.memory.remember/remembered/rejected`.
+8. Add NATS `kernel.memory.ingest/ingested/rejected`.
 9. Re-run the benchmark and publish what improves and what still fails.
 
 This order avoids over-promising write-side memory before the wake/ask/trace
@@ -847,9 +1330,11 @@ experience is real.
 The design is ready to implement when:
 
 - an LLM can choose the right memory move from tool descriptions;
-- a human can write a valid memory capsule by hand;
+- a human can write valid memory by hand;
 - `wake` returns a usable continuation state, not just graph data;
 - `ask` returns proof or unknown;
+- `goto`, `near`, `rewind`, and `forward` traverse one, several, or all
+  dimensions by time;
 - `trace` shows the relation path behind an answer;
 - `inspect` can audit the raw stored facts;
 - the same memory move can be carried through MCP, gRPC, or NATS;
@@ -872,7 +1357,7 @@ KMP is not:
 The public promise is:
 
 ```text
-If memory is recorded as claims, links, evidence, time, and provenance, the
-kernel can wake a caller up, answer with proof, trace why, and show what is
-missing.
+If memory is ingested as dimensions, entries, relations, evidence, time, and
+provenance, the kernel can wake a caller up, answer with proof, move through
+time, trace why, and show what is missing.
 ```

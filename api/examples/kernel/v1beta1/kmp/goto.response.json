@@ -1,0 +1,47 @@
+{
+  "summary": "At 2026-04-12T15:03:00Z, memory still supported Denver as Rachel's destination.",
+  "temporal": {
+    "direction": "goto",
+    "at": {
+      "time": "2026-04-12T15:03:00Z"
+    }
+  },
+  "coverage": {
+    "requested": {
+      "mode": "all"
+    },
+    "included": [
+      "conversation",
+      "entity",
+      "benchmark_record"
+    ],
+    "missing": []
+  },
+  "entries": [
+    {
+      "ref": "claim:rachel-denver",
+      "text": "Rachel said she was moving to Denver.",
+      "coordinates": [
+        {
+          "dimension": "conversation",
+          "scope_id": "conversation:rachel-2026-04-12",
+          "sequence": 1,
+          "occurred_at": "2026-04-12T15:00:00Z"
+        },
+        {
+          "dimension": "entity",
+          "scope_id": "person:rachel",
+          "valid_from": "2026-04-12T15:00:00Z"
+        }
+      ]
+    }
+  ],
+  "proof": {
+    "path": [],
+    "evidence": [],
+    "conflicts": [],
+    "missing": [],
+    "confidence": "high"
+  },
+  "warnings": []
+}

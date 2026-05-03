@@ -1,0 +1,20 @@
+{
+  "about": "question:830ce83f",
+  "from": {
+    "ref": "claim:rachel-austin"
+  },
+  "dimensions": {
+    "mode": "only",
+    "include": [
+      "conversation",
+      "entity"
+    ]
+  },
+  "limit": {
+    "entries": 5
+  },
+  "include": {
+    "evidence": true,
+    "relations": true
+  }
+}

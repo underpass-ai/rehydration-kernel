@@ -1,0 +1,71 @@
+{
+  "summary": "Near 2026-04-12T15:03:00Z, Denver appeared before the cursor and Austin appeared after it.",
+  "temporal": {
+    "direction": "near",
+    "around": {
+      "time": "2026-04-12T15:03:00Z"
+    },
+    "window": {
+      "before_entries": 2,
+      "after_entries": 2
+    }
+  },
+  "coverage": {
+    "requested": {
+      "mode": "only",
+      "include": [
+        "conversation",
+        "entity"
+      ]
+    },
+    "included": [
+      "conversation",
+      "entity"
+    ],
+    "missing": []
+  },
+  "entries": [
+    {
+      "ref": "claim:rachel-denver",
+      "text": "Rachel said she was moving to Denver.",
+      "position": "before",
+      "coordinates": [
+        {
+          "dimension": "conversation",
+          "scope_id": "conversation:rachel-2026-04-12",
+          "sequence": 1,
+          "occurred_at": "2026-04-12T15:00:00Z"
+        }
+      ]
+    },
+    {
+      "ref": "claim:rachel-austin",
+      "text": "Rachel later corrected the destination to Austin.",
+      "position": "after",
+      "coordinates": [
+        {
+          "dimension": "conversation",
+          "scope_id": "conversation:rachel-2026-04-12",
+          "sequence": 2,
+          "occurred_at": "2026-04-12T15:05:00Z"
+        }
+      ]
+    }
+  ],
+  "proof": {
+    "path": [
+      {
+        "from": "claim:rachel-austin",
+        "to": "claim:rachel-denver",
+        "rel": "supersedes",
+        "class": "evidential",
+        "confidence": "high"
+      }
+    ],
+    "evidence": [],
+    "conflicts": [],
+    "missing": [],
+    "confidence": "high"
+  },
+  "warnings": []
+}

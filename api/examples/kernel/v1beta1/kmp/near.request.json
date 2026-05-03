@@ -1,0 +1,21 @@
+{
+  "about": "question:830ce83f",
+  "around": {
+    "time": "2026-04-12T15:03:00Z"
+  },
+  "window": {
+    "before_entries": 2,
+    "after_entries": 2
+  },
+  "dimensions": {
+    "mode": "only",
+    "include": [
+      "conversation",
+      "entity"
+    ]
+  },
+  "include": {
+    "evidence": true,
+    "relations": true
+  }
+}

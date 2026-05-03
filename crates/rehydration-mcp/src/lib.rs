@@ -431,8 +431,8 @@ fn fixture_tool_result(name: &str, arguments: &Value) -> Result<Value, String> {
             read_fixture_tool_result(arguments, &["from", "to"], TRACE_RESPONSE_FIXTURE)
         }
         "kernel_inspect" => read_fixture_tool_result(arguments, &["ref"], INSPECT_RESPONSE_FIXTURE),
-        "kernel_remember" => {
-            Err("kernel_remember is not implemented in the read-only MCP adapter".to_string())
+        "kernel_ingest" | "kernel_remember" => {
+            Err("kernel_ingest is not implemented in the read-only MCP adapter".to_string())
         }
         other => Err(format!("unknown KMP tool `{other}`")),
     }
@@ -460,8 +460,8 @@ async fn grpc_tool_result(
         "kernel_ask" => grpc_ask(endpoint, tls, arguments).await,
         "kernel_trace" => grpc_trace(endpoint, tls, arguments).await,
         "kernel_inspect" => grpc_inspect(endpoint, tls, arguments).await,
-        "kernel_remember" => {
-            Err("kernel_remember is not implemented in the read-only MCP adapter".to_string())
+        "kernel_ingest" | "kernel_remember" => {
+            Err("kernel_ingest is not implemented in the read-only MCP adapter".to_string())
         }
         other => Err(format!("unknown KMP tool `{other}`")),
     }
