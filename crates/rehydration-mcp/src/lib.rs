@@ -107,17 +107,17 @@ impl KernelMcpGrpcTlsConfig {
         let cert_path = optional_env_path(GRPC_TLS_CERT_PATH_ENV);
         let key_path = optional_env_path(GRPC_TLS_KEY_PATH_ENV);
         let domain_name = optional_env_string(GRPC_TLS_DOMAIN_NAME_ENV);
+        let server_tls_requested = ca_path.is_some()
+            || domain_name.is_some()
+            || endpoint
+                .map(|endpoint| endpoint.trim().starts_with("https://"))
+                .unwrap_or(false);
         let mode = optional_env_string(GRPC_TLS_MODE_ENV)
             .and_then(|value| parse_tls_mode(&value))
             .unwrap_or_else(|| {
                 if cert_path.is_some() || key_path.is_some() {
                     KernelMcpGrpcTlsMode::Mutual
-                } else if ca_path.is_some() || domain_name.is_some() {
-                    KernelMcpGrpcTlsMode::Server
-                } else if endpoint
-                    .map(|endpoint| endpoint.trim().starts_with("https://"))
-                    .unwrap_or(false)
-                {
+                } else if server_tls_requested {
                     KernelMcpGrpcTlsMode::Server
                 } else {
                     KernelMcpGrpcTlsMode::Disabled
