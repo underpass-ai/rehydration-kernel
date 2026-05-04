@@ -55,5 +55,8 @@ Current binding note:
 - gRPC `DimensionSelection` defaults to `CURRENT_ABOUT`. Cross-memory traversal
   must use `ABOUTS` with an explicit non-empty about list or `ALL_ABOUTS` to
   traverse every memory anchor from the kernel memory about index.
+- `DimensionSelection.scope_ids` is an exact scope filter applied after
+  `mode/include/exclude`. It accepts local dimension ids or fully namespaced
+  ids shaped as `about:<about>:dimension:<dimension_id>`.
 - MCP live-mode migration to `KernelMemoryService` is intentionally a later
   slice; these fixtures should not drive direct MCP-owned behavior.

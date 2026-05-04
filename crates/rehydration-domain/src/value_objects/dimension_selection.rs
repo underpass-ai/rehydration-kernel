@@ -22,6 +22,7 @@ pub struct DimensionSelection {
     dimensions: BTreeSet<String>,
     scope_mode: DimensionScopeMode,
     abouts: BTreeSet<String>,
+    scope_ids: BTreeSet<String>,
 }
 
 impl DimensionSelection {
@@ -31,6 +32,7 @@ impl DimensionSelection {
             dimensions: BTreeSet::new(),
             scope_mode: DimensionScopeMode::CurrentAbout,
             abouts: BTreeSet::new(),
+            scope_ids: BTreeSet::new(),
         }
     }
 
@@ -40,6 +42,7 @@ impl DimensionSelection {
             dimensions: normalize_dimensions(values),
             scope_mode: DimensionScopeMode::CurrentAbout,
             abouts: BTreeSet::new(),
+            scope_ids: BTreeSet::new(),
         }
     }
 
@@ -49,6 +52,7 @@ impl DimensionSelection {
             dimensions: normalize_dimensions(values),
             scope_mode: DimensionScopeMode::CurrentAbout,
             abouts: BTreeSet::new(),
+            scope_ids: BTreeSet::new(),
         }
     }
 
@@ -66,6 +70,18 @@ impl DimensionSelection {
 
     pub fn abouts(&self) -> &BTreeSet<String> {
         &self.abouts
+    }
+
+    pub fn scope_ids(&self) -> &BTreeSet<String> {
+        &self.scope_ids
+    }
+
+    pub fn with_scope_ids(
+        mut self,
+        scope_ids: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.scope_ids = normalize_dimensions(scope_ids);
+        self
     }
 
     pub fn with_current_about_scope(mut self) -> Self {
@@ -106,7 +122,9 @@ impl DimensionSelection {
     }
 
     pub fn includes_coordinate(&self, dimension: &str, scope_id: &str) -> bool {
-        self.includes_dimension(dimension) && self.includes_scope(scope_id)
+        self.includes_dimension(dimension)
+            && self.includes_scope(scope_id)
+            && self.includes_dimension_scope(scope_id)
     }
 
     pub fn includes_scope(&self, scope_id: &str) -> bool {
@@ -117,6 +135,17 @@ impl DimensionSelection {
                 .map(|identity| self.abouts.contains(identity.about()))
                 .unwrap_or(false),
         }
+    }
+
+    pub fn includes_dimension_scope(&self, scope_id: &str) -> bool {
+        if self.scope_ids.is_empty() {
+            return true;
+        }
+        let scope_id = scope_id.trim();
+        self.scope_ids.contains(scope_id)
+            || MemoryDimensionIdentity::parse(scope_id)
+                .map(|identity| self.scope_ids.contains(identity.dimension_id()))
+                .unwrap_or(false)
     }
 }
 
@@ -158,5 +187,34 @@ mod tests {
 
         let all = DimensionSelection::only(["timeline"]).with_all_about_scope();
         assert!(all.includes_coordinate("timeline", "about:question:b:dimension:timeline"));
+    }
+
+    #[test]
+    fn selection_filters_exact_dimension_scope_ids() {
+        let local = DimensionSelection::only(["conversation"])
+            .resolve_current_about("question:a")
+            .with_scope_ids(["conversation:alpha"]);
+        assert!(local.includes_coordinate(
+            "conversation",
+            "about:question:a:dimension:conversation:alpha"
+        ));
+        assert!(!local.includes_coordinate(
+            "conversation",
+            "about:question:a:dimension:conversation:beta"
+        ));
+        assert!(
+            !local.includes_coordinate("topic", "about:question:a:dimension:conversation:alpha")
+        );
+
+        let namespaced = DimensionSelection::all()
+            .with_scope_ids(["about:question:a:dimension:conversation:alpha"]);
+        assert!(namespaced.includes_coordinate(
+            "conversation",
+            "about:question:a:dimension:conversation:alpha"
+        ));
+        assert!(!namespaced.includes_coordinate(
+            "conversation",
+            "about:question:b:dimension:conversation:alpha"
+        ));
     }
 }

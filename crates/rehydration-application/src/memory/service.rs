@@ -139,9 +139,10 @@ where
                 &render_options,
             )
             .await?;
+        let source_bundle = filter_bundle_by_memory_dimensions(&context.bundle, &dimensions)?;
 
         let request = TemporalTraversalRequest::new(query.direction, query.cursor)
-            .with_dimensions(dimensions)
+            .with_dimensions(dimensions.clone())
             .with_window(query.window);
         let request = if let Some(limit_entries) = query.limit_entries {
             request.with_limit_entries(limit_entries)?
@@ -149,11 +150,11 @@ where
             request
         };
 
-        let traversal = TemporalMemoryTraversal::traverse(&context.bundle, &request)?;
+        let traversal = TemporalMemoryTraversal::traverse(&source_bundle, &request)?;
 
         Ok(TemporalMemoryResult {
             traversal,
-            source_bundle: context.bundle,
+            source_bundle,
             include: query.include,
         })
     }
@@ -278,7 +279,10 @@ where
             return context_roots(current_about, selection);
         }
 
-        let roots = normalize_about_roots(self.query_application.list_memory_abouts().await?);
+        let roots = prioritize_current_about(
+            normalize_about_roots(self.query_application.list_memory_abouts().await?),
+            current_about,
+        );
         if roots.is_empty() {
             return Err(ApplicationError::NotFound(
                 "no memory abouts found for ALL_ABOUTS scope".to_string(),
@@ -308,6 +312,10 @@ fn requested_dimension_scopes(
     selection: &DimensionSelection,
     context_roots: &[String],
 ) -> Vec<String> {
+    if !selection.scope_ids().is_empty() {
+        return requested_explicit_dimension_scopes(current_about, selection, context_roots);
+    }
+
     match selection.mode() {
         DimensionSelectionMode::Only => match selection.scope_mode() {
             DimensionScopeMode::CurrentAbout => selection
@@ -339,6 +347,31 @@ fn requested_dimension_scopes(
         },
         DimensionSelectionMode::Except | DimensionSelectionMode::All => Vec::new(),
     }
+}
+
+fn requested_explicit_dimension_scopes(
+    current_about: &str,
+    selection: &DimensionSelection,
+    context_roots: &[String],
+) -> Vec<String> {
+    let abouts = match selection.scope_mode() {
+        DimensionScopeMode::CurrentAbout => vec![current_about.to_string()],
+        DimensionScopeMode::Abouts => selection.abouts().iter().cloned().collect(),
+        DimensionScopeMode::AllAbouts => context_roots.to_vec(),
+    };
+
+    abouts
+        .iter()
+        .flat_map(|about| {
+            selection
+                .scope_ids()
+                .iter()
+                .filter_map(|scope_id| resolve_dimension_scope_id(about, scope_id))
+                .collect::<Vec<_>>()
+        })
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
 }
 
 fn context_roots(
@@ -378,6 +411,18 @@ fn normalize_about_roots(values: Vec<String>) -> Vec<String> {
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect()
+}
+
+fn prioritize_current_about(mut roots: Vec<String>, current_about: &str) -> Vec<String> {
+    let current_about = current_about.trim();
+    if current_about.is_empty() {
+        return roots;
+    }
+    if let Some(position) = roots.iter().position(|root| root == current_about) {
+        let root = roots.remove(position);
+        roots.insert(0, root);
+    }
+    roots
 }
 
 fn filter_bundle_by_memory_dimensions(
@@ -554,6 +599,20 @@ fn namespaced_dimension_id(about: &str, dimension: &str) -> Option<String> {
         .map(|identity| identity.node_id())
 }
 
+fn resolve_dimension_scope_id(about: &str, scope_id: &str) -> Option<String> {
+    let scope_id = scope_id.trim();
+    if scope_id.is_empty() {
+        return None;
+    }
+    if let Some(identity) = MemoryDimensionIdentity::parse(scope_id) {
+        if identity.about() == about {
+            return Some(identity.node_id());
+        }
+        return None;
+    }
+    namespaced_dimension_id(about, scope_id)
+}
+
 fn is_unknown_memory_ref_validation(error: &ApplicationError) -> bool {
     matches!(
         error,
@@ -564,6 +623,12 @@ fn is_unknown_memory_ref_validation(error: &ApplicationError) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
+    use rehydration_domain::{
+        BundleMetadata, CaseId, RelationExplanation, RelationSemanticClass, Role,
+    };
+
     use super::*;
 
     #[test]
@@ -598,6 +663,66 @@ mod tests {
     }
 
     #[test]
+    fn requested_scopes_expand_explicit_scope_ids_against_selected_abouts() {
+        let selection = DimensionSelection::only(["conversation"])
+            .with_about_scope(["question:a", "question:b"])
+            .with_scope_ids([
+                "conversation:alpha",
+                "about:question:b:dimension:conversation:beta",
+            ]);
+        let scopes = requested_dimension_scopes("question:current", &selection, &[]);
+
+        assert_eq!(
+            scopes,
+            vec![
+                "about:question:a:dimension:conversation:alpha".to_string(),
+                "about:question:b:dimension:conversation:alpha".to_string(),
+                "about:question:b:dimension:conversation:beta".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn bundle_filter_narrows_same_dimension_kind_by_exact_scope_id() {
+        let bundle = scoped_conversation_bundle();
+        let selection = DimensionSelection::only(["conversation"])
+            .resolve_current_about("question:a")
+            .with_scope_ids(["conversation:alpha"]);
+
+        let filtered =
+            filter_bundle_by_memory_dimensions(&bundle, &selection).expect("bundle should filter");
+        let node_ids = filtered
+            .neighbor_nodes()
+            .iter()
+            .map(|node| node.node_id())
+            .collect::<Vec<_>>();
+        let relationships = filtered
+            .relationships()
+            .iter()
+            .map(|relationship| {
+                (
+                    relationship.source_node_id(),
+                    relationship.target_node_id(),
+                    relationship.relationship_type(),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        assert!(node_ids.contains(&"about:question:a:dimension:conversation:alpha"));
+        assert!(node_ids.contains(&"claim:alpha"));
+        assert!(!node_ids.contains(&"about:question:a:dimension:conversation:beta"));
+        assert!(!node_ids.contains(&"claim:beta"));
+        assert_eq!(
+            relationships,
+            vec![(
+                "about:question:a:dimension:conversation:alpha",
+                "claim:alpha",
+                "contains_entry"
+            )]
+        );
+    }
+
+    #[test]
     fn normalize_about_roots_trims_sorts_and_deduplicates() {
         assert_eq!(
             normalize_about_roots(vec![
@@ -608,5 +733,109 @@ mod tests {
             ]),
             vec!["question:a".to_string(), "question:b".to_string()]
         );
+    }
+
+    #[test]
+    fn prioritize_current_about_keeps_all_roots_but_moves_current_first() {
+        assert_eq!(
+            prioritize_current_about(
+                vec![
+                    "question:a".to_string(),
+                    "question:current".to_string(),
+                    "question:z".to_string(),
+                ],
+                "question:current",
+            ),
+            vec![
+                "question:current".to_string(),
+                "question:a".to_string(),
+                "question:z".to_string()
+            ]
+        );
+    }
+
+    fn scoped_conversation_bundle() -> RehydrationBundle {
+        RehydrationBundle::new(
+            CaseId::new("question:a").expect("case id should be valid"),
+            Role::new("temporal-reader").expect("role should be valid"),
+            BundleNode::new(
+                "question:a",
+                "question",
+                "Question A",
+                "Test question",
+                "ACTIVE",
+                Vec::new(),
+                BTreeMap::new(),
+            ),
+            vec![
+                memory_dimension_node("about:question:a:dimension:conversation:alpha"),
+                memory_dimension_node("about:question:a:dimension:conversation:beta"),
+                claim_node("claim:alpha"),
+                claim_node("claim:beta"),
+            ],
+            vec![
+                contains_entry(
+                    "about:question:a:dimension:conversation:alpha",
+                    "claim:alpha",
+                    1,
+                ),
+                contains_entry(
+                    "about:question:a:dimension:conversation:beta",
+                    "claim:beta",
+                    2,
+                ),
+                cross_scope_constraint("claim:beta", "claim:alpha"),
+            ],
+            Vec::new(),
+            BundleMetadata::initial("test"),
+        )
+        .expect("test bundle should be valid")
+    }
+
+    fn memory_dimension_node(node_id: &str) -> BundleNode {
+        BundleNode::new(
+            node_id,
+            "memory_dimension",
+            node_id,
+            "Conversation scope",
+            "ACTIVE",
+            Vec::new(),
+            BTreeMap::new(),
+        )
+    }
+
+    fn claim_node(node_id: &str) -> BundleNode {
+        BundleNode::new(
+            node_id,
+            "claim",
+            node_id,
+            "Claim",
+            "ACTIVE",
+            Vec::new(),
+            BTreeMap::new(),
+        )
+    }
+
+    fn contains_entry(scope_id: &str, target_node_id: &str, sequence: u32) -> BundleRelationship {
+        BundleRelationship::new(
+            scope_id,
+            target_node_id,
+            "contains_entry",
+            RelationExplanation::new(RelationSemanticClass::Structural)
+                .with_dimension("conversation")
+                .with_scope_id(scope_id)
+                .with_sequence(sequence),
+        )
+    }
+
+    fn cross_scope_constraint(source_node_id: &str, target_node_id: &str) -> BundleRelationship {
+        BundleRelationship::new(
+            source_node_id,
+            target_node_id,
+            "contextual_constraint",
+            RelationExplanation::new(RelationSemanticClass::Constraint)
+                .with_rationale("Off-scope relation must not leak through exact scope filtering.")
+                .with_confidence("medium"),
+        )
     }
 }

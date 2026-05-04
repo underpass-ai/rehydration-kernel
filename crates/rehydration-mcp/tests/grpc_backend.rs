@@ -164,7 +164,8 @@ async fn grpc_backend_maps_temporal_tools_to_kernel_memory_service() {
             "dimensions": {
                 "mode": "only",
                 "include": ["conversation"],
-                "scope": "all_abouts"
+                "scope": "all_abouts",
+                "scope_ids": ["conversation:rachel"]
             },
             "limit": {
                 "entries": 5,
@@ -204,6 +205,15 @@ async fn grpc_backend_maps_temporal_tools_to_kernel_memory_service() {
             .expect("dimensions")
             .scope,
         DimensionScopeMode::AllAbouts as i32
+    );
+    assert_eq!(
+        moves[0]
+            .request
+            .dimensions
+            .as_ref()
+            .expect("dimensions")
+            .scope_ids,
+        vec!["conversation:rachel".to_string()]
     );
     assert!(moves[0].request.include.as_ref().expect("include").raw_refs);
     assert_eq!(moves[0].request.budget.as_ref().expect("budget").depth, 4);

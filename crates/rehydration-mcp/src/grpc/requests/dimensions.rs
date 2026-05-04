@@ -28,6 +28,7 @@ fn dimension_selection_from_object(
     };
     let include = optional_string_array_field(dimensions, "include", "dimensions.include")?;
     let exclude = optional_string_array_field(dimensions, "exclude", "dimensions.exclude")?;
+    let scope_ids = optional_string_array_field(dimensions, "scope_ids", "dimensions.scope_ids")?;
     let scope = match optional_string_field(dimensions, "scope", "dimensions.scope")?.as_deref() {
         None | Some("current_about") => DimensionScopeMode::CurrentAbout as i32,
         Some("abouts") => DimensionScopeMode::Abouts as i32,
@@ -45,6 +46,7 @@ fn dimension_selection_from_object(
         exclude,
         scope,
         abouts,
+        scope_ids,
     })
 }
 
@@ -129,5 +131,19 @@ mod tests {
         )
         .expect("ALL_ABOUTS should be accepted only when explicit");
         assert_eq!(all_abouts.scope, DimensionScopeMode::AllAbouts as i32);
+
+        let exact_scope = dimension_selection_from_object(
+            object(
+                &json!({
+                    "mode": "only",
+                    "include": ["conversation"],
+                    "scope_ids": ["conversation:rachel"]
+                }),
+                "dimensions",
+            )
+            .expect("dimensions should be object"),
+        )
+        .expect("scope_ids should be accepted as a narrowing filter");
+        assert_eq!(exact_scope.scope_ids, vec!["conversation:rachel"]);
     }
 }

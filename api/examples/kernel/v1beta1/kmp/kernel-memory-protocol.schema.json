@@ -456,6 +456,13 @@
           "items": {
             "$ref": "#/$defs/non_empty_string"
           }
+        },
+        "scope_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/non_empty_string"
+          },
+          "description": "Exact dimension scope ids to include. Values may be local dimension ids or namespaced about:<about>:dimension:<dimension_id> ids."
         }
       }
     },

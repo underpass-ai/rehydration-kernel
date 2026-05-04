@@ -109,7 +109,7 @@ messages:
 | `MemoryEvidence` | `id`, `supports`, `text`, `source`, `time`, `metadata`. |
 | `MemoryProvenance` | `source_kind`, `source_agent`, `observed_at`, `correlation_id`, `causation_id`. |
 | `MemoryBudget` | `tokens`, `detail`, `depth`. |
-| `DimensionSelection` | `mode`, `include`, `exclude`, `scope`, `abouts`. Scope defaults to `CURRENT_ABOUT`; `ABOUTS` requires an explicit non-empty list; `ALL_ABOUTS` uses the kernel memory about index. |
+| `DimensionSelection` | `mode`, `include`, `exclude`, `scope`, `abouts`, `scope_ids`. Scope defaults to `CURRENT_ABOUT`; `ABOUTS` requires an explicit non-empty list; `ALL_ABOUTS` uses the kernel memory about index; `scope_ids` narrows selection to exact dimension scopes using local ids or `about:<about>:dimension:<dimension_id>` ids. |
 | `TemporalCursor` | `ref`, `time`, or `sequence`; exactly one should be accepted. |
 | `TemporalWindow` | Entry and time window controls for `Near`. |
 | `TemporalInclude` | `evidence`, `relations`, `raw_refs` include flags. |

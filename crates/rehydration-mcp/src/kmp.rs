@@ -276,6 +276,9 @@ fn dimension_selection_json(selection: &DimensionSelection) -> Value {
     if !selection.exclude.is_empty() {
         object.insert("exclude".to_string(), json!(selection.exclude));
     }
+    if !selection.scope_ids.is_empty() {
+        object.insert("scope_ids".to_string(), json!(selection.scope_ids));
+    }
     object.insert(
         "scope".to_string(),
         json!(dimension_scope_mode_label(selection.scope)),
@@ -442,6 +445,7 @@ mod tests {
                     exclude: Vec::new(),
                     scope: DimensionScopeMode::CurrentAbout as i32,
                     abouts: Vec::new(),
+                    scope_ids: vec!["timeline:main".to_string()],
                 }),
                 included: vec!["timeline".to_string()],
                 missing: Vec::new(),
@@ -462,6 +466,10 @@ mod tests {
         assert_eq!(value["entries"][0]["ref"], "claim:target");
         assert_eq!(value["entries"][0]["coordinates"][0]["scope_id"], "scope");
         assert_eq!(value["coverage"]["requested"]["scope"], "current_about");
+        assert_eq!(
+            value["coverage"]["requested"]["scope_ids"][0],
+            "timeline:main"
+        );
     }
 
     #[test]

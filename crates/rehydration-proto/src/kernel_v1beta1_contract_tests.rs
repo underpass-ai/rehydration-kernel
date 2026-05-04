@@ -104,7 +104,7 @@ fn v1beta1_kernel_memory_core_fields_are_stable() {
     );
     assert_eq!(
         message_field_names(memory_file, "DimensionSelection"),
-        vec!["mode", "include", "exclude", "scope", "abouts"]
+        vec!["mode", "include", "exclude", "scope", "abouts", "scope_ids"]
     );
 }
 

@@ -1203,6 +1203,7 @@ async fn memory_service_temporal_methods_use_domain_traversal() {
                 exclude: Vec::new(),
                 scope: ProtoDimensionScopeMode::AllAbouts as i32,
                 abouts: Vec::new(),
+                ..Default::default()
             },
         )))
         .await
@@ -1220,6 +1221,38 @@ async fn memory_service_temporal_methods_use_domain_traversal() {
     assert_eq!(
         all_abouts_coverage.requested.expect("requested").scope,
         ProtoDimensionScopeMode::AllAbouts as i32
+    );
+
+    let exact_scope_forward = service
+        .forward(Request::new(temporal_move_request(
+            Some(ProtoTemporalCursor {
+                r#ref: "claim:rachel-denver".to_string(),
+                ..Default::default()
+            }),
+            ProtoDimensionSelection {
+                mode: ProtoDimensionSelectionMode::Only as i32,
+                include: vec!["conversation".to_string()],
+                exclude: Vec::new(),
+                scope: ProtoDimensionScopeMode::AllAbouts as i32,
+                abouts: Vec::new(),
+                scope_ids: vec!["about:question:830ce83f:dimension:conversation".to_string()],
+            },
+        )))
+        .await
+        .expect("exact scope_ids should narrow ALL_ABOUTS traversal")
+        .into_inner();
+    assert_eq!(
+        exact_scope_forward
+            .entries
+            .iter()
+            .map(|entry| entry.r#ref.as_str())
+            .collect::<Vec<_>>(),
+        vec!["claim:rachel-austin"]
+    );
+    let exact_coverage = exact_scope_forward.coverage.expect("coverage");
+    assert_eq!(
+        exact_coverage.requested.expect("requested").scope_ids,
+        vec!["about:question:830ce83f:dimension:conversation".to_string()]
     );
 }
 
@@ -1269,6 +1302,7 @@ async fn memory_service_temporal_requests_fail_fast_on_ambiguous_inputs() {
                 exclude: Vec::new(),
                 scope: ProtoDimensionScopeMode::Abouts as i32,
                 abouts: Vec::new(),
+                ..Default::default()
             },
         )))
         .await

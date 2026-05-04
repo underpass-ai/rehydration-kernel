@@ -28,6 +28,7 @@ pub(super) fn proto_dimension_selection_from_domain(
         },
         scope: proto_dimension_scope_mode(selection.scope_mode()) as i32,
         abouts: selection.abouts().iter().cloned().collect(),
+        scope_ids: selection.scope_ids().iter().cloned().collect(),
     }
 }
 
@@ -39,6 +40,7 @@ pub(super) fn domain_dimension_selection(
     };
     let scope = value.scope();
     let abouts = value.abouts.clone();
+    let scope_ids = value.scope_ids.clone();
     let selection = match value.mode() {
         ProtoDimensionSelectionMode::Only => {
             if value.include.is_empty() {
@@ -75,7 +77,8 @@ pub(super) fn domain_dimension_selection(
             DimensionSelection::all()
         }
     };
-    apply_dimension_scope(selection, scope, abouts)
+    let selection = apply_dimension_scope(selection, scope, abouts)?;
+    Ok(selection.with_scope_ids(scope_ids))
 }
 
 fn apply_dimension_scope(

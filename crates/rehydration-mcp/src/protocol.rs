@@ -328,6 +328,10 @@ fn dimensions_schema() -> Value {
                 "type": "array",
                 "items": string_schema("Dimension kind to exclude.")
             },
+            "scope_ids": {
+                "type": "array",
+                "items": string_schema("Exact dimension scope id to include. Values may be local memory dimension ids or namespaced about:<about>:dimension:<dimension_id> ids.")
+            },
             "scope": {
                 "type": "string",
                 "enum": ["current_about", "abouts", "all_abouts"]
