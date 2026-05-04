@@ -1,10 +1,11 @@
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use rehydration_application::{ApplicationError, KernelMemoryApplicationService};
 use rehydration_domain::{
     ContextEventStore, DimensionScopeMode, DimensionSelection, DimensionSelectionMode,
     GraphNeighborhoodReader, MemoryAboutIndexReader, NodeDetailReader, NodeRelationshipReader,
-    ProjectionWriter, SnapshotStore, TemporalDirection,
+    ProjectionWriter, RehydrationBundle, SnapshotStore, TemporalDirection,
 };
 use rehydration_proto::v1beta1::{
     AskRequest, AskResponse, IngestRequest, IngestResponse, InspectRequest, InspectResponse,
@@ -90,6 +91,7 @@ where
             self.application.wake(query).await.map_err(|error| {
                 map_application_error_with_log("KernelMemoryService.Wake", error)
             })?;
+        let selected_abouts = selected_abouts_from_bundle(&result.bundle);
         let response = wake_response_from_result(&intent, result);
         let proof_paths = response
             .proof
@@ -98,6 +100,7 @@ where
             .unwrap_or_default();
         tracing::info!(
             rpc = "KernelMemoryService.Wake",
+            selected_abouts = ?selected_abouts,
             proof_paths,
             warnings = response.warnings.len(),
             "kernel memory grpc response"
@@ -118,9 +121,11 @@ where
             self.application.ask(query).await.map_err(|error| {
                 map_application_error_with_log("KernelMemoryService.Ask", error)
             })?;
+        let selected_abouts = selected_abouts_from_bundle(&result.bundle);
         let response = ask_response_from_result(&question, answer_policy, result);
         tracing::info!(
             rpc = "KernelMemoryService.Ask",
+            selected_abouts = ?selected_abouts,
             evidence = response.because.len(),
             answer = %answer_presence_label(&response.answer),
             warnings = response.warnings.len(),
@@ -153,10 +158,12 @@ where
             self.application.temporal(query).await.map_err(|error| {
                 map_application_error_with_log("KernelMemoryService.Near", error)
             })?;
+        let selected_abouts = selected_abouts_from_bundle(&result.source_bundle);
         let response =
             temporal_response_from_result(requested_cursor, TemporalDirection::Near, result);
         tracing::info!(
             rpc = "KernelMemoryService.Near",
+            selected_abouts = ?selected_abouts,
             entries = response.entries.len(),
             warnings = response.warnings.len(),
             "kernel memory grpc response"
@@ -279,9 +286,11 @@ where
             .temporal(query)
             .await
             .map_err(|error| map_application_error_with_log(rpc, error))?;
+        let selected_abouts = selected_abouts_from_bundle(&result.source_bundle);
         let response = temporal_response_from_result(requested_cursor, direction, result);
         tracing::info!(
             rpc,
+            selected_abouts = ?selected_abouts,
             entries = response.entries.len(),
             warnings = response.warnings.len(),
             "kernel memory grpc response"
@@ -306,6 +315,23 @@ fn log_dimensioned_request(rpc: &'static str, about: &str, dimensions: &Dimensio
 
 fn log_temporal_request(rpc: &'static str, about: &str, dimensions: &DimensionSelection) {
     log_dimensioned_request(rpc, about, dimensions);
+}
+
+fn selected_abouts_from_bundle(bundle: &RehydrationBundle) -> Vec<String> {
+    let mut seen = BTreeSet::from([bundle.root_node_id().as_str().to_string()]);
+    let mut selected = vec![bundle.root_node_id().as_str().to_string()];
+
+    for node in bundle
+        .neighbor_nodes()
+        .iter()
+        .filter(|node| node.node_kind() == "memory_anchor")
+    {
+        if seen.insert(node.node_id().to_string()) {
+            selected.push(node.node_id().to_string());
+        }
+    }
+
+    selected
 }
 
 fn map_proto_error(rpc: &'static str, status: Status) -> Status {
@@ -360,5 +386,48 @@ fn answer_presence_label(answer: &str) -> &'static str {
         "unknown"
     } else {
         "deterministic"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use rehydration_domain::{BundleMetadata, BundleNode, CaseId, RehydrationBundle, Role};
+
+    use super::selected_abouts_from_bundle;
+
+    #[test]
+    fn selected_abouts_preserve_resolved_root_order() {
+        let bundle = RehydrationBundle::new(
+            CaseId::new("question:current").expect("valid case id"),
+            Role::new("memory").expect("valid role"),
+            node("question:current", "memory_anchor"),
+            vec![
+                node("question:other", "memory_anchor"),
+                node("claim:current", "claim"),
+            ],
+            Vec::new(),
+            Vec::new(),
+            BundleMetadata::initial("test"),
+        )
+        .expect("bundle should be valid");
+
+        assert_eq!(
+            selected_abouts_from_bundle(&bundle),
+            vec!["question:current", "question:other"]
+        );
+    }
+
+    fn node(node_id: &str, node_kind: &str) -> BundleNode {
+        BundleNode::new(
+            node_id,
+            node_kind,
+            node_id,
+            node_id,
+            "ACTIVE",
+            Vec::new(),
+            BTreeMap::new(),
+        )
     }
 }

@@ -286,12 +286,13 @@ application/storage errors:
 
 - `Ingest` logs `about`, `dry_run`, submitted counts, accepted counts, and
   `read_after_write_ready`;
-- `Wake` and `Ask` log `about`, dimension mode/scope, requested dimensions,
-  selected abouts, `scope_ids`, evidence/proof counts, answer presence, and
-  warnings;
+- `Wake` and `Ask` request logs include `about`, dimension mode/scope,
+  requested dimensions, requested abouts, and `scope_ids`; response logs
+  include resolved `selected_abouts`, evidence/proof counts, answer presence,
+  and warnings;
 - `Goto`, `Near`, `Rewind`, and `Forward` log `about`, dimension mode/scope,
-  requested dimensions, selected abouts, `scope_ids`, entry counts, and
-  warnings;
+  requested dimensions, requested abouts, and `scope_ids`; response logs
+  include resolved `selected_abouts`, entry counts, and warnings;
 - `Trace` logs source/target refs and returned path size;
 - `Inspect` logs requested include flags and returned incoming/outgoing/evidence
   counts.

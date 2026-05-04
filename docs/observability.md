@@ -140,7 +140,7 @@ Request logs include:
 
 - `rpc`;
 - `about` for memory reads/writes;
-- `dimension_mode`, `dimension_scope`, `dimensions`, `abouts`, and
+- `dimension_mode`, `dimension_scope`, `dimensions`, requested `abouts`, and
   `scope_ids` for dimensioned reads;
 - submitted counts for `Ingest`;
 - source and target refs for `Trace`;
@@ -151,6 +151,8 @@ Response logs include:
 - accepted counts and `read_after_write_ready` for `Ingest`;
 - evidence/answer/warning counts for `Ask`;
 - entry/warning counts for temporal traversal;
+- `selected_abouts` for dimensioned reads after `CURRENT_ABOUT`, `ABOUTS`, or
+  `ALL_ABOUTS` resolution;
 - path/warning counts for `Trace`;
 - incoming/outgoing/evidence/warning counts for `Inspect`.
 
@@ -180,6 +182,9 @@ Error logs include:
 
 # Intentional all-about KMP reads
 {app_kubernetes_io_name="rehydration-kernel"} | json | message = "kernel memory grpc request" | dimension_scope = "all_abouts"
+
+# Resolved memory anchors for all-about KMP reads
+{app_kubernetes_io_name="rehydration-kernel"} | json | message = "kernel memory grpc response" | selected_abouts != ""
 
 # KMP fail-fast or storage conflict errors
 {app_kubernetes_io_name="rehydration-kernel"} | json | message = "kernel memory grpc error"
