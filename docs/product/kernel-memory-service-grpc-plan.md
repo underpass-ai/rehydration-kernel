@@ -281,7 +281,8 @@ remains fail-fast until a typed raw response shape exists.
 ## Observability
 
 Every `KernelMemoryService` method emits structured request and response logs at
-the gRPC boundary:
+the gRPC boundary, plus structured error logs for fail-fast validation and
+application/storage errors:
 
 - `Ingest` logs `about`, `dry_run`, submitted counts, accepted counts, and
   `read_after_write_ready`;
@@ -294,6 +295,8 @@ the gRPC boundary:
 - `Trace` logs source/target refs and returned path size;
 - `Inspect` logs requested include flags and returned incoming/outgoing/evidence
   counts.
+- error logs use message `kernel memory grpc error` and include `rpc`, tonic
+  `code`, and mapped `message`.
 
 These logs make intentional cross-about traversal auditable: `CURRENT_ABOUT`,
 `ABOUTS`, and `ALL_ABOUTS` are emitted as distinct `dimension_scope` values.
@@ -398,9 +401,9 @@ The public endpoint smoke target remains:
 https://rehydration-kernel.underpassai.com
 ```
 
-## Documentation Updates
+## Documentation Status
 
-After implementation:
+Implemented documentation updates:
 
 - `docs/beta-status.md` records `KernelMemoryService` maturity separately.
 - `docs/migration/kernel-node-centric-integration-contract.md` lists the

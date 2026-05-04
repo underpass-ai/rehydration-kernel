@@ -33,14 +33,15 @@ ingest -> wake -> ask -> goto/near/rewind/forward -> trace -> inspect
 
 Transport bindings:
 
-- MCP tools should expose `kernel_ingest`, `kernel_wake`, `kernel_ask`,
+- MCP tools expose `kernel_ingest`, `kernel_wake`, `kernel_ask`,
   `kernel_goto`, `kernel_near`, `kernel_rewind`, `kernel_forward`,
   `kernel_trace`, and `kernel_inspect`.
 - gRPC exposes the same moves through the typed
   [`KernelMemoryService`](../../../../proto/underpass/rehydration/kernel/v1beta1/memory.proto).
   The gRPC contract is the executable binding for this cut.
-- NATS should start with asynchronous `kernel.memory.ingest`,
-  `kernel.memory.ingested`, and `kernel.memory.rejected`.
+- NATS KMP subjects such as `kernel.memory.ingest`,
+  `kernel.memory.ingested`, and `kernel.memory.rejected` remain design
+  guidance; they are not implemented in this cut.
 
 These fixtures are not a replacement for the existing node-centric gRPC and
 AsyncAPI contracts. They define the higher-level public memory shape that maps
@@ -66,3 +67,5 @@ Current binding note:
 - `kernel_inspect` supports typed object/detail/link/evidence lookup.
   `include.raw=true` is intentionally fail-fast until a typed raw response
   shape exists.
+- Temporal `include.raw_refs=true` is intentionally fail-fast until a typed raw
+  reference response shape exists.

@@ -162,7 +162,7 @@ pub(crate) fn tools_list_result() -> Value {
             ),
             tool_definition(
                 "kernel_ask",
-                "Answer a question from kernel memory with proof, or return unknown/conflict.",
+                "Return a deterministic evidence answer from kernel memory, or UNKNOWN.",
                 json!({
                     "type": "object",
                     "additionalProperties": false,
@@ -223,7 +223,7 @@ pub(crate) fn tools_list_result() -> Value {
             ),
             tool_definition(
                 "kernel_inspect",
-                "Inspect the raw stored memory object, links, and evidence for one ref.",
+                "Inspect the typed stored memory object, direct links, and evidence for one ref.",
                 json!({
                     "type": "object",
                     "additionalProperties": false,
@@ -237,7 +237,10 @@ pub(crate) fn tools_list_result() -> Value {
                                 "incoming": {"type": "boolean"},
                                 "outgoing": {"type": "boolean"},
                                 "details": {"type": "boolean"},
-                                "raw": {"type": "boolean"}
+                                "raw": {
+                                    "type": "boolean",
+                                    "description": "Reserved; live mode fails fast when true until inspect raw output has a typed response shape."
+                                }
                             }
                         }
                     }

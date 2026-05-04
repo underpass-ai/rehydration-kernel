@@ -549,7 +549,7 @@ Wake response fields:
 | `wake.open_loops` | Known unresolved work or uncertainty. |
 | `wake.next_actions` | Concrete continuation options. |
 | `wake.guardrails` | Constraints that prevent harmful or wrong continuation. |
-| `proof` | Evidence, missing data, confidence, and optional raw refs. |
+| `proof` | Evidence, missing data, confidence, and typed proof refs. Raw expansion remains fail-fast until typed. |
 
 This is different from `GetContext`: `GetContext` returns a bundle;
 `wake` returns a continuation state.
@@ -1088,17 +1088,18 @@ SDKs. They should answer:
 - what proof will come back?
 - when should the model call a different memory move?
 
-MCP must not duplicate kernel logic. The MCP server calls the same application
-services used by gRPC and NATS ingress.
+MCP must not duplicate kernel logic. The current stdio adapter is a thin live
+client of the typed `KernelMemoryService`; it does not call
+`ContextQueryService` or `ContextCommandService` directly for KMP moves.
 
 ## Binding: gRPC
 
 gRPC carries the same protocol for typed clients.
 
-Implementation plan:
+Implemented binding:
 [`kernel-memory-service-grpc-plan.md`](./kernel-memory-service-grpc-plan.md)
 
-Recommended service:
+Service:
 
 ```proto
 service KernelMemoryService {
@@ -1114,7 +1115,7 @@ service KernelMemoryService {
 }
 ```
 
-This service should live additively beside current services:
+This service lives additively beside current services:
 
 - `ContextQueryService`
 - `ContextCommandService`
@@ -1134,7 +1135,10 @@ CRUD names.
 
 ## Binding: NATS
 
-NATS carries asynchronous memory ingestion and notifications.
+NATS KMP ingestion is design guidance in the current cut. The implemented async
+surface remains the projection subjects (`graph.node.materialized`,
+`graph.relation.materialized`, and `node.detail.materialized`); KMP-specific
+subjects are not emitted or consumed yet.
 
 Recommended subjects:
 
@@ -1148,8 +1152,8 @@ Recommended subjects:
 | `graph.relation.materialized` | kernel subscribes | Existing relation-only projection input. |
 | `node.detail.materialized` | kernel subscribes | Existing detail projection input. |
 
-`kernel.memory.ingest` is the simple async path. Existing `graph.*` and
-`node.detail.*` subjects remain the lower-level projection contract.
+`kernel.memory.ingest` is the proposed simple async path. Existing `graph.*`
+and `node.detail.*` subjects remain the lower-level projection contract.
 
 NATS envelope:
 
@@ -1243,7 +1247,8 @@ Default read behavior:
 - current/superseding facts beat stale facts when the path proves it;
 - conflicts are returned explicitly;
 - unknown is a valid answer;
-- raw state is hidden unless requested.
+- raw state is hidden; requested raw expansion fails fast until typed response
+  shapes exist.
 
 For `ask`, the default answer policy is:
 
@@ -1267,15 +1272,20 @@ proof
 
 Writes are idempotent and validation-first.
 
-Required behavior:
+Current `KernelMemoryService.Ingest` behavior:
 
 - require `idempotency_key`;
-- validate references before accepting;
-- reject duplicate relations inside one memory ingest;
-- reject unresolved link refs unless pending refs are explicitly enabled;
-- reject entry coordinates that reference dimensions absent from the memory;
+- validate dimensions, entries, entry coordinates, relation endpoints, relation
+  classes, relation proof material, evidence refs, provenance, and positive
+  temporal coordinate numbers before accepting;
+- reject unresolved relation and evidence refs unless they already exist in the
+  current memory read model;
+- reject entry coordinates that reference dimensions absent from the submitted
+  memory or existing memory read model;
+- reject replay of the same idempotency key with different memory content;
 - preserve provenance;
-- acknowledge acceptance separately from read-model completion;
+- report `read_after_write_ready=true` only after the synchronous projection
+  mutation path completes;
 - expose dry-run validation.
 
 Dry-run behavior:
@@ -1339,7 +1349,8 @@ The differentiated product is:
 - wake packets instead of context dumps;
 - temporal goto/near/rewind/forward across selected memory dimensions;
 - proof as a first-class response field;
-- unknown/conflict as honest first-class outcomes;
+- unknown as an honest first-class outcome, with conflict reporting reserved
+  for the future proof model;
 - LLM-produced relations stored as inspectable facts;
 - deterministic traversal over causal/evidential links;
 - one protocol that works locally through MCP, synchronously through gRPC, and
@@ -1347,7 +1358,7 @@ The differentiated product is:
 
 ## Implementation Order
 
-Recommended order:
+Implemented:
 
 1. Rename the public API direction to Kernel Memory Protocol in product docs.
 2. Add JSON schemas for `kernel_ingest`, `kernel_wake`, `kernel_ask`,
@@ -1362,18 +1373,23 @@ Recommended order:
 6. Add typed gRPC `KernelMemoryService`.
 7. Keep MCP live mode on `KernelMemoryService`.
    This migration is implemented for live MCP mode.
-8. Add NATS `kernel.memory.ingest/ingested/rejected`.
-9. Re-run the benchmark and publish what improves and what still fails.
 
-The `KernelMemoryService` work is API-first: define `memory.proto` and contract
-tests before implementing server behavior. Existing query/command application
-services may be reused behind typed KMP use cases, but MCP live mode should
-move to the typed memory service instead of calling the lower-level gRPC
-services directly. See
+Remaining follow-up:
+
+1. Add NATS `kernel.memory.ingest/ingested/rejected` if an async KMP write
+   workload needs it.
+2. Add a real generated answer engine only after its ownership, policy, and
+   tests are explicit.
+3. Re-run the benchmark and publish what improves and what still fails.
+
+The `KernelMemoryService` work was delivered API-first: `memory.proto` and
+contract tests define the public boundary, and existing query/command
+application services are reused behind typed KMP use cases. MCP live mode now
+calls the typed memory service instead of the lower-level gRPC services. See
 [`kernel-memory-service-grpc-plan.md`](./kernel-memory-service-grpc-plan.md).
 
-This order keeps domain behavior, application use cases, and transport
-bindings separated before MCP becomes another adapter over the same API.
+This keeps domain behavior, application use cases, and transport bindings
+separated while MCP remains another adapter over the same API.
 
 ## Acceptance Criteria
 

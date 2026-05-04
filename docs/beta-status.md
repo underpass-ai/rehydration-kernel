@@ -158,8 +158,9 @@ metrics. `RehydrateSession` renders per-role bundles and emits quality via the o
 
 - MCP live adapter is a thin `KernelMemoryService` client for KMP tools. It has
   no compatibility fallback to `ContextQueryService` or `ContextCommandService`.
-- `KernelMemoryService` emits structured request/response logs for all nine
-  KMP RPCs, including dimension mode/scope/abouts/scope IDs where applicable.
+- `KernelMemoryService` emits structured request/response/error logs for all
+  nine KMP RPCs, including dimension mode/scope/abouts/scope IDs where
+  applicable and tonic code/message on errors.
 - **Event store atomic CAS** — NATS uses `expected_last_subject_sequence` header; Valkey uses a Lua EVAL script. Both reject concurrent writes with `PortError::Conflict`. Validated with container integration tests.
 - **Async quality observer** — `CompositeQualityObserver` spawns observer calls via `tokio::spawn` (fire-and-forget). Observer I/O no longer blocks the gRPC handler hot path.
 - **TruncationMetadata in proto** — `RenderedContext.truncation` (field 8) carries budget_requested, budget_used, sections_kept, sections_dropped, token_estimator when a budget is applied.

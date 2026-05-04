@@ -131,9 +131,10 @@ When `REHYDRATION_LOG_FORMAT=json`, the `TracingQualityObserver` emits:
 }
 ```
 
-`KernelMemoryService` also emits structured request/response logs at the gRPC
-boundary for every KMP RPC. These events use the message values
-`kernel memory grpc request` and `kernel memory grpc response`.
+`KernelMemoryService` also emits structured request, response, and error logs
+at the gRPC boundary for every KMP RPC. These events use the message values
+`kernel memory grpc request`, `kernel memory grpc response`, and
+`kernel memory grpc error`.
 
 Request logs include:
 
@@ -152,6 +153,12 @@ Response logs include:
 - entry/warning counts for temporal traversal;
 - path/warning counts for `Trace`;
 - incoming/outgoing/evidence/warning counts for `Inspect`.
+
+Error logs include:
+
+- `rpc`;
+- tonic `code`;
+- the mapped error `message`.
 
 ### LogQL Examples
 
@@ -173,6 +180,9 @@ Response logs include:
 
 # Intentional all-about KMP reads
 {app_kubernetes_io_name="rehydration-kernel"} | json | message = "kernel memory grpc request" | dimension_scope = "all_abouts"
+
+# KMP fail-fast or storage conflict errors
+{app_kubernetes_io_name="rehydration-kernel"} | json | message = "kernel memory grpc error"
 ```
 
 ### PromQL Examples

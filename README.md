@@ -72,9 +72,15 @@ What is in place:
 
 - Hexagonal domain/application/adapter/transport layers
 - gRPC + async (NATS) contracts with CI protection (`buf breaking`, AsyncAPI checks)
+- Typed `KernelMemoryService` for Kernel Memory Protocol moves: ingest, wake,
+  ask, goto, near, rewind, forward, trace, and inspect
+- Installable stdio MCP adapter backed by the typed `KernelMemoryService`
 - TLS/mTLS on all infrastructure boundaries
-- 270 unit tests + 9 container-backed integration tests + [LLM-as-judge E2E benchmark](./docs/testing.md#benchmark-tests-llm-as-judge) ([methodology](./docs/research/benchmark-methodology-v1.md))
-- 4 E2E Helm tests via `helm test` (mTLS handshake, gRPC reachability, connection stability, mTLS enforcement)
+- Workspace unit tests + container-backed integration tests +
+  [LLM-as-judge E2E benchmark](./docs/testing.md#benchmark-tests-llm-as-judge)
+  ([methodology](./docs/research/benchmark-methodology-v1.md))
+- 5 E2E Helm tests via `helm test`, including the typed
+  `KernelMemoryService` lifecycle
 - Multi-resolution rendering (L0/L1/L2) with auto mode selection
 - Quality metrics with OTel + Loki observability
 - Helm chart with optional infrastructure sidecars and E2E test hooks

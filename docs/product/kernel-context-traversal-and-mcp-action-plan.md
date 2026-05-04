@@ -2,6 +2,11 @@
 
 Date: 2026-04-30
 
+Status: first typed gRPC and MCP live cut implemented on
+`feat/kernel-memory-service-grpc`. This document is now the roadmap and product
+context for the memory protocol, not a claim that every planned capability is
+still missing.
+
 ## Purpose
 
 This document defines the next capability the kernel must provide: a public
@@ -41,16 +46,24 @@ Kernel 1.0 already has:
 - gRPC query APIs;
 - Neo4j-backed relationship traversal;
 - Valkey-backed detail retrieval;
-- rendered context bundles with semantic relationship metadata.
+- rendered context bundles with semantic relationship metadata;
+- typed `KernelMemoryService` over Kernel Memory Protocol moves;
+- API-owned memory ingest mapped through the application command path;
+- domain-owned temporal traversal over `contains_entry` coordinates;
+- about-scoped dimension identities shaped as
+  `about:<about>:dimension:<dimension_id>`;
+- explicit dimension scope selection: `CURRENT_ABOUT`, `ABOUTS`, and
+  `ALL_ABOUTS`;
+- an installable stdio MCP adapter that calls `KernelMemoryService` live.
 
-Kernel 1.0 does not yet have:
+Kernel 1.0 still does not have:
 
-- a simple public memory protocol;
-- first-class memory ingestion mapped to `anchor/dimension/scope/entry`;
-- MCP tools for wake-up, evidence-backed answers, tracing, and inspection;
-- generic temporal traversal across one, several, or all memory dimensions;
-- a public, honest demo that proves before/after, update, and multi-scope
-  retrieval without app-specific code.
+- generated `Ask` answers; `Ask` is deterministic evidence recovery plus proof;
+- semantic conflict detection for `show_conflicts`;
+- raw/raw-ref expansion in typed responses;
+- KMP-specific NATS subjects such as `kernel.memory.ingest`;
+- a crates.io-published MCP package;
+- benchmark re-measurement proving which categories improved.
 
 This plan closes that gap using the existing Kernel 1.0 architecture. It does
 not require an embedded database, a new storage stack, or a GPU-bound traversal
@@ -147,17 +160,16 @@ This keeps the kernel agnostic while still allowing precise traversal.
 
 ## First Public Slice
 
-The first public slice should be intentionally small:
+The first public slice was intentionally small and is now implemented:
 
 1. Define the `anchor/dimension/scope/entry/time/relation/detail/provenance`
    contract.
-2. Add JSON schemas and examples for conversation, incident, workflow, and
-   benchmark-like records.
+2. Add JSON schemas and examples for KMP moves.
 3. Add typed gRPC `KernelMemoryService` over domain/application memory
    behavior.
-4. Add MCP tools only after they can call the typed memory service instead of
-   duplicating traversal logic.
-5. Prove temporal and multi-scope retrieval with one deterministic demo.
+4. Add MCP tools as a thin live client of the typed memory service.
+5. Prove temporal and multi-about retrieval with deterministic integration and
+   Helm lifecycle tests.
 6. Publish the limitation: this is traversal and evidence recovery, not a claim
    that every benchmark category is solved.
 
@@ -560,20 +572,25 @@ Optional semantic link:
 
 Ingest defaults:
 
-- preserve raw order inside each dimension and scope;
-- assign sequence when omitted;
-- preserve full text as evidence/detail payload;
-- index `about`, dimension kind/id, scope id, time, sequence, relation type,
-  and provenance;
+- preserve producer-provided temporal coordinates inside each dimension and
+  scope;
+- require callers to provide `sequence`/`rank` when they want those ordering
+  coordinates; the current cut does not auto-assign missing sequence values;
+- store entry text in the memory entry payload and store evidence only when the
+  request supplies explicit evidence records;
+- namespace dimension ids by `about` and project dimension, entry, relation,
+  and evidence records into the read model for traversal;
 - accept producer-provided semantic relations;
-- allow later enrichment to add relations after raw memory is recorded.
+- allow later enrichment to add relations through future memory or projection
+  writes.
 
 ### Ingest Modes
 
 Raw mode:
 
 - caller provides dimensions and entries only;
-- kernel stores traversable raw context;
+- kernel stores traversable typed memory entries with producer-provided
+  coordinates; typed raw payload expansion is still fail-fast;
 - use for transcripts, logs, histories, and benchmark haystacks.
 
 Semantic mode:
@@ -633,13 +650,16 @@ Minimal input:
 }
 ```
 
-The kernel should decide by default:
+Current live `kernel_ask` behavior is deterministic and bounded:
 
-- which dimensions to inspect;
-- how much temporal context to include;
-- which link paths are relevant;
-- whether raw neighboring claims are useful;
-- whether the answer needs aggregation, update resolution, or temporal ordering.
+- omitted dimension selection defaults to all dimensions in the current `about`;
+- callers may select one, several, or all abouts through `dimensions`;
+- the kernel reads the selected memory bundle and builds `answer` from selected
+  evidence reasons;
+- `show_conflicts` follows the same deterministic evidence path in this cut;
+- `best_effort` does not generate fallback text;
+- raw neighboring claims and conflict resolution require future typed response
+  and proof-model work.
 
 Optional constraints:
 
@@ -692,12 +712,14 @@ Expected output:
 
 Reading defaults:
 
-- `dimensions.mode="all"` unless restricted;
+- `dimensions.mode="all"` and `dimensions.scope="current_about"` unless
+  restricted;
 - proof path first;
-- raw neighboring claims only when useful or requested;
+- raw neighboring claims are not expanded in this cut;
 - bounded output by token budget;
-- current/superseding facts preferred when update relations exist;
-- ambiguity surfaced explicitly when facts conflict.
+- current/superseding facts are visible when producer-provided relations carry
+  that path;
+- conflict arrays remain empty until conflict detection is implemented.
 
 ## Public Memory Protocol Surface
 
@@ -936,27 +958,29 @@ without knowing application meaning.
 
 ## Architecture Direction
 
-MCP should be an adapter over kernel application services.
+MCP should be an adapter over the typed memory API.
 
-Recommended shape:
+Current implemented shape:
 
 ```text
 client / agent / eval harness
         |
         v
-kernel MCP server
+stdio MCP adapter
+        |
+        v
+KernelMemoryService gRPC
         |
         v
 kernel application ports
         |
-        +--> gRPC transport
-        +--> event ingestion
         +--> graph/query services
+        +--> command/event ingestion
         +--> detail store
 ```
 
 Events and gRPC remain supported. MCP is added as the simple tool-facing
-protocol.
+protocol without owning traversal logic.
 
 ## Compute Model
 
@@ -1020,12 +1044,14 @@ Affected projects/classes:
 
 ### Phase 0: Public Alignment
 
-Deliver:
+Status: delivered for the first memory slice.
+
+Delivered:
 
 - this action plan in public docs;
 - a short README/index link so readers can find it;
 - explicit non-goals and current limitations;
-- a tracked issue/PR checklist for the first implementation slice.
+- implementation status in the active docs.
 
 Exit criteria:
 
@@ -1035,38 +1061,48 @@ Exit criteria:
 
 ### Phase 1: Contract
 
-Deliver:
+Status: delivered for KMP fixtures and typed gRPC surface. Domain-specific
+example packs can still be added without changing the protocol.
 
-- RFC/ADR for the traversal contract;
+Delivered:
+
 - schemas for `kernel_ingest`, `kernel_wake`, `kernel_ask`, `kernel_goto`,
   `kernel_near`, `kernel_rewind`, `kernel_forward`, `kernel_trace`, and
   `kernel_inspect` under
   [`api/examples/kernel/v1beta1/kmp`](../../api/examples/kernel/v1beta1/kmp);
-- examples for conversation, incident, workflow, and benchmark records;
 - migration note for legacy API names that still say "session"; new kernel
   vocabulary should use "scope".
 
+Remaining follow-up:
+
+- optional formal ADR if the KMP contract needs a decision record separate from
+  these product/API docs;
+- richer conversation, incident, workflow, and benchmark example packs.
+
 ### Phase 2: Kernel Query Capabilities
 
-Deliver application services for:
+Status: delivered for the gRPC/MCP cut where backed by memory projection and
+existing query ports.
+
+Delivered application behavior:
 
 - context by anchor;
 - context by dimension;
-- context window by time;
-- context window by sequence;
 - temporal goto/near/rewind/forward over one, selected, or all dimensions;
 - context path by relation type;
-- scoped raw inspection.
+- typed scoped inspection of object/detail/direct links/evidence.
 
-Also deliver:
+Remaining follow-up:
 
-- indexes;
-- unit tests;
-- integration tests against Neo4j/Valkey.
+- typed raw inspection expansion;
+- richer semantic conflict detection;
+- additional indexes only where live workloads show query pressure.
 
 ### Phase 3: Typed gRPC API Before MCP
 
-Expose `KernelMemoryService` over gRPC first:
+Status: delivered.
+
+Exposed `KernelMemoryService` over gRPC:
 
 - `kernel_ingest`;
 - `kernel_wake`;
@@ -1078,7 +1114,7 @@ Expose `KernelMemoryService` over gRPC first:
 - `kernel_trace`;
 - `kernel_inspect`;
 
-Also deliver:
+Also delivered:
 
 - domain-owned temporal and multidimensional traversal;
 - application use cases over existing query/command ports;
@@ -1088,7 +1124,9 @@ Also deliver:
 
 ### Phase 4: MCP Server
 
-After the typed service is stable, expose:
+Status: delivered for stdio live mode.
+
+Delivered:
 
 - MCP service binary or crate;
 - local stdio adapter;
@@ -1103,6 +1141,8 @@ The MCP adapter must not call `ContextQueryService` or
 
 ### Phase 5: Underpass Adoption
 
+Status: follow-up.
+
 Deliver:
 
 - PIR context inspection/retrieval via MCP;
@@ -1111,7 +1151,9 @@ Deliver:
 - demos for temporal and dimensional traversal;
 - documentation in affected projects.
 
-### Phase 5: Evaluation
+### Phase 6: Evaluation
+
+Status: follow-up after the implemented KMP slice is stable in consumers.
 
 Evaluate against:
 
@@ -1157,9 +1199,9 @@ Interpretation:
 - Update questions improve when retrieval is more aware of recency.
 - Multi-scope aggregation remains weak without first-class evidence collection
   and traversal.
-- The kernel currently retrieves what has been connected semantically; it does
-  not yet provide enough generic exploration to recover missing context paths by
-  itself.
+- The pre-KMP kernel retrieved what had been connected semantically. The current
+  KMP cut adds generic temporal and dimension traversal, but the benchmark still
+  needs to be re-run before claiming category-level improvement.
 
 ### Concrete Failure Shape
 
@@ -1204,10 +1246,10 @@ Events and gRPC remain valid transports.
 Kernel Memory Protocol becomes the product surface. MCP, gRPC, and NATS become
 bindings for the same memory moves across Underpass.
 
-The first public step should be narrow and verifiable: make Kernel 1.0 expose
-memory moves as a simple protocol, then measure the benchmark again against that
-capability. Do not claim the benchmark is solved before the memory protocol and
-MCP tools exist.
+The first public step is now narrow and verifiable: Kernel 1.0 exposes memory
+moves as a simple protocol through typed gRPC and MCP. The next product proof is
+to measure the benchmark again against that capability. Do not claim the
+benchmark is solved before measurement.
 
 The principle to implement:
 
