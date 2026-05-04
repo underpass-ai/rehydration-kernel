@@ -1,11 +1,13 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use rehydration_application::{ApplicationError, KernelMemoryApplicationService};
+use rehydration_application::{
+    ApplicationError, KernelMemoryApplicationService, TemporalMemoryResult,
+};
 use rehydration_domain::{
     ContextEventStore, DimensionScopeMode, DimensionSelection, DimensionSelectionMode,
-    GraphNeighborhoodReader, MemoryAboutIndexReader, NodeDetailReader, NodeRelationshipReader,
-    ProjectionWriter, RehydrationBundle, SnapshotStore, TemporalDirection,
+    GraphNeighborhoodReader, MemoryAboutIndexReader, MemoryDimensionIdentity, NodeDetailReader,
+    NodeRelationshipReader, ProjectionWriter, RehydrationBundle, SnapshotStore, TemporalDirection,
 };
 use rehydration_proto::v1beta1::{
     AskRequest, AskResponse, IngestRequest, IngestResponse, InspectRequest, InspectResponse,
@@ -158,7 +160,7 @@ where
             self.application.temporal(query).await.map_err(|error| {
                 map_application_error_with_log("KernelMemoryService.Near", error)
             })?;
-        let selected_abouts = selected_abouts_from_bundle(&result.source_bundle);
+        let selected_abouts = selected_abouts_from_temporal_result(&result);
         let response =
             temporal_response_from_result(requested_cursor, TemporalDirection::Near, result);
         tracing::info!(
@@ -286,7 +288,7 @@ where
             .temporal(query)
             .await
             .map_err(|error| map_application_error_with_log(rpc, error))?;
-        let selected_abouts = selected_abouts_from_bundle(&result.source_bundle);
+        let selected_abouts = selected_abouts_from_temporal_result(&result);
         let response = temporal_response_from_result(requested_cursor, direction, result);
         tracing::info!(
             rpc,
@@ -318,6 +320,25 @@ fn log_temporal_request(rpc: &'static str, about: &str, dimensions: &DimensionSe
 }
 
 fn selected_abouts_from_bundle(bundle: &RehydrationBundle) -> Vec<String> {
+    selected_abouts_from_bundle_and_scope_ids(bundle, std::iter::empty())
+}
+
+fn selected_abouts_from_temporal_result(result: &TemporalMemoryResult) -> Vec<String> {
+    selected_abouts_from_bundle_and_scope_ids(
+        &result.source_bundle,
+        result
+            .traversal
+            .entries()
+            .iter()
+            .flat_map(|entry| entry.coordinates().iter())
+            .map(|coordinate| coordinate.scope_id()),
+    )
+}
+
+fn selected_abouts_from_bundle_and_scope_ids<'a>(
+    bundle: &RehydrationBundle,
+    scope_ids: impl IntoIterator<Item = &'a str>,
+) -> Vec<String> {
     let mut seen = BTreeSet::from([bundle.root_node_id().as_str().to_string()]);
     let mut selected = vec![bundle.root_node_id().as_str().to_string()];
 
@@ -328,6 +349,16 @@ fn selected_abouts_from_bundle(bundle: &RehydrationBundle) -> Vec<String> {
     {
         if seen.insert(node.node_id().to_string()) {
             selected.push(node.node_id().to_string());
+        }
+    }
+
+    for scope_id in scope_ids {
+        let Some(identity) = MemoryDimensionIdentity::parse(scope_id) else {
+            continue;
+        };
+        let about = identity.about().to_string();
+        if seen.insert(about.clone()) {
+            selected.push(about);
         }
     }
 
@@ -395,7 +426,7 @@ mod tests {
 
     use rehydration_domain::{BundleMetadata, BundleNode, CaseId, RehydrationBundle, Role};
 
-    use super::selected_abouts_from_bundle;
+    use super::{selected_abouts_from_bundle, selected_abouts_from_bundle_and_scope_ids};
 
     #[test]
     fn selected_abouts_preserve_resolved_root_order() {
@@ -415,6 +446,31 @@ mod tests {
 
         assert_eq!(
             selected_abouts_from_bundle(&bundle),
+            vec!["question:current", "question:other"]
+        );
+    }
+
+    #[test]
+    fn selected_abouts_include_temporal_scope_about_ids() {
+        let bundle = RehydrationBundle::new(
+            CaseId::new("question:current").expect("valid case id"),
+            Role::new("memory").expect("valid role"),
+            node("question:current", "memory_anchor"),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            BundleMetadata::initial("test"),
+        )
+        .expect("bundle should be valid");
+
+        assert_eq!(
+            selected_abouts_from_bundle_and_scope_ids(
+                &bundle,
+                [
+                    "about:question:other:dimension:timeline",
+                    "about:question:current:dimension:timeline",
+                ],
+            ),
             vec!["question:current", "question:other"]
         );
     }
