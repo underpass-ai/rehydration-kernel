@@ -439,7 +439,8 @@ Typed gRPC cut:
 - A real deployed public endpoint smoke proves ingest, read, temporal
   traversal, trace, and inspect through the typed service.
 - Helm e2e includes `KernelMemoryService` typed lifecycle coverage, including
-  `Inspect` link expansion and raw fail-fast behavior.
+  temporal `raw_refs` fail-fast behavior plus `Inspect` link expansion and raw
+  fail-fast behavior.
 
 MCP cut:
 

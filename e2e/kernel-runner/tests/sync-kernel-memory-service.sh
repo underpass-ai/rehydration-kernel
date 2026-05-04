@@ -221,7 +221,7 @@ goto="$(grpc_memory_call Goto "$(
       include: [$dimension]
     },
     limit: { entries: 5 },
-    include: { evidence: true, relations: true, rawRefs: true },
+    include: { evidence: true, relations: true },
     budget: { tokens: 1600, depth: 3 }
   }'
 )")"
@@ -240,7 +240,7 @@ near="$(grpc_memory_call Near "$(
     },
     window: { beforeEntries: 1, afterEntries: 1 },
     limit: { entries: 5 },
-    include: { evidence: true, relations: true, rawRefs: true },
+    include: { evidence: true, relations: true },
     budget: { tokens: 1600, depth: 3 }
   }'
 )")"
@@ -261,7 +261,7 @@ rewind_current="$(grpc_memory_call Rewind "$(
       include: [$dimension]
     },
     limit: { entries: 10 },
-    include: { evidence: true, relations: true, rawRefs: true },
+    include: { evidence: true, relations: true },
     budget: { tokens: 1600, depth: 3 }
   }'
 )")"
@@ -280,7 +280,7 @@ rewind_all="$(grpc_memory_call Rewind "$(
       scope: "DIMENSION_SCOPE_MODE_ALL_ABOUTS"
     },
     limit: { entries: 10 },
-    include: { evidence: true, relations: true, rawRefs: true },
+    include: { evidence: true, relations: true },
     budget: { tokens: 1600, depth: 3 }
   }'
 )")"
@@ -303,7 +303,7 @@ forward="$(grpc_memory_call Forward "$(
       include: [$dimension]
     },
     limit: { entries: 5 },
-    include: { evidence: true, relations: true, rawRefs: true },
+    include: { evidence: true, relations: true },
     budget: { tokens: 1600, depth: 3 }
   }'
 )")"
@@ -311,6 +311,30 @@ assert_jq "${forward}" \
   --arg target_ref "${target_ref}" \
   '.entries | map(.ref) | index($target_ref) != null' \
   "Forward did not include target entry"
+
+set +e
+temporal_raw_payload="$(
+  jq -nc --arg about "${about_a}" --arg dimension "${dimension}" '{
+    about: $about,
+    cursor: { sequence: 2 },
+    dimensions: {
+      mode: "DIMENSION_SELECTION_MODE_ONLY",
+      include: [$dimension]
+    },
+    include: { rawRefs: true },
+    budget: { tokens: 1600, depth: 3 }
+  }'
+)"
+temporal_raw_output="$(grpc_memory_call Goto "${temporal_raw_payload}" 2>&1)"
+temporal_raw_status=$?
+set -e
+
+if [[ ${temporal_raw_status} -eq 0 ]]; then
+  fail "Temporal rawRefs=true unexpectedly succeeded: ${temporal_raw_output}"
+fi
+if ! grep -q "temporal raw_refs expansion is not available" <<<"${temporal_raw_output}"; then
+  fail "Temporal rawRefs=true failed with unexpected error: ${temporal_raw_output}"
+fi
 
 trace="$(grpc_memory_call Trace "$(
   jq -nc --arg source_ref "${source_ref}" --arg target_ref "${target_ref}" '{
