@@ -109,7 +109,7 @@ helm upgrade rehydration-kernel charts/rehydration-kernel \
   --reuse-values --set e2e.enabled=true
 
 helm test rehydration-kernel --timeout 5m
-# 4 tests: health (mTLS handshake), rehydrate-session, get-context, mTLS enforcement
+# Helm hooks cover transport/mTLS smoke plus the typed KernelMemoryService lifecycle.
 ```
 
 Tests require the `e2e-client-tls` secret (same CA used by the kernel).

@@ -38,6 +38,22 @@ append_optional_bool_flag() {
   fi
 }
 
+kernel_grpc_host() {
+  local host="${KERNEL_GRPC_HOST:-${KERNEL_HOST:-}}"
+  if [[ -z "${host}" ]]; then
+    fail "KERNEL_GRPC_HOST or KERNEL_HOST is required"
+  fi
+  echo "${host}"
+}
+
+kernel_grpc_port() {
+  echo "${KERNEL_GRPC_PORT:-${KERNEL_PORT:-50054}}"
+}
+
+kernel_grpc_addr() {
+  echo "$(kernel_grpc_host):$(kernel_grpc_port)"
+}
+
 append_requested_scopes() {
   local -n out_ref="$1"
   local scopes="${PIR_GRAPH_BATCH_SCOPES:-graph,details}"
@@ -53,17 +69,15 @@ append_requested_scopes() {
 }
 
 grpc_describe() {
-  require_env KERNEL_GRPC_HOST
   require_env TLS_CA
   require_env TLS_CERT
   require_env TLS_KEY
 
-  local kernel_port="${KERNEL_GRPC_PORT:-50054}"
   grpcurl \
     -cacert "${TLS_CA}" \
     -cert "${TLS_CERT}" \
     -key "${TLS_KEY}" \
-    "${KERNEL_GRPC_HOST}:${kernel_port}" \
+    "$(kernel_grpc_addr)" \
     describe 2>&1
 }
 

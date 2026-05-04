@@ -297,3 +297,6 @@ e2e:
     - id: "04"
       name: connectivity
       timeout: 60
+    - id: "05"
+      name: kernel-memory-service
+      timeout: 180

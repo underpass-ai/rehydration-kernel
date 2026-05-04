@@ -4,13 +4,11 @@ source /app/common.sh
 
 echo "=== sync-mtls-enforcement ==="
 
-require_env KERNEL_GRPC_HOST
 require_env TLS_CA
 require_env TLS_CERT
 require_env TLS_KEY
 
-kernel_port="${KERNEL_GRPC_PORT:-50054}"
-kernel_addr="${KERNEL_GRPC_HOST}:${kernel_port}"
+kernel_addr="$(kernel_grpc_addr)"
 
 set +e
 output_auth="$(grpcurl \

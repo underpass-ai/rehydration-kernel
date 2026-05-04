@@ -356,6 +356,11 @@ After the gRPC-only code and tests pass:
    - `Trace`;
    - `Inspect`.
 
+The chart Helm tests include `kernel-memory-service` test id `05`. It runs the
+typed lifecycle through the e2e runner: ingest two abouts, read current-about
+and `ALL_ABOUTS` temporal traversal, verify `Trace`, verify `Inspect`
+incoming/outgoing links, and assert `raw=true` fails fast.
+
 MCP rebuild/reinstall belongs to the next slice.
 
 The public endpoint smoke target remains:
@@ -400,6 +405,8 @@ Current gRPC-only cut:
 - CI passes.
 - A real deployed public endpoint smoke proves ingest, read, temporal
   traversal, trace, and inspect through the typed service.
+- Helm e2e includes `KernelMemoryService` typed lifecycle coverage, including
+  `Inspect` link expansion and raw fail-fast behavior.
 
 Next MCP cut:
 

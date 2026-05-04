@@ -16,11 +16,17 @@ else
 fi
 
 case "${test_id}" in
-  01|sync-grpc-handshake)
+  01|health|sync-grpc-handshake)
     script="/app/tests/sync-grpc-handshake.sh"
     ;;
-  02|sync-mtls-enforcement)
+  02|04|connectivity|sync-mtls-enforcement)
     script="/app/tests/sync-mtls-enforcement.sh"
+    ;;
+  03|get-context|rehydrate-session)
+    script="/app/tests/sync-grpc-handshake.sh"
+    ;;
+  05|kernel-memory-service|sync-kernel-memory-service)
+    script="/app/tests/sync-kernel-memory-service.sh"
     ;;
   11|async-graph-batch-roundtrip)
     script="/app/tests/async-graph-batch-roundtrip.sh"
@@ -42,6 +48,9 @@ case "${test_id}" in
 Supported TEST_ID values:
   01 | sync-grpc-handshake
   02 | sync-mtls-enforcement
+  03 | sync-grpc-handshake
+  04 | sync-mtls-enforcement
+  05 | sync-kernel-memory-service
   11 | async-graph-batch-roundtrip
   14 | async-graph-relation-roundtrip
   15 | async-vllm-spine-ab-comparison
@@ -56,6 +65,9 @@ EOF
 Supported TEST_ID values:
   01 | sync-grpc-handshake
   02 | sync-mtls-enforcement
+  03 | sync-grpc-handshake
+  04 | sync-mtls-enforcement
+  05 | sync-kernel-memory-service
   11 | async-graph-batch-roundtrip
   14 | async-graph-relation-roundtrip
   15 | async-vllm-spine-ab-comparison

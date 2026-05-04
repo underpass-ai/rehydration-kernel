@@ -265,6 +265,7 @@ Supported `TEST_ID` values:
 
 - `sync-grpc-handshake`
 - `sync-mtls-enforcement`
+- `sync-kernel-memory-service`
 - `async-graph-batch-roundtrip`
 - `async-graph-relation-roundtrip`
 - `async-vllm-spine-ab-comparison`
