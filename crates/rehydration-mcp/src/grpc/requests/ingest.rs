@@ -1,0 +1,273 @@
+use rehydration_proto::v1beta1::{
+    IngestRequest, Memory, MemoryConfidence, MemoryDimension, MemoryEntry, MemoryEvidence,
+    MemoryProvenance, MemoryRelation, MemorySemanticClass, TemporalCoordinate,
+};
+use serde_json::{Map, Value};
+
+use super::common::{
+    confidence_from_field, object, optional_array_field, optional_bool_field,
+    optional_metadata_field, optional_positive_u32_field, optional_string_array_field,
+    optional_string_field, optional_timestamp_field, required_array_field, required_object_field,
+    required_string_field, required_timestamp_field, semantic_class_from_field,
+    source_kind_from_field,
+};
+
+pub(in crate::grpc) fn ingest_request_from_arguments(
+    arguments: &Value,
+) -> Result<IngestRequest, String> {
+    let arguments = object(arguments, "tool arguments")?;
+    let about = required_string_field(arguments, "about", "about")?;
+    let memory = memory_from_object(required_object_field(arguments, "memory", "memory")?)?;
+    let provenance = super::common::optional_object_field(arguments, "provenance", "provenance")?
+        .map(provenance_from_object)
+        .transpose()?;
+    let idempotency_key = required_string_field(arguments, "idempotency_key", "idempotency_key")?;
+    let dry_run = optional_bool_field(arguments, "dry_run", "dry_run")?.unwrap_or(false);
+
+    Ok(IngestRequest {
+        about,
+        memory: Some(memory),
+        provenance,
+        idempotency_key,
+        dry_run,
+    })
+}
+
+fn memory_from_object(memory: &Map<String, Value>) -> Result<Memory, String> {
+    let dimensions = required_array_field(memory, "dimensions", "memory.dimensions")?;
+    let entries = required_array_field(memory, "entries", "memory.entries")?;
+    let relations = optional_array_field(memory, "relations", "memory.relations")?;
+    let evidence = optional_array_field(memory, "evidence", "memory.evidence")?;
+
+    Ok(Memory {
+        dimensions: dimensions
+            .iter()
+            .map(dimension_from_value)
+            .collect::<Result<Vec<_>, _>>()?,
+        entries: entries
+            .iter()
+            .map(entry_from_value)
+            .collect::<Result<Vec<_>, _>>()?,
+        relations: relations
+            .iter()
+            .map(relation_from_value)
+            .collect::<Result<Vec<_>, _>>()?,
+        evidence: evidence
+            .iter()
+            .map(evidence_from_value)
+            .collect::<Result<Vec<_>, _>>()?,
+    })
+}
+
+fn dimension_from_value(value: &Value) -> Result<MemoryDimension, String> {
+    let value = object(value, "memory.dimensions[]")?;
+    Ok(MemoryDimension {
+        id: required_string_field(value, "id", "memory.dimensions[].id")?,
+        kind: required_string_field(value, "kind", "memory.dimensions[].kind")?,
+        title: optional_string_field(value, "title", "memory.dimensions[].title")?
+            .unwrap_or_default(),
+        metadata: optional_metadata_field(value, "metadata", "memory.dimensions[].metadata")?,
+    })
+}
+
+fn entry_from_value(value: &Value) -> Result<MemoryEntry, String> {
+    let value = object(value, "memory.entries[]")?;
+    let coordinates = required_array_field(value, "coordinates", "memory.entries[].coordinates")?;
+
+    Ok(MemoryEntry {
+        id: required_string_field(value, "id", "memory.entries[].id")?,
+        kind: required_string_field(value, "kind", "memory.entries[].kind")?,
+        text: required_string_field(value, "text", "memory.entries[].text")?,
+        coordinates: coordinates
+            .iter()
+            .map(coordinate_from_value)
+            .collect::<Result<Vec<_>, _>>()?,
+        metadata: optional_metadata_field(value, "metadata", "memory.entries[].metadata")?,
+    })
+}
+
+fn coordinate_from_value(value: &Value) -> Result<TemporalCoordinate, String> {
+    let value = object(value, "memory.entries[].coordinates[]")?;
+    Ok(TemporalCoordinate {
+        dimension: required_string_field(
+            value,
+            "dimension",
+            "memory.entries[].coordinates[].dimension",
+        )?,
+        scope_id: required_string_field(
+            value,
+            "scope_id",
+            "memory.entries[].coordinates[].scope_id",
+        )?,
+        occurred_at: optional_timestamp_field(
+            value,
+            "occurred_at",
+            "memory.entries[].coordinates[].occurred_at",
+        )?,
+        observed_at: optional_timestamp_field(
+            value,
+            "observed_at",
+            "memory.entries[].coordinates[].observed_at",
+        )?,
+        ingested_at: optional_timestamp_field(
+            value,
+            "ingested_at",
+            "memory.entries[].coordinates[].ingested_at",
+        )?,
+        valid_from: optional_timestamp_field(
+            value,
+            "valid_from",
+            "memory.entries[].coordinates[].valid_from",
+        )?,
+        valid_until: optional_timestamp_field(
+            value,
+            "valid_until",
+            "memory.entries[].coordinates[].valid_until",
+        )?,
+        sequence: optional_positive_u32_field(
+            value,
+            "sequence",
+            "memory.entries[].coordinates[].sequence",
+        )?,
+        rank: optional_positive_u32_field(value, "rank", "memory.entries[].coordinates[].rank")?,
+        metadata: optional_metadata_field(
+            value,
+            "metadata",
+            "memory.entries[].coordinates[].metadata",
+        )?,
+    })
+}
+
+fn relation_from_value(value: &Value) -> Result<MemoryRelation, String> {
+    let value = object(value, "memory.relations[]")?;
+    let semantic_class = semantic_class_from_field(value, "class", "memory.relations[].class")?;
+    let why = optional_string_field(value, "why", "memory.relations[].why")?.unwrap_or_default();
+    let evidence = optional_string_field(value, "evidence", "memory.relations[].evidence")?
+        .unwrap_or_default();
+    let confidence = confidence_from_field(value, "confidence", "memory.relations[].confidence")?;
+
+    if semantic_class != MemorySemanticClass::Structural as i32 {
+        if confidence == MemoryConfidence::Unspecified as i32 {
+            return Err("non-structural memory relations require confidence".to_string());
+        }
+        if why.trim().is_empty() && evidence.trim().is_empty() {
+            return Err("non-structural memory relations require why or evidence".to_string());
+        }
+    }
+
+    Ok(MemoryRelation {
+        source_ref: required_string_field(value, "from", "memory.relations[].from")?,
+        target_ref: required_string_field(value, "to", "memory.relations[].to")?,
+        rel: required_string_field(value, "rel", "memory.relations[].rel")?,
+        semantic_class,
+        why,
+        evidence,
+        confidence,
+        sequence: optional_positive_u32_field(value, "sequence", "memory.relations[].sequence")?,
+    })
+}
+
+fn evidence_from_value(value: &Value) -> Result<MemoryEvidence, String> {
+    let value = object(value, "memory.evidence[]")?;
+    Ok(MemoryEvidence {
+        id: required_string_field(value, "id", "memory.evidence[].id")?,
+        supports: optional_string_array_field(value, "supports", "memory.evidence[].supports")?,
+        text: required_string_field(value, "text", "memory.evidence[].text")?,
+        source: optional_string_field(value, "source", "memory.evidence[].source")?
+            .unwrap_or_default(),
+        time: optional_timestamp_field(value, "time", "memory.evidence[].time")?,
+        metadata: optional_metadata_field(value, "metadata", "memory.evidence[].metadata")?,
+    })
+}
+
+fn provenance_from_object(value: &Map<String, Value>) -> Result<MemoryProvenance, String> {
+    Ok(MemoryProvenance {
+        source_kind: source_kind_from_field(value, "source_kind", "provenance.source_kind")?,
+        source_agent: required_string_field(value, "source_agent", "provenance.source_agent")?,
+        observed_at: Some(required_timestamp_field(
+            value,
+            "observed_at",
+            "provenance.observed_at",
+        )?),
+        correlation_id: optional_string_field(
+            value,
+            "correlation_id",
+            "provenance.correlation_id",
+        )?
+        .unwrap_or_default(),
+        causation_id: optional_string_field(value, "causation_id", "provenance.causation_id")?
+            .unwrap_or_default(),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use rehydration_proto::v1beta1::MemorySourceKind;
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn ingest_request_maps_mcp_memory_to_kernel_memory_service_proto() {
+        let request = ingest_request_from_arguments(&json!({
+            "about": "question:830ce83f",
+            "memory": {
+                "dimensions": [
+                    {
+                        "id": "conversation:rachel",
+                        "kind": "conversation"
+                    }
+                ],
+                "entries": [
+                    {
+                        "id": "claim:rachel-austin",
+                        "kind": "claim",
+                        "text": "Rachel moved to Austin.",
+                        "coordinates": [
+                            {
+                                "dimension": "conversation",
+                                "scope_id": "conversation:rachel",
+                                "sequence": 1,
+                                "occurred_at": "2026-04-12T15:05:00Z"
+                            }
+                        ]
+                    }
+                ],
+                "relations": [
+                    {
+                        "from": "claim:rachel-austin",
+                        "to": "claim:rachel-denver",
+                        "rel": "supersedes",
+                        "class": "evidential",
+                        "why": "Later statement corrects earlier statement.",
+                        "confidence": "high"
+                    }
+                ],
+                "evidence": [
+                    {
+                        "id": "evidence:rachel",
+                        "supports": ["claim:rachel-austin"],
+                        "text": "Rachel corrected the destination."
+                    }
+                ]
+            },
+            "provenance": {
+                "source_kind": "agent",
+                "source_agent": "longmemeval-adapter",
+                "observed_at": "2026-05-04T10:00:00Z"
+            },
+            "idempotency_key": "ingest:830ce83f:1"
+        }))
+        .expect("ingest request should map");
+
+        assert_eq!(request.about, "question:830ce83f");
+        assert_eq!(
+            request.memory.as_ref().expect("memory").relations[0].source_ref,
+            "claim:rachel-austin"
+        );
+        assert_eq!(
+            request.provenance.expect("provenance").source_kind,
+            MemorySourceKind::Agent as i32
+        );
+    }
+}

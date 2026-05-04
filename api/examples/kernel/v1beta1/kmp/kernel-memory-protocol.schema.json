@@ -409,6 +409,10 @@
             "balanced",
             "full"
           ]
+        },
+        "depth": {
+          "type": "integer",
+          "minimum": 1
         }
       }
     },
@@ -434,6 +438,20 @@
           }
         },
         "exclude": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/non_empty_string"
+          }
+        },
+        "scope": {
+          "type": "string",
+          "enum": [
+            "current_about",
+            "abouts",
+            "all_abouts"
+          ]
+        },
+        "abouts": {
           "type": "array",
           "items": {
             "$ref": "#/$defs/non_empty_string"
@@ -1055,18 +1073,6 @@
         },
         "goal": {
           "$ref": "#/$defs/non_empty_string"
-        },
-        "include": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "evidence": {
-              "type": "boolean"
-            },
-            "raw_refs": {
-              "type": "boolean"
-            }
-          }
         }
       }
     },

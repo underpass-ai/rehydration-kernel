@@ -10,12 +10,9 @@ Current status:
 - can serve explicit fixture-backed KMP responses from
   `api/examples/kernel/v1beta1/kmp`;
 - can use the live gRPC kernel when `REHYDRATION_KERNEL_GRPC_ENDPOINT` is set;
-- current live mode still maps KMP tools to the lower-level
-  `ContextCommandService` and `ContextQueryService` clients;
-- migration to the typed `KernelMemoryService` is the next slice now that the
-  gRPC memory API exists;
-- live `kernel_ask` returns evidence/proof from `GetContext`, not a generated
-  answer.
+- live mode calls the typed `KernelMemoryService` gRPC API directly;
+- live `kernel_ask` returns deterministic memory context or `UNKNOWN`, not a
+  generated answer.
 
 Run locally:
 
@@ -80,21 +77,7 @@ Tool call example:
 {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"kernel_ask","arguments":{"about":"question:830ce83f","question":"Where did Rachel move after her recent relocation?","answer_policy":"evidence_or_unknown"}}}
 ```
 
-Current live backend mapping:
-
-| Tool | Kernel read |
-|:-----|:------------|
-| `kernel_ingest` | `UpdateContext` |
-| `kernel_wake` | `GetContext` |
-| `kernel_ask` | `GetContext` |
-| `kernel_goto` | `GetContext` |
-| `kernel_near` | `GetContext` |
-| `kernel_rewind` | `GetContext` |
-| `kernel_forward` | `GetContext` |
-| `kernel_trace` | `GetContextPath` |
-| `kernel_inspect` | `GetNodeDetail` |
-
-Next live backend mapping:
+Live backend mapping:
 
 | Tool | Kernel read/write |
 |:-----|:------------------|

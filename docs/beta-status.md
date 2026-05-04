@@ -144,7 +144,6 @@ metrics. `RehydrateSession` renders per-role bundles and emits quality via the o
 - **No authorization backend (deliberate)** — `ValidateScope` is a pure set-comparison utility, not an access control gate. `GetContext` does not invoke scope validation. This is a conscious design decision for v1beta1: the kernel delegates access control to the transport layer (mTLS client certificates) and the integrating product. Scope enforcement is not planned for the kernel itself — consumers are expected to validate scopes at their own boundary
 - **No timeline filtering** — `RehydrateSession` echoes `timeline_window` but does not filter events by time range
 - **`context.bundle.generated` not emitted** — defined in AsyncAPI contract but the kernel runtime does not publish this event. Test fixtures simulate it for downstream integration tests
-- **MCP live adapter not migrated to `KernelMemoryService` yet** — this is the next slice. The gRPC memory service is implemented first so MCP can become a thin adapter over it.
 - **No generated `Ask` answers** — `KernelMemoryService.Ask` returns deterministic rendered memory context or `UNKNOWN` according to the answer policy.
 - **No inspect raw expansion yet** — `KernelMemoryService.Inspect` supports explicit incoming/outgoing links through the typed node relationship reader. `raw=true` still fails fast until raw inspection has a typed response contract.
 - **Single token estimator** — `cl100k_base` BPE via `tiktoken-rs` for all counting. No model-specific estimator selection
@@ -152,6 +151,8 @@ metrics. `RehydrateSession` renders per-role bundles and emits quality via the o
 
 **Implemented in this version:**
 
+- MCP live adapter is a thin `KernelMemoryService` client for KMP tools. It has
+  no compatibility fallback to `ContextQueryService` or `ContextCommandService`.
 - **Event store atomic CAS** — NATS uses `expected_last_subject_sequence` header; Valkey uses a Lua EVAL script. Both reject concurrent writes with `PortError::Conflict`. Validated with container integration tests.
 - **Async quality observer** — `CompositeQualityObserver` spawns observer calls via `tokio::spawn` (fire-and-forget). Observer I/O no longer blocks the gRPC handler hot path.
 - **TruncationMetadata in proto** — `RenderedContext.truncation` (field 8) carries budget_requested, budget_used, sections_kept, sections_dropped, token_estimator when a budget is applied.

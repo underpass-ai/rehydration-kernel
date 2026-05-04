@@ -1,9 +1,5 @@
 {
   "from": "claim:rachel-austin",
   "to": "claim:rachel-denver",
-  "goal": "explain_update",
-  "include": {
-    "evidence": true,
-    "raw_refs": true
-  }
+  "goal": "explain_update"
 }

@@ -6,8 +6,8 @@ use std::error::Error;
 
 use rehydration_mcp::KernelMcpServer;
 use rehydration_tests_shared::seed::kernel_data::{
-    DECISION_DETAIL, DECISION_ID, DECISION_KIND, DEVELOPER_ROLE, HAS_TASK_RELATION,
-    RECORDS_RELATION, ROOT_NODE_ID, TASK_ID,
+    DECISION_DETAIL, DECISION_ID, DECISION_KIND, DEVELOPER_ROLE, HAS_TASK_RELATION, ROOT_NODE_ID,
+    TASK_ID,
 };
 use serde_json::{Value, json};
 
@@ -70,7 +70,7 @@ async fn mcp_tools_read_from_live_kernel_grpc_server() -> Result<(), Box<dyn Err
                         {
                             "id": "claim:mcp-ingest-after",
                             "kind": "claim",
-                            "text": "The MCP adapter can submit memory through the live kernel command service.",
+                            "text": "The MCP adapter can submit memory through the live KernelMemoryService.",
                             "coordinates": [
                                 {
                                     "dimension": "conversation",
@@ -101,8 +101,9 @@ async fn mcp_tools_read_from_live_kernel_grpc_server() -> Result<(), Box<dyn Err
                     ]
                 },
                 "provenance": {
-                    "source_kind": "test",
+                    "source_kind": "agent",
                     "source_agent": "mcp-real-kernel-smoke",
+                    "observed_at": "2026-05-04T10:00:00Z",
                     "correlation_id": "corr:mcp-ingest-smoke",
                     "causation_id": "test:mcp-real-kernel-smoke"
                 },
@@ -217,22 +218,7 @@ async fn mcp_tools_read_from_live_kernel_grpc_server() -> Result<(), Box<dyn Err
         let wake_content = structured_content(&wake);
         assert_non_empty_string(wake_content, "/summary");
         assert_non_empty_array(wake_content, "/wake/current_state");
-        assert_array_contains_relation(
-            wake_content,
-            "/proof/path",
-            ROOT_NODE_ID,
-            DECISION_ID,
-            RECORDS_RELATION,
-        );
-        assert_array_contains_relation(
-            wake_content,
-            "/proof/path",
-            ROOT_NODE_ID,
-            TASK_ID,
-            HAS_TASK_RELATION,
-        );
         assert_array_contains_evidence(wake_content, "/proof/evidence", ROOT_NODE_ID);
-        assert_array_contains_evidence(wake_content, "/proof/evidence", DECISION_ID);
 
         let ask = call_tool(
             &server,
@@ -250,14 +236,8 @@ async fn mcp_tools_read_from_live_kernel_grpc_server() -> Result<(), Box<dyn Err
         .await;
         assert_tool_success(&ask);
         let ask_content = structured_content(&ask);
-        assert_eq!(ask_content.pointer("/answer"), Some(&Value::Null));
-        assert_array_contains_evidence(ask_content, "/proof/evidence", DECISION_ID);
-        assert!(
-            array_at(ask_content, "/proof/missing")
-                .iter()
-                .any(|value| value.as_str() == Some("generative_answer")),
-            "kernel_ask should stay honest about the missing generative answer"
-        );
+        assert_non_empty_string(ask_content, "/answer");
+        assert_non_empty_array(ask_content, "/because");
 
         let trace = call_tool(
             &server,

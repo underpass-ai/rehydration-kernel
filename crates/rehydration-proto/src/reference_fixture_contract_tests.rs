@@ -290,7 +290,7 @@ fn kmp_reference_fixtures_are_valid_json_and_memory_shaped() {
     );
     assert_eq!(
         sorted_keys(object_keys(&parse_fixture(KMP_TRACE_REQUEST_FIXTURE))),
-        sorted_strs(&["from", "to", "goal", "include"])
+        sorted_strs(&["from", "to", "goal"])
     );
     assert_eq!(
         sorted_keys(object_keys(&parse_fixture(KMP_TRACE_RESPONSE_FIXTURE))),

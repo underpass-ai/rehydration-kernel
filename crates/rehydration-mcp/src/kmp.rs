@@ -1,843 +1,539 @@
-use std::collections::{BTreeMap, BTreeSet};
-
+use prost_types::Timestamp;
 use rehydration_proto::v1beta1::{
-    BundleNodeDetail, GetContextResponse, GetNodeDetailResponse, GraphRelationship,
-    GraphRelationshipExplanation, GraphRelationshipSemanticClass, RenderedContext,
+    AnswerReason, AskResponse, DimensionScopeMode, DimensionSelection, DimensionSelectionMode,
+    IngestResponse, InspectResponse, MemoryConfidence, MemoryEvidence, MemoryRelation,
+    MemorySemanticClass, TemporalCoordinate, TemporalCursor, TemporalDirection, TemporalEntry,
+    TemporalMoveResponse, TraceResponse, WakeClaim, WakeResponse,
 };
 use serde_json::{Map, Value, json};
 
-pub(crate) fn wake_from_get_context(
-    about: &str,
-    intent: &str,
-    response: &GetContextResponse,
-) -> Value {
-    let rendered = response.rendered.as_ref();
-    let relationships = context_relationships(response);
-    let evidence = context_evidence(response);
-    let current_state = rendered_current_state(rendered);
-    let has_content = rendered
-        .map(|rendered| !rendered.content.trim().is_empty() || !rendered.sections.is_empty())
-        .unwrap_or(false);
+use crate::ingest::KmpIngestPlan;
+
+pub(crate) fn ingest_from_response(response: IngestResponse) -> Value {
+    let memory = response.memory.as_ref();
+    let accepted = memory.and_then(|memory| memory.accepted.as_ref());
 
     json!({
-        "summary": rendered
-            .map(rendered_summary)
-            .unwrap_or_else(|| format!("Live kernel returned no rendered context for {about}.")),
-        "wake": {
-            "objective": intent,
-            "current_state": current_state,
-            "causal_spine": relationships
-                .iter()
-                .take(8)
-                .map(|relationship| json!({
-                    "claim": format!(
-                        "{} -> {}",
-                        relationship.get("from").and_then(Value::as_str).unwrap_or("unknown"),
-                        relationship.get("to").and_then(Value::as_str).unwrap_or("unknown")
-                    ),
-                    "because": relationship
-                        .get("why")
-                        .and_then(Value::as_str)
-                        .filter(|why| !why.is_empty())
-                        .unwrap_or("Kernel relationship path selected this edge."),
-                    "evidence_ref": relationship
-                        .get("evidence")
-                        .and_then(Value::as_str)
-                        .unwrap_or("")
-                }))
-                .collect::<Vec<_>>(),
-            "open_loops": if has_content { Vec::<String>::new() } else { vec!["No rendered live context was returned.".to_string()] },
-            "next_actions": [
-                "Use kernel_trace for specific relation paths.",
-                "Use kernel_inspect for raw node detail."
-            ],
-            "guardrails": [
-                "This wake packet is derived from live GetContext output.",
-                "Missing relations or details may limit proof quality."
-            ]
+        "summary": response.summary,
+        "memory": {
+            "about": memory.map(|memory| memory.about.as_str()).unwrap_or(""),
+            "memory_id": memory.map(|memory| memory.memory_id.as_str()).unwrap_or(""),
+            "accepted": {
+                "entries": accepted.map(|accepted| accepted.entries).unwrap_or_default(),
+                "relations": accepted.map(|accepted| accepted.relations).unwrap_or_default(),
+                "evidence": accepted.map(|accepted| accepted.evidence).unwrap_or_default()
+            },
+            "read_after_write_ready": memory
+                .map(|memory| memory.read_after_write_ready)
+                .unwrap_or(false)
         },
-        "proof": {
-            "path": relationships,
-            "evidence": evidence,
-            "conflicts": [],
-            "missing": if has_content { Vec::<String>::new() } else { vec!["rendered_context".to_string()] },
-            "confidence": if has_content { "medium" } else { "unknown" }
-        },
-        "warnings": live_warnings(rendered, false)
+        "warnings": response.warnings
     })
 }
 
-pub(crate) fn ask_from_get_context(
-    about: &str,
-    question: &str,
-    response: &GetContextResponse,
-) -> Value {
-    let rendered = response.rendered.as_ref();
-    let relationships = context_relationships(response);
-    let evidence = context_evidence(response);
-    let has_evidence = !evidence.is_empty()
-        || rendered
-            .map(|rendered| !rendered.content.trim().is_empty())
-            .unwrap_or(false);
-
+pub(crate) fn dry_run_ingest_from_plan(plan: &KmpIngestPlan) -> Value {
     json!({
-        "summary": if has_evidence {
-            format!("Returned live kernel context for `{about}`. This read-only adapter did not generate a final answer for: {question}")
-        } else {
-            format!("Live kernel returned no evidence for `{about}`.")
-        },
-        "answer": Value::Null,
-        "because": evidence
-            .iter()
-            .take(5)
-            .map(|item| json!({
-                "claim": item.get("source").and_then(Value::as_str).unwrap_or("kernel evidence"),
-                "evidence": item.get("text").and_then(Value::as_str).unwrap_or(""),
-                "ref": item.get("id").and_then(Value::as_str).unwrap_or("")
-            }))
-            .collect::<Vec<_>>(),
-        "proof": {
-            "path": relationships,
-            "evidence": evidence,
-            "conflicts": [],
-            "missing": ["generative_answer"],
-            "confidence": if has_evidence { "medium" } else { "unknown" }
+        "summary": format!(
+            "Ingested {} {}, {} {}, and {} {} for {}.",
+            plan.accepted.entries,
+            plural(plan.accepted.entries, "entry", "entries"),
+            plan.accepted.relations,
+            plural(plan.accepted.relations, "relation", "relations"),
+            plan.accepted.evidence,
+            plural(plan.accepted.evidence, "evidence item", "evidence items"),
+            plan.about
+        ),
+        "memory": {
+            "about": plan.about,
+            "memory_id": plan.memory_id,
+            "accepted": {
+                "entries": plan.accepted.entries,
+                "relations": plan.accepted.relations,
+                "evidence": plan.accepted.evidence
+            },
+            "read_after_write_ready": false
         },
         "warnings": [
-            "kernel_ask live gRPC mode returns evidence/proof only; final answer generation is not implemented in this adapter."
+            "dry_run=true; validated memory without sending a KernelMemoryService.Ingest call"
         ]
     })
 }
 
-pub(crate) fn inspect_from_get_node_detail(
-    ref_id: &str,
-    response: &GetNodeDetailResponse,
-) -> Value {
-    let object = response.node.as_ref().map_or_else(
+pub(crate) fn wake_from_response(response: WakeResponse) -> Value {
+    let wake = response.wake.as_ref();
+    json!({
+        "summary": response.summary,
+        "wake": {
+            "objective": wake.map(|wake| wake.objective.as_str()).unwrap_or(""),
+            "current_state": wake
+                .map(|wake| wake.current_state.clone())
+                .unwrap_or_default(),
+            "causal_spine": wake
+                .map(|wake| wake.causal_spine.iter().map(wake_claim_json).collect::<Vec<_>>())
+                .unwrap_or_default(),
+            "open_loops": wake.map(|wake| wake.open_loops.clone()).unwrap_or_default(),
+            "next_actions": wake.map(|wake| wake.next_actions.clone()).unwrap_or_default(),
+            "guardrails": wake.map(|wake| wake.guardrails.clone()).unwrap_or_default()
+        },
+        "proof": response.proof.as_ref().map(proof_json).unwrap_or_else(empty_proof_json),
+        "warnings": response.warnings
+    })
+}
+
+pub(crate) fn ask_from_response(response: AskResponse) -> Value {
+    json!({
+        "summary": response.summary,
+        "answer": if response.answer.trim().is_empty() {
+            Value::Null
+        } else {
+            Value::String(response.answer)
+        },
+        "because": response.because.iter().map(answer_reason_json).collect::<Vec<_>>(),
+        "proof": response.proof.as_ref().map(proof_json).unwrap_or_else(empty_proof_json),
+        "warnings": response.warnings
+    })
+}
+
+pub(crate) fn temporal_from_response(response: TemporalMoveResponse) -> Value {
+    json!({
+        "summary": response.summary,
+        "temporal": response
+            .temporal
+            .as_ref()
+            .map(temporal_state_json)
+            .unwrap_or(Value::Null),
+        "coverage": response
+            .coverage
+            .as_ref()
+            .map(|coverage| {
+                json!({
+                    "requested": coverage
+                        .requested
+                        .as_ref()
+                        .map(dimension_selection_json)
+                        .unwrap_or(Value::Null),
+                    "included": coverage.included,
+                    "missing": coverage.missing
+                })
+            })
+            .unwrap_or_else(|| json!({
+                "requested": Value::Null,
+                "included": Vec::<String>::new(),
+                "missing": Vec::<String>::new()
+            })),
+        "entries": response.entries.iter().map(temporal_entry_json).collect::<Vec<_>>(),
+        "proof": response.proof.as_ref().map(proof_json).unwrap_or_else(empty_proof_json),
+        "warnings": response.warnings
+    })
+}
+
+pub(crate) fn trace_from_response(response: TraceResponse) -> Value {
+    json!({
+        "summary": response.summary,
+        "trace": response.trace.iter().map(memory_relation_json).collect::<Vec<_>>(),
+        "warnings": response.warnings
+    })
+}
+
+pub(crate) fn inspect_from_response(response: InspectResponse) -> Value {
+    let object = response.object.as_ref().map_or_else(
         || {
             json!({
-                "ref": ref_id,
-                "kind": "unknown"
+                "ref": "",
+                "kind": "",
+                "text": ""
             })
         },
-        |node| {
+        |object| {
             json!({
-                "ref": node.node_id,
-                "kind": node.node_kind,
-                "text": if node.summary.is_empty() { node.title.clone() } else { node.summary.clone() }
+                "ref": object.r#ref,
+                "kind": object.kind,
+                "text": object.text
             })
         },
     );
-    let evidence = response
-        .detail
-        .as_ref()
-        .map_or_else(Vec::new, |detail| vec![evidence_from_detail(detail)]);
+    let links = response.links.as_ref();
 
     json!({
-        "summary": if response.node.is_some() {
-            format!("Found live kernel node `{ref_id}`.")
-        } else {
-            format!("No live kernel node metadata returned for `{ref_id}`.")
-        },
+        "summary": response.summary,
         "object": object,
         "links": {
-            "incoming": [],
-            "outgoing": []
+            "incoming": links
+                .map(|links| links.incoming.iter().map(memory_relation_json).collect::<Vec<_>>())
+                .unwrap_or_default(),
+            "outgoing": links
+                .map(|links| links.outgoing.iter().map(memory_relation_json).collect::<Vec<_>>())
+                .unwrap_or_default()
         },
-        "evidence": evidence,
-        "warnings": if response.detail.is_some() { Vec::<String>::new() } else { vec!["No node detail returned.".to_string()] }
+        "evidence": response.evidence.iter().map(memory_evidence_json).collect::<Vec<_>>(),
+        "warnings": response.warnings
     })
 }
 
-pub(crate) fn temporal_from_get_context(
-    direction: &str,
-    arguments: &Value,
-    response: &GetContextResponse,
-) -> Value {
-    let about = arguments
-        .get("about")
-        .and_then(Value::as_str)
-        .unwrap_or("memory");
-    let relationships = context_relationships(response);
-    let evidence = context_evidence(response);
-    let nodes = response
-        .bundle
-        .as_ref()
-        .map(bundle_nodes_by_id)
-        .unwrap_or_default();
-    let requested_dimensions = arguments
-        .get("dimensions")
-        .cloned()
-        .unwrap_or_else(|| json!({"mode": "all"}));
-    let mut positions = relationships
-        .iter()
-        .filter_map(|relationship| temporal_position_from_relationship(relationship, &nodes))
-        .filter(|position| dimension_is_requested(position, &requested_dimensions))
-        .collect::<Vec<_>>();
-    positions.sort_by(|left, right| left.sort_key.cmp(&right.sort_key));
-
-    let cursor = temporal_cursor(direction, arguments, &positions);
-    let mut selected = match direction {
-        "goto" => positions
-            .iter()
-            .filter(|position| cursor.as_ref().is_none_or(|cursor| *position <= cursor))
-            .cloned()
-            .collect::<Vec<_>>(),
-        "near" => near_positions(&positions, cursor.as_ref(), arguments),
-        "rewind" => positions
-            .iter()
-            .filter(|position| cursor.as_ref().is_none_or(|cursor| *position < cursor))
-            .cloned()
-            .collect::<Vec<_>>(),
-        "forward" => positions
-            .iter()
-            .filter(|position| cursor.as_ref().is_none_or(|cursor| *position > cursor))
-            .cloned()
-            .collect::<Vec<_>>(),
-        _ => Vec::new(),
-    };
-
-    if direction == "goto" || direction == "rewind" {
-        selected.reverse();
-    }
-    selected.truncate(limit_entries(arguments, direction));
-    if direction == "goto" || direction == "rewind" {
-        selected.reverse();
-    }
-
-    let included = selected
-        .iter()
-        .filter_map(|position| position.dimension.as_deref())
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .map(ToString::to_string)
-        .collect::<Vec<_>>();
-
+fn wake_claim_json(claim: &WakeClaim) -> Value {
     json!({
-        "summary": format!(
-            "Live kernel returned {} temporal {} {} for `{about}`.",
-            selected.len(),
-            if selected.len() == 1 { "entry" } else { "entries" },
-            direction
-        ),
-        "temporal": temporal_request_json(direction, arguments, cursor.as_ref()),
-        "coverage": {
-            "requested": requested_dimensions,
-            "included": included,
-            "missing": []
-        },
-        "entries": selected.iter().map(TemporalPosition::to_entry_json).collect::<Vec<_>>(),
-        "proof": {
-            "path": relationships
-                .into_iter()
-                .filter(|relationship| relationship.get("rel").and_then(Value::as_str) != Some("contains_entry"))
-                .collect::<Vec<_>>(),
-            "evidence": evidence,
-            "conflicts": [],
-            "missing": if selected.is_empty() { vec!["temporal_positions"] } else { Vec::<&str>::new() },
-            "confidence": if selected.is_empty() { "unknown" } else { "medium" }
-        },
-        "warnings": live_warnings(response.rendered.as_ref(), false)
+        "claim": claim.claim,
+        "because": claim.because,
+        "evidence_ref": claim.evidence_ref
     })
 }
 
-fn context_relationships(response: &GetContextResponse) -> Vec<Value> {
-    response
-        .bundle
-        .as_ref()
-        .map(bundle_relationships)
-        .unwrap_or_default()
+fn answer_reason_json(reason: &AnswerReason) -> Value {
+    json!({
+        "claim": reason.claim,
+        "evidence": reason.evidence,
+        "ref": reason.r#ref
+    })
 }
 
-pub(crate) fn bundle_relationships(
-    bundle: &rehydration_proto::v1beta1::RehydrationBundle,
-) -> Vec<Value> {
-    bundle
-        .bundles
-        .iter()
-        .flat_map(|role_bundle| role_bundle.relationships.iter())
-        .map(relationship_json)
-        .collect()
+fn proof_json(proof: &rehydration_proto::v1beta1::Proof) -> Value {
+    json!({
+        "path": proof.path.iter().map(memory_relation_json).collect::<Vec<_>>(),
+        "evidence": proof.evidence.iter().map(memory_evidence_json).collect::<Vec<_>>(),
+        "conflicts": proof.conflicts,
+        "missing": proof.missing,
+        "confidence": confidence_label(proof.confidence)
+    })
 }
 
-pub(crate) fn relationships_is_empty(relationships: &[Value]) -> bool {
-    relationships.is_empty()
+fn empty_proof_json() -> Value {
+    json!({
+        "path": [],
+        "evidence": [],
+        "conflicts": [],
+        "missing": ["proof"],
+        "confidence": "unknown"
+    })
 }
 
-fn relationship_json(relationship: &GraphRelationship) -> Value {
-    let explanation = relationship.explanation.as_ref();
-    let relationship_type = if relationship.relationship_type.trim().is_empty() {
-        "related"
-    } else {
-        relationship.relationship_type.as_str()
-    };
-    let why = explanation
-        .map(|explanation| {
-            first_non_empty([
-                explanation.rationale.as_str(),
-                explanation.motivation.as_str(),
-                explanation.method.as_str(),
-            ])
-        })
-        .filter(|why| !why.trim().is_empty())
-        .unwrap_or_else(|| "Kernel relationship path selected this edge.".to_string());
-    let evidence = explanation
-        .map(|explanation| explanation.evidence.clone())
-        .filter(|evidence| !evidence.trim().is_empty())
-        .unwrap_or_else(|| why.clone());
+fn temporal_state_json(state: &rehydration_proto::v1beta1::TemporalState) -> Value {
+    json!({
+        "direction": temporal_direction_label(state.direction),
+        "requested": state
+            .requested
+            .as_ref()
+            .map(temporal_cursor_json)
+            .unwrap_or(Value::Null),
+        "resolved": state
+            .resolved
+            .as_ref()
+            .map(temporal_coordinate_json)
+            .unwrap_or(Value::Null)
+    })
+}
 
-    let mut relationship = json!({
-        "from": relationship.source_node_id,
-        "to": relationship.target_node_id,
-        "rel": relationship_type,
-        "class": explanation
-            .map(|explanation| semantic_class_label(explanation.semantic_class))
-            .unwrap_or("structural"),
-        "why": why,
-        "evidence": evidence,
-        "confidence": explanation
-            .map(|explanation| if explanation.confidence.is_empty() { "unknown".to_string() } else { explanation.confidence.clone() })
-            .unwrap_or_else(|| "unknown".to_string())
-    });
+fn temporal_entry_json(entry: &TemporalEntry) -> Value {
+    json!({
+        "ref": entry.r#ref,
+        "kind": entry.kind,
+        "text": entry.text,
+        "coordinates": entry.coordinates.iter().map(temporal_coordinate_json).collect::<Vec<_>>()
+    })
+}
 
-    if let Some(coordinate) = explanation.and_then(coordinate_json) {
-        relationship["coordinate"] = coordinate;
+fn temporal_cursor_json(cursor: &TemporalCursor) -> Value {
+    let mut object = Map::new();
+    insert_optional_string(&mut object, "ref", &cursor.r#ref);
+    if let Some(time) = cursor.time {
+        object.insert("time".to_string(), json!(time.to_string()));
     }
+    if let Some(sequence) = cursor.sequence {
+        object.insert("sequence".to_string(), json!(sequence));
+    }
+    Value::Object(object)
+}
 
-    relationship
+fn temporal_coordinate_json(coordinate: &TemporalCoordinate) -> Value {
+    let mut object = Map::new();
+    insert_optional_string(&mut object, "dimension", &coordinate.dimension);
+    insert_optional_string(&mut object, "scope_id", &coordinate.scope_id);
+    insert_optional_timestamp(&mut object, "occurred_at", coordinate.occurred_at);
+    insert_optional_timestamp(&mut object, "observed_at", coordinate.observed_at);
+    insert_optional_timestamp(&mut object, "ingested_at", coordinate.ingested_at);
+    insert_optional_timestamp(&mut object, "valid_from", coordinate.valid_from);
+    insert_optional_timestamp(&mut object, "valid_until", coordinate.valid_until);
+    if let Some(sequence) = coordinate.sequence {
+        object.insert("sequence".to_string(), json!(sequence));
+    }
+    if let Some(rank) = coordinate.rank {
+        object.insert("rank".to_string(), json!(rank));
+    }
+    if !coordinate.metadata.is_empty() {
+        object.insert("metadata".to_string(), json!(coordinate.metadata));
+    }
+    Value::Object(object)
+}
+
+fn dimension_selection_json(selection: &DimensionSelection) -> Value {
+    let mut object = Map::new();
+    object.insert(
+        "mode".to_string(),
+        json!(dimension_selection_mode_label(selection.mode)),
+    );
+    if !selection.include.is_empty() {
+        object.insert("include".to_string(), json!(selection.include));
+    }
+    if !selection.exclude.is_empty() {
+        object.insert("exclude".to_string(), json!(selection.exclude));
+    }
+    object.insert(
+        "scope".to_string(),
+        json!(dimension_scope_mode_label(selection.scope)),
+    );
+    if !selection.abouts.is_empty() {
+        object.insert("abouts".to_string(), json!(selection.abouts));
+    }
+    Value::Object(object)
+}
+
+fn memory_relation_json(relation: &MemoryRelation) -> Value {
+    let mut object = Map::new();
+    object.insert("from".to_string(), json!(relation.source_ref));
+    object.insert("to".to_string(), json!(relation.target_ref));
+    object.insert("rel".to_string(), json!(relation.rel));
+    object.insert(
+        "class".to_string(),
+        json!(semantic_class_label(relation.semantic_class)),
+    );
+    insert_optional_string(&mut object, "why", &relation.why);
+    insert_optional_string(&mut object, "evidence", &relation.evidence);
+    object.insert(
+        "confidence".to_string(),
+        json!(confidence_label(relation.confidence)),
+    );
+    if let Some(sequence) = relation.sequence {
+        object.insert("sequence".to_string(), json!(sequence));
+    }
+    Value::Object(object)
+}
+
+fn memory_evidence_json(evidence: &MemoryEvidence) -> Value {
+    let mut object = Map::new();
+    object.insert("id".to_string(), json!(evidence.id));
+    object.insert("supports".to_string(), json!(evidence.supports));
+    object.insert("text".to_string(), json!(evidence.text));
+    insert_optional_string(&mut object, "source", &evidence.source);
+    insert_optional_timestamp(&mut object, "time", evidence.time);
+    if !evidence.metadata.is_empty() {
+        object.insert("metadata".to_string(), json!(evidence.metadata));
+    }
+    Value::Object(object)
+}
+
+fn insert_optional_string(object: &mut Map<String, Value>, key: &str, value: &str) {
+    if !value.trim().is_empty() {
+        object.insert(key.to_string(), json!(value));
+    }
+}
+
+fn insert_optional_timestamp(object: &mut Map<String, Value>, key: &str, value: Option<Timestamp>) {
+    if let Some(value) = value {
+        object.insert(key.to_string(), json!(value.to_string()));
+    }
 }
 
 fn semantic_class_label(value: i32) -> &'static str {
-    match GraphRelationshipSemanticClass::try_from(value) {
-        Ok(GraphRelationshipSemanticClass::Structural) => "structural",
-        Ok(GraphRelationshipSemanticClass::Causal) => "causal",
-        Ok(GraphRelationshipSemanticClass::Motivational) => "motivational",
-        Ok(GraphRelationshipSemanticClass::Procedural) => "procedural",
-        Ok(GraphRelationshipSemanticClass::Evidential) => "evidential",
-        Ok(GraphRelationshipSemanticClass::Constraint) => "constraint",
-        _ => "structural",
+    match MemorySemanticClass::try_from(value) {
+        Ok(MemorySemanticClass::Structural) => "structural",
+        Ok(MemorySemanticClass::Causal) => "causal",
+        Ok(MemorySemanticClass::Motivational) => "motivational",
+        Ok(MemorySemanticClass::Procedural) => "procedural",
+        Ok(MemorySemanticClass::Evidential) => "evidential",
+        Ok(MemorySemanticClass::Constraint) => "constraint",
+        _ => "unspecified",
     }
 }
 
-fn first_non_empty(values: [&str; 3]) -> String {
-    values
-        .into_iter()
-        .find(|value| !value.trim().is_empty())
-        .unwrap_or("")
-        .to_string()
-}
-
-fn context_evidence(response: &GetContextResponse) -> Vec<Value> {
-    response
-        .bundle
-        .as_ref()
-        .map(|bundle| {
-            bundle
-                .bundles
-                .iter()
-                .flat_map(|role_bundle| role_bundle.node_details.iter())
-                .map(evidence_from_detail)
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-fn bundle_nodes_by_id(
-    bundle: &rehydration_proto::v1beta1::RehydrationBundle,
-) -> BTreeMap<String, (String, String)> {
-    let mut nodes = BTreeMap::new();
-
-    for role_bundle in &bundle.bundles {
-        if let Some(root) = role_bundle.root_node.as_ref() {
-            nodes.insert(root.node_id.clone(), node_text(root));
-        }
-        for node in &role_bundle.neighbor_nodes {
-            nodes.insert(node.node_id.clone(), node_text(node));
-        }
-    }
-
-    nodes
-}
-
-fn node_text(node: &rehydration_proto::v1beta1::GraphNode) -> (String, String) {
-    let text = if node.summary.trim().is_empty() {
-        node.title.clone()
-    } else {
-        node.summary.clone()
-    };
-    (node.node_kind.clone(), text)
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct TemporalPosition {
-    ref_id: String,
-    text: String,
-    kind: String,
-    dimension: Option<String>,
-    scope_id: Option<String>,
-    sequence: Option<u32>,
-    rank: Option<u32>,
-    occurred_at: Option<String>,
-    observed_at: Option<String>,
-    ingested_at: Option<String>,
-    valid_from: Option<String>,
-    valid_until: Option<String>,
-    sort_key: String,
-}
-
-impl PartialOrd for TemporalPosition {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
+fn confidence_label(value: i32) -> &'static str {
+    match MemoryConfidence::try_from(value) {
+        Ok(MemoryConfidence::High) => "high",
+        Ok(MemoryConfidence::Medium) => "medium",
+        Ok(MemoryConfidence::Low) => "low",
+        Ok(MemoryConfidence::Unknown) => "unknown",
+        _ => "unspecified",
     }
 }
 
-impl Ord for TemporalPosition {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.sort_key
-            .cmp(&other.sort_key)
-            .then_with(|| self.dimension.cmp(&other.dimension))
-            .then_with(|| self.scope_id.cmp(&other.scope_id))
-            .then_with(|| self.sequence.cmp(&other.sequence))
-            .then_with(|| self.rank.cmp(&other.rank))
-            .then_with(|| self.ref_id.cmp(&other.ref_id))
+fn temporal_direction_label(value: i32) -> &'static str {
+    match TemporalDirection::try_from(value) {
+        Ok(TemporalDirection::Goto) => "goto",
+        Ok(TemporalDirection::Near) => "near",
+        Ok(TemporalDirection::Rewind) => "rewind",
+        Ok(TemporalDirection::Forward) => "forward",
+        _ => "unspecified",
     }
 }
 
-impl TemporalPosition {
-    fn to_entry_json(&self) -> Value {
-        json!({
-            "ref": self.ref_id,
-            "kind": self.kind,
-            "text": self.text,
-            "coordinates": [self.coordinate_json()]
-        })
-    }
-
-    fn coordinate_json(&self) -> Value {
-        let mut coordinate = Map::new();
-        insert_optional_json(&mut coordinate, "dimension", self.dimension.as_deref());
-        insert_optional_json(&mut coordinate, "scope_id", self.scope_id.as_deref());
-        insert_optional_u32_json(&mut coordinate, "sequence", self.sequence);
-        insert_optional_u32_json(&mut coordinate, "rank", self.rank);
-        insert_optional_json(&mut coordinate, "occurred_at", self.occurred_at.as_deref());
-        insert_optional_json(&mut coordinate, "observed_at", self.observed_at.as_deref());
-        insert_optional_json(&mut coordinate, "ingested_at", self.ingested_at.as_deref());
-        insert_optional_json(&mut coordinate, "valid_from", self.valid_from.as_deref());
-        insert_optional_json(&mut coordinate, "valid_until", self.valid_until.as_deref());
-        Value::Object(coordinate)
+fn dimension_selection_mode_label(value: i32) -> &'static str {
+    match DimensionSelectionMode::try_from(value) {
+        Ok(DimensionSelectionMode::All) => "all",
+        Ok(DimensionSelectionMode::Only) => "only",
+        Ok(DimensionSelectionMode::Except) => "except",
+        _ => "unspecified",
     }
 }
 
-fn temporal_position_from_relationship(
-    relationship: &Value,
-    nodes: &BTreeMap<String, (String, String)>,
-) -> Option<TemporalPosition> {
-    if relationship.get("rel").and_then(Value::as_str) != Some("contains_entry") {
-        return None;
-    }
-
-    let ref_id = relationship.get("to").and_then(Value::as_str)?.to_string();
-    let coordinate = relationship.get("coordinate")?;
-    let (kind, text) = nodes
-        .get(&ref_id)
-        .cloned()
-        .unwrap_or_else(|| ("entry".to_string(), ref_id.clone()));
-    let sequence = coordinate
-        .get("sequence")
-        .and_then(Value::as_u64)
-        .and_then(|value| u32::try_from(value).ok());
-    let rank = coordinate
-        .get("rank")
-        .and_then(Value::as_u64)
-        .and_then(|value| u32::try_from(value).ok());
-    let occurred_at = optional_json_string(coordinate, "occurred_at");
-    let valid_from = optional_json_string(coordinate, "valid_from");
-    let observed_at = optional_json_string(coordinate, "observed_at");
-    let ingested_at = optional_json_string(coordinate, "ingested_at");
-    let sort_key = occurred_at
-        .as_ref()
-        .or(valid_from.as_ref())
-        .or(observed_at.as_ref())
-        .or(ingested_at.as_ref())
-        .cloned()
-        .or_else(|| sequence.map(|sequence| format!("sequence:{sequence:010}")))
-        .or_else(|| rank.map(|rank| format!("rank:{rank:010}")))
-        .unwrap_or_else(|| ref_id.clone());
-
-    Some(TemporalPosition {
-        ref_id,
-        text,
-        kind,
-        dimension: optional_json_string(coordinate, "dimension"),
-        scope_id: optional_json_string(coordinate, "scope_id"),
-        sequence,
-        rank,
-        occurred_at,
-        observed_at,
-        ingested_at,
-        valid_from,
-        valid_until: optional_json_string(coordinate, "valid_until"),
-        sort_key,
-    })
-}
-
-fn coordinate_json(explanation: &GraphRelationshipExplanation) -> Option<Value> {
-    let mut coordinate = Map::new();
-    insert_optional_json(
-        &mut coordinate,
-        "dimension",
-        non_empty(&explanation.dimension),
-    );
-    insert_optional_json(
-        &mut coordinate,
-        "scope_id",
-        non_empty(&explanation.scope_id),
-    );
-    insert_optional_u32_json(&mut coordinate, "sequence", non_zero(explanation.sequence));
-    insert_optional_u32_json(&mut coordinate, "rank", non_zero(explanation.rank));
-    insert_optional_json(
-        &mut coordinate,
-        "occurred_at",
-        non_empty(&explanation.occurred_at),
-    );
-    insert_optional_json(
-        &mut coordinate,
-        "observed_at",
-        non_empty(&explanation.observed_at),
-    );
-    insert_optional_json(
-        &mut coordinate,
-        "ingested_at",
-        non_empty(&explanation.ingested_at),
-    );
-    insert_optional_json(
-        &mut coordinate,
-        "valid_from",
-        non_empty(&explanation.valid_from),
-    );
-    insert_optional_json(
-        &mut coordinate,
-        "valid_until",
-        non_empty(&explanation.valid_until),
-    );
-
-    (!coordinate.is_empty()).then_some(Value::Object(coordinate))
-}
-
-fn dimension_is_requested(position: &TemporalPosition, requested: &Value) -> bool {
-    let mode = requested
-        .get("mode")
-        .and_then(Value::as_str)
-        .unwrap_or("all");
-    let dimension = position.dimension.as_deref().unwrap_or("");
-    match mode {
-        "only" => requested
-            .get("include")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .filter_map(Value::as_str)
-            .any(|candidate| candidate == dimension),
-        "except" => !requested
-            .get("exclude")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .filter_map(Value::as_str)
-            .any(|candidate| candidate == dimension),
-        _ => true,
+fn dimension_scope_mode_label(value: i32) -> &'static str {
+    match DimensionScopeMode::try_from(value) {
+        Ok(DimensionScopeMode::CurrentAbout) => "current_about",
+        Ok(DimensionScopeMode::Abouts) => "abouts",
+        Ok(DimensionScopeMode::AllAbouts) => "all_abouts",
+        _ => "current_about",
     }
 }
 
-fn temporal_cursor(
-    direction: &str,
-    arguments: &Value,
-    positions: &[TemporalPosition],
-) -> Option<TemporalPosition> {
-    let cursor_object = match direction {
-        "goto" => arguments.get("at"),
-        "near" => arguments.get("around"),
-        "rewind" | "forward" => arguments.get("from"),
-        _ => None,
-    }?;
-
-    if let Some(ref_id) = cursor_object.get("ref").and_then(Value::as_str)
-        && let Some(position) = positions.iter().find(|position| position.ref_id == ref_id)
-    {
-        return Some(position.clone());
-    }
-
-    let sort_key = cursor_object
-        .get("time")
-        .and_then(Value::as_str)
-        .map(ToString::to_string)
-        .or_else(|| {
-            cursor_object
-                .get("sequence")
-                .and_then(Value::as_u64)
-                .and_then(|value| u32::try_from(value).ok())
-                .map(|value| format!("sequence:{value:010}"))
-        })?;
-
-    Some(TemporalPosition {
-        ref_id: "cursor".to_string(),
-        text: String::new(),
-        kind: "cursor".to_string(),
-        dimension: None,
-        scope_id: None,
-        sequence: None,
-        rank: None,
-        occurred_at: cursor_object
-            .get("time")
-            .and_then(Value::as_str)
-            .map(ToString::to_string),
-        observed_at: None,
-        ingested_at: None,
-        valid_from: None,
-        valid_until: None,
-        sort_key,
-    })
-}
-
-fn near_positions(
-    positions: &[TemporalPosition],
-    cursor: Option<&TemporalPosition>,
-    arguments: &Value,
-) -> Vec<TemporalPosition> {
-    let Some(cursor) = cursor else {
-        return positions.to_vec();
-    };
-    let before_limit = arguments
-        .get("window")
-        .and_then(|window| window.get("before_entries"))
-        .and_then(Value::as_u64)
-        .and_then(|value| usize::try_from(value).ok())
-        .unwrap_or(2);
-    let after_limit = arguments
-        .get("window")
-        .and_then(|window| window.get("after_entries"))
-        .and_then(Value::as_u64)
-        .and_then(|value| usize::try_from(value).ok())
-        .unwrap_or(2);
-    let mut before = positions
-        .iter()
-        .filter(|position| *position < cursor)
-        .rev()
-        .take(before_limit)
-        .cloned()
-        .collect::<Vec<_>>();
-    before.reverse();
-    let after = positions
-        .iter()
-        .filter(|position| *position > cursor)
-        .take(after_limit)
-        .cloned();
-
-    before.into_iter().chain(after).collect()
-}
-
-fn limit_entries(arguments: &Value, direction: &str) -> usize {
-    let default = if direction == "goto" { 1 } else { 5 };
-    arguments
-        .get("limit")
-        .and_then(|limit| limit.get("entries"))
-        .and_then(Value::as_u64)
-        .and_then(|value| usize::try_from(value).ok())
-        .unwrap_or(default)
-}
-
-fn temporal_request_json(
-    direction: &str,
-    arguments: &Value,
-    cursor: Option<&TemporalPosition>,
-) -> Value {
-    let cursor_key = match direction {
-        "near" => "around",
-        "goto" => "at",
-        _ => "from",
-    };
-    let mut temporal = Map::new();
-    temporal.insert("direction".to_string(), json!(direction));
-    temporal.insert(
-        cursor_key.to_string(),
-        arguments.get(cursor_key).cloned().unwrap_or(Value::Null),
-    );
-    temporal.insert(
-        "resolved".to_string(),
-        cursor
-            .map(|cursor| cursor.coordinate_json())
-            .unwrap_or(Value::Null),
-    );
-    Value::Object(temporal)
-}
-
-fn optional_json_string(value: &Value, key: &str) -> Option<String> {
-    value
-        .get(key)
-        .and_then(Value::as_str)
-        .filter(|value| !value.trim().is_empty())
-        .map(ToString::to_string)
-}
-
-fn insert_optional_json(object: &mut Map<String, Value>, key: &str, value: Option<&str>) {
-    if let Some(value) = value {
-        object.insert(key.to_string(), json!(value));
-    }
-}
-
-fn insert_optional_u32_json(object: &mut Map<String, Value>, key: &str, value: Option<u32>) {
-    if let Some(value) = value {
-        object.insert(key.to_string(), json!(value));
-    }
-}
-
-fn non_empty(value: &str) -> Option<&str> {
-    (!value.trim().is_empty()).then_some(value)
-}
-
-fn non_zero(value: u32) -> Option<u32> {
-    (value != 0).then_some(value)
-}
-
-fn evidence_from_detail(detail: &BundleNodeDetail) -> Value {
-    json!({
-        "id": format!("detail:{}", detail.node_id),
-        "supports": [detail.node_id.clone()],
-        "text": detail.detail,
-        "source": detail.node_id
-    })
-}
-
-fn rendered_current_state(rendered: Option<&RenderedContext>) -> Vec<String> {
-    let Some(rendered) = rendered else {
-        return Vec::new();
-    };
-
-    let from_sections = rendered
-        .sections
-        .iter()
-        .take(5)
-        .map(|section| {
-            if section.title.is_empty() {
-                section.content.clone()
-            } else {
-                format!("{}: {}", section.title, section.content)
-            }
-        })
-        .filter(|state| !state.trim().is_empty())
-        .collect::<Vec<_>>();
-
-    if !from_sections.is_empty() {
-        return from_sections;
-    }
-
-    if rendered.content.trim().is_empty() {
-        Vec::new()
-    } else {
-        vec![truncate(&rendered.content, 1200)]
-    }
-}
-
-pub(crate) fn rendered_summary(rendered: &RenderedContext) -> String {
-    rendered
-        .tiers
-        .iter()
-        .find(|tier| !tier.content.trim().is_empty())
-        .map(|tier| truncate(&tier.content, 500))
-        .or_else(|| {
-            rendered
-                .sections
-                .iter()
-                .find(|section| !section.content.trim().is_empty())
-                .map(|section| truncate(&section.content, 500))
-        })
-        .unwrap_or_else(|| truncate(&rendered.content, 500))
-}
-
-pub(crate) fn live_warnings(rendered: Option<&RenderedContext>, missing_path: bool) -> Vec<String> {
-    let mut warnings = Vec::new();
-
-    if rendered
-        .map(|rendered| rendered.content.trim().is_empty() && rendered.sections.is_empty())
-        .unwrap_or(true)
-    {
-        warnings.push("No rendered context was returned by the live kernel.".to_string());
-    }
-
-    if missing_path {
-        warnings.push("No relationship path was returned by the live kernel.".to_string());
-    }
-
-    warnings
-}
-
-fn truncate(text: &str, max_chars: usize) -> String {
-    let mut truncated = text.chars().take(max_chars).collect::<String>();
-    if text.chars().count() > max_chars {
-        truncated.push_str("...");
-    }
-    truncated
+fn plural<'a>(count: usize, singular: &'a str, plural: &'a str) -> &'a str {
+    if count == 1 { singular } else { plural }
 }
 
 #[cfg(test)]
 mod tests {
     use rehydration_proto::v1beta1::{
-        BundleRenderFormat, BundleSection, RehydrationMode, RenderedTier, ResolutionTier,
+        MemoryBudget, MemoryDetailLevel, Proof, TemporalState, WakePacket,
     };
 
     use super::*;
 
     #[test]
-    fn live_warnings_report_missing_rendered_context_and_path() {
-        assert_eq!(
-            live_warnings(None, true),
-            vec![
-                "No rendered context was returned by the live kernel.".to_string(),
-                "No relationship path was returned by the live kernel.".to_string()
-            ]
-        );
+    fn maps_typed_ask_response_without_inventing_null_answer() {
+        let response = AskResponse {
+            summary: "No deterministic memory answer found.".to_string(),
+            answer: String::new(),
+            because: vec![AnswerReason {
+                claim: "claim".to_string(),
+                evidence: "evidence".to_string(),
+                r#ref: "evidence:1".to_string(),
+            }],
+            proof: Some(Proof {
+                path: vec![relation()],
+                evidence: vec![evidence()],
+                conflicts: Vec::new(),
+                missing: vec!["generative_answer".to_string()],
+                confidence: MemoryConfidence::Medium as i32,
+            }),
+            warnings: Vec::new(),
+        };
 
-        let rendered = rendered_with_content("visible context");
-        assert!(live_warnings(Some(&rendered), false).is_empty());
+        let value = ask_from_response(response);
+
+        assert_eq!(value["answer"], Value::Null);
+        assert_eq!(value["because"][0]["ref"], "evidence:1");
+        assert_eq!(value["proof"]["path"][0]["from"], "claim:source");
+        assert_eq!(value["proof"]["confidence"], "medium");
     }
 
     #[test]
-    fn rendered_summary_prefers_tiers_then_sections_then_content() {
-        let mut rendered = rendered_with_content("fallback content");
-        rendered.sections.push(BundleSection {
-            key: "state".to_string(),
-            title: "State".to_string(),
-            content: "section summary".to_string(),
-            token_count: 2,
-            scopes: Vec::new(),
-        });
-        rendered.tiers.push(RenderedTier {
-            tier: ResolutionTier::L0Summary as i32,
-            content: "tier summary".to_string(),
-            token_count: 2,
-            sections: Vec::new(),
-        });
+    fn maps_temporal_response_to_kmp_json_names() {
+        let response = TemporalMoveResponse {
+            summary: "Returned 1 temporal entry.".to_string(),
+            temporal: Some(TemporalState {
+                direction: TemporalDirection::Forward as i32,
+                requested: Some(TemporalCursor {
+                    r#ref: "claim:source".to_string(),
+                    time: None,
+                    sequence: None,
+                }),
+                resolved: Some(coordinate()),
+            }),
+            coverage: Some(rehydration_proto::v1beta1::TemporalCoverage {
+                requested: Some(DimensionSelection {
+                    mode: DimensionSelectionMode::Only as i32,
+                    include: vec!["timeline".to_string()],
+                    exclude: Vec::new(),
+                    scope: DimensionScopeMode::CurrentAbout as i32,
+                    abouts: Vec::new(),
+                }),
+                included: vec!["timeline".to_string()],
+                missing: Vec::new(),
+            }),
+            entries: vec![TemporalEntry {
+                r#ref: "claim:target".to_string(),
+                kind: "claim".to_string(),
+                text: "Target".to_string(),
+                coordinates: vec![coordinate()],
+            }],
+            proof: None,
+            warnings: Vec::new(),
+        };
 
-        assert_eq!(rendered_summary(&rendered), "tier summary");
+        let value = temporal_from_response(response);
 
-        rendered.tiers.clear();
-        assert_eq!(rendered_summary(&rendered), "section summary");
-
-        rendered.sections.clear();
-        assert_eq!(rendered_summary(&rendered), "fallback content");
+        assert_eq!(value["temporal"]["direction"], "forward");
+        assert_eq!(value["entries"][0]["ref"], "claim:target");
+        assert_eq!(value["entries"][0]["coordinates"][0]["scope_id"], "scope");
+        assert_eq!(value["coverage"]["requested"]["scope"], "current_about");
     }
 
-    fn rendered_with_content(content: &str) -> RenderedContext {
-        RenderedContext {
-            format: BundleRenderFormat::Structured as i32,
-            content: content.to_string(),
-            token_count: 1,
-            sections: Vec::new(),
-            tiers: Vec::new(),
-            resolved_mode: RehydrationMode::ResumeFocused as i32,
-            quality: None,
-            truncation: None,
-            content_hash: "sha256:test".to_string(),
+    #[test]
+    fn maps_wake_and_ignores_transport_budget_types() {
+        let response = WakeResponse {
+            summary: "Wake summary".to_string(),
+            wake: Some(WakePacket {
+                objective: "continue".to_string(),
+                current_state: vec!["state".to_string()],
+                causal_spine: vec![WakeClaim {
+                    claim: "claim".to_string(),
+                    because: "because".to_string(),
+                    evidence_ref: "evidence:1".to_string(),
+                }],
+                open_loops: Vec::new(),
+                next_actions: Vec::new(),
+                guardrails: Vec::new(),
+            }),
+            proof: None,
+            warnings: Vec::new(),
+        };
+        let _budget = MemoryBudget {
+            tokens: 1,
+            detail: MemoryDetailLevel::Full as i32,
+            depth: 1,
+        };
+
+        let value = wake_from_response(response);
+
+        assert_eq!(value["wake"]["current_state"][0], "state");
+        assert_eq!(
+            value["wake"]["causal_spine"][0]["evidence_ref"],
+            "evidence:1"
+        );
+    }
+
+    fn relation() -> MemoryRelation {
+        MemoryRelation {
+            source_ref: "claim:source".to_string(),
+            target_ref: "claim:target".to_string(),
+            rel: "supports".to_string(),
+            semantic_class: MemorySemanticClass::Evidential as i32,
+            why: "why".to_string(),
+            evidence: "evidence".to_string(),
+            confidence: MemoryConfidence::High as i32,
+            sequence: Some(1),
+        }
+    }
+
+    fn evidence() -> MemoryEvidence {
+        MemoryEvidence {
+            id: "evidence:1".to_string(),
+            supports: vec!["claim:target".to_string()],
+            text: "Evidence".to_string(),
+            source: "source".to_string(),
+            time: None,
+            metadata: Default::default(),
+        }
+    }
+
+    fn coordinate() -> TemporalCoordinate {
+        TemporalCoordinate {
+            dimension: "timeline".to_string(),
+            scope_id: "scope".to_string(),
+            occurred_at: None,
+            observed_at: None,
+            ingested_at: None,
+            valid_from: None,
+            valid_until: None,
+            sequence: Some(2),
+            rank: None,
+            metadata: Default::default(),
         }
     }
 }

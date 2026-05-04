@@ -1,6 +1,6 @@
 # MCP Stdio Adapter
 
-Status: draft local adapter for Kernel Memory Protocol (KMP).
+Status: installable stdio adapter for Kernel Memory Protocol (KMP).
 
 The repo includes a stdio MCP server in
 [`crates/rehydration-mcp`](../../crates/rehydration-mcp). It exposes the KMP
@@ -16,17 +16,16 @@ tools:
 - `kernel_trace`
 - `kernel_inspect`
 
-In live mode, `kernel_ingest` submits memory through the existing gRPC
-`ContextCommandService.UpdateContext` command path. Acceptance means the kernel
-accepted the command and synchronously projected basic KMP `memory_*` changes
-into the read model. Successful live responses report
-`read_after_write_ready=true`; fixture and dry-run responses remain
-`read_after_write_ready=false`.
+In live mode, the adapter calls the typed gRPC `KernelMemoryService` API. The
+MCP process owns JSON-RPC parsing, MCP tool schemas, JSON/proto conversion,
+structuredContent conversion, and TLS endpoint configuration. It does not call
+`ContextQueryService` or `ContextCommandService` directly for KMP moves.
+Successful live ingest responses report `read_after_write_ready=true`; fixture
+and dry-run responses remain `read_after_write_ready=false`.
 
-Temporal tools use the same live `GetContext` read path and interpret
-`contains_entry` relationships as positions inside dimensions/scopes. The
-position fields include `dimension`, `scope_id`, `sequence`, `rank`,
-`occurred_at`, `observed_at`, `ingested_at`, `valid_from`, and `valid_until`.
+Temporal tools call `KernelMemoryService.Goto`, `Near`, `Rewind`, and
+`Forward`. Temporal traversal and multidimensional scoping are kernel behavior,
+not MCP-side reconstruction.
 
 ## Modes
 
@@ -70,10 +69,8 @@ The crate is not yet published to crates.io. The supported external install
 path for this phase is `cargo install --git`, because the generated gRPC proto
 client still builds from the repository's checked-in proto tree.
 
-Current live mode uses the existing gRPC `ContextQueryService` and
-`ContextCommandService`. The typed `KernelMemoryService` is now the target for
-the next MCP migration slice; this document should not be read as saying that
-MCP already uses it.
+Live mode requires the deployed kernel to expose `KernelMemoryService`. There is
+no compatibility fallback to lower-level query/command services.
 
 ```bash
 REHYDRATION_KERNEL_GRPC_ENDPOINT=http://127.0.0.1:50051 \
@@ -103,20 +100,19 @@ Live mapping:
 
 | MCP tool | Kernel binding |
 |:---------|:------------|
-| `kernel_ingest` | `UpdateContext` |
-| `kernel_wake` | `GetContext` |
-| `kernel_ask` | `GetContext` |
-| `kernel_goto` | `GetContext` |
-| `kernel_near` | `GetContext` |
-| `kernel_rewind` | `GetContext` |
-| `kernel_forward` | `GetContext` |
-| `kernel_trace` | `GetContextPath` |
-| `kernel_inspect` | `GetNodeDetail` |
+| `kernel_ingest` | `KernelMemoryService.Ingest` |
+| `kernel_wake` | `KernelMemoryService.Wake` |
+| `kernel_ask` | `KernelMemoryService.Ask` |
+| `kernel_goto` | `KernelMemoryService.Goto` |
+| `kernel_near` | `KernelMemoryService.Near` |
+| `kernel_rewind` | `KernelMemoryService.Rewind` |
+| `kernel_forward` | `KernelMemoryService.Forward` |
+| `kernel_trace` | `KernelMemoryService.Trace` |
+| `kernel_inspect` | `KernelMemoryService.Inspect` |
 
-In live mode, `kernel_ask` returns evidence and proof from `GetContext`; it
-does not generate a final answer yet.
-The temporal tools return deterministic traversal slices from graph positions;
-they do not synthesize a generated final answer.
+In live mode, `kernel_ask` returns deterministic memory context or `UNKNOWN`;
+it does not generate a final answer. The temporal tools return deterministic
+traversal slices from kernel-owned temporal traversal.
 
 ## Smoke Test
 
@@ -146,11 +142,11 @@ bash scripts/ci/integration-mcp-real-kernel.sh
 ```
 
 This starts the containerized Kernel test fixture, exposes its ephemeral gRPC
-endpoint to the MCP adapter, verifies `kernel_ingest` against the live command
-service, verifies that the ingested memory can be read back with `kernel_wake`,
-verifies `kernel_forward` against live `contains_entry` positions, and verifies
-`kernel_wake`, `kernel_ask`, `kernel_trace`, and `kernel_inspect` against the
-seeded live read model.
+endpoint to the MCP adapter, verifies `kernel_ingest` through
+`KernelMemoryService.Ingest`, verifies that the ingested memory can be read back
+with `kernel_wake`, verifies `kernel_forward` through typed temporal traversal,
+and verifies `kernel_wake`, `kernel_ask`, `kernel_trace`, and `kernel_inspect`
+against the seeded live read model.
 
 ## Generic MCP Client Config
 

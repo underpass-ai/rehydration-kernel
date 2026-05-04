@@ -1,11 +1,10 @@
 # KernelMemoryService gRPC API-First Plan
 
-Status: current implementation slice for `feat/kernel-memory-service-grpc`.
+Status: implemented typed gRPC boundary plus MCP live-mode migration for
+`feat/kernel-memory-service-grpc`.
 
-This document defines the clean API-first slice before the MCP migration. The
-goal is to promote Kernel Memory Protocol (KMP) into domain, application, and
-typed gRPC code first. MCP is deliberately delayed until the kernel memory API
-is coherent and tested on its own.
+This document defines the clean API-first path that promoted Kernel Memory
+Protocol (KMP) into domain, application, typed gRPC, and then MCP live mode.
 
 The important boundary is the public memory contract. Existing query and
 command services may be used behind that boundary while this slice is delivered,
@@ -32,12 +31,11 @@ The current repository state is:
   model-generated graph materialization. It must remain separate from KMP
   memory ingest.
 
-## Deferred MCP Binding
+## Legacy MCP Binding Avoided
 
-This is the legacy behavior to avoid when MCP is resumed. It is not part of the
-current gRPC-only cut:
+This was the legacy behavior to remove from MCP live mode:
 
-| MCP tool | Current live binding |
+| MCP tool | Legacy live binding |
 |:---------|:---------------------|
 | `kernel_ingest` | `ContextCommandService.UpdateContext` |
 | `kernel_wake` | `ContextQueryService.GetContext` |
@@ -49,8 +47,8 @@ current gRPC-only cut:
 | `kernel_trace` | `ContextQueryService.GetContextPath` |
 | `kernel_inspect` | `ContextQueryService.GetNodeDetail` |
 
-The durable surface for this cut is `KernelMemoryService`. MCP must not own
-temporal or multidimensional traversal logic.
+The durable surface is now `KernelMemoryService`. MCP must not own temporal or
+multidimensional traversal logic.
 
 ## Target Service
 
@@ -276,13 +274,12 @@ Incoming/outgoing expansion is backed by the typed node relationship reader and
 does not synthesize reverse links from an outgoing traversal. Raw expansion
 remains fail-fast until a typed raw response shape exists.
 
-## Next Slice: MCP Migration
+## MCP Migration Cut
 
-After `KernelMemoryService` is registered, tested, and smoke-tested as a gRPC
-service, live MCP mode should become a client of that service. This is
-explicitly outside the current gRPC-only cut.
+Live MCP mode is a client of `KernelMemoryService`. The adapter is deliberately
+thin and keeps lower-level query/command service details out of the KMP surface.
 
-MCP live mode should keep only:
+MCP live mode keeps only:
 
 - JSON-RPC request parsing;
 - MCP tool schema handling;
@@ -290,7 +287,7 @@ MCP live mode should keep only:
 - structuredContent conversion;
 - TLS endpoint configuration.
 
-MCP live mode should remove direct client calls to:
+MCP live mode does not make direct client calls to:
 
 - `ContextCommandServiceClient`;
 - `ContextQueryServiceClient`.
@@ -327,7 +324,7 @@ Transport tests:
 - error mapping matches existing tonic status conventions;
 - TLS/mTLS server tests continue to pass with the additional service.
 
-Next-slice MCP tests:
+MCP tests:
 
 - live MCP test server implements `KernelMemoryService` only;
 - live MCP tests fail if the adapter still calls `ContextQueryService` or
@@ -361,8 +358,6 @@ typed lifecycle through the e2e runner: ingest two abouts, read current-about
 and `ALL_ABOUTS` temporal traversal, verify `Trace`, verify `Inspect`
 incoming/outgoing links, and assert `raw=true` fails fast.
 
-MCP rebuild/reinstall belongs to the next slice.
-
 The public endpoint smoke target remains:
 
 ```text
@@ -394,7 +389,7 @@ After implementation:
 
 ## Definition Of Done
 
-Current gRPC-only cut:
+Typed gRPC cut:
 
 - `KernelMemoryService` exists in proto and descriptor tests.
 - The gRPC server registers the service.
@@ -408,7 +403,7 @@ Current gRPC-only cut:
 - Helm e2e includes `KernelMemoryService` typed lifecycle coverage, including
   `Inspect` link expansion and raw fail-fast behavior.
 
-Next MCP cut:
+MCP cut:
 
 - MCP live mode calls `KernelMemoryService`.
 - MCP no longer calls `ContextQueryService` or `ContextCommandService`

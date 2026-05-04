@@ -8,6 +8,7 @@ description = "Stdio MCP adapter for Kernel Memory Protocol"
 repository.workspace = true
 
 [dependencies]
+prost-types.workspace = true
 rehydration-proto.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
