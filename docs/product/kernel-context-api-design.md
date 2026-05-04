@@ -568,11 +568,7 @@ MCP request:
 {
   "about": "question:830ce83f",
   "question": "Where did Rachel move after her recent relocation?",
-  "answer_policy": "evidence_or_unknown",
-  "prefer": {
-    "time": "latest",
-    "relations": ["supersedes", "supports"]
-  }
+  "answer_policy": "evidence_or_unknown"
 }
 ```
 
@@ -580,8 +576,8 @@ MCP response:
 
 ```json
 {
-  "summary": "Rachel moved to Austin. The Austin claim supersedes the earlier Denver claim.",
-  "answer": "Austin",
+  "summary": "Deterministic memory answer from 1 evidence item for: Where did Rachel move after her recent relocation?",
+  "answer": "Later she corrected it: the move is to Austin.",
   "because": [
     {
       "claim": "Rachel later corrected the destination to Austin.",
@@ -596,7 +592,17 @@ MCP response:
         "to": "claim:rachel-denver",
         "rel": "supersedes",
         "class": "evidential",
+        "why": "The later statement corrects the earlier destination.",
+        "evidence": "Later she corrected it: the move is to Austin.",
         "confidence": "high"
+      }
+    ],
+    "evidence": [
+      {
+        "id": "evidence:rachel-turn-2",
+        "supports": ["claim:rachel-austin"],
+        "text": "Later she corrected it: the move is to Austin.",
+        "source": "conversation turn 2"
       }
     ],
     "conflicts": [],
@@ -651,42 +657,56 @@ MCP response:
   "summary": "At 2026-04-12T15:03:00Z, memory still supported Denver as Rachel's destination.",
   "temporal": {
     "direction": "goto",
-    "at": {
+    "requested": {
       "time": "2026-04-12T15:03:00Z"
+    },
+    "resolved": {
+      "occurred_at": "2026-04-12T15:03:00Z"
     }
   },
   "coverage": {
     "requested": {
-      "mode": "all"
+      "mode": "all",
+      "scope": "current_about"
     },
-    "included": ["conversation", "entity", "benchmark_record"],
+    "included": ["conversation", "entity"],
     "missing": []
   },
   "entries": [
     {
       "ref": "claim:rachel-denver",
+      "kind": "claim",
       "text": "Rachel said she was moving to Denver.",
       "coordinates": [
         {
           "dimension": "conversation",
-          "scope_id": "conversation:rachel-2026-04-12",
+          "scope_id": "about:question:830ce83f:dimension:conversation:rachel-2026-04-12",
           "sequence": 1,
           "occurred_at": "2026-04-12T15:00:00Z"
         },
         {
           "dimension": "entity",
-          "scope_id": "person:rachel",
+          "scope_id": "about:question:830ce83f:dimension:person:rachel",
           "valid_from": "2026-04-12T15:00:00Z"
         }
       ]
     }
   ],
   "proof": {
-    "path": [],
+    "path": [
+      {
+        "from": "claim:rachel-austin",
+        "to": "claim:rachel-denver",
+        "rel": "supersedes",
+        "class": "evidential",
+        "why": "The later statement corrects the earlier destination.",
+        "confidence": "high"
+      }
+    ],
     "evidence": [],
     "conflicts": [],
     "missing": [],
-    "confidence": "high"
+    "confidence": "medium"
   },
   "warnings": []
 }
@@ -734,18 +754,18 @@ MCP response:
   "summary": "Near 2026-04-12T15:03:00Z, Denver appeared before the cursor and Austin appeared after it.",
   "temporal": {
     "direction": "near",
-    "around": {
+    "requested": {
       "time": "2026-04-12T15:03:00Z"
     },
-    "window": {
-      "before_entries": 2,
-      "after_entries": 2
+    "resolved": {
+      "occurred_at": "2026-04-12T15:03:00Z"
     }
   },
   "coverage": {
     "requested": {
       "mode": "only",
-      "include": ["conversation", "entity"]
+      "include": ["conversation", "entity"],
+      "scope": "current_about"
     },
     "included": ["conversation", "entity"],
     "missing": []
@@ -753,27 +773,37 @@ MCP response:
   "entries": [
     {
       "ref": "claim:rachel-denver",
+      "kind": "claim",
       "text": "Rachel said she was moving to Denver.",
-      "position": "before",
       "coordinates": [
         {
           "dimension": "conversation",
-          "scope_id": "conversation:rachel-2026-04-12",
+          "scope_id": "about:question:830ce83f:dimension:conversation:rachel-2026-04-12",
           "sequence": 1,
           "occurred_at": "2026-04-12T15:00:00Z"
+        },
+        {
+          "dimension": "entity",
+          "scope_id": "about:question:830ce83f:dimension:person:rachel",
+          "valid_from": "2026-04-12T15:00:00Z"
         }
       ]
     },
     {
       "ref": "claim:rachel-austin",
+      "kind": "claim",
       "text": "Rachel later corrected the destination to Austin.",
-      "position": "after",
       "coordinates": [
         {
           "dimension": "conversation",
-          "scope_id": "conversation:rachel-2026-04-12",
+          "scope_id": "about:question:830ce83f:dimension:conversation:rachel-2026-04-12",
           "sequence": 2,
           "occurred_at": "2026-04-12T15:05:00Z"
+        },
+        {
+          "dimension": "entity",
+          "scope_id": "about:question:830ce83f:dimension:person:rachel",
+          "valid_from": "2026-04-12T15:05:00Z"
         }
       ]
     }
@@ -785,13 +815,14 @@ MCP response:
         "to": "claim:rachel-denver",
         "rel": "supersedes",
         "class": "evidential",
+        "why": "The later statement corrects the earlier destination.",
         "confidence": "high"
       }
     ],
     "evidence": [],
     "conflicts": [],
     "missing": [],
-    "confidence": "high"
+    "confidence": "medium"
   },
   "warnings": []
 }
@@ -835,15 +866,21 @@ MCP response:
   "summary": "Before claim:rachel-austin, the active supported location was Denver across conversation and entity dimensions.",
   "temporal": {
     "direction": "rewind",
-    "from": {
-      "ref": "claim:rachel-austin",
-      "time": "2026-04-12T15:05:00Z"
+    "requested": {
+      "ref": "claim:rachel-austin"
+    },
+    "resolved": {
+      "dimension": "conversation",
+      "scope_id": "about:question:830ce83f:dimension:conversation:rachel-2026-04-12",
+      "sequence": 2,
+      "occurred_at": "2026-04-12T15:05:00Z"
     }
   },
   "coverage": {
     "requested": {
       "mode": "only",
-      "include": ["conversation", "entity"]
+      "include": ["conversation", "entity"],
+      "scope": "current_about"
     },
     "included": ["conversation", "entity"],
     "missing": []
@@ -851,28 +888,38 @@ MCP response:
   "entries": [
     {
       "ref": "claim:rachel-denver",
+      "kind": "claim",
       "text": "Rachel said she was moving to Denver.",
       "coordinates": [
         {
           "dimension": "conversation",
-          "scope_id": "conversation:rachel-2026-04-12",
+          "scope_id": "about:question:830ce83f:dimension:conversation:rachel-2026-04-12",
           "sequence": 1,
           "occurred_at": "2026-04-12T15:00:00Z"
         },
         {
           "dimension": "entity",
-          "scope_id": "person:rachel",
+          "scope_id": "about:question:830ce83f:dimension:person:rachel",
           "valid_from": "2026-04-12T15:00:00Z"
         }
       ]
     }
   ],
   "proof": {
-    "path": [],
+    "path": [
+      {
+        "from": "claim:rachel-austin",
+        "to": "claim:rachel-denver",
+        "rel": "supersedes",
+        "class": "evidential",
+        "why": "The later statement corrects the earlier destination.",
+        "confidence": "high"
+      }
+    ],
     "evidence": [],
     "conflicts": [],
     "missing": [],
-    "confidence": "high"
+    "confidence": "medium"
   },
   "warnings": []
 }
@@ -911,32 +958,39 @@ MCP response:
   "summary": "After claim:rachel-denver, claim:rachel-austin superseded it.",
   "temporal": {
     "direction": "forward",
-    "from": {
-      "ref": "claim:rachel-denver",
-      "time": "2026-04-12T15:00:00Z"
+    "requested": {
+      "ref": "claim:rachel-denver"
+    },
+    "resolved": {
+      "dimension": "conversation",
+      "scope_id": "about:question:830ce83f:dimension:conversation:rachel-2026-04-12",
+      "sequence": 1,
+      "occurred_at": "2026-04-12T15:00:00Z"
     }
   },
   "coverage": {
     "requested": {
-      "mode": "all"
+      "mode": "all",
+      "scope": "current_about"
     },
-    "included": ["conversation", "entity", "benchmark_record"],
+    "included": ["conversation", "entity"],
     "missing": []
   },
   "entries": [
     {
       "ref": "claim:rachel-austin",
+      "kind": "claim",
       "text": "Rachel later corrected the destination to Austin.",
       "coordinates": [
         {
           "dimension": "conversation",
-          "scope_id": "conversation:rachel-2026-04-12",
+          "scope_id": "about:question:830ce83f:dimension:conversation:rachel-2026-04-12",
           "sequence": 2,
           "occurred_at": "2026-04-12T15:05:00Z"
         },
         {
           "dimension": "entity",
-          "scope_id": "person:rachel",
+          "scope_id": "about:question:830ce83f:dimension:person:rachel",
           "valid_from": "2026-04-12T15:05:00Z"
         }
       ]
@@ -949,13 +1003,14 @@ MCP response:
         "to": "claim:rachel-denver",
         "rel": "supersedes",
         "class": "evidential",
+        "why": "The later statement corrects the earlier destination.",
         "confidence": "high"
       }
     ],
     "evidence": [],
     "conflicts": [],
     "missing": [],
-    "confidence": "high"
+    "confidence": "medium"
   },
   "warnings": []
 }

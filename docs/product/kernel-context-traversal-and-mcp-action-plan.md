@@ -474,35 +474,48 @@ was said before or after the referenced conversation. Identify the scope, entry,
 timestamp, and path that prove it.
 ```
 
-Expected answer shape:
+Expected KMP evidence/proof shape:
 
 ```json
 {
-  "answer": "The datum was said after the earlier Chicago statement.",
-  "position": {
-    "temporal": "after",
-    "scope_id": "answer_0b1a0942_2",
-    "entry_index": 2,
-    "timestamp": "2023-05-27T04:45:00Z"
-  },
-  "path": [
+  "answer": "My friend Rachel actually just moved back to the suburbs again.",
+  "because": [
     {
-      "type": "UPDATES_PREVIOUS_FACT",
-      "from": "scope:answer_0b1a0942_1:entry:4",
-      "to": "scope:answer_0b1a0942_2:entry:2"
+      "claim": "Rachel moved back to the suburbs.",
+      "evidence": "My friend Rachel actually just moved back to the suburbs again.",
+      "ref": "claim:rachel-suburbs"
     }
   ],
-  "evidence": [
-    "She moved to Chicago.",
-    "My friend Rachel actually just moved back to the suburbs again."
-  ],
-  "confidence": "high"
+  "proof": {
+    "path": [
+      {
+        "from": "claim:rachel-suburbs",
+        "to": "claim:rachel-chicago",
+        "rel": "supersedes",
+        "class": "evidential",
+        "confidence": "high"
+      }
+    ],
+    "evidence": [
+      {
+        "id": "evidence:rachel-suburbs",
+        "supports": ["claim:rachel-suburbs"],
+        "text": "My friend Rachel actually just moved back to the suburbs again.",
+        "source": "conversation turn"
+      }
+    ],
+    "conflicts": [],
+    "missing": [],
+    "confidence": "high"
+  }
 }
 ```
 
 The important behavior is not the final text alone. The kernel must explain
 where the datum lives, whether it is before or after another datum, and which
-scope/dimension/path proves it.
+scope/dimension/path proves it. Temporal position is reported through
+`goto`/`near`/`rewind`/`forward` entries and their namespaced coordinates, not
+as a synthetic `proof.position` field on `ask`.
 
 ## Memory Ingest Contract
 
@@ -685,8 +698,8 @@ Expected output:
 
 ```json
 {
-  "summary": "The suburbs statement was after the Chicago statement.",
-  "answer": "The suburbs statement was after the Chicago statement.",
+  "summary": "Deterministic memory answer from 1 evidence item for: Was the suburbs statement before or after the Chicago statement?",
+  "answer": "My friend Rachel actually just moved back to the suburbs again.",
   "because": [
     {
       "claim": "Rachel moved back to the suburbs.",
@@ -695,13 +708,23 @@ Expected output:
     }
   ],
   "proof": {
-    "position": {
-      "temporal": "after",
-      "scope_id": "answer_0b1a0942_2",
-      "sequence": 2,
-      "timestamp": "2023-05-27T04:45:00Z"
-    },
-    "path": [],
+    "path": [
+      {
+        "from": "claim:rachel-suburbs",
+        "to": "claim:rachel-chicago",
+        "rel": "supersedes",
+        "class": "evidential",
+        "confidence": "high"
+      }
+    ],
+    "evidence": [
+      {
+        "id": "evidence:rachel-suburbs",
+        "supports": ["claim:rachel-suburbs"],
+        "text": "My friend Rachel actually just moved back to the suburbs again.",
+        "source": "conversation turn"
+      }
+    ],
     "conflicts": [],
     "missing": [],
     "confidence": "high"
@@ -709,6 +732,10 @@ Expected output:
   "warnings": []
 }
 ```
+
+In the current live cut, `ask.answer` is evidence text. It does not synthesize a
+fresh temporal conclusion from the question; callers use temporal traversal and
+`proof.path` to audit before/after semantics.
 
 Reading defaults:
 
