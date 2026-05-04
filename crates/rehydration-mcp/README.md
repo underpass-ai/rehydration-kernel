@@ -10,10 +10,10 @@ Current status:
 - can serve explicit fixture-backed KMP responses from
   `api/examples/kernel/v1beta1/kmp`;
 - can use the live gRPC kernel when `REHYDRATION_KERNEL_GRPC_ENDPOINT` is set;
-- maps live `kernel_ingest` to `ContextCommandService.UpdateContext` and
-  read-model projection for basic KMP memory changes;
-- maps live temporal tools to `GetContext` and traverses `contains_entry`
-  relations with dimension/scope/time positions;
+- current live mode still maps KMP tools to the lower-level
+  `ContextCommandService` and `ContextQueryService` clients;
+- migration to the typed `KernelMemoryService` is the next slice now that the
+  gRPC memory API exists;
 - live `kernel_ask` returns evidence/proof from `GetContext`, not a generated
   answer.
 
@@ -80,7 +80,7 @@ Tool call example:
 {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"kernel_ask","arguments":{"about":"question:830ce83f","question":"Where did Rachel move after her recent relocation?","answer_policy":"evidence_or_unknown"}}}
 ```
 
-Live backend mapping:
+Current live backend mapping:
 
 | Tool | Kernel read |
 |:-----|:------------|
@@ -93,3 +93,17 @@ Live backend mapping:
 | `kernel_forward` | `GetContext` |
 | `kernel_trace` | `GetContextPath` |
 | `kernel_inspect` | `GetNodeDetail` |
+
+Next live backend mapping:
+
+| Tool | Kernel read/write |
+|:-----|:------------------|
+| `kernel_ingest` | `KernelMemoryService.Ingest` |
+| `kernel_wake` | `KernelMemoryService.Wake` |
+| `kernel_ask` | `KernelMemoryService.Ask` |
+| `kernel_goto` | `KernelMemoryService.Goto` |
+| `kernel_near` | `KernelMemoryService.Near` |
+| `kernel_rewind` | `KernelMemoryService.Rewind` |
+| `kernel_forward` | `KernelMemoryService.Forward` |
+| `kernel_trace` | `KernelMemoryService.Trace` |
+| `kernel_inspect` | `KernelMemoryService.Inspect` |

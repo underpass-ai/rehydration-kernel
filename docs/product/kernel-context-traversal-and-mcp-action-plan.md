@@ -153,10 +153,12 @@ The first public slice should be intentionally small:
    contract.
 2. Add JSON schemas and examples for conversation, incident, workflow, and
    benchmark-like records.
-3. Add MCP tools that call Kernel 1.0 application services instead of
+3. Add typed gRPC `KernelMemoryService` over domain/application memory
+   behavior.
+4. Add MCP tools only after they can call the typed memory service instead of
    duplicating traversal logic.
-4. Prove temporal and multi-scope retrieval with one deterministic demo.
-5. Publish the limitation: this is traversal and evidence recovery, not a claim
+5. Prove temporal and multi-scope retrieval with one deterministic demo.
+6. Publish the limitation: this is traversal and evidence recovery, not a claim
    that every benchmark category is solved.
 
 The demo should answer questions like:
@@ -1065,9 +1067,9 @@ Also deliver:
 - unit tests;
 - integration tests against Neo4j/Valkey.
 
-### Phase 3: MCP Server
+### Phase 3: Typed gRPC API Before MCP
 
-Expose:
+Expose `KernelMemoryService` over gRPC first:
 
 - `kernel_ingest`;
 - `kernel_wake`;
@@ -1078,29 +1080,31 @@ Expose:
 - `kernel_forward`;
 - `kernel_trace`;
 - `kernel_inspect`;
-- advanced/debug tools only where needed.
 
 Also deliver:
 
+- domain-owned temporal and multidimensional traversal;
+- application use cases over existing query/command ports;
+- typed protobuf contract and descriptor tests;
+- direct gRPC service tests for every memory move;
+- deployment smoke through the public gRPC endpoint.
+
+### Phase 4: MCP Server
+
+After the typed service is stable, expose:
+
 - MCP service binary or crate;
-- local configuration;
-- Kubernetes deployment option;
-- auth/TLS story;
-- examples for Claude/Codex/agents.
+- local stdio adapter;
+- fixture-backed mode;
+- live mode via `KernelMemoryService`;
+- CI smoke proving MCP tools read from a real containerized kernel through the
+  typed memory service;
+- auth/TLS/Kubernetes story where remote MCP is needed.
 
-MVP cut:
+The MCP adapter must not call `ContextQueryService` or
+`ContextCommandService` directly for KMP moves after this migration.
 
-- local stdio MCP first;
-- initial fixture-backed stdio adapter in
-  [`crates/rehydration-mcp`](../../crates/rehydration-mcp);
-- live gRPC read mode via `REHYDRATION_KERNEL_GRPC_ENDPOINT`;
-- CI smoke that proves MCP tools read from a real containerized Kernel gRPC
-  server, not only from fixtures;
-- auth/TLS/Kubernetes after local behavior is proven;
-- read/explore tools can ship before full write-side ingestion if they wrap
-  existing gRPC/query services cleanly.
-
-### Phase 4: Underpass Adoption
+### Phase 5: Underpass Adoption
 
 Deliver:
 

@@ -1,7 +1,8 @@
 use crate::v1beta1;
 use prost::Message;
 use prost_types::{
-    DescriptorProto, FileDescriptorProto, FileDescriptorSet, ServiceDescriptorProto,
+    DescriptorProto, FieldDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    ServiceDescriptorProto,
 };
 
 const KERNEL_PACKAGE: &str = "underpass.rehydration.kernel.v1beta1";
@@ -32,6 +33,86 @@ fn v1beta1_command_service_surface_is_stable() {
         service_method_names(command_file, "ContextCommandService"),
         vec!["UpdateContext"]
     );
+}
+
+#[test]
+fn v1beta1_kernel_memory_service_surface_is_stable() {
+    let descriptor_set = decode_kernel_descriptor_set();
+    let memory_file = kernel_file(&descriptor_set, "memory.proto");
+
+    assert_eq!(
+        service_method_names(memory_file, "KernelMemoryService"),
+        vec![
+            "Ingest", "Wake", "Ask", "Goto", "Near", "Rewind", "Forward", "Trace", "Inspect"
+        ]
+    );
+}
+
+#[test]
+fn v1beta1_kernel_memory_core_fields_are_stable() {
+    let descriptor_set = decode_kernel_descriptor_set();
+    let memory_file = kernel_file(&descriptor_set, "memory.proto");
+
+    assert_eq!(
+        message_field_names(memory_file, "IngestRequest"),
+        vec![
+            "about",
+            "memory",
+            "provenance",
+            "idempotency_key",
+            "dry_run"
+        ]
+    );
+    assert_eq!(
+        message_field_names(memory_file, "TemporalCoordinate"),
+        vec![
+            "dimension",
+            "scope_id",
+            "occurred_at",
+            "observed_at",
+            "ingested_at",
+            "valid_from",
+            "valid_until",
+            "sequence",
+            "rank",
+            "metadata",
+        ]
+    );
+    assert_eq!(
+        message_field_names(memory_file, "TemporalMoveRequest"),
+        vec![
+            "about",
+            "cursor",
+            "dimensions",
+            "window",
+            "limit",
+            "include",
+            "budget",
+        ]
+    );
+    assert_eq!(
+        message_field_names(memory_file, "TemporalNearRequest"),
+        vec![
+            "about",
+            "around",
+            "dimensions",
+            "window",
+            "limit",
+            "include",
+            "budget",
+        ]
+    );
+}
+
+#[test]
+fn v1beta1_kernel_memory_temporal_presence_fields_are_stable() {
+    let descriptor_set = decode_kernel_descriptor_set();
+    let memory_file = kernel_file(&descriptor_set, "memory.proto");
+
+    assert_proto3_optional(memory_file, "TemporalCoordinate", "sequence");
+    assert_proto3_optional(memory_file, "TemporalCoordinate", "rank");
+    assert_proto3_optional(memory_file, "MemoryRelation", "sequence");
+    assert_proto3_optional(memory_file, "TemporalCursor", "sequence");
 }
 
 #[test]
@@ -114,6 +195,28 @@ fn message_field_names(file: &FileDescriptorProto, message_name: &str) -> Vec<St
         .iter()
         .map(|field| field.name.clone().expect("field name should be present"))
         .collect()
+}
+
+fn assert_proto3_optional(file: &FileDescriptorProto, message_name: &str, field_name: &str) {
+    assert!(
+        message_field(file, message_name, field_name).proto3_optional(),
+        "`{message_name}.{field_name}` must preserve proto3 presence"
+    );
+}
+
+fn message_field<'a>(
+    file: &'a FileDescriptorProto,
+    message_name: &str,
+    field_name: &str,
+) -> &'a FieldDescriptorProto {
+    file.message_type
+        .iter()
+        .find(|message| message.name.as_deref() == Some(message_name))
+        .unwrap_or_else(|| panic!("missing message `{message_name}`"))
+        .field
+        .iter()
+        .find(|field| field.name.as_deref() == Some(field_name))
+        .unwrap_or_else(|| panic!("missing field `{message_name}.{field_name}`"))
 }
 
 #[allow(dead_code)]

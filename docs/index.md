@@ -5,7 +5,9 @@ Navigation hub for kernel documentation.
 Current integration stance:
 
 - `GraphBatch -> translator -> async projection events` is the recommended write path for model-driven producers.
-- The stable kernel boundary remains gRPC reads plus async projection subjects.
+- The stable kernel boundary remains typed gRPC plus async projection subjects.
+- Kernel Memory Protocol is implemented API-first over domain/application/gRPC;
+  MCP is a later adapter over that API, not the owner of memory behavior.
 - The dedicated `repair-judge` is an experimental stabilization helper for model extraction. It is not part of the stable kernel contract.
 
 ## Guides
@@ -23,8 +25,9 @@ Current integration stance:
 
 | Document | Content |
 |:---------|:--------|
-| [kernel-context-traversal-and-mcp-action-plan.md](product/kernel-context-traversal-and-mcp-action-plan.md) | Public Kernel 1.0 plan for Kernel Memory Protocol, MCP tools, and honest benchmark follow-up |
+| [kernel-context-traversal-and-mcp-action-plan.md](product/kernel-context-traversal-and-mcp-action-plan.md) | Public Kernel 1.0 plan for Kernel Memory Protocol, typed gRPC first, MCP after, and honest benchmark follow-up |
 | [kernel-context-api-design.md](product/kernel-context-api-design.md) | Kernel Memory Protocol design: ingest, wake, ask, temporal movement, trace, inspect, and MCP/gRPC/NATS bindings |
+| [kernel-memory-service-grpc-plan.md](product/kernel-memory-service-grpc-plan.md) | API-first plan for the typed `KernelMemoryService` gRPC boundary; MCP migration is the next slice |
 
 ## Operations
 

@@ -70,8 +70,10 @@ The crate is not yet published to crates.io. The supported external install
 path for this phase is `cargo install --git`, because the generated gRPC proto
 client still builds from the repository's checked-in proto tree.
 
-Live mode uses the existing gRPC `ContextQueryService` and
-`ContextCommandService`.
+Current live mode uses the existing gRPC `ContextQueryService` and
+`ContextCommandService`. The typed `KernelMemoryService` is now the target for
+the next MCP migration slice; this document should not be read as saying that
+MCP already uses it.
 
 ```bash
 REHYDRATION_KERNEL_GRPC_ENDPOINT=http://127.0.0.1:50051 \

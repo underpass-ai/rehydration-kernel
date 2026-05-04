@@ -1096,6 +1096,9 @@ services used by gRPC and NATS ingress.
 
 gRPC carries the same protocol for typed clients.
 
+Implementation plan:
+[`kernel-memory-service-grpc-plan.md`](./kernel-memory-service-grpc-plan.md)
+
 Recommended service:
 
 ```proto
@@ -1355,20 +1358,22 @@ Recommended order:
    [`api/examples/kernel/v1beta1/kmp`](../../api/examples/kernel/v1beta1/kmp).
 3. Add examples for conversation memory, incident memory, workflow memory, and
    benchmark memory.
-4. Implement local stdio MCP read moves first: `wake`, `ask`, `trace`,
-   `inspect`. The first adapter lives in
-   [`crates/rehydration-mcp`](../../crates/rehydration-mcp) and supports
-   fixture-backed mode plus live gRPC reads through
-   `REHYDRATION_KERNEL_GRPC_ENDPOINT`.
-5. Map read moves onto existing `GetContext`, `GetContextPath`, and
-   `GetNodeDetail`.
-6. Add memory-to-projection translation for `ingest`.
-7. Add typed gRPC `KernelMemoryService`.
+4. Add domain-owned temporal and multidimensional traversal.
+5. Add memory-to-projection translation for `ingest` in the application layer.
+6. Add typed gRPC `KernelMemoryService`.
+7. Migrate MCP onto `KernelMemoryService` after the typed API is stable.
 8. Add NATS `kernel.memory.ingest/ingested/rejected`.
 9. Re-run the benchmark and publish what improves and what still fails.
 
-This order avoids over-promising write-side memory before the wake/ask/trace
-experience is real.
+The `KernelMemoryService` work is API-first: define `memory.proto` and contract
+tests before implementing server behavior. Existing query/command application
+services may be reused behind typed KMP use cases, but MCP live mode should
+move to the typed memory service instead of calling the lower-level gRPC
+services directly. See
+[`kernel-memory-service-grpc-plan.md`](./kernel-memory-service-grpc-plan.md).
+
+This order keeps domain behavior, application use cases, and transport
+bindings separated before MCP becomes another adapter over the same API.
 
 ## Acceptance Criteria
 

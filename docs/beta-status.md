@@ -42,6 +42,25 @@ changes to fields that are implemented. Deprecated fields may be removed in `v1`
 |-----|--------|-------|
 | `UpdateContext` | Production-ready | Persists full domain events (changes, requested_by, occurred_at) to the context event store as JSON. Optimistic concurrency via `expected_revision`. Content hash validated via `expected_content_hash`. Idempotency via `idempotency_key`. Returns `ABORTED` on revision or hash conflict. |
 
+## KernelMemoryService
+
+Typed memory API in `api/proto/underpass/rehydration/kernel/v1beta1/memory.proto`.
+This is the API-first surface for Kernel Memory Protocol moves. It is additive;
+`ContextQueryService` and `ContextCommandService` remain supported lower-level
+kernel services.
+
+| RPC | Status | Notes |
+|-----|--------|-------|
+| `Ingest` | Production-ready | Validates dimensions, entries, coordinates, relations, evidence, idempotency, provenance, and positive temporal coordinates. Relation/evidence refs may be submitted in the request or already materialized in the read model. |
+| `Wake` | Production-ready | Reads live context through the application query port. Honors budget detail and dimension selection. |
+| `Ask` | Production-ready for deterministic memory answers | Honors answer policy, budget detail, and dimension selection. Does not generate novel answers; `evidence_or_unknown` returns `UNKNOWN` when no evidence is available. |
+| `Goto` | Production-ready | Domain-owned temporal traversal over `contains_entry` coordinates. Honors dimensions, window, entry limit, token limit, and include flags. |
+| `Near` | Production-ready | Domain-owned temporal neighborhood traversal. |
+| `Rewind` | Production-ready | Domain-owned backward traversal. |
+| `Forward` | Production-ready | Domain-owned forward traversal. |
+| `Trace` | Production-ready | Uses `GetContextPath` semantics and maps `goal` to the trace role. |
+| `Inspect` | Production-ready for object/detail lookup | Honors `details=false`. Explicit `incoming`, `outgoing`, or `raw` expansion fails fast until link/raw-capable reader support exists. |
+
 ## Async Contract (NATS JetStream)
 
 Event channels defined in [`context-projection.v1beta1.yaml`](../api/asyncapi/context-projection.v1beta1.yaml).
@@ -121,6 +140,9 @@ metrics. `RehydrateSession` renders per-role bundles and emits quality via the o
 - **No authorization backend (deliberate)** — `ValidateScope` is a pure set-comparison utility, not an access control gate. `GetContext` does not invoke scope validation. This is a conscious design decision for v1beta1: the kernel delegates access control to the transport layer (mTLS client certificates) and the integrating product. Scope enforcement is not planned for the kernel itself — consumers are expected to validate scopes at their own boundary
 - **No timeline filtering** — `RehydrateSession` echoes `timeline_window` but does not filter events by time range
 - **`context.bundle.generated` not emitted** — defined in AsyncAPI contract but the kernel runtime does not publish this event. Test fixtures simulate it for downstream integration tests
+- **MCP live adapter not migrated to `KernelMemoryService` yet** — this is the next slice. The gRPC memory service is implemented first so MCP can become a thin adapter over it.
+- **No generated `Ask` answers** — `KernelMemoryService.Ask` returns deterministic rendered memory context or `UNKNOWN` according to the answer policy.
+- **No inspect link/raw expansion yet** — `KernelMemoryService.Inspect` fails fast for explicit incoming/outgoing/raw requests.
 - **Single token estimator** — `cl100k_base` BPE via `tiktoken-rs` for all counting. No model-specific estimator selection
 - **Idempotency outcome** — outcome publish is fire-and-forget. If it fails, retries are treated as new requests
 

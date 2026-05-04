@@ -1,5 +1,6 @@
 pub mod application_error;
 pub mod commands;
+pub mod memory;
 pub mod projection;
 pub mod queries;
 pub mod rehydration_application;
@@ -8,6 +9,14 @@ pub use application_error::ApplicationError;
 pub use commands::{
     AcceptedVersion, CommandApplicationService, NoopProjectionWriter, UpdateContextChange,
     UpdateContextCommand, UpdateContextOutcome, UpdateContextUseCase,
+};
+pub use memory::{
+    AskMemoryQuery, ExistingMemoryRefs, InspectMemoryQuery, KernelMemoryApplicationService,
+    MemoryAcceptedCounts, MemoryAnswerPolicy, MemoryCoordinateData, MemoryData,
+    MemoryDimensionData, MemoryEntryData, MemoryEvidenceData, MemoryIngestCommand,
+    MemoryIngestOutcome, MemoryProvenanceData, MemoryRelationData, TemporalIncludeOptions,
+    TemporalMemoryQuery, TemporalMemoryResult, TraceMemoryQuery, WakeMemoryQuery,
+    translate_memory_ingest,
 };
 pub use projection::{
     GraphNodeMaterializedData, GraphNodeMaterializedEvent, GraphRelationMaterializedData,

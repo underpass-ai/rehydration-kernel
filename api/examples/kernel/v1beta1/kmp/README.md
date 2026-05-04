@@ -35,10 +35,19 @@ Transport bindings:
 - MCP tools should expose `kernel_ingest`, `kernel_wake`, `kernel_ask`,
   `kernel_goto`, `kernel_near`, `kernel_rewind`, `kernel_forward`,
   `kernel_trace`, and `kernel_inspect`.
-- gRPC should expose the same moves through a typed `KernelMemoryService`.
+- gRPC exposes the same moves through the typed
+  [`KernelMemoryService`](../../../../proto/underpass/rehydration/kernel/v1beta1/memory.proto).
+  The gRPC contract is the executable binding for this cut.
 - NATS should start with asynchronous `kernel.memory.ingest`,
   `kernel.memory.ingested`, and `kernel.memory.rejected`.
 
 These fixtures are not a replacement for the existing node-centric gRPC and
 AsyncAPI contracts. They define the higher-level public memory shape that maps
 onto those existing Kernel 1.0 primitives.
+
+Current binding note:
+
+- KMP temporal fixture aliases such as `at` and `from` map to the gRPC
+  `TemporalCursor` field on `TemporalMoveRequest`.
+- MCP live-mode migration to `KernelMemoryService` is intentionally a later
+  slice; these fixtures should not drive direct MCP-owned behavior.

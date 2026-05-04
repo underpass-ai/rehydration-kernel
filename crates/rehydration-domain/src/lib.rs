@@ -7,6 +7,7 @@ pub mod value_objects;
 pub use error::DomainError;
 pub use model::{
     BundleNode, BundleNodeDetail, BundleRelationship, RehydrationBundle, RehydrationStats,
+    TemporalEntry, TemporalMemoryTraversal, TemporalTraversalRequest, TemporalTraversalResult,
 };
 pub use projection::{
     ContextPathNeighborhood, GraphNodeMaterializedData, GraphNodeMaterializedEvent,
@@ -23,7 +24,9 @@ pub use repositories::{
     SnapshotStore, TokenEstimator,
 };
 pub use value_objects::{
-    BundleMetadata, BundleQualityMetrics, CaseId, Provenance, Role, SourceKind,
+    BundleMetadata, BundleQualityMetrics, CaseId, DimensionSelection, DimensionSelectionMode,
+    Provenance, Role, SourceKind, TemporalCoordinate, TemporalCursor, TemporalDirection,
+    TemporalWindow,
 };
 pub use value_objects::{RehydrationMode, ResolutionTier, TierBudget};
 pub use value_objects::{RelationExplanation, RelationSemanticClass};

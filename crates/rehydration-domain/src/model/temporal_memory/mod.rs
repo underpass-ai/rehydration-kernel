@@ -1,0 +1,237 @@
+mod axis_key;
+mod extract;
+mod position;
+mod select;
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use crate::{
+    DimensionSelection, DimensionSelectionMode, DomainError, RehydrationBundle, TemporalCoordinate,
+    TemporalCursor, TemporalDirection, TemporalWindow,
+};
+
+use self::extract::{bundle_nodes_by_id, temporal_positions};
+use self::select::{coordinates_by_ref, ordered_unique_ref_ids, resolve_cursor, select_positions};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TemporalTraversalRequest {
+    direction: TemporalDirection,
+    cursor: TemporalCursor,
+    dimensions: DimensionSelection,
+    window: TemporalWindow,
+    limit_entries: Option<usize>,
+}
+
+impl TemporalTraversalRequest {
+    pub fn new(direction: TemporalDirection, cursor: TemporalCursor) -> Self {
+        Self {
+            direction,
+            cursor,
+            dimensions: DimensionSelection::all(),
+            window: TemporalWindow::default(),
+            limit_entries: None,
+        }
+    }
+
+    pub fn with_dimensions(mut self, dimensions: DimensionSelection) -> Self {
+        self.dimensions = dimensions;
+        self
+    }
+
+    pub fn with_window(mut self, window: TemporalWindow) -> Self {
+        self.window = window;
+        self
+    }
+
+    pub fn with_limit_entries(mut self, limit_entries: usize) -> Result<Self, DomainError> {
+        if limit_entries == 0 {
+            return Err(DomainError::InvalidState(
+                "temporal limit_entries must be greater than zero".to_string(),
+            ));
+        }
+        self.limit_entries = Some(limit_entries);
+        Ok(self)
+    }
+
+    pub fn direction(&self) -> TemporalDirection {
+        self.direction
+    }
+
+    pub fn cursor(&self) -> &TemporalCursor {
+        &self.cursor
+    }
+
+    pub fn dimensions(&self) -> &DimensionSelection {
+        &self.dimensions
+    }
+
+    pub(super) fn window(&self) -> TemporalWindow {
+        self.window
+    }
+
+    pub(super) fn limit_entries(&self) -> Option<usize> {
+        self.limit_entries
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TemporalEntry {
+    ref_id: String,
+    kind: String,
+    text: String,
+    coordinates: Vec<TemporalCoordinate>,
+}
+
+impl TemporalEntry {
+    pub fn ref_id(&self) -> &str {
+        &self.ref_id
+    }
+
+    pub fn kind(&self) -> &str {
+        &self.kind
+    }
+
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+
+    pub fn coordinates(&self) -> &[TemporalCoordinate] {
+        &self.coordinates
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TemporalTraversalResult {
+    direction: TemporalDirection,
+    resolved_cursor: TemporalCoordinate,
+    requested_dimensions: DimensionSelection,
+    included_dimensions: Vec<String>,
+    missing_dimensions: Vec<String>,
+    entries: Vec<TemporalEntry>,
+    missing: Vec<String>,
+}
+
+impl TemporalTraversalResult {
+    pub fn direction(&self) -> TemporalDirection {
+        self.direction
+    }
+
+    pub fn resolved_cursor(&self) -> &TemporalCoordinate {
+        &self.resolved_cursor
+    }
+
+    pub fn requested_dimensions(&self) -> &DimensionSelection {
+        &self.requested_dimensions
+    }
+
+    pub fn included_dimensions(&self) -> &[String] {
+        &self.included_dimensions
+    }
+
+    pub fn missing_dimensions(&self) -> &[String] {
+        &self.missing_dimensions
+    }
+
+    pub fn entries(&self) -> &[TemporalEntry] {
+        &self.entries
+    }
+
+    pub fn missing(&self) -> &[String] {
+        &self.missing
+    }
+}
+
+pub struct TemporalMemoryTraversal;
+
+impl TemporalMemoryTraversal {
+    pub fn traverse(
+        bundle: &RehydrationBundle,
+        request: &TemporalTraversalRequest,
+    ) -> Result<TemporalTraversalResult, DomainError> {
+        let nodes = bundle_nodes_by_id(bundle);
+        let mut positions = temporal_positions(bundle, &nodes)?
+            .into_iter()
+            .filter(|position| request.dimensions.includes(position.coordinate.dimension()))
+            .collect::<Vec<_>>();
+        positions.sort();
+
+        let cursor = resolve_cursor(&positions, request.cursor())?;
+        let selected_positions = select_positions(&positions, &cursor, request);
+        let selected_ref_ids = ordered_unique_ref_ids(selected_positions);
+        let coordinates_by_ref = coordinates_by_ref(&positions);
+        let entries = build_entries(
+            selected_ref_ids,
+            &nodes,
+            &coordinates_by_ref,
+            request.dimensions(),
+        );
+        let included_dimensions = included_dimensions(&entries);
+        let missing_dimensions = missing_dimensions(request.dimensions(), &included_dimensions);
+        let missing = if entries.is_empty() {
+            vec!["temporal_positions".to_string()]
+        } else {
+            Vec::new()
+        };
+
+        Ok(TemporalTraversalResult {
+            direction: request.direction,
+            resolved_cursor: cursor.coordinate,
+            requested_dimensions: request.dimensions.clone(),
+            included_dimensions,
+            missing_dimensions,
+            entries,
+            missing,
+        })
+    }
+}
+
+fn build_entries(
+    selected_ref_ids: Vec<String>,
+    nodes: &BTreeMap<String, (String, String)>,
+    coordinates_by_ref: &BTreeMap<String, Vec<TemporalCoordinate>>,
+    dimensions: &DimensionSelection,
+) -> Vec<TemporalEntry> {
+    selected_ref_ids
+        .into_iter()
+        .filter_map(|ref_id| {
+            let (kind, text) = nodes.get(&ref_id)?;
+            let coordinates = coordinates_by_ref
+                .get(&ref_id)
+                .cloned()
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|coordinate| dimensions.includes(coordinate.dimension()))
+                .collect::<Vec<_>>();
+
+            Some(TemporalEntry {
+                ref_id,
+                kind: kind.clone(),
+                text: text.clone(),
+                coordinates,
+            })
+        })
+        .collect()
+}
+
+fn included_dimensions(entries: &[TemporalEntry]) -> Vec<String> {
+    entries
+        .iter()
+        .flat_map(|entry| entry.coordinates.iter())
+        .map(|coordinate| coordinate.dimension().to_string())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+fn missing_dimensions(requested: &DimensionSelection, included: &[String]) -> Vec<String> {
+    if requested.mode() != DimensionSelectionMode::Only {
+        return Vec::new();
+    }
+
+    let included = included.iter().cloned().collect::<BTreeSet<_>>();
+    requested
+        .dimensions()
+        .difference(&included)
+        .cloned()
+        .collect()
+}
