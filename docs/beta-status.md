@@ -62,8 +62,8 @@ kernel services.
 | `Inspect` | Production-ready for object/detail lookup | Honors `details=false`. Explicit `incoming`, `outgoing`, or `raw` expansion fails fast until link/raw-capable reader support exists. |
 
 Dimension selection scope defaults to `CURRENT_ABOUT`. `ABOUTS` is valid only
-with a non-empty `abouts` list. `ALL_ABOUTS` is reserved and fails fast until
-the kernel exposes a global about index port.
+with a non-empty `abouts` list. `ALL_ABOUTS` uses the kernel memory about index
+to traverse every memory anchor.
 
 ## Async Contract (NATS JetStream)
 

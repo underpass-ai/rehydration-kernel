@@ -111,7 +111,7 @@ messages:
 | `MemoryEvidence` | `id`, `supports`, `text`, `source`, `time`, `metadata`. |
 | `MemoryProvenance` | `source_kind`, `source_agent`, `observed_at`, `correlation_id`, `causation_id`. |
 | `MemoryBudget` | `tokens`, `detail`, `depth`. |
-| `DimensionSelection` | `mode`, `include`, `exclude`, `scope`, `abouts`. Scope defaults to `CURRENT_ABOUT`; `ABOUTS` requires an explicit non-empty list; `ALL_ABOUTS` is reserved and fails fast until a global about index port exists. |
+| `DimensionSelection` | `mode`, `include`, `exclude`, `scope`, `abouts`. Scope defaults to `CURRENT_ABOUT`; `ABOUTS` requires an explicit non-empty list; `ALL_ABOUTS` uses the kernel memory about index. |
 | `TemporalCursor` | `ref`, `time`, or `sequence`; exactly one should be accepted. |
 | `TemporalWindow` | Entry and time window controls for `Near`. |
 | `TemporalInclude` | `evidence`, `relations`, `raw_refs` include flags. |
@@ -136,7 +136,7 @@ Critical enums to define in `memory.proto`:
 - `MemorySemanticClass`: structural, causal, motivational, procedural,
   evidential, constraint.
 - `DimensionSelectionMode`: all, only, except.
-- `DimensionScopeMode`: current-about, abouts, all-abouts reserved/fail-fast until a global about index exists.
+- `DimensionScopeMode`: current-about, abouts, all-abouts through the memory about index.
 - `TemporalDirection`: goto, near, rewind, forward.
 - `MemoryDetailLevel`: compact, balanced, full.
 - `AnswerPolicy`: evidence-or-unknown, show-conflicts, best-effort.

@@ -1,5 +1,6 @@
 pub mod context_event_store;
 pub mod graph_neighborhood_reader;
+pub mod memory_about_index_reader;
 pub mod node_detail_reader;
 pub mod port_error;
 pub mod processed_event_store;
@@ -14,6 +15,7 @@ pub use context_event_store::{
     ContextEventChange, ContextEventStore, ContextUpdatedEvent, IdempotentOutcome,
 };
 pub use graph_neighborhood_reader::GraphNeighborhoodReader;
+pub use memory_about_index_reader::MemoryAboutIndexReader;
 pub use node_detail_reader::NodeDetailReader;
 pub use port_error::PortError;
 pub use processed_event_store::ProcessedEventStore;

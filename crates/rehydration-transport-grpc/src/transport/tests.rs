@@ -10,10 +10,10 @@ use rehydration_application::{
 };
 use rehydration_domain::{
     BundleMetadata, BundleNode, BundleNodeDetail, BundleRelationship, CaseId, ContextEventStore,
-    ContextPathNeighborhood, GraphNeighborhoodReader, NodeDetailProjection, NodeDetailReader,
-    NodeNeighborhood, NodeProjection, NodeRelationProjection, PortError, ProjectionMutation,
-    ProjectionWriter, RehydrationBundle, RelationExplanation, RelationSemanticClass, Role,
-    SnapshotSaveOptions, SnapshotStore,
+    ContextPathNeighborhood, GraphNeighborhoodReader, MemoryAboutIndexReader, NodeDetailProjection,
+    NodeDetailReader, NodeNeighborhood, NodeProjection, NodeRelationProjection, PortError,
+    ProjectionMutation, ProjectionWriter, RehydrationBundle, RelationExplanation,
+    RelationSemanticClass, Role, SnapshotSaveOptions, SnapshotStore,
 };
 use rehydration_observability::quality_observers::NoopQualityObserver;
 use rehydration_proto::v1beta1::{
@@ -67,6 +67,12 @@ impl GraphNeighborhoodReader for EmptyGraphNeighborhoodReader {
     }
 }
 
+impl MemoryAboutIndexReader for EmptyGraphNeighborhoodReader {
+    async fn list_memory_abouts(&self) -> Result<Vec<String>, PortError> {
+        Ok(Vec::new())
+    }
+}
+
 impl ProjectionWriter for EmptyGraphNeighborhoodReader {
     async fn apply_mutations(&self, _mutations: Vec<ProjectionMutation>) -> Result<(), PortError> {
         Ok(())
@@ -95,6 +101,12 @@ impl GraphNeighborhoodReader for RecordingGraphNeighborhoodReader {
     ) -> Result<Option<ContextPathNeighborhood>, PortError> {
         self.depths.lock().await.push(subtree_depth);
         Ok(None)
+    }
+}
+
+impl MemoryAboutIndexReader for RecordingGraphNeighborhoodReader {
+    async fn list_memory_abouts(&self) -> Result<Vec<String>, PortError> {
+        Ok(Vec::new())
     }
 }
 
@@ -206,6 +218,12 @@ impl GraphNeighborhoodReader for SeededGraphNeighborhoodReader {
     }
 }
 
+impl MemoryAboutIndexReader for SeededGraphNeighborhoodReader {
+    async fn list_memory_abouts(&self) -> Result<Vec<String>, PortError> {
+        Ok(vec!["node-123".to_string(), "graph-only".to_string()])
+    }
+}
+
 struct SeededNodeDetailReader;
 
 impl NodeDetailReader for SeededNodeDetailReader {
@@ -262,99 +280,122 @@ impl GraphNeighborhoodReader for TemporalGraphNeighborhoodReader {
         root_node_id: &str,
         _depth: u32,
     ) -> Result<Option<NodeNeighborhood>, PortError> {
-        if root_node_id != "question:830ce83f" {
-            return Ok(None);
+        match root_node_id {
+            "question:830ce83f" => Ok(Some(NodeNeighborhood {
+                root: temporal_projection(
+                    "question:830ce83f",
+                    "memory_anchor",
+                    "Rachel relocation memory",
+                ),
+                neighbors: vec![
+                    temporal_projection(
+                        "about:question:830ce83f:dimension:conversation",
+                        "memory_dimension",
+                        "Rachel relocation discussion",
+                    ),
+                    temporal_projection(
+                        "about:question:830ce83f:dimension:entity",
+                        "memory_dimension",
+                        "Rachel",
+                    ),
+                    temporal_projection(
+                        "about:question:830ce83f:dimension:benchmark_record",
+                        "memory_dimension",
+                        "Benchmark item",
+                    ),
+                    temporal_projection(
+                        "claim:rachel-denver",
+                        "claim",
+                        "Rachel said she was moving to Denver.",
+                    ),
+                    temporal_projection(
+                        "claim:rachel-austin",
+                        "claim",
+                        "Rachel later corrected the destination to Austin.",
+                    ),
+                ],
+                relations: vec![
+                    temporal_contains_entry(
+                        "about:question:830ce83f:dimension:conversation",
+                        "claim:rachel-denver",
+                        "conversation",
+                        1,
+                        Some(sort_time(100)),
+                        None,
+                        None,
+                    ),
+                    temporal_contains_entry(
+                        "about:question:830ce83f:dimension:entity",
+                        "claim:rachel-denver",
+                        "entity",
+                        1,
+                        None,
+                        Some(sort_time(100)),
+                        None,
+                    ),
+                    temporal_contains_entry(
+                        "about:question:830ce83f:dimension:conversation",
+                        "claim:rachel-austin",
+                        "conversation",
+                        2,
+                        Some(sort_time(105)),
+                        None,
+                        None,
+                    ),
+                    temporal_contains_entry(
+                        "about:question:830ce83f:dimension:entity",
+                        "claim:rachel-austin",
+                        "entity",
+                        2,
+                        None,
+                        Some(sort_time(105)),
+                        None,
+                    ),
+                    temporal_contains_entry(
+                        "about:question:830ce83f:dimension:benchmark_record",
+                        "claim:rachel-austin",
+                        "benchmark_record",
+                        7,
+                        None,
+                        None,
+                        Some(7),
+                    ),
+                    NodeRelationProjection {
+                        source_node_id: "claim:rachel-austin".to_string(),
+                        target_node_id: "claim:rachel-denver".to_string(),
+                        relation_type: "supersedes".to_string(),
+                        explanation: RelationExplanation::new(RelationSemanticClass::Evidential)
+                            .with_rationale("The later statement corrects the earlier destination.")
+                            .with_confidence("high"),
+                    },
+                ],
+            })),
+            "question:porto" => Ok(Some(NodeNeighborhood {
+                root: temporal_projection("question:porto", "memory_anchor", "Porto travel memory"),
+                neighbors: vec![
+                    temporal_projection(
+                        "about:question:porto:dimension:conversation",
+                        "memory_dimension",
+                        "Porto travel discussion",
+                    ),
+                    temporal_projection(
+                        "claim:porto-lisbon",
+                        "claim",
+                        "The Porto plan later included a Lisbon stop.",
+                    ),
+                ],
+                relations: vec![temporal_contains_entry(
+                    "about:question:porto:dimension:conversation",
+                    "claim:porto-lisbon",
+                    "conversation",
+                    3,
+                    Some(sort_time(110)),
+                    None,
+                    None,
+                )],
+            })),
+            _ => Ok(None),
         }
-
-        Ok(Some(NodeNeighborhood {
-            root: temporal_projection(
-                "question:830ce83f",
-                "memory_anchor",
-                "Rachel relocation memory",
-            ),
-            neighbors: vec![
-                temporal_projection(
-                    "about:question:830ce83f:dimension:conversation",
-                    "memory_dimension",
-                    "Rachel relocation discussion",
-                ),
-                temporal_projection(
-                    "about:question:830ce83f:dimension:entity",
-                    "memory_dimension",
-                    "Rachel",
-                ),
-                temporal_projection(
-                    "about:question:830ce83f:dimension:benchmark_record",
-                    "memory_dimension",
-                    "Benchmark item",
-                ),
-                temporal_projection(
-                    "claim:rachel-denver",
-                    "claim",
-                    "Rachel said she was moving to Denver.",
-                ),
-                temporal_projection(
-                    "claim:rachel-austin",
-                    "claim",
-                    "Rachel later corrected the destination to Austin.",
-                ),
-            ],
-            relations: vec![
-                temporal_contains_entry(
-                    "about:question:830ce83f:dimension:conversation",
-                    "claim:rachel-denver",
-                    "conversation",
-                    1,
-                    Some(sort_time(100)),
-                    None,
-                    None,
-                ),
-                temporal_contains_entry(
-                    "about:question:830ce83f:dimension:entity",
-                    "claim:rachel-denver",
-                    "entity",
-                    1,
-                    None,
-                    Some(sort_time(100)),
-                    None,
-                ),
-                temporal_contains_entry(
-                    "about:question:830ce83f:dimension:conversation",
-                    "claim:rachel-austin",
-                    "conversation",
-                    2,
-                    Some(sort_time(105)),
-                    None,
-                    None,
-                ),
-                temporal_contains_entry(
-                    "about:question:830ce83f:dimension:entity",
-                    "claim:rachel-austin",
-                    "entity",
-                    2,
-                    None,
-                    Some(sort_time(105)),
-                    None,
-                ),
-                temporal_contains_entry(
-                    "about:question:830ce83f:dimension:benchmark_record",
-                    "claim:rachel-austin",
-                    "benchmark_record",
-                    7,
-                    None,
-                    None,
-                    Some(7),
-                ),
-                NodeRelationProjection {
-                    source_node_id: "claim:rachel-austin".to_string(),
-                    target_node_id: "claim:rachel-denver".to_string(),
-                    relation_type: "supersedes".to_string(),
-                    explanation: RelationExplanation::new(RelationSemanticClass::Evidential)
-                        .with_rationale("The later statement corrects the earlier destination.")
-                        .with_confidence("high"),
-                },
-            ],
-        }))
     }
 
     async fn load_context_path(
@@ -364,6 +405,15 @@ impl GraphNeighborhoodReader for TemporalGraphNeighborhoodReader {
         _subtree_depth: u32,
     ) -> Result<Option<ContextPathNeighborhood>, PortError> {
         Ok(None)
+    }
+}
+
+impl MemoryAboutIndexReader for TemporalGraphNeighborhoodReader {
+    async fn list_memory_abouts(&self) -> Result<Vec<String>, PortError> {
+        Ok(vec![
+            "question:830ce83f".to_string(),
+            "question:porto".to_string(),
+        ])
     }
 }
 
@@ -1069,6 +1119,37 @@ async fn memory_service_temporal_methods_use_domain_traversal() {
         forward.coverage.expect("coverage").included,
         ["conversation"]
     );
+
+    let all_abouts_forward = service
+        .forward(Request::new(temporal_move_request(
+            Some(ProtoTemporalCursor {
+                r#ref: "claim:rachel-denver".to_string(),
+                ..Default::default()
+            }),
+            ProtoDimensionSelection {
+                mode: ProtoDimensionSelectionMode::Only as i32,
+                include: vec!["conversation".to_string()],
+                exclude: Vec::new(),
+                scope: ProtoDimensionScopeMode::AllAbouts as i32,
+                abouts: Vec::new(),
+            },
+        )))
+        .await
+        .expect("ALL_ABOUTS should traverse every indexed memory about")
+        .into_inner();
+    assert_eq!(
+        all_abouts_forward
+            .entries
+            .iter()
+            .map(|entry| entry.r#ref.as_str())
+            .collect::<Vec<_>>(),
+        vec!["claim:rachel-austin", "claim:porto-lisbon"]
+    );
+    let all_abouts_coverage = all_abouts_forward.coverage.expect("coverage");
+    assert_eq!(
+        all_abouts_coverage.requested.expect("requested").scope,
+        ProtoDimensionScopeMode::AllAbouts as i32
+    );
 }
 
 #[tokio::test]
@@ -1122,29 +1203,6 @@ async fn memory_service_temporal_requests_fail_fast_on_ambiguous_inputs() {
         .await
         .expect_err("ABOUTS scope without abouts should fail");
     assert_eq!(empty_about_scope.code(), tonic::Code::InvalidArgument);
-
-    let all_abouts_scope = service
-        .goto(Request::new(temporal_move_request(
-            Some(ProtoTemporalCursor {
-                sequence: Some(1),
-                ..Default::default()
-            }),
-            ProtoDimensionSelection {
-                mode: ProtoDimensionSelectionMode::Only as i32,
-                include: vec!["conversation".to_string()],
-                exclude: Vec::new(),
-                scope: ProtoDimensionScopeMode::AllAbouts as i32,
-                abouts: Vec::new(),
-            },
-        )))
-        .await
-        .expect_err("ALL_ABOUTS scope should fail until global about index support exists");
-    assert_eq!(all_abouts_scope.code(), tonic::Code::InvalidArgument);
-    assert!(
-        all_abouts_scope
-            .message()
-            .contains("requires global about index support")
-    );
 
     let zero_sequence_cursor = service
         .goto(Request::new(temporal_move_request(

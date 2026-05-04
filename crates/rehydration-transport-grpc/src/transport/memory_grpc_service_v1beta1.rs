@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use rehydration_application::KernelMemoryApplicationService;
 use rehydration_domain::{
-    ContextEventStore, GraphNeighborhoodReader, NodeDetailReader, ProjectionWriter, SnapshotStore,
-    TemporalDirection,
+    ContextEventStore, GraphNeighborhoodReader, MemoryAboutIndexReader, NodeDetailReader,
+    ProjectionWriter, SnapshotStore, TemporalDirection,
 };
 use rehydration_proto::v1beta1::{
     AskRequest, AskResponse, IngestRequest, IngestResponse, InspectRequest, InspectResponse,
@@ -34,7 +34,7 @@ impl<G, D, S, E, W> MemoryGrpcServiceV1Beta1<G, D, S, E, W> {
 #[tonic::async_trait]
 impl<G, D, S, E, W> KernelMemoryService for MemoryGrpcServiceV1Beta1<G, D, S, E, W>
 where
-    G: GraphNeighborhoodReader + Send + Sync + 'static,
+    G: GraphNeighborhoodReader + MemoryAboutIndexReader + Send + Sync + 'static,
     D: NodeDetailReader + Send + Sync + 'static,
     S: SnapshotStore + Send + Sync + 'static,
     E: ContextEventStore + Send + Sync + 'static,
@@ -173,7 +173,7 @@ where
 
 impl<G, D, S, E, W> MemoryGrpcServiceV1Beta1<G, D, S, E, W>
 where
-    G: GraphNeighborhoodReader + Send + Sync + 'static,
+    G: GraphNeighborhoodReader + MemoryAboutIndexReader + Send + Sync + 'static,
     D: NodeDetailReader + Send + Sync + 'static,
     S: SnapshotStore + Send + Sync + 'static,
     E: ContextEventStore + Send + Sync + 'static,

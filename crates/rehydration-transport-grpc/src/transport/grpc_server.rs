@@ -11,8 +11,8 @@ use rehydration_application::{
 };
 use rehydration_config::{AppConfig, GrpcTlsConfig, GrpcTlsMode};
 use rehydration_domain::{
-    ContextEventStore, GraphNeighborhoodReader, NodeDetailReader, ProjectionWriter,
-    QualityMetricsObserver, RehydrationBundle, SnapshotStore,
+    ContextEventStore, GraphNeighborhoodReader, MemoryAboutIndexReader, NodeDetailReader,
+    ProjectionWriter, QualityMetricsObserver, RehydrationBundle, SnapshotStore,
 };
 use rehydration_proto::v1beta1::{
     FILE_DESCRIPTOR_SET, GetContextRequest,
@@ -42,7 +42,7 @@ pub struct GrpcServer<G, D, S, E> {
 
 impl<G, D, S, E> GrpcServer<G, D, S, E>
 where
-    G: GraphNeighborhoodReader + Send + Sync + 'static,
+    G: GraphNeighborhoodReader + MemoryAboutIndexReader + Send + Sync + 'static,
     G: ProjectionWriter + Send + Sync + 'static,
     D: NodeDetailReader + Send + Sync + 'static,
     D: ProjectionWriter + Send + Sync + 'static,

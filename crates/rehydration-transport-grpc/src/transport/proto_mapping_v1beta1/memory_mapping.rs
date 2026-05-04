@@ -770,9 +770,7 @@ fn apply_dimension_scope(
                     "dimension scope ALL_ABOUTS must not set abouts",
                 ));
             }
-            Err(invalid_argument(
-                "dimension scope ALL_ABOUTS requires global about index support",
-            ))
+            Ok(selection.with_all_about_scope())
         }
     }
 }
