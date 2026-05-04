@@ -3,7 +3,7 @@ use std::sync::Arc;
 use rehydration_application::KernelMemoryApplicationService;
 use rehydration_domain::{
     ContextEventStore, GraphNeighborhoodReader, MemoryAboutIndexReader, NodeDetailReader,
-    ProjectionWriter, SnapshotStore, TemporalDirection,
+    NodeRelationshipReader, ProjectionWriter, SnapshotStore, TemporalDirection,
 };
 use rehydration_proto::v1beta1::{
     AskRequest, AskResponse, IngestRequest, IngestResponse, InspectRequest, InspectResponse,
@@ -34,7 +34,12 @@ impl<G, D, S, E, W> MemoryGrpcServiceV1Beta1<G, D, S, E, W> {
 #[tonic::async_trait]
 impl<G, D, S, E, W> KernelMemoryService for MemoryGrpcServiceV1Beta1<G, D, S, E, W>
 where
-    G: GraphNeighborhoodReader + MemoryAboutIndexReader + Send + Sync + 'static,
+    G: GraphNeighborhoodReader
+        + MemoryAboutIndexReader
+        + NodeRelationshipReader
+        + Send
+        + Sync
+        + 'static,
     D: NodeDetailReader + Send + Sync + 'static,
     S: SnapshotStore + Send + Sync + 'static,
     E: ContextEventStore + Send + Sync + 'static,
@@ -157,23 +162,24 @@ where
         request: Request<InspectRequest>,
     ) -> Result<Response<InspectResponse>, Status> {
         let query = inspect_query_from_proto(request.into_inner()).map_err(|status| *status)?;
-        let include_details = query.include_details;
         let result = self
             .application
             .inspect(query)
             .await
             .map_err(map_application_error)?;
 
-        Ok(Response::new(inspect_response_from_result(
-            result,
-            include_details,
-        )))
+        Ok(Response::new(inspect_response_from_result(result)))
     }
 }
 
 impl<G, D, S, E, W> MemoryGrpcServiceV1Beta1<G, D, S, E, W>
 where
-    G: GraphNeighborhoodReader + MemoryAboutIndexReader + Send + Sync + 'static,
+    G: GraphNeighborhoodReader
+        + MemoryAboutIndexReader
+        + NodeRelationshipReader
+        + Send
+        + Sync
+        + 'static,
     D: NodeDetailReader + Send + Sync + 'static,
     S: SnapshotStore + Send + Sync + 'static,
     E: ContextEventStore + Send + Sync + 'static,

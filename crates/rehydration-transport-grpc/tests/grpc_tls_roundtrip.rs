@@ -7,8 +7,8 @@ use std::sync::{Arc, Once};
 use rehydration_config::{AppConfig, GrpcTlsConfig, GrpcTlsMode};
 use rehydration_domain::{
     ContextPathNeighborhood, GraphNeighborhoodReader, MemoryAboutIndexReader, NodeDetailProjection,
-    NodeDetailReader, NodeNeighborhood, PortError, ProjectionMutation, ProjectionWriter,
-    RehydrationBundle, SnapshotSaveOptions, SnapshotStore,
+    NodeDetailReader, NodeNeighborhood, NodeRelationshipReader, NodeRelationships, PortError,
+    ProjectionMutation, ProjectionWriter, RehydrationBundle, SnapshotSaveOptions, SnapshotStore,
 };
 use rehydration_observability::quality_observers::NoopQualityObserver;
 use rehydration_proto::v1beta1::{
@@ -46,6 +46,15 @@ impl GraphNeighborhoodReader for EmptyGraphNeighborhoodReader {
 impl MemoryAboutIndexReader for EmptyGraphNeighborhoodReader {
     async fn list_memory_abouts(&self) -> Result<Vec<String>, PortError> {
         Ok(Vec::new())
+    }
+}
+
+impl NodeRelationshipReader for EmptyGraphNeighborhoodReader {
+    async fn load_node_relationships(
+        &self,
+        _node_id: &str,
+    ) -> Result<Option<NodeRelationships>, PortError> {
+        Ok(None)
     }
 }
 

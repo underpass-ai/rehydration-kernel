@@ -107,6 +107,8 @@ pub(crate) fn inspect_query_from_proto(
     Ok(InspectMemoryQuery {
         ref_id: request.r#ref,
         include_details: include.details,
+        include_incoming: include.incoming,
+        include_outgoing: include.outgoing,
     })
 }
 
@@ -175,11 +177,6 @@ fn temporal_include_from_proto(value: TemporalInclude) -> TemporalIncludeOptions
 }
 
 fn validate_inspect_include(value: &InspectInclude) -> ProtoMappingResult<()> {
-    if value.incoming || value.outgoing {
-        return Err(invalid_argument(
-            "inspect incoming/outgoing link expansion requires link-capable reader support",
-        ));
-    }
     if value.raw {
         return Err(invalid_argument(
             "inspect raw expansion is not available on the current typed response shape",

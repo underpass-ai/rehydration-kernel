@@ -11,9 +11,9 @@ pub use commands::{
     UpdateContextCommand, UpdateContextOutcome, UpdateContextUseCase,
 };
 pub use memory::{
-    AskMemoryQuery, ExistingMemoryRefs, InspectMemoryQuery, KernelMemoryApplicationService,
-    MemoryAcceptedCounts, MemoryAnswerPolicy, MemoryCoordinateData, MemoryData,
-    MemoryDimensionData, MemoryEntryData, MemoryEvidenceData, MemoryIngestCommand,
+    AskMemoryQuery, ExistingMemoryRefs, InspectMemoryQuery, InspectMemoryResult,
+    KernelMemoryApplicationService, MemoryAcceptedCounts, MemoryAnswerPolicy, MemoryCoordinateData,
+    MemoryData, MemoryDimensionData, MemoryEntryData, MemoryEvidenceData, MemoryIngestCommand,
     MemoryIngestOutcome, MemoryProvenanceData, MemoryRelationData, TemporalIncludeOptions,
     TemporalMemoryQuery, TemporalMemoryResult, TraceMemoryQuery, WakeMemoryQuery,
     translate_memory_ingest,
@@ -30,6 +30,7 @@ pub use queries::{
     GetContextPathQuery, GetContextPathResult, GetContextPathUseCase, GetContextQuery,
     GetContextResult, GetContextUseCase, GetGraphRelationshipsQuery, GetGraphRelationshipsResult,
     GetGraphRelationshipsUseCase, GetNodeDetailQuery, GetNodeDetailResult, GetNodeDetailUseCase,
+    GetNodeRelationshipsQuery, GetNodeRelationshipsResult, GetNodeRelationshipsUseCase,
     GraphNodeView, GraphRelationshipView, MAX_NATIVE_GRAPH_TRAVERSAL_DEPTH,
     MIN_NATIVE_GRAPH_TRAVERSAL_DEPTH, NodeCentricProjectionReader, NodeDetailView,
     QueryApplicationService, QueryTimingBreakdown, RehydrateSessionQuery, RehydrateSessionResult,

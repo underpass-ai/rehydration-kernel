@@ -2,6 +2,8 @@ use rehydration_domain::{
     DimensionSelection, ResolutionTier, TemporalCursor, TemporalDirection, TemporalWindow,
 };
 
+use crate::queries::{GetNodeDetailResult, GraphRelationshipView};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MemoryIngestCommand {
     pub about: String,
@@ -165,6 +167,16 @@ pub struct TraceMemoryQuery {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InspectMemoryQuery {
     pub ref_id: String,
+    pub include_details: bool,
+    pub include_incoming: bool,
+    pub include_outgoing: bool,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct InspectMemoryResult {
+    pub detail: GetNodeDetailResult,
+    pub incoming: Vec<GraphRelationshipView>,
+    pub outgoing: Vec<GraphRelationshipView>,
     pub include_details: bool,
 }
 

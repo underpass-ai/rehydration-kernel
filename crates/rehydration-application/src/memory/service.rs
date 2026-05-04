@@ -4,22 +4,22 @@ use std::sync::Arc;
 use rehydration_domain::{
     BundleNode, BundleRelationship, ContextEventStore, DimensionScopeMode, DimensionSelection,
     DimensionSelectionMode, GraphNeighborhoodReader, MemoryAboutIndexReader,
-    MemoryDimensionIdentity, NodeDetailReader, ProjectionWriter, RehydrationBundle,
-    RehydrationMode, ResolutionTier, SnapshotStore, TemporalMemoryTraversal,
+    MemoryDimensionIdentity, NodeDetailReader, NodeRelationshipReader, ProjectionWriter,
+    RehydrationBundle, RehydrationMode, ResolutionTier, SnapshotStore, TemporalMemoryTraversal,
     TemporalTraversalRequest,
 };
 
 use crate::ApplicationError;
 use crate::commands::CommandApplicationService;
 use crate::memory::{
-    AskMemoryQuery, ExistingMemoryRefs, InspectMemoryQuery, MemoryIngestCommand,
-    MemoryIngestOutcome, TemporalMemoryQuery, TemporalMemoryResult, TraceMemoryQuery,
-    WakeMemoryQuery, translate_memory_ingest,
+    AskMemoryQuery, ExistingMemoryRefs, InspectMemoryQuery, InspectMemoryResult,
+    MemoryIngestCommand, MemoryIngestOutcome, TemporalMemoryQuery, TemporalMemoryResult,
+    TraceMemoryQuery, WakeMemoryQuery, translate_memory_ingest,
 };
 use crate::queries::{
     ContextRenderOptions, EndpointHint, GetContextPathQuery, GetContextPathResult, GetContextQuery,
-    GetContextResult, GetNodeDetailQuery, GetNodeDetailResult, MAX_NATIVE_GRAPH_TRAVERSAL_DEPTH,
-    QueryApplicationService, render_graph_bundle_with_options,
+    GetContextResult, GetNodeDetailQuery, GetNodeRelationshipsQuery,
+    MAX_NATIVE_GRAPH_TRAVERSAL_DEPTH, QueryApplicationService, render_graph_bundle_with_options,
 };
 
 pub struct KernelMemoryApplicationService<G, D, S, E, W> {
@@ -41,7 +41,7 @@ impl<G, D, S, E, W> KernelMemoryApplicationService<G, D, S, E, W> {
 
 impl<G, D, S, E, W> KernelMemoryApplicationService<G, D, S, E, W>
 where
-    G: GraphNeighborhoodReader + MemoryAboutIndexReader + Send + Sync,
+    G: GraphNeighborhoodReader + MemoryAboutIndexReader + NodeRelationshipReader + Send + Sync,
     D: NodeDetailReader + Send + Sync,
     S: SnapshotStore + Send + Sync,
     E: ContextEventStore + Send + Sync,
@@ -181,12 +181,43 @@ where
     pub async fn inspect(
         &self,
         query: InspectMemoryQuery,
-    ) -> Result<GetNodeDetailResult, ApplicationError> {
-        self.query_application
+    ) -> Result<InspectMemoryResult, ApplicationError> {
+        let include_incoming = query.include_incoming;
+        let include_outgoing = query.include_outgoing;
+        let include_details = query.include_details;
+        let detail = self
+            .query_application
             .get_node_detail(GetNodeDetailQuery {
-                node_id: query.ref_id,
+                node_id: query.ref_id.clone(),
             })
-            .await
+            .await?;
+
+        let links = if include_incoming || include_outgoing {
+            Some(
+                self.query_application
+                    .get_node_relationships(GetNodeRelationshipsQuery {
+                        node_id: query.ref_id,
+                    })
+                    .await?,
+            )
+        } else {
+            None
+        };
+
+        Ok(InspectMemoryResult {
+            detail,
+            incoming: links
+                .as_ref()
+                .filter(|_| include_incoming)
+                .map(|links| links.incoming.clone())
+                .unwrap_or_default(),
+            outgoing: links
+                .as_ref()
+                .filter(|_| include_outgoing)
+                .map(|links| links.outgoing.clone())
+                .unwrap_or_default(),
+            include_details,
+        })
     }
 
     async fn existing_memory_refs(

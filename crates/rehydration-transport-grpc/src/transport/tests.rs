@@ -11,9 +11,10 @@ use rehydration_application::{
 use rehydration_domain::{
     BundleMetadata, BundleNode, BundleNodeDetail, BundleRelationship, CaseId, ContextEventStore,
     ContextPathNeighborhood, GraphNeighborhoodReader, MemoryAboutIndexReader, NodeDetailProjection,
-    NodeDetailReader, NodeNeighborhood, NodeProjection, NodeRelationProjection, PortError,
-    ProjectionMutation, ProjectionWriter, RehydrationBundle, RelationExplanation,
-    RelationSemanticClass, Role, SnapshotSaveOptions, SnapshotStore,
+    NodeDetailReader, NodeNeighborhood, NodeProjection, NodeRelationProjection,
+    NodeRelationshipReader, NodeRelationships, PortError, ProjectionMutation, ProjectionWriter,
+    RehydrationBundle, RelationExplanation, RelationSemanticClass, Role, SnapshotSaveOptions,
+    SnapshotStore,
 };
 use rehydration_observability::quality_observers::NoopQualityObserver;
 use rehydration_proto::v1beta1::{
@@ -73,6 +74,15 @@ impl MemoryAboutIndexReader for EmptyGraphNeighborhoodReader {
     }
 }
 
+impl NodeRelationshipReader for EmptyGraphNeighborhoodReader {
+    async fn load_node_relationships(
+        &self,
+        _node_id: &str,
+    ) -> Result<Option<NodeRelationships>, PortError> {
+        Ok(None)
+    }
+}
+
 impl ProjectionWriter for EmptyGraphNeighborhoodReader {
     async fn apply_mutations(&self, _mutations: Vec<ProjectionMutation>) -> Result<(), PortError> {
         Ok(())
@@ -107,6 +117,15 @@ impl GraphNeighborhoodReader for RecordingGraphNeighborhoodReader {
 impl MemoryAboutIndexReader for RecordingGraphNeighborhoodReader {
     async fn list_memory_abouts(&self) -> Result<Vec<String>, PortError> {
         Ok(Vec::new())
+    }
+}
+
+impl NodeRelationshipReader for RecordingGraphNeighborhoodReader {
+    async fn load_node_relationships(
+        &self,
+        _node_id: &str,
+    ) -> Result<Option<NodeRelationships>, PortError> {
+        Ok(None)
     }
 }
 
@@ -221,6 +240,36 @@ impl GraphNeighborhoodReader for SeededGraphNeighborhoodReader {
 impl MemoryAboutIndexReader for SeededGraphNeighborhoodReader {
     async fn list_memory_abouts(&self) -> Result<Vec<String>, PortError> {
         Ok(vec!["node-123".to_string(), "graph-only".to_string()])
+    }
+}
+
+impl NodeRelationshipReader for SeededGraphNeighborhoodReader {
+    async fn load_node_relationships(
+        &self,
+        node_id: &str,
+    ) -> Result<Option<NodeRelationships>, PortError> {
+        Ok(match node_id {
+            "node-123" => Some(NodeRelationships {
+                incoming: vec![NodeRelationProjection {
+                    source_node_id: "node-000".to_string(),
+                    target_node_id: "node-123".to_string(),
+                    relation_type: "supports".to_string(),
+                    explanation: RelationExplanation::new(RelationSemanticClass::Evidential)
+                        .with_rationale("seeded predecessor supports the inspected node")
+                        .with_confidence("high"),
+                }],
+                outgoing: vec![NodeRelationProjection {
+                    source_node_id: "node-123".to_string(),
+                    target_node_id: "node-456".to_string(),
+                    relation_type: "TRIGGERS".to_string(),
+                    explanation: RelationExplanation::new(RelationSemanticClass::Causal)
+                        .with_rationale("recovery triggered")
+                        .with_sequence(1),
+                }],
+            }),
+            "graph-only" => Some(NodeRelationships::default()),
+            _ => None,
+        })
     }
 }
 
@@ -417,6 +466,18 @@ impl MemoryAboutIndexReader for TemporalGraphNeighborhoodReader {
     }
 }
 
+impl NodeRelationshipReader for TemporalGraphNeighborhoodReader {
+    async fn load_node_relationships(
+        &self,
+        node_id: &str,
+    ) -> Result<Option<NodeRelationships>, PortError> {
+        Ok(match node_id {
+            "question:830ce83f" | "question:porto" => Some(NodeRelationships::default()),
+            _ => None,
+        })
+    }
+}
+
 struct NoopSnapshotStore;
 
 impl SnapshotStore for NoopSnapshotStore {
@@ -440,7 +501,12 @@ fn memory_service<G, D>(
     NoopProjectionWriter,
 >
 where
-    G: GraphNeighborhoodReader + Send + Sync + 'static,
+    G: GraphNeighborhoodReader
+        + MemoryAboutIndexReader
+        + NodeRelationshipReader
+        + Send
+        + Sync
+        + 'static,
     D: NodeDetailReader + Send + Sync + 'static,
 {
     memory_service_with_store(
@@ -462,7 +528,12 @@ fn memory_service_with_store<G, D>(
     NoopProjectionWriter,
 >
 where
-    G: GraphNeighborhoodReader + Send + Sync + 'static,
+    G: GraphNeighborhoodReader
+        + MemoryAboutIndexReader
+        + NodeRelationshipReader
+        + Send
+        + Sync
+        + 'static,
     D: NodeDetailReader + Send + Sync + 'static,
 {
     let query_application = Arc::new(QueryApplicationService::new(
@@ -1241,13 +1312,23 @@ async fn memory_service_trace_and_inspect_use_existing_query_ports() {
     let inspect = service
         .inspect(Request::new(InspectRequest {
             r#ref: "node-123".to_string(),
-            include: None,
+            include: Some(InspectInclude {
+                incoming: true,
+                outgoing: true,
+                details: true,
+                raw: false,
+            }),
         }))
         .await
-        .expect("inspect should read node detail")
+        .expect("inspect should read node detail and direct links")
         .into_inner();
     assert_eq!(inspect.object.expect("object").r#ref, "node-123");
     assert_eq!(inspect.evidence.len(), 1);
+    let links = inspect.links.expect("links");
+    assert_eq!(links.incoming.len(), 1);
+    assert_eq!(links.incoming[0].source_ref, "node-000");
+    assert_eq!(links.outgoing.len(), 1);
+    assert_eq!(links.outgoing[0].target_ref, "node-456");
 
     let summary_only = service
         .inspect(Request::new(InspectRequest {
@@ -1270,23 +1351,8 @@ async fn memory_service_trace_and_inspect_use_existing_query_ports() {
 }
 
 #[tokio::test]
-async fn memory_service_inspect_fails_fast_for_unsupported_links() {
+async fn memory_service_inspect_fails_fast_for_unsupported_raw() {
     let service = memory_service(SeededGraphNeighborhoodReader, SeededNodeDetailReader);
-
-    let error = service
-        .inspect(Request::new(InspectRequest {
-            r#ref: "node-123".to_string(),
-            include: Some(InspectInclude {
-                incoming: true,
-                outgoing: false,
-                details: true,
-                raw: false,
-            }),
-        }))
-        .await
-        .expect_err("unsupported explicit link expansion should fail");
-
-    assert_eq!(error.code(), tonic::Code::InvalidArgument);
 
     let raw = service
         .inspect(Request::new(InspectRequest {

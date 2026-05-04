@@ -271,10 +271,10 @@ Temporal traversal rules:
 `Trace` reads a path between two refs through the existing path query behavior
 and returns KMP relationship proof.
 
-`Inspect` reads node detail for one ref. It honors `details=false`. It must not
-pretend to support link directions or raw expansion that the underlying reader
-cannot supply. If a caller explicitly requests incoming links, outgoing links,
-or raw expansion before the reader can serve them, the method fails clearly.
+`Inspect` reads node detail for one ref. It honors `details=false`.
+Incoming/outgoing expansion is backed by the typed node relationship reader and
+does not synthesize reverse links from an outgoing traversal. Raw expansion
+remains fail-fast until a typed raw response shape exists.
 
 ## Next Slice: MCP Migration
 
@@ -317,7 +317,8 @@ Application tests:
 - temporal traversal covers all four directions, ref cursor, time cursor,
   sequence cursor, dimension `all`, `only`, and `except`;
 - ask never returns an invented generated answer;
-- inspect fails fast for unsupported explicit include flags.
+- inspect returns requested incoming/outgoing direct links and fails fast for
+  unsupported raw expansion.
 
 Transport tests:
 

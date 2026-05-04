@@ -107,6 +107,7 @@ where
     E: ContextEventStore + Send + Sync + 'static + std::fmt::Debug,
     G: rehydration_domain::GraphNeighborhoodReader
         + rehydration_domain::MemoryAboutIndexReader
+        + rehydration_domain::NodeRelationshipReader
         + rehydration_domain::ProjectionWriter
         + Send
         + Sync

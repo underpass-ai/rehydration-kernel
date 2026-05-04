@@ -59,7 +59,7 @@ kernel services.
 | `Rewind` | Production-ready | Domain-owned backward traversal. |
 | `Forward` | Production-ready | Domain-owned forward traversal. |
 | `Trace` | Production-ready | Uses `GetContextPath` semantics and maps `goal` to the trace role. |
-| `Inspect` | Production-ready for object/detail lookup | Honors `details=false`. Explicit `incoming`, `outgoing`, or `raw` expansion fails fast until link/raw-capable reader support exists. |
+| `Inspect` | Production-ready for object/detail/link lookup | Honors `details=false`. Explicit `incoming` and `outgoing` use the typed node relationship reader. `raw` expansion fails fast until a typed raw response shape exists. |
 
 Dimension selection scope defaults to `CURRENT_ABOUT`. `ABOUTS` is valid only
 with a non-empty `abouts` list. `ALL_ABOUTS` uses the kernel memory about index
@@ -146,7 +146,7 @@ metrics. `RehydrateSession` renders per-role bundles and emits quality via the o
 - **`context.bundle.generated` not emitted** — defined in AsyncAPI contract but the kernel runtime does not publish this event. Test fixtures simulate it for downstream integration tests
 - **MCP live adapter not migrated to `KernelMemoryService` yet** — this is the next slice. The gRPC memory service is implemented first so MCP can become a thin adapter over it.
 - **No generated `Ask` answers** — `KernelMemoryService.Ask` returns deterministic rendered memory context or `UNKNOWN` according to the answer policy.
-- **No inspect link/raw expansion yet** — `KernelMemoryService.Inspect` fails fast for explicit incoming/outgoing/raw requests.
+- **No inspect raw expansion yet** — `KernelMemoryService.Inspect` supports explicit incoming/outgoing links through the typed node relationship reader. `raw=true` still fails fast until raw inspection has a typed response contract.
 - **Single token estimator** — `cl100k_base` BPE via `tiktoken-rs` for all counting. No model-specific estimator selection
 - **Idempotency outcome** — outcome publish is fire-and-forget. If it fails, retries are treated as new requests
 

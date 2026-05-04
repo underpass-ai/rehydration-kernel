@@ -1,6 +1,7 @@
 use rehydration_domain::{
-    ContextPathNeighborhood, GraphNeighborhoodReader, NodeDetailProjection, NodeDetailReader,
-    NodeNeighborhood, PortError, RehydrationBundle, SnapshotSaveOptions, SnapshotStore,
+    ContextPathNeighborhood, GraphNeighborhoodReader, MemoryAboutIndexReader, NodeDetailProjection,
+    NodeDetailReader, NodeNeighborhood, NodeRelationshipReader, NodeRelationships, PortError,
+    ProjectionMutation, ProjectionWriter, RehydrationBundle, SnapshotSaveOptions, SnapshotStore,
 };
 
 pub struct EmptyGraphNeighborhoodReader;
@@ -24,6 +25,27 @@ impl GraphNeighborhoodReader for EmptyGraphNeighborhoodReader {
     }
 }
 
+impl NodeRelationshipReader for EmptyGraphNeighborhoodReader {
+    async fn load_node_relationships(
+        &self,
+        _node_id: &str,
+    ) -> Result<Option<NodeRelationships>, PortError> {
+        Ok(None)
+    }
+}
+
+impl MemoryAboutIndexReader for EmptyGraphNeighborhoodReader {
+    async fn list_memory_abouts(&self) -> Result<Vec<String>, PortError> {
+        Ok(Vec::new())
+    }
+}
+
+impl ProjectionWriter for EmptyGraphNeighborhoodReader {
+    async fn apply_mutations(&self, _mutations: Vec<ProjectionMutation>) -> Result<(), PortError> {
+        Ok(())
+    }
+}
+
 pub struct EmptyNodeDetailReader;
 
 impl NodeDetailReader for EmptyNodeDetailReader {
@@ -43,6 +65,12 @@ impl NodeDetailReader for EmptyNodeDetailReader {
             results.push(self.load_node_detail(node_id).await?);
         }
         Ok(results)
+    }
+}
+
+impl ProjectionWriter for EmptyNodeDetailReader {
+    async fn apply_mutations(&self, _mutations: Vec<ProjectionMutation>) -> Result<(), PortError> {
+        Ok(())
     }
 }
 

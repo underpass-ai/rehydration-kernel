@@ -1126,7 +1126,7 @@ Existing RPCs remain valid:
 |:-------------|:-----------------|
 | `GetContext` | Low-level bundle read used by `wake` or advanced callers. |
 | `GetContextPath` | Low-level path read used by `trace`. |
-| `GetNodeDetail` | Low-level detail read used by `inspect`. |
+| `GetNodeDetail` + node relationship reader | Low-level detail and direct link reads used by `inspect`. |
 | `RehydrateSession` | Compatibility rehydration call; public product vocabulary should use `wake` and `scope`. |
 | `UpdateContext` | Generic command/event-store path; not the preferred memory ingest path. |
 

@@ -1,6 +1,7 @@
 mod endpoint;
 mod load_memory_about_index;
 mod load_neighborhood;
+mod load_node_relationships;
 mod projection_store;
 mod queries;
 mod query_executor;

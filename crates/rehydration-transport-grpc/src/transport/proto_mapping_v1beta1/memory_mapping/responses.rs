@@ -1,14 +1,14 @@
 use std::collections::BTreeSet;
 
 use rehydration_application::{
-    GetContextPathResult, GetContextResult, GetNodeDetailResult, MemoryAnswerPolicy,
-    TemporalMemoryResult,
+    GetContextPathResult, GetContextResult, GraphRelationshipView, InspectMemoryResult,
+    MemoryAnswerPolicy, TemporalMemoryResult,
 };
 use rehydration_domain::TemporalDirection;
 use rehydration_proto::v1beta1::{
     AnswerReason, AskResponse, InspectResponse, InspectedLinks, InspectedObject, MemoryConfidence,
-    MemoryEvidence, TemporalEntry as ProtoTemporalEntry, TemporalMoveResponse, TemporalState,
-    TraceResponse, WakeClaim, WakePacket, WakeResponse,
+    MemoryEvidence, MemoryRelation, TemporalEntry as ProtoTemporalEntry, TemporalMoveResponse,
+    TemporalState, TraceResponse, WakeClaim, WakePacket, WakeResponse,
 };
 
 use super::bundle_views::{
@@ -17,7 +17,7 @@ use super::bundle_views::{
     temporal_relations_from_bundle,
 };
 use super::dimensions::proto_dimension_selection_from_domain;
-use super::scalars::proto_direction;
+use super::scalars::{proto_confidence, proto_direction, proto_semantic_class};
 
 pub(crate) fn wake_response_from_result(intent: &str, result: GetContextResult) -> WakeResponse {
     let relationships = memory_relations_from_bundle(&result.bundle);
@@ -180,47 +180,70 @@ pub(crate) fn trace_response_from_result(result: GetContextPathResult) -> TraceR
     }
 }
 
-pub(crate) fn inspect_response_from_result(
-    result: GetNodeDetailResult,
-    include_details: bool,
-) -> InspectResponse {
-    let text = if include_details {
+pub(crate) fn inspect_response_from_result(result: InspectMemoryResult) -> InspectResponse {
+    let text = if result.include_details {
         result
+            .detail
             .detail
             .as_ref()
             .map(|detail| detail.detail.clone())
             .filter(|detail| !detail.trim().is_empty())
-            .unwrap_or_else(|| result.node.summary.clone())
+            .unwrap_or_else(|| result.detail.node.summary.clone())
     } else {
-        result.node.summary.clone()
+        result.detail.node.summary.clone()
     };
-    let evidence = if include_details {
-        result.detail.as_ref().map_or_else(Vec::new, |detail| {
-            vec![MemoryEvidence {
-                id: format!("detail:{}", detail.node_id),
-                supports: vec![detail.node_id.clone()],
-                text: detail.detail.clone(),
-                source: detail.node_id.clone(),
-                time: None,
-                metadata: Default::default(),
-            }]
-        })
+    let evidence = if result.include_details {
+        result
+            .detail
+            .detail
+            .as_ref()
+            .map_or_else(Vec::new, |detail| {
+                vec![MemoryEvidence {
+                    id: format!("detail:{}", detail.node_id),
+                    supports: vec![detail.node_id.clone()],
+                    text: detail.detail.clone(),
+                    source: detail.node_id.clone(),
+                    time: None,
+                    metadata: Default::default(),
+                }]
+            })
     } else {
         Vec::new()
     };
+    let incoming = result
+        .incoming
+        .iter()
+        .map(memory_relation_from_graph_relationship)
+        .collect();
+    let outgoing = result
+        .outgoing
+        .iter()
+        .map(memory_relation_from_graph_relationship)
+        .collect();
 
     InspectResponse {
-        summary: format!("Found live kernel node `{}`.", result.node.node_id),
+        summary: format!("Found live kernel node `{}`.", result.detail.node.node_id),
         object: Some(InspectedObject {
-            r#ref: result.node.node_id,
-            kind: result.node.node_kind,
+            r#ref: result.detail.node.node_id,
+            kind: result.detail.node.node_kind,
             text,
         }),
-        links: Some(InspectedLinks {
-            incoming: Vec::new(),
-            outgoing: Vec::new(),
-        }),
+        links: Some(InspectedLinks { incoming, outgoing }),
         evidence,
         warnings: Vec::new(),
+    }
+}
+
+fn memory_relation_from_graph_relationship(relationship: &GraphRelationshipView) -> MemoryRelation {
+    let explanation = &relationship.explanation;
+    MemoryRelation {
+        source_ref: relationship.source_node_id.clone(),
+        target_ref: relationship.target_node_id.clone(),
+        rel: relationship.relationship_type.clone(),
+        semantic_class: proto_semantic_class(explanation.semantic_class()) as i32,
+        why: explanation.rationale().unwrap_or_default().to_string(),
+        evidence: explanation.evidence().unwrap_or_default().to_string(),
+        confidence: proto_confidence(explanation.confidence()) as i32,
+        sequence: explanation.sequence(),
     }
 }

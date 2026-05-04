@@ -4,8 +4,8 @@ use std::time::Duration;
 
 use rehydration_config::{AppConfig, GrpcTlsConfig};
 use rehydration_domain::{
-    GraphNeighborhoodReader, MemoryAboutIndexReader, NodeDetailReader, ProjectionWriter,
-    SnapshotStore,
+    GraphNeighborhoodReader, MemoryAboutIndexReader, NodeDetailReader, NodeRelationshipReader,
+    ProjectionWriter, SnapshotStore,
 };
 use rehydration_observability::quality_observers::NoopQualityObserver;
 use rehydration_transport_grpc::GrpcServer;
@@ -32,6 +32,7 @@ impl RunningTlsGrpcServer {
     where
         G: GraphNeighborhoodReader
             + MemoryAboutIndexReader
+            + NodeRelationshipReader
             + ProjectionWriter
             + Send
             + Sync
