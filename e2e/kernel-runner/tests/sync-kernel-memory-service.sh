@@ -4,10 +4,6 @@ source /app/common.sh
 
 echo "=== sync-kernel-memory-service ==="
 
-require_env TLS_CA
-require_env TLS_CERT
-require_env TLS_KEY
-
 memory_service="underpass.rehydration.kernel.v1beta1.KernelMemoryService"
 memory_proto="underpass/rehydration/kernel/v1beta1/memory.proto"
 proto_root="${KERNEL_PROTO_ROOT:-/app/api/proto}"
@@ -24,11 +20,11 @@ evidence_ref="evidence:${run_id}:target"
 grpc_memory_call() {
   local method="$1"
   local payload="$2"
+  local -a transport_args=()
+  append_grpcurl_transport_args transport_args
 
   grpcurl \
-    -cacert "${TLS_CA}" \
-    -cert "${TLS_CERT}" \
-    -key "${TLS_KEY}" \
+    "${transport_args[@]}" \
     -import-path "${proto_root}" \
     -proto "${memory_proto}" \
     -d "${payload}" \

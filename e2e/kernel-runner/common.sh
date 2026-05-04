@@ -54,6 +54,33 @@ kernel_grpc_addr() {
   echo "$(kernel_grpc_host):$(kernel_grpc_port)"
 }
 
+kernel_grpc_tls_mode() {
+  echo "${E2E_GRPC_TLS_MODE:-${KERNEL_GRPC_TLS_MODE:-mutual}}"
+}
+
+append_grpcurl_transport_args() {
+  local -n out_ref="$1"
+
+  case "$(kernel_grpc_tls_mode)" in
+    disabled)
+      out_ref+=("-plaintext")
+      ;;
+    server)
+      require_env TLS_CA
+      out_ref+=("-cacert" "${TLS_CA}")
+      ;;
+    mutual)
+      require_env TLS_CA
+      require_env TLS_CERT
+      require_env TLS_KEY
+      out_ref+=("-cacert" "${TLS_CA}" "-cert" "${TLS_CERT}" "-key" "${TLS_KEY}")
+      ;;
+    *)
+      fail "unsupported E2E_GRPC_TLS_MODE=$(kernel_grpc_tls_mode)"
+      ;;
+  esac
+}
+
 append_requested_scopes() {
   local -n out_ref="$1"
   local scopes="${PIR_GRAPH_BATCH_SCOPES:-graph,details}"
@@ -69,14 +96,11 @@ append_requested_scopes() {
 }
 
 grpc_describe() {
-  require_env TLS_CA
-  require_env TLS_CERT
-  require_env TLS_KEY
+  local -a transport_args=()
+  append_grpcurl_transport_args transport_args
 
   grpcurl \
-    -cacert "${TLS_CA}" \
-    -cert "${TLS_CERT}" \
-    -key "${TLS_KEY}" \
+    "${transport_args[@]}" \
     "$(kernel_grpc_addr)" \
     describe 2>&1
 }
