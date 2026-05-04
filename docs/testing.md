@@ -274,6 +274,10 @@ Supported `TEST_ID` values:
 - `async-vllm-graph-batch-roundtrip`
 - `async-vllm-blind-context-consumption`
 
+`sync-mtls-enforcement` is only applicable when `E2E_GRPC_TLS_MODE=mutual`;
+for `disabled` and `server` TLS modes it exits as skipped because those modes do
+not enforce client certificates.
+
 Example async fixture-driven run inside the cluster:
 
 ```bash

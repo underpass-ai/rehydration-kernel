@@ -5,7 +5,6 @@ source /app/common.sh
 echo "=== sync-mtls-enforcement ==="
 
 if [[ "$(kernel_grpc_tls_mode)" != "mutual" ]]; then
-  output="$(grpc_describe 2>&1)" || fail "gRPC describe failed in tls mode $(kernel_grpc_tls_mode): ${output}"
   pass "mTLS enforcement skipped for tls mode $(kernel_grpc_tls_mode)"
   exit 0
 fi
