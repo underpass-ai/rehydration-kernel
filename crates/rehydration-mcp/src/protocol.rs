@@ -144,6 +144,26 @@ pub(crate) fn tools_list_result() -> Value {
                     }
                 })
             ),
+            temporal_tool_definition(
+                "kernel_goto",
+                "Jump to memory state at a timestamp, sequence, or ref over selected dimensions.",
+                "at",
+            ),
+            temporal_tool_definition(
+                "kernel_near",
+                "Return the temporal neighborhood around a timestamp, sequence, or ref.",
+                "around",
+            ),
+            temporal_tool_definition(
+                "kernel_rewind",
+                "Move backward through memory from a timestamp, sequence, or ref.",
+                "from",
+            ),
+            temporal_tool_definition(
+                "kernel_forward",
+                "Move forward through memory from a timestamp, sequence, or ref.",
+                "from",
+            ),
             tool_definition(
                 "kernel_trace",
                 "Trace the proof path between two memory refs.",
@@ -191,6 +211,87 @@ pub(crate) fn tools_list_result() -> Value {
                 })
             )
         ]
+    })
+}
+
+fn temporal_tool_definition(name: &str, description: &str, cursor_key: &str) -> Value {
+    let cursor_schema = json!({
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+            "time": string_schema("ISO-8601 temporal cursor."),
+            "sequence": {
+                "type": "integer",
+                "minimum": 0
+            },
+            "ref": string_schema("Memory ref cursor.")
+        }
+    });
+    let mut input_schema = json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["about", cursor_key],
+        "properties": {
+            "about": string_schema("Memory anchor or root ref to traverse from."),
+            "window": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "before_entries": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "after_entries": {
+                        "type": "integer",
+                        "minimum": 0
+                    }
+                }
+            },
+            "limit": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "entries": {
+                        "type": "integer",
+                        "minimum": 1
+                    }
+                }
+            },
+            "dimensions": dimensions_schema(),
+            "include": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "evidence": {"type": "boolean"},
+                    "relations": {"type": "boolean"}
+                }
+            },
+            "depth": integer_schema("Optional graph traversal depth for live gRPC mode."),
+            "budget": budget_schema()
+        }
+    });
+    input_schema["properties"][cursor_key] = cursor_schema;
+    tool_definition(name, description, input_schema)
+}
+
+fn dimensions_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+            "mode": {
+                "type": "string",
+                "enum": ["all", "only", "except"]
+            },
+            "include": {
+                "type": "array",
+                "items": string_schema("Dimension kind to include.")
+            },
+            "exclude": {
+                "type": "array",
+                "items": string_schema("Dimension kind to exclude.")
+            }
+        }
     })
 }
 
@@ -304,13 +405,15 @@ mod tests {
             .as_array()
             .expect("tools should be an array");
 
-        assert_eq!(tools.len(), 5);
+        assert_eq!(tools.len(), 9);
         assert_eq!(tools[0]["name"], "kernel_ingest");
         assert_eq!(tools[0]["inputSchema"]["required"][1], "memory");
         assert_eq!(tools[1]["name"], "kernel_wake");
         assert_eq!(tools[1]["inputSchema"]["required"][0], "about");
         assert_eq!(tools[2]["name"], "kernel_ask");
         assert_eq!(tools[2]["inputSchema"]["required"][1], "question");
+        assert_eq!(tools[3]["name"], "kernel_goto");
+        assert_eq!(tools[3]["inputSchema"]["required"][1], "at");
     }
 
     #[test]

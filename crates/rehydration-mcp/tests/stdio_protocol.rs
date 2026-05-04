@@ -6,7 +6,7 @@ use rehydration_mcp::{
 use serde_json::{Value, json};
 
 #[test]
-fn backend_selection_defaults_to_fixtures_without_endpoint() {
+fn backend_selection_helper_uses_fixture_when_endpoint_is_absent() {
     let server = KernelMcpServer::from_optional_endpoint(None);
     assert_eq!(server.backend_name(), "fixture");
 }
@@ -128,6 +128,10 @@ async fn tools_list_exposes_read_only_kmp_tools() {
             "kernel_ingest",
             "kernel_wake",
             "kernel_ask",
+            "kernel_goto",
+            "kernel_near",
+            "kernel_rewind",
+            "kernel_forward",
             "kernel_trace",
             "kernel_inspect"
         ]
@@ -184,6 +188,27 @@ async fn fixture_tools_cover_ingest_wake_trace_and_inspect() {
     assert_eq!(
         trace["result"]["structuredContent"]["trace"][0]["rel"],
         "supersedes"
+    );
+
+    let near = handle(json!({
+        "jsonrpc": "2.0",
+        "id": 28,
+        "method": "tools/call",
+        "params": {
+            "name": "kernel_near",
+            "arguments": {
+                "about": "question:830ce83f",
+                "around": {
+                    "time": "2026-04-12T15:03:00Z"
+                }
+            }
+        }
+    }))
+    .await;
+    assert_eq!(near["result"]["isError"], false);
+    assert_eq!(
+        near["result"]["structuredContent"]["temporal"]["direction"],
+        "near"
     );
 
     let inspect = handle(json!({

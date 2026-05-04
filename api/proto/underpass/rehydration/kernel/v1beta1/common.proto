@@ -224,6 +224,14 @@ message GraphRelationshipExplanation {
   string evidence = 7;
   string confidence = 8;
   uint32 sequence = 9;
+  string dimension = 10;
+  string scope_id = 11;
+  string occurred_at = 12;
+  string observed_at = 13;
+  string ingested_at = 14;
+  string valid_from = 15;
+  string valid_until = 16;
+  uint32 rank = 17;
 }
 
 message RehydrationDiagnostic {

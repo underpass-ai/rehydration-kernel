@@ -257,7 +257,7 @@ mod tests {
                 operation: "UPSERT".to_string(),
                 entity_kind: "memory_entry".to_string(),
                 entity_id: "claim:mcp".to_string(),
-                payload_json: r#"{"id":"claim:mcp","kind":"claim","text":"MCP ingest materializes into the read model.","coordinates":[{"dimension":"conversation","scope_id":"conversation:mcp","sequence":2}]}"#.to_string(),
+                payload_json: r#"{"id":"claim:mcp","kind":"claim","text":"MCP ingest materializes into the read model.","coordinates":[{"dimension":"conversation","scope_id":"conversation:mcp","sequence":2,"occurred_at":"2026-05-04T10:00:00Z","valid_from":"2026-05-04T10:00:00Z"}]}"#.to_string(),
                 reason: "test entry".to_string(),
                 scopes: vec!["memory".to_string()],
             },
@@ -529,6 +529,18 @@ mod tests {
                 if relation.source_node_id == "question:mcp"
                     && relation.target_node_id == "claim:mcp"
                     && relation.relation_type == "records"
+        )));
+        assert!(mutations.iter().any(|mutation| matches!(
+            mutation,
+            ProjectionMutation::UpsertNodeRelation(relation)
+                if relation.source_node_id == "conversation:mcp"
+                    && relation.target_node_id == "claim:mcp"
+                    && relation.relation_type == "contains_entry"
+                    && relation.explanation.dimension() == Some("conversation")
+                    && relation.explanation.scope_id() == Some("conversation:mcp")
+                    && relation.explanation.sequence() == Some(2)
+                    && relation.explanation.occurred_at() == Some("2026-05-04T10:00:00Z")
+                    && relation.explanation.valid_from() == Some("2026-05-04T10:00:00Z")
         )));
         assert!(mutations.iter().any(|mutation| matches!(
             mutation,

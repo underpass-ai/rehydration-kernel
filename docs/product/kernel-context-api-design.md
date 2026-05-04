@@ -215,6 +215,7 @@ Supported temporal coordinates:
 | `valid_from` | When the entry became true or current. |
 | `valid_until` | When the entry stopped being true or current. |
 | `sequence` | Order within one scope or dimension. |
+| `rank` | Rank/order inside a benchmark, retrieval, or prioritization scope. |
 
 ## Memory Shape
 

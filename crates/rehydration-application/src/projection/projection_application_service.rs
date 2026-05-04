@@ -62,7 +62,8 @@ where
                         .related_nodes
                         .iter()
                         .map(|reference| {
-                            Ok(ProjectionMutation::UpsertNodeRelation(NodeRelationProjection {
+                            Ok(ProjectionMutation::UpsertNodeRelation(Box::new(
+                                NodeRelationProjection {
                         source_node_id: event.data.node_id.clone(),
                         target_node_id: reference.node_id.clone(),
                         relation_type: reference.relation_type.clone(),
@@ -72,14 +73,15 @@ where
                                 event.data.node_id, reference.node_id
                             ))
                         })?,
-                    }))
+                    },
+                            )))
                         })
                         .collect::<Result<Vec<_>, PortError>>()?,
                 );
                 mutations
             }
             ProjectionEvent::GraphRelationMaterialized(event) => {
-                vec![ProjectionMutation::UpsertNodeRelation(
+                vec![ProjectionMutation::UpsertNodeRelation(Box::new(
                     NodeRelationProjection {
                         source_node_id: event.data.source_node_id.clone(),
                         target_node_id: event.data.target_node_id.clone(),
@@ -93,7 +95,7 @@ where
                             },
                         )?,
                     },
-                )]
+                ))]
             }
             ProjectionEvent::NodeDetailMaterialized(event) => {
                 vec![ProjectionMutation::UpsertNodeDetail(NodeDetailProjection {
