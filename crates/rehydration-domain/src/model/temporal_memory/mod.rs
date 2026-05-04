@@ -151,7 +151,12 @@ impl TemporalMemoryTraversal {
         let nodes = bundle_nodes_by_id(bundle);
         let mut positions = temporal_positions(bundle, &nodes)?
             .into_iter()
-            .filter(|position| request.dimensions.includes(position.coordinate.dimension()))
+            .filter(|position| {
+                request.dimensions.includes_coordinate(
+                    position.coordinate.dimension(),
+                    position.coordinate.scope_id(),
+                )
+            })
             .collect::<Vec<_>>();
         positions.sort();
 
@@ -200,7 +205,9 @@ fn build_entries(
                 .cloned()
                 .unwrap_or_default()
                 .into_iter()
-                .filter(|coordinate| dimensions.includes(coordinate.dimension()))
+                .filter(|coordinate| {
+                    dimensions.includes_coordinate(coordinate.dimension(), coordinate.scope_id())
+                })
                 .collect::<Vec<_>>();
 
             Some(TemporalEntry {

@@ -267,6 +267,8 @@ message DimensionSelection {
   DimensionSelectionMode mode = 1;
   repeated string include = 2;
   repeated string exclude = 3;
+  DimensionScopeMode scope = 4;
+  repeated string abouts = 5;
 }
 
 message TemporalWindow {
@@ -323,6 +325,13 @@ enum DimensionSelectionMode {
   DIMENSION_SELECTION_MODE_ALL = 1;
   DIMENSION_SELECTION_MODE_ONLY = 2;
   DIMENSION_SELECTION_MODE_EXCEPT = 3;
+}
+
+enum DimensionScopeMode {
+  DIMENSION_SCOPE_MODE_UNSPECIFIED = 0;
+  DIMENSION_SCOPE_MODE_CURRENT_ABOUT = 1;
+  DIMENSION_SCOPE_MODE_ABOUTS = 2;
+  DIMENSION_SCOPE_MODE_ALL_ABOUTS = 3;
 }
 
 enum TemporalDirection {

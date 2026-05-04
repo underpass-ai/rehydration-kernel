@@ -49,5 +49,10 @@ Current binding note:
 
 - KMP temporal fixture aliases such as `at` and `from` map to the gRPC
   `TemporalCursor` field on `TemporalMoveRequest`.
+- `IngestRequest.about` is the default dimension namespace. Logical dimension
+  ids in KMP map to internal kernel ids shaped as
+  `about:<about>:dimension:<dimension_id>`.
+- gRPC `DimensionSelection` defaults to `CURRENT_ABOUT`. Cross-memory traversal
+  must use `ABOUTS` with an explicit non-empty about list or `ALL_ABOUTS`.
 - MCP live-mode migration to `KernelMemoryService` is intentionally a later
   slice; these fixtures should not drive direct MCP-owned behavior.

@@ -51,15 +51,18 @@ kernel services.
 
 | RPC | Status | Notes |
 |-----|--------|-------|
-| `Ingest` | Production-ready | Validates dimensions, entries, coordinates, relations, evidence, idempotency, provenance, and positive temporal coordinates. Relation/evidence refs may be submitted in the request or already materialized in the read model. |
-| `Wake` | Production-ready | Reads live context through the application query port. Honors budget detail and dimension selection. |
-| `Ask` | Production-ready for deterministic memory answers | Honors answer policy, budget detail, and dimension selection. Does not generate novel answers; `evidence_or_unknown` returns `UNKNOWN` when no evidence is available. |
+| `Ingest` | Production-ready | Validates dimensions, entries, coordinates, relations, evidence, idempotency, provenance, and positive temporal coordinates. `about` namespaces submitted dimensions internally as `about:<about>:dimension:<dimension_id>`. Relation/evidence refs may be submitted in the request or already materialized in the read model. |
+| `Wake` | Production-ready | Reads live context through the application query port. Honors budget detail, dimension selection, and dimension about scope. |
+| `Ask` | Production-ready for deterministic memory answers | Honors answer policy, budget detail, dimension selection, and dimension about scope. Does not generate novel answers; `evidence_or_unknown` returns `UNKNOWN` when no evidence is available. |
 | `Goto` | Production-ready | Domain-owned temporal traversal over `contains_entry` coordinates. Honors dimensions, window, entry limit, token limit, and include flags. |
 | `Near` | Production-ready | Domain-owned temporal neighborhood traversal. |
 | `Rewind` | Production-ready | Domain-owned backward traversal. |
 | `Forward` | Production-ready | Domain-owned forward traversal. |
 | `Trace` | Production-ready | Uses `GetContextPath` semantics and maps `goal` to the trace role. |
 | `Inspect` | Production-ready for object/detail lookup | Honors `details=false`. Explicit `incoming`, `outgoing`, or `raw` expansion fails fast until link/raw-capable reader support exists. |
+
+Dimension selection scope defaults to `CURRENT_ABOUT`. `ABOUTS` is valid only
+with a non-empty `abouts` list, and `ALL_ABOUTS` must be explicitly requested.
 
 ## Async Contract (NATS JetStream)
 

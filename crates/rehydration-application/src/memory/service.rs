@@ -2,9 +2,10 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use rehydration_domain::{
-    ContextEventStore, DimensionSelection, DimensionSelectionMode, GraphNeighborhoodReader,
-    NodeDetailReader, ProjectionWriter, RehydrationBundle, RehydrationMode, ResolutionTier,
-    SnapshotStore, TemporalMemoryTraversal, TemporalTraversalRequest,
+    BundleNode, BundleRelationship, ContextEventStore, DimensionScopeMode, DimensionSelection,
+    DimensionSelectionMode, GraphNeighborhoodReader, MemoryDimensionIdentity, NodeDetailReader,
+    ProjectionWriter, RehydrationBundle, RehydrationMode, ResolutionTier, SnapshotStore,
+    TemporalMemoryTraversal, TemporalTraversalRequest,
 };
 
 use crate::ApplicationError;
@@ -84,17 +85,17 @@ where
             RehydrationMode::ResumeFocused,
             EndpointHint::Neighborhood,
         );
+        let dimensions = query.dimensions.resolve_current_about(&query.about);
         let result = self
-            .query_application
-            .get_context(GetContextQuery {
-                root_node_id: query.about,
-                role: query.role,
-                depth: query.depth,
-                requested_scopes: requested_dimension_scopes(&query.dimensions),
-                render_options: render_options.clone(),
-            })
+            .memory_context(
+                &query.about,
+                &query.role,
+                query.depth,
+                &dimensions,
+                &render_options,
+            )
             .await?;
-        apply_dimension_selection(result, &query.dimensions, &render_options)
+        apply_dimension_selection(result, &dimensions, &render_options)
     }
 
     pub async fn ask(&self, query: AskMemoryQuery) -> Result<GetContextResult, ApplicationError> {
@@ -104,41 +105,42 @@ where
             RehydrationMode::ReasonPreserving,
             EndpointHint::Neighborhood,
         );
+        let dimensions = query.dimensions.resolve_current_about(&query.about);
         let result = self
-            .query_application
-            .get_context(GetContextQuery {
-                root_node_id: query.about,
-                role: "answerer".to_string(),
-                depth: query.depth,
-                requested_scopes: requested_dimension_scopes(&query.dimensions),
-                render_options: render_options.clone(),
-            })
+            .memory_context(
+                &query.about,
+                "answerer",
+                query.depth,
+                &dimensions,
+                &render_options,
+            )
             .await?;
-        apply_dimension_selection(result, &query.dimensions, &render_options)
+        apply_dimension_selection(result, &dimensions, &render_options)
     }
 
     pub async fn temporal(
         &self,
         query: TemporalMemoryQuery,
     ) -> Result<TemporalMemoryResult, ApplicationError> {
+        let render_options = memory_render_options(
+            query.token_budget,
+            query.max_tier,
+            RehydrationMode::ReasonPreserving,
+            EndpointHint::Neighborhood,
+        );
+        let dimensions = query.dimensions.resolve_current_about(&query.about);
         let context = self
-            .query_application
-            .get_context(GetContextQuery {
-                root_node_id: query.about,
-                role: "temporal-reader".to_string(),
-                depth: query.depth,
-                requested_scopes: Vec::new(),
-                render_options: memory_render_options(
-                    query.token_budget,
-                    query.max_tier,
-                    RehydrationMode::ReasonPreserving,
-                    EndpointHint::Neighborhood,
-                ),
-            })
+            .memory_context(
+                &query.about,
+                "temporal-reader",
+                query.depth,
+                &dimensions,
+                &render_options,
+            )
             .await?;
 
         let request = TemporalTraversalRequest::new(query.direction, query.cursor)
-            .with_dimensions(query.dimensions)
+            .with_dimensions(dimensions)
             .with_window(query.window);
         let request = if let Some(limit_entries) = query.limit_entries {
             request.with_limit_entries(limit_entries)?
@@ -206,6 +208,33 @@ where
             Err(error) => Err(error),
         }
     }
+
+    async fn memory_context(
+        &self,
+        about: &str,
+        role: &str,
+        depth: u32,
+        dimensions: &DimensionSelection,
+        render_options: &ContextRenderOptions,
+    ) -> Result<GetContextResult, ApplicationError> {
+        let roots = context_roots(about, dimensions);
+        let mut results = Vec::new();
+        for root in &roots {
+            results.push(
+                self.query_application
+                    .get_context(GetContextQuery {
+                        root_node_id: root.clone(),
+                        role: role.to_string(),
+                        depth,
+                        requested_scopes: requested_dimension_scopes(about, dimensions),
+                        render_options: render_options.clone(),
+                    })
+                    .await?,
+            );
+        }
+
+        merge_context_results(results, render_options)
+    }
 }
 
 fn memory_render_options(
@@ -223,10 +252,39 @@ fn memory_render_options(
     }
 }
 
-fn requested_dimension_scopes(selection: &DimensionSelection) -> Vec<String> {
+fn requested_dimension_scopes(current_about: &str, selection: &DimensionSelection) -> Vec<String> {
     match selection.mode() {
-        DimensionSelectionMode::Only => selection.dimensions().iter().cloned().collect(),
+        DimensionSelectionMode::Only => match selection.scope_mode() {
+            DimensionScopeMode::CurrentAbout => selection
+                .dimensions()
+                .iter()
+                .filter_map(|dimension| namespaced_dimension_id(current_about, dimension))
+                .collect(),
+            DimensionScopeMode::Abouts => selection
+                .abouts()
+                .iter()
+                .flat_map(|about| {
+                    selection
+                        .dimensions()
+                        .iter()
+                        .filter_map(|dimension| namespaced_dimension_id(about, dimension))
+                        .collect::<Vec<_>>()
+                })
+                .collect(),
+            DimensionScopeMode::AllAbouts => Vec::new(),
+        },
         DimensionSelectionMode::Except | DimensionSelectionMode::All => Vec::new(),
+    }
+}
+
+fn context_roots(current_about: &str, selection: &DimensionSelection) -> Vec<String> {
+    match selection.scope_mode() {
+        DimensionScopeMode::Abouts if !selection.abouts().is_empty() => {
+            selection.abouts().iter().cloned().collect()
+        }
+        DimensionScopeMode::CurrentAbout
+        | DimensionScopeMode::Abouts
+        | DimensionScopeMode::AllAbouts => vec![current_about.to_string()],
     }
 }
 
@@ -235,7 +293,9 @@ fn apply_dimension_selection(
     dimensions: &DimensionSelection,
     render_options: &ContextRenderOptions,
 ) -> Result<GetContextResult, ApplicationError> {
-    if dimensions.mode() == DimensionSelectionMode::All {
+    if dimensions.mode() == DimensionSelectionMode::All
+        && dimensions.scope_mode() == DimensionScopeMode::AllAbouts
+    {
         return Ok(result);
     }
 
@@ -256,8 +316,11 @@ fn filter_bundle_by_memory_dimensions(
         .iter()
         .filter(|relationship| relationship.relationship_type() == "contains_entry")
     {
-        let dimension = relationship.explanation().dimension().unwrap_or_default();
-        if dimensions.includes(dimension) {
+        let explanation = relationship.explanation();
+        if dimensions.includes_coordinate(
+            explanation.dimension().unwrap_or_default(),
+            explanation.scope_id().unwrap_or_default(),
+        ) {
             included_node_ids.insert(relationship.source_node_id().to_string());
             included_node_ids.insert(relationship.target_node_id().to_string());
             selected_entry_ids.insert(relationship.target_node_id().to_string());
@@ -282,8 +345,11 @@ fn filter_bundle_by_memory_dimensions(
         .iter()
         .filter(|relationship| {
             if relationship.relationship_type() == "contains_entry" {
-                let dimension = relationship.explanation().dimension().unwrap_or_default();
-                return dimensions.includes(dimension);
+                let explanation = relationship.explanation();
+                return dimensions.includes_coordinate(
+                    explanation.dimension().unwrap_or_default(),
+                    explanation.scope_id().unwrap_or_default(),
+                );
             }
             included_node_ids.contains(relationship.source_node_id())
                 && included_node_ids.contains(relationship.target_node_id())
@@ -329,6 +395,87 @@ fn existing_refs_from_bundle(bundle: &RehydrationBundle) -> ExistingMemoryRefs {
     }
 
     ExistingMemoryRefs { refs, dimensions }
+}
+
+fn merge_context_results(
+    mut results: Vec<GetContextResult>,
+    render_options: &ContextRenderOptions,
+) -> Result<GetContextResult, ApplicationError> {
+    let mut result = results.remove(0);
+    if results.is_empty() {
+        return Ok(result);
+    }
+
+    let mut node_ids = BTreeSet::from([result.bundle.root_node().node_id().to_string()]);
+    let mut neighbor_nodes = result.bundle.neighbor_nodes().to_vec();
+    for node in &neighbor_nodes {
+        node_ids.insert(node.node_id().to_string());
+    }
+
+    let mut relationships = result.bundle.relationships().to_vec();
+    let mut relationship_ids = relationships
+        .iter()
+        .map(relationship_key)
+        .collect::<BTreeSet<_>>();
+    let mut node_details = result.bundle.node_details().to_vec();
+    let mut detail_ids = node_details
+        .iter()
+        .map(|detail| detail.node_id().to_string())
+        .collect::<BTreeSet<_>>();
+
+    for other in results {
+        push_node(&mut neighbor_nodes, &mut node_ids, other.bundle.root_node());
+        for node in other.bundle.neighbor_nodes() {
+            push_node(&mut neighbor_nodes, &mut node_ids, node);
+        }
+        for relationship in other.bundle.relationships() {
+            if relationship_ids.insert(relationship_key(relationship)) {
+                relationships.push(relationship.clone());
+            }
+        }
+        for detail in other.bundle.node_details() {
+            if detail_ids.insert(detail.node_id().to_string()) {
+                node_details.push(detail.clone());
+            }
+        }
+    }
+
+    result.bundle = RehydrationBundle::new(
+        result.bundle.root_node_id().clone(),
+        result.bundle.role().clone(),
+        result.bundle.root_node().clone(),
+        neighbor_nodes,
+        relationships,
+        node_details,
+        result.bundle.metadata().clone(),
+    )
+    .map_err(ApplicationError::Domain)?;
+    result.rendered = render_graph_bundle_with_options(&result.bundle, render_options);
+    Ok(result)
+}
+
+fn push_node(
+    neighbor_nodes: &mut Vec<BundleNode>,
+    node_ids: &mut BTreeSet<String>,
+    node: &BundleNode,
+) {
+    if node_ids.insert(node.node_id().to_string()) {
+        neighbor_nodes.push(node.clone());
+    }
+}
+
+fn relationship_key(relationship: &BundleRelationship) -> (String, String, String) {
+    (
+        relationship.source_node_id().to_string(),
+        relationship.target_node_id().to_string(),
+        relationship.relationship_type().to_string(),
+    )
+}
+
+fn namespaced_dimension_id(about: &str, dimension: &str) -> Option<String> {
+    MemoryDimensionIdentity::new(about, dimension)
+        .ok()
+        .map(|identity| identity.node_id())
 }
 
 fn is_unknown_memory_ref_validation(error: &ApplicationError) -> bool {

@@ -7,12 +7,12 @@ use rehydration_application::{
     TemporalMemoryResult, TraceMemoryQuery, WakeMemoryQuery,
 };
 use rehydration_domain::{
-    DimensionSelection, DimensionSelectionMode, RehydrationBundle, ResolutionTier,
-    TemporalCoordinate, TemporalCursor, TemporalDirection,
+    DimensionScopeMode, DimensionSelection, DimensionSelectionMode, RehydrationBundle,
+    ResolutionTier, TemporalCoordinate, TemporalCursor, TemporalDirection,
 };
 use rehydration_proto::v1beta1::{
     AcceptedCounts, AnswerPolicy as ProtoAnswerPolicy, AnswerReason, AskRequest, AskResponse,
-    DimensionSelection as ProtoDimensionSelection,
+    DimensionScopeMode as ProtoDimensionScopeMode, DimensionSelection as ProtoDimensionSelection,
     DimensionSelectionMode as ProtoDimensionSelectionMode, IngestRequest, IngestResponse,
     IngestedMemory, InspectInclude, InspectRequest, InspectResponse, InspectedLinks,
     InspectedObject, MemoryConfidence, MemoryDetailLevel, MemoryDimension, MemoryEvidence,
@@ -677,6 +677,8 @@ fn proto_dimension_selection_from_domain(
         } else {
             Vec::new()
         },
+        scope: proto_dimension_scope_mode(selection.scope_mode()) as i32,
+        abouts: selection.abouts().iter().cloned().collect(),
     }
 }
 
@@ -686,7 +688,9 @@ fn domain_dimension_selection(
     let Some(value) = value else {
         return Ok(DimensionSelection::all());
     };
-    match value.mode() {
+    let scope = value.scope();
+    let abouts = value.abouts.clone();
+    let selection = match value.mode() {
         ProtoDimensionSelectionMode::Only => {
             if value.include.is_empty() {
                 return Err(invalid_argument(
@@ -698,7 +702,7 @@ fn domain_dimension_selection(
                     "dimension selection mode ONLY must not set exclude values",
                 ));
             }
-            Ok(DimensionSelection::only(value.include))
+            DimensionSelection::only(value.include)
         }
         ProtoDimensionSelectionMode::Except => {
             if value.exclude.is_empty() {
@@ -711,7 +715,7 @@ fn domain_dimension_selection(
                     "dimension selection mode EXCEPT must not set include values",
                 ));
             }
-            Ok(DimensionSelection::except(value.exclude))
+            DimensionSelection::except(value.exclude)
         }
         ProtoDimensionSelectionMode::All | ProtoDimensionSelectionMode::Unspecified => {
             if !value.include.is_empty() || !value.exclude.is_empty() {
@@ -719,9 +723,10 @@ fn domain_dimension_selection(
                     "dimension selection mode ALL must not set include or exclude values",
                 ));
             }
-            Ok(DimensionSelection::all())
+            DimensionSelection::all()
         }
-    }
+    };
+    apply_dimension_scope(selection, scope, abouts)
 }
 
 fn temporal_include_from_proto(value: TemporalInclude) -> TemporalIncludeOptions {
@@ -729,6 +734,52 @@ fn temporal_include_from_proto(value: TemporalInclude) -> TemporalIncludeOptions
         evidence: value.evidence,
         relations: value.relations,
         raw_refs: value.raw_refs,
+    }
+}
+
+fn apply_dimension_scope(
+    selection: DimensionSelection,
+    scope: ProtoDimensionScopeMode,
+    abouts: Vec<String>,
+) -> ProtoMappingResult<DimensionSelection> {
+    let abouts = abouts
+        .into_iter()
+        .map(|about| about.trim().to_string())
+        .filter(|about| !about.is_empty())
+        .collect::<Vec<_>>();
+    match scope {
+        ProtoDimensionScopeMode::Unspecified | ProtoDimensionScopeMode::CurrentAbout => {
+            if !abouts.is_empty() {
+                return Err(invalid_argument(
+                    "dimension scope CURRENT_ABOUT must not set abouts",
+                ));
+            }
+            Ok(selection.with_current_about_scope())
+        }
+        ProtoDimensionScopeMode::Abouts => {
+            if abouts.is_empty() {
+                return Err(invalid_argument(
+                    "dimension scope ABOUTS requires at least one about",
+                ));
+            }
+            Ok(selection.with_about_scope(abouts))
+        }
+        ProtoDimensionScopeMode::AllAbouts => {
+            if !abouts.is_empty() {
+                return Err(invalid_argument(
+                    "dimension scope ALL_ABOUTS must not set abouts",
+                ));
+            }
+            Ok(selection.with_all_about_scope())
+        }
+    }
+}
+
+fn proto_dimension_scope_mode(value: DimensionScopeMode) -> ProtoDimensionScopeMode {
+    match value {
+        DimensionScopeMode::CurrentAbout => ProtoDimensionScopeMode::CurrentAbout,
+        DimensionScopeMode::Abouts => ProtoDimensionScopeMode::Abouts,
+        DimensionScopeMode::AllAbouts => ProtoDimensionScopeMode::AllAbouts,
     }
 }
 

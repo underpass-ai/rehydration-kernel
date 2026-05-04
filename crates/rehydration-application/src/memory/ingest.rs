@@ -1,10 +1,12 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
-use rehydration_domain::{RelationSemanticClass, SourceKind};
+use rehydration_domain::{MemoryDimensionIdentity, RelationSemanticClass, SourceKind};
 
 use crate::ApplicationError;
 use crate::commands::{UpdateContextChange, UpdateContextCommand};
-use crate::memory::{MemoryAcceptedCounts, MemoryData, MemoryIngestCommand, MemoryIngestOutcome};
+use crate::memory::{
+    MemoryAcceptedCounts, MemoryData, MemoryDimensionData, MemoryIngestCommand, MemoryIngestOutcome,
+};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ExistingMemoryRefs {
@@ -16,9 +18,10 @@ pub fn translate_memory_ingest(
     command: &MemoryIngestCommand,
     existing: &ExistingMemoryRefs,
 ) -> Result<(UpdateContextCommand, MemoryIngestOutcome), ApplicationError> {
-    validate_command(command, existing)?;
+    validate_command(command)?;
+    let memory = namespaced_memory(&command.about, &command.memory, existing)?;
 
-    let changes = memory_changes(&command.memory)?;
+    let changes = memory_changes(&memory)?;
     let outcome = MemoryIngestOutcome {
         about: command.about.clone(),
         memory_id: memory_id_from_idempotency_key(&command.idempotency_key),
@@ -49,10 +52,7 @@ pub fn translate_memory_ingest(
     ))
 }
 
-fn validate_command(
-    command: &MemoryIngestCommand,
-    existing: &ExistingMemoryRefs,
-) -> Result<(), ApplicationError> {
+fn validate_command(command: &MemoryIngestCommand) -> Result<(), ApplicationError> {
     require_non_empty(&command.about, "about")?;
     require_non_empty(&command.idempotency_key, "idempotency_key")?;
     if let Some(provenance) = command.provenance.as_ref() {
@@ -65,13 +65,14 @@ fn validate_command(
         require_non_empty(&provenance.observed_at, "provenance.observed_at")?;
     }
 
-    validate_memory(&command.memory, existing)
+    Ok(())
 }
 
-fn validate_memory(
+fn namespaced_memory(
+    about: &str,
     memory: &MemoryData,
     existing: &ExistingMemoryRefs,
-) -> Result<(), ApplicationError> {
+) -> Result<MemoryData, ApplicationError> {
     if memory.dimensions.is_empty() && existing.dimensions.is_empty() {
         return Err(ApplicationError::Validation(
             "memory.dimensions must not be empty when no existing memory dimensions are available"
@@ -86,14 +87,42 @@ fn validate_memory(
 
     let mut known_refs = existing.refs.clone();
     let mut dimension_ids = existing.dimensions.clone();
+    let mut dimension_aliases = existing_dimension_aliases(about, existing);
+    let mut dimensions = Vec::new();
     for dimension in &memory.dimensions {
         require_non_empty(&dimension.id, "memory.dimensions[].id")?;
         require_non_empty(&dimension.kind, "memory.dimensions[].kind")?;
-        insert_unique(&mut dimension_ids, &dimension.id, "memory dimension")?;
-        known_refs.insert(dimension.id.clone());
+        let dimension_identity = dimension_identity(about, &dimension.id)?;
+        let dimension_ref = dimension_identity.node_id();
+        insert_unique(&mut dimension_ids, &dimension_ref, "memory dimension")?;
+        if dimension_aliases
+            .insert(dimension.id.clone(), dimension_ref.clone())
+            .is_some()
+        {
+            return Err(ApplicationError::Validation(format!(
+                "duplicate memory dimension `{}`",
+                dimension.id
+            )));
+        }
+        known_refs.insert(dimension_ref.clone());
+
+        let mut metadata = dimension.metadata.clone();
+        metadata
+            .entry("memory_about".to_string())
+            .or_insert_with(|| about.to_string());
+        metadata
+            .entry("memory_dimension_id".to_string())
+            .or_insert_with(|| dimension.id.clone());
+        dimensions.push(MemoryDimensionData {
+            id: dimension_ref,
+            kind: dimension.kind.clone(),
+            title: dimension.title.clone(),
+            metadata,
+        });
     }
 
     let mut entry_ids = BTreeSet::new();
+    let mut entries = Vec::new();
     for entry in &memory.entries {
         require_non_empty(&entry.id, "memory.entries[].id")?;
         require_non_empty(&entry.kind, "memory.entries[].kind")?;
@@ -107,6 +136,7 @@ fn validate_memory(
         insert_unique(&mut entry_ids, &entry.id, "memory entry")?;
         known_refs.insert(entry.id.clone());
 
+        let mut coordinates = Vec::new();
         for coordinate in &entry.coordinates {
             require_non_empty(
                 &coordinate.dimension,
@@ -116,7 +146,11 @@ fn validate_memory(
                 &coordinate.scope_id,
                 "memory.entries[].coordinates[].scope_id",
             )?;
-            if !dimension_ids.contains(&coordinate.scope_id) {
+            let scope_id = dimension_aliases
+                .get(&coordinate.scope_id)
+                .cloned()
+                .unwrap_or_else(|| coordinate.scope_id.clone());
+            if !dimension_ids.contains(&scope_id) {
                 return Err(ApplicationError::Validation(format!(
                     "memory entry coordinate references unknown dimension scope `{}`",
                     coordinate.scope_id
@@ -127,9 +161,16 @@ fn validate_memory(
                 "memory.entries[].coordinates[].sequence",
             )?;
             validate_positive_optional(coordinate.rank, "memory.entries[].coordinates[].rank")?;
+            let mut coordinate = coordinate.clone();
+            coordinate.scope_id = scope_id;
+            coordinates.push(coordinate);
         }
+        let mut entry = entry.clone();
+        entry.coordinates = coordinates;
+        entries.push(entry);
     }
 
+    let mut relations = Vec::new();
     for relation in &memory.relations {
         require_non_empty(&relation.source_ref, "memory.relations[].source_ref")?;
         require_non_empty(&relation.target_ref, "memory.relations[].target_ref")?;
@@ -138,8 +179,9 @@ fn validate_memory(
             RelationSemanticClass::parse(&relation.semantic_class).map_err(|error| {
                 ApplicationError::Validation(format!("memory relation class is invalid: {error}"))
             })?;
-        if !known_refs.contains(&relation.source_ref) || !known_refs.contains(&relation.target_ref)
-        {
+        let source_ref = normalize_ref(&relation.source_ref, &dimension_aliases);
+        let target_ref = normalize_ref(&relation.target_ref, &dimension_aliases);
+        if !known_refs.contains(&source_ref) || !known_refs.contains(&target_ref) {
             return Err(ApplicationError::Validation(format!(
                 "memory relation `{}` -> `{}` references unknown refs",
                 relation.source_ref, relation.target_ref
@@ -166,26 +208,72 @@ fn validate_memory(
             }
         }
         validate_positive_optional(relation.sequence, "memory.relations[].sequence")?;
+        let mut relation = relation.clone();
+        relation.source_ref = source_ref;
+        relation.target_ref = target_ref;
+        relations.push(relation);
     }
 
     let mut evidence_ids = BTreeSet::new();
+    let mut evidence_items = Vec::new();
     for evidence in &memory.evidence {
         require_non_empty(&evidence.id, "memory.evidence[].id")?;
         require_non_empty(&evidence.text, "memory.evidence[].text")?;
         insert_unique(&mut evidence_ids, &evidence.id, "memory evidence")?;
         known_refs.insert(evidence.id.clone());
+        let mut supports = Vec::new();
         for supported in &evidence.supports {
             require_non_empty(supported, "memory.evidence[].supports[]")?;
-            if !known_refs.contains(supported) {
+            let supported_ref = normalize_ref(supported, &dimension_aliases);
+            if !known_refs.contains(&supported_ref) {
                 return Err(ApplicationError::Validation(format!(
                     "memory evidence `{}` supports unknown ref `{supported}`",
                     evidence.id
                 )));
             }
+            supports.push(supported_ref);
         }
+        let mut evidence = evidence.clone();
+        evidence.supports = supports;
+        evidence_items.push(evidence);
     }
 
-    Ok(())
+    Ok(MemoryData {
+        dimensions,
+        entries,
+        relations,
+        evidence: evidence_items,
+    })
+}
+
+fn existing_dimension_aliases(
+    about: &str,
+    existing: &ExistingMemoryRefs,
+) -> BTreeMap<String, String> {
+    existing
+        .dimensions
+        .iter()
+        .filter_map(|dimension_ref| {
+            let identity = MemoryDimensionIdentity::parse(dimension_ref)?;
+            (identity.about() == about)
+                .then(|| (identity.dimension_id().to_string(), dimension_ref.clone()))
+        })
+        .collect()
+}
+
+fn dimension_identity(
+    about: &str,
+    dimension_id: &str,
+) -> Result<MemoryDimensionIdentity, ApplicationError> {
+    MemoryDimensionIdentity::new(about, dimension_id)
+        .map_err(|error| ApplicationError::Validation(error.to_string()))
+}
+
+fn normalize_ref(value: &str, dimension_aliases: &BTreeMap<String, String>) -> String {
+    dimension_aliases
+        .get(value)
+        .cloned()
+        .unwrap_or_else(|| value.to_string())
 }
 
 fn memory_changes(memory: &MemoryData) -> Result<Vec<UpdateContextChange>, ApplicationError> {
@@ -342,6 +430,24 @@ mod tests {
                 "memory_relation",
                 "memory_evidence"
             ]
+        );
+        assert_eq!(
+            update.changes[0].entity_id,
+            "about:question:830ce83f:dimension:conversation:rachel-2026-04-12"
+        );
+        assert_eq!(
+            update.changes[1].scopes,
+            ["about:question:830ce83f:dimension:conversation:rachel-2026-04-12"]
+        );
+        assert_eq!(
+            update.changes[2].entity_id,
+            "relation:about:question:830ce83f:dimension:conversation:rachel-2026-04-12:contains_entry:claim:rachel-denver"
+        );
+        let entry_payload: serde_json::Value =
+            serde_json::from_str(&update.changes[1].payload_json).expect("entry payload json");
+        assert_eq!(
+            entry_payload["coordinates"][0]["scope_id"],
+            "about:question:830ce83f:dimension:conversation:rachel-2026-04-12"
         );
     }
 

@@ -24,9 +24,9 @@ pub use repositories::{
     SnapshotStore, TokenEstimator,
 };
 pub use value_objects::{
-    BundleMetadata, BundleQualityMetrics, CaseId, DimensionSelection, DimensionSelectionMode,
-    Provenance, Role, SourceKind, TemporalCoordinate, TemporalCursor, TemporalDirection,
-    TemporalWindow,
+    BundleMetadata, BundleQualityMetrics, CaseId, DimensionScopeMode, DimensionSelection,
+    DimensionSelectionMode, MemoryDimensionIdentity, Provenance, Role, SourceKind,
+    TemporalCoordinate, TemporalCursor, TemporalDirection, TemporalWindow,
 };
 pub use value_objects::{RehydrationMode, ResolutionTier, TierBudget};
 pub use value_objects::{RelationExplanation, RelationSemanticClass};

@@ -18,7 +18,7 @@ use rehydration_domain::{
 use rehydration_observability::quality_observers::NoopQualityObserver;
 use rehydration_proto::v1beta1::{
     AnswerPolicy, AskRequest, ContextChange, ContextChangeOperation,
-    DimensionSelection as ProtoDimensionSelection,
+    DimensionScopeMode as ProtoDimensionScopeMode, DimensionSelection as ProtoDimensionSelection,
     DimensionSelectionMode as ProtoDimensionSelectionMode, GetContextPathRequest,
     GetContextRequest, GetNodeDetailRequest, IngestRequest, InspectInclude, InspectRequest, Memory,
     MemoryBudget, MemoryConfidence, MemoryDetailLevel, MemoryDimension, MemoryEntry,
@@ -274,13 +274,17 @@ impl GraphNeighborhoodReader for TemporalGraphNeighborhoodReader {
             ),
             neighbors: vec![
                 temporal_projection(
-                    "conversation:rachel-2026-04-12",
+                    "about:question:830ce83f:dimension:conversation",
                     "memory_dimension",
                     "Rachel relocation discussion",
                 ),
-                temporal_projection("person:rachel", "memory_dimension", "Rachel"),
                 temporal_projection(
-                    "longmemeval:item:830ce83f",
+                    "about:question:830ce83f:dimension:entity",
+                    "memory_dimension",
+                    "Rachel",
+                ),
+                temporal_projection(
+                    "about:question:830ce83f:dimension:benchmark_record",
                     "memory_dimension",
                     "Benchmark item",
                 ),
@@ -297,7 +301,7 @@ impl GraphNeighborhoodReader for TemporalGraphNeighborhoodReader {
             ],
             relations: vec![
                 temporal_contains_entry(
-                    "conversation:rachel-2026-04-12",
+                    "about:question:830ce83f:dimension:conversation",
                     "claim:rachel-denver",
                     "conversation",
                     1,
@@ -306,7 +310,7 @@ impl GraphNeighborhoodReader for TemporalGraphNeighborhoodReader {
                     None,
                 ),
                 temporal_contains_entry(
-                    "person:rachel",
+                    "about:question:830ce83f:dimension:entity",
                     "claim:rachel-denver",
                     "entity",
                     1,
@@ -315,7 +319,7 @@ impl GraphNeighborhoodReader for TemporalGraphNeighborhoodReader {
                     None,
                 ),
                 temporal_contains_entry(
-                    "conversation:rachel-2026-04-12",
+                    "about:question:830ce83f:dimension:conversation",
                     "claim:rachel-austin",
                     "conversation",
                     2,
@@ -324,7 +328,7 @@ impl GraphNeighborhoodReader for TemporalGraphNeighborhoodReader {
                     None,
                 ),
                 temporal_contains_entry(
-                    "person:rachel",
+                    "about:question:830ce83f:dimension:entity",
                     "claim:rachel-austin",
                     "entity",
                     2,
@@ -333,7 +337,7 @@ impl GraphNeighborhoodReader for TemporalGraphNeighborhoodReader {
                     None,
                 ),
                 temporal_contains_entry(
-                    "longmemeval:item:830ce83f",
+                    "about:question:830ce83f:dimension:benchmark_record",
                     "claim:rachel-austin",
                     "benchmark_record",
                     7,
@@ -910,6 +914,7 @@ async fn memory_service_wake_and_ask_apply_dimensions_detail_and_answer_policy()
                 mode: ProtoDimensionSelectionMode::Only as i32,
                 include: vec!["conversation".to_string()],
                 exclude: Vec::new(),
+                ..Default::default()
             }),
         }))
         .await
@@ -919,10 +924,8 @@ async fn memory_service_wake_and_ask_apply_dimensions_detail_and_answer_policy()
     let proof = wake.proof.expect("wake proof should be present");
     assert!(!proof.path.is_empty());
     assert!(
-        proof
-            .path
-            .iter()
-            .any(|relationship| relationship.source_ref == "conversation:rachel-2026-04-12")
+        proof.path.iter().any(|relationship| relationship.source_ref
+            == "about:question:830ce83f:dimension:conversation")
     );
     assert!(
         proof
@@ -950,6 +953,7 @@ async fn memory_service_wake_and_ask_apply_dimensions_detail_and_answer_policy()
                 mode: ProtoDimensionSelectionMode::Only as i32,
                 include: vec!["benchmark_record".to_string()],
                 exclude: Vec::new(),
+                ..Default::default()
             }),
         }))
         .await
@@ -1054,6 +1058,7 @@ async fn memory_service_temporal_methods_use_domain_traversal() {
                 mode: ProtoDimensionSelectionMode::Only as i32,
                 include: vec!["conversation".to_string()],
                 exclude: Vec::new(),
+                ..Default::default()
             },
         )))
         .await
@@ -1093,11 +1098,30 @@ async fn memory_service_temporal_requests_fail_fast_on_ambiguous_inputs() {
                 mode: ProtoDimensionSelectionMode::Only as i32,
                 include: Vec::new(),
                 exclude: Vec::new(),
+                ..Default::default()
             },
         )))
         .await
         .expect_err("empty ONLY selection should fail");
     assert_eq!(empty_only_selection.code(), tonic::Code::InvalidArgument);
+
+    let empty_about_scope = service
+        .goto(Request::new(temporal_move_request(
+            Some(ProtoTemporalCursor {
+                sequence: Some(1),
+                ..Default::default()
+            }),
+            ProtoDimensionSelection {
+                mode: ProtoDimensionSelectionMode::Only as i32,
+                include: vec!["conversation".to_string()],
+                exclude: Vec::new(),
+                scope: ProtoDimensionScopeMode::Abouts as i32,
+                abouts: Vec::new(),
+            },
+        )))
+        .await
+        .expect_err("ABOUTS scope without abouts should fail");
+    assert_eq!(empty_about_scope.code(), tonic::Code::InvalidArgument);
 
     let zero_sequence_cursor = service
         .goto(Request::new(temporal_move_request(
