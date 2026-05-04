@@ -1013,7 +1013,9 @@ async fn memory_service_wake_and_ask_read_live_context() {
         .expect("ask should read live context")
         .into_inner();
 
-    assert!(!ask.answer.trim().is_empty());
+    assert_eq!(ask.answer, "Expanded detail");
+    assert!(ask.summary.contains("Deterministic memory answer"));
+    assert_eq!(ask.because[0].evidence, "Expanded detail");
     assert!(ask.warnings.is_empty());
 }
 

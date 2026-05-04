@@ -63,7 +63,6 @@ pub(crate) fn ask_response_from_result(
     result: GetContextResult,
 ) -> AskResponse {
     let evidence = memory_evidence_from_bundle(&result.bundle);
-    let answer = rendered_summary(&result.rendered);
     let because = evidence
         .iter()
         .take(5)
@@ -83,14 +82,23 @@ pub(crate) fn ask_response_from_result(
         MemoryAnswerPolicy::EvidenceOrUnknown if because.is_empty() => "UNKNOWN".to_string(),
         MemoryAnswerPolicy::EvidenceOrUnknown
         | MemoryAnswerPolicy::ShowConflicts
-        | MemoryAnswerPolicy::BestEffort => answer,
+        | MemoryAnswerPolicy::BestEffort => deterministic_answer_from_reasons(&because),
+    };
+    let answer = if answer.trim().is_empty() {
+        "UNKNOWN".to_string()
+    } else {
+        answer
     };
 
     AskResponse {
-        summary: if answer.trim().is_empty() || answer == "UNKNOWN" {
+        summary: if answer == "UNKNOWN" {
             format!("No deterministic memory answer found for: {question}")
         } else {
-            answer.clone()
+            format!(
+                "Deterministic memory answer from {} evidence {} for: {question}",
+                because.len(),
+                if because.len() == 1 { "item" } else { "items" }
+            )
         },
         answer,
         because,
@@ -101,6 +109,31 @@ pub(crate) fn ask_response_from_result(
             confidence,
         )),
         warnings: Vec::new(),
+    }
+}
+
+fn deterministic_answer_from_reasons(reasons: &[AnswerReason]) -> String {
+    let mut seen = BTreeSet::new();
+    let evidence = reasons
+        .iter()
+        .filter_map(|reason| {
+            let text = reason.evidence.trim();
+            if text.is_empty() || !seen.insert(text.to_string()) {
+                None
+            } else {
+                Some(text.to_string())
+            }
+        })
+        .collect::<Vec<_>>();
+
+    match evidence.as_slice() {
+        [] => String::new(),
+        [single] => single.clone(),
+        many => many
+            .iter()
+            .map(|item| format!("- {item}"))
+            .collect::<Vec<_>>()
+            .join("\n"),
     }
 }
 
