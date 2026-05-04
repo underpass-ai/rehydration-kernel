@@ -77,6 +77,7 @@ Event channels defined in [`context-projection.v1beta1.yaml`](../api/asyncapi/co
 | Channel | Direction | Status | Notes |
 |:--------|:----------|:-------|:------|
 | `graph.node.materialized` | Subscribe (kernel consumes) | Production-ready | Materializes nodes + relationships into Neo4j. Full `EventEnvelope` with 7 required fields + `data` payload. `related_nodes` carries explanatory metadata (semantic_class, rationale, method, decision_id, caused_by_node_id, evidence, confidence, sequence) |
+| `graph.relation.materialized` | Subscribe (kernel consumes) | Implemented experimental | Materializes one relation without re-materializing the source node. Runtime routing, AsyncAPI contract, projection mapping, and initial PIR-like container integration are implemented. Out-of-order convergence and idempotency-specific relation tests are still pending. |
 | `node.detail.materialized` | Subscribe (kernel consumes) | Production-ready | Materializes extended detail into Valkey. Requires `node_id`, `detail`, `content_hash`, `revision` |
 | `context.bundle.generated` | Publish (kernel emits) | **Contract only** | Defined in AsyncAPI but **not emitted by the kernel runtime**. Test fixtures simulate it. Implementation pending |
 
@@ -99,6 +100,10 @@ What is stable:
 
 - the async projection subjects above
 - the gRPC query surface
+
+What is implemented but still experimental:
+
+- `graph.relation.materialized` as an additive relation-only async subject
 
 What remains experimental:
 

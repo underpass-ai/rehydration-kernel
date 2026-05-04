@@ -50,6 +50,8 @@ memory moves once they adopt this service.
 Inbound (kernel consumes):
 
 - `{prefix}.graph.node.materialized` — nodes + relationships
+- `{prefix}.graph.relation.materialized` — relation-only async projection
+  between existing or future graph nodes
 - `{prefix}.node.detail.materialized` — extended detail
 
 Outbound (kernel publishes):

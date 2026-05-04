@@ -1,6 +1,6 @@
 # PIR Kernel Relation-Materialized RFC
 
-Status: proposed  
+Status: accepted; initial kernel implementation and container coverage landed
 Date: 2026-04-14  
 Scope: boundary evolution needed to complete the `PIR` sequential intervention spine without re-materializing anchor nodes
 
@@ -26,14 +26,14 @@ focuses on one missing capability:
 
 ## Problem Statement
 
-The current kernel boundary is node-centric in a very specific way:
+The previous kernel boundary was node-centric in a very specific way:
 
-- the stable async contract exposes only:
+- it exposed only:
   - `graph.node.materialized`
   - `node.detail.materialized`
 - `graph.node.materialized` carries one source node plus its outgoing
   `related_nodes`
-- the current `GraphBatch -> translator` path therefore serializes every
+- the current `GraphBatch -> translator` path still serializes every
   relation as "outgoing from a node materialized in this same wave"
 
 This is visible in:
@@ -279,17 +279,18 @@ Those belong to the eventual real node event. The placeholder should only say:
 
 ## Contract Position
 
-Recommended maturity stance:
+Current maturity stance:
 
 - `graph.node.materialized`: stable `v1beta1`
 - `node.detail.materialized`: stable `v1beta1`
-- `graph.relation.materialized`: experimental
+- `graph.relation.materialized`: implemented experimental additive subject
 
 Why:
 
 - it expands the async surface
 - it changes the practical integration story for incremental producers
-- it needs dedicated evidence before it should be declared stable
+- it has initial contract/runtime/container evidence, but still needs broader
+  convergence and idempotency coverage before being declared stable
 
 This mirrors the current stance for `GraphBatch`:
 
@@ -408,6 +409,8 @@ Assert that:
 - its schema reuses the same explanation shape
 - existing subjects remain unchanged
 
+Status: implemented.
+
 #### `nats_consumer_routes_graph_relation_materialized`
 
 Assert that:
@@ -415,12 +418,16 @@ Assert that:
 - the NATS consumer recognizes the new subject
 - unsupported subjects still fail deterministically
 
+Status: implemented.
+
 #### `projection_application_service_handles_relation_event`
 
 Assert that:
 
 - the event maps to one `UpsertNodeRelation` mutation
 - no node detail mutation is emitted
+
+Status: implemented.
 
 ### 2. Container integration tests
 
@@ -441,15 +448,18 @@ Goal:
 Shape:
 
 1. publish `incident` and `finding`
-2. publish `evidence`
-3. publish `finding -SUPPORTED_BY-> evidence` through the new subject
+2. publish `decision`
+3. publish `decision -ADDRESSES-> finding` through the new subject
 4. read back via `GetContext`
 
 Assertions:
 
 - all three nodes exist
-- `SUPPORTED_BY` exists
+- `ADDRESSES` exists
 - no duplicate root node is needed
+
+Status: implemented as
+`relation_materialized_events_extend_a_pir_like_spine_without_rematerializing_the_source_node`.
 
 #### `relation_materialization_out_of_order_integration`
 
@@ -589,43 +599,54 @@ Success criteria:
 
 ## Acceptance Criteria
 
-This RFC should be considered successfully validated only if:
+This RFC is partially validated. Current state:
 
-1. the new async subject exists and passes contract tests
-2. deterministic container tests prove cross-wave relation materialization
-3. out-of-order convergence is explicit and tested
-4. a live smoke proves the path against a deployed kernel
-5. the PIR-like sequential spine is demonstrated without anchor-node patching
-6. placeholder behavior is explicit, minimal, and does not pollute normal
+1. the new async subject exists and passes contract tests;
+2. deterministic container tests prove cross-wave relation materialization;
+3. out-of-order convergence is not yet tested;
+4. live cluster smoke is not yet added;
+5. the full PIR-like sequential spine is not yet demonstrated end to end;
+6. placeholder behavior is implemented for relation-before-node convergence,
+   but still needs dedicated rendered-output coverage.
+
+The subject should remain experimental until:
+
+1. out-of-order convergence is explicit and tested;
+2. a live smoke proves the path against a deployed kernel;
+3. the PIR-like sequential spine is demonstrated without anchor-node patching;
+4. placeholder behavior is explicit, minimal, and does not pollute normal
    rehydrated output
 
 ## Decision Recommendation
 
-If we want to complete the `PIR` semantic spine honestly, without patching the
-producer into re-emitting earlier anchors, this is the cleanest next step.
+`graph.relation.materialized` is accepted as the clean additive boundary for
+incremental relation-only projection. Current recommendation:
 
-Recommendation:
-
-1. approve `graph.relation.materialized` as an experimental additive boundary
-2. validate it with the test plan above
+1. keep it experimental while the remaining tests land;
+2. validate out-of-order, idempotency, placeholder filtering, and live smoke;
 3. only after that decide whether `GraphBatch` should evolve to target it
+   directly.
 
 ## Suggested Implementation Phases
 
-To keep blast radius low, this work should be split into three phases.
+To keep blast radius low, this work is split into three phases.
 
 ### Phase 1 — contract and projection
+
+Status: implemented.
 
 - AsyncAPI extension
 - domain/application event support
 - NATS subject routing and decoding
 - Neo4j projection path for relation events
 
-Success condition:
+Current evidence:
 
-- relation events materialize edges and converge with later node events
+- relation events materialize edges through the real projection runtime.
 
 ### Phase 2 — placeholder hygiene
+
+Status: partial; dedicated coverage still pending.
 
 - explicit placeholder shape
 - overwrite semantics confirmed
@@ -637,8 +658,10 @@ Success condition:
 
 ### Phase 3 — PIR-shaped validation
 
-- container E2E reproducing the full sequential spine
-- live roundtrip smoke against deployed kernel
+Status: partial; initial PIR-like cross-wave relation test exists.
+
+- container E2E reproducing the full sequential spine remains pending
+- live roundtrip smoke against deployed kernel remains pending
 
 Success condition:
 
