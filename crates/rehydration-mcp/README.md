@@ -16,7 +16,9 @@ Current status:
 - dimension scope defaults to `current_about`; `abouts` requires a non-empty
   about list; `all_abouts` is explicit and uses the kernel memory about index;
 - `kernel_inspect` supports typed detail/link lookup; `include.raw=true` fails
-  fast until a typed raw response shape exists.
+  fast until a typed raw response shape exists;
+- temporal `include.raw_refs=true` fails fast until a typed raw reference
+  response shape exists.
 
 Run locally:
 

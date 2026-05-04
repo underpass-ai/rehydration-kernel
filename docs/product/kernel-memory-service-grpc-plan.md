@@ -112,10 +112,10 @@ messages:
 | `MemoryBudget` | `tokens`, `detail`, `depth`. |
 | `DimensionSelection` | `mode`, `include`, `exclude`, `scope`, `abouts`, `scope_ids`. Scope defaults to `CURRENT_ABOUT`; `ABOUTS` requires an explicit non-empty list; `ALL_ABOUTS` uses the kernel memory about index; `scope_ids` narrows selection to exact dimension scopes using local ids or `about:<about>:dimension:<dimension_id>` ids. |
 | `TemporalCursor` | `ref`, `time`, or `sequence`; exactly one should be accepted. |
-| `TemporalWindow` | Entry and time window controls for `Near`. |
-| `TemporalInclude` | `evidence`, `relations`, `raw_refs` include flags. |
+| `TemporalWindow` | Entry window controls for `Near`: `before_entries`, `after_entries`. |
+| `TemporalInclude` | `evidence` and `relations` include flags. `raw_refs=true` is fail-fast until a typed raw reference response shape exists. |
 | `Proof` | `path`, `evidence`, `conflicts`, `missing`, `confidence`. |
-| `TraceRequest` | `from`, `to`, `goal`, include flags. |
+| `TraceRequest` | `from`, `to`, `goal`, `budget`. |
 | `InspectRequest` | `ref`, include flags for links, details, and raw state. |
 
 Response families:
@@ -230,6 +230,8 @@ Acceptance semantics:
 
 - `dry_run=true` validates and returns a response without writing.
 - accepted live writes preserve current idempotency behavior.
+- replaying the same idempotency key with different content fails with a
+  storage conflict.
 - `read_after_write_ready=true` is only returned when the synchronous memory
   projection mutation path completed successfully.
 - storage conflicts are not downgraded to warnings.
@@ -258,10 +260,11 @@ Temporal traversal rules:
   generated response and not the anchor summary;
 - `answer_policy=evidence_or_unknown` returns `UNKNOWN` when the selected
   context has no evidence;
-- `answer_policy=show_conflicts` keeps deterministic context and exposes
-  conflicts when the proof model has them;
-- `answer_policy=best_effort` returns deterministic context even without
-  evidence;
+- `answer_policy=show_conflicts` uses the same deterministic evidence path in
+  this cut; conflict detection is not implemented yet, so `proof.conflicts`
+  remains empty unless a future proof model supplies conflicts;
+- `answer_policy=best_effort` does not fall back to generated or anchor-summary
+  text; without evidence it still returns `UNKNOWN`;
 - the method returns evidence, path, conflicts, missing data, and confidence
   without pretending to have run a generative answer engine.
 

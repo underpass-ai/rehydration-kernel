@@ -90,6 +90,7 @@
     },
     "answer_policy": {
       "type": "string",
+      "description": "Answer policy selector. Current live gRPC/MCP mode is deterministic evidence-only: show_conflicts does not run conflict detection yet, and best_effort does not generate fallback text.",
       "enum": [
         "evidence_or_unknown",
         "show_conflicts",
@@ -546,7 +547,8 @@
           "type": "boolean"
         },
         "raw_refs": {
-          "type": "boolean"
+          "type": "boolean",
+          "description": "Reserved typed raw-reference expansion flag. Current live gRPC/MCP mode fails fast when true until the response shape is typed."
         }
       }
     },

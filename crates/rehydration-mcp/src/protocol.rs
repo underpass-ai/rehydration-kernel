@@ -172,6 +172,7 @@ pub(crate) fn tools_list_result() -> Value {
                         "question": string_schema("Natural-language question."),
                         "answer_policy": {
                             "type": "string",
+                            "description": "Deterministic evidence policy. show_conflicts does not run conflict detection yet, and best_effort does not generate fallback text.",
                             "enum": ["evidence_or_unknown", "show_conflicts", "best_effort"]
                         },
                         "prefer": {
@@ -300,7 +301,10 @@ fn temporal_tool_definition(name: &str, description: &str, cursor_key: &str) -> 
                 "properties": {
                     "evidence": {"type": "boolean"},
                     "relations": {"type": "boolean"},
-                    "raw_refs": {"type": "boolean"}
+                    "raw_refs": {
+                        "type": "boolean",
+                        "description": "Reserved; live mode fails fast when true until temporal raw refs have a typed response shape."
+                    }
                 }
             },
             "depth": integer_schema("Optional graph traversal depth for live gRPC mode."),

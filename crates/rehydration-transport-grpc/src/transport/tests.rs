@@ -1129,7 +1129,7 @@ async fn memory_service_temporal_methods_use_domain_traversal() {
             include: Some(TemporalInclude {
                 evidence: false,
                 relations: true,
-                raw_refs: true,
+                raw_refs: false,
             }),
             ..Default::default()
         }))
@@ -1260,6 +1260,31 @@ async fn memory_service_temporal_methods_use_domain_traversal() {
         exact_coverage.requested.expect("requested").scope_ids,
         vec!["about:question:830ce83f:dimension:conversation".to_string()]
     );
+}
+
+#[tokio::test]
+async fn memory_service_temporal_raw_refs_fail_fast_until_typed_shape_exists() {
+    let service = memory_service(TemporalGraphNeighborhoodReader, EmptyNodeDetailReader);
+    let mut request = temporal_move_request(
+        Some(ProtoTemporalCursor {
+            r#ref: "claim:rachel-denver".to_string(),
+            ..Default::default()
+        }),
+        ProtoDimensionSelection::default(),
+    );
+    request.include = Some(TemporalInclude {
+        evidence: false,
+        relations: false,
+        raw_refs: true,
+    });
+
+    let raw_refs = service
+        .forward(Request::new(request))
+        .await
+        .expect_err("unsupported temporal raw_refs should fail");
+
+    assert_eq!(raw_refs.code(), tonic::Code::InvalidArgument);
+    assert!(raw_refs.message().contains("temporal raw_refs expansion"));
 }
 
 #[tokio::test]

@@ -76,17 +76,14 @@ KMP exposes nine memory moves.
 | `rewind` | `kernel_rewind` | `Rewind` | Not recommended for async MVP | Move backward in time over one, several, or all dimensions of a memory. |
 | `forward` | `kernel_forward` | `Forward` | Not recommended for async MVP | Move forward in time over one, several, or all dimensions of a memory. |
 | `trace` | `kernel_trace` | `Trace` | Not recommended for async MVP | Return the relationship path and evidence trail behind an answer. |
-| `inspect` | `kernel_inspect` | `Inspect` | Not recommended for async MVP | Show raw graph/detail state for audits and debugging. |
+| `inspect` | `kernel_inspect` | `Inspect` | Not recommended for async MVP | Show typed graph/detail/link state for audits and debugging. Raw expansion is fail-fast until typed. |
 
-The old descriptive names remain valid as aliases during migration:
+Only the ingest aliases are implemented in MCP live mode during migration:
 
 | Alias | Canonical move |
 |:------|:---------------|
 | `kernel_remember` | `kernel_ingest` |
 | `kernel_ingest_context` | `kernel_ingest` |
-| `kernel_explore_context` | `kernel_ask` |
-| `kernel_get_context` | `kernel_wake` or advanced bundle read |
-| `kernel_inspect_context` | `kernel_inspect` |
 
 ## Why These Moves
 
@@ -454,7 +451,7 @@ MCP response:
 
 Rules:
 
-- `idempotency_key` is required for non-dry-run requests.
+- `idempotency_key` is required for every request, including `dry_run`.
 - Synchronous gRPC/MCP live ingest reports `read_after_write_ready=true` only
   after the memory projection mutation path completes.
 - Fixture, dry-run, and asynchronous examples may report
@@ -462,7 +459,8 @@ Rules:
 - The same memory replay with the same idempotency key returns the same
   acceptance.
 - The same idempotency key with different memory is rejected.
-- `dry_run=true` validates and returns the translated projection summary.
+- `dry_run=true` validates and returns the translated projection summary
+  without writing.
 
 ## Move: `wake`
 
@@ -614,8 +612,8 @@ Answer policy values:
 | Policy | Behavior |
 |:-------|:---------|
 | `evidence_or_unknown` | Return an answer only when evidence exists. |
-| `show_conflicts` | Return competing claims if conflict is unresolved. |
-| `best_effort` | Return the best supported answer and mark uncertainty. |
+| `show_conflicts` | Current live cut uses the same deterministic evidence path; conflict detection is not implemented yet. |
+| `best_effort` | Current live cut does not fall back to generated or anchor-summary text; without evidence it returns `UNKNOWN`. |
 
 Default policy should be `evidence_or_unknown`.
 
@@ -985,11 +983,7 @@ MCP request:
 {
   "from": "claim:rachel-austin",
   "to": "claim:rachel-denver",
-  "goal": "explain_update",
-  "include": {
-    "evidence": true,
-    "raw_refs": true
-  }
+  "goal": "explain_update"
 }
 ```
 
@@ -1033,7 +1027,7 @@ MCP request:
     "incoming": true,
     "outgoing": true,
     "details": true,
-    "raw": true
+    "raw": false
   }
 }
 ```
@@ -1349,7 +1343,7 @@ The differentiated product is:
 - LLM-produced relations stored as inspectable facts;
 - deterministic traversal over causal/evidential links;
 - one protocol that works locally through MCP, synchronously through gRPC, and
-  asynchronously through NATS.
+  asynchronously through NATS once the KMP NATS subjects are implemented.
 
 ## Implementation Order
 
@@ -1359,14 +1353,15 @@ Recommended order:
 2. Add JSON schemas for `kernel_ingest`, `kernel_wake`, `kernel_ask`,
    `kernel_goto`, `kernel_near`, `kernel_rewind`, `kernel_forward`,
    `kernel_trace`, and `kernel_inspect`.
-   Draft fixtures live under
+   Contract fixtures live under
    [`api/examples/kernel/v1beta1/kmp`](../../api/examples/kernel/v1beta1/kmp).
 3. Add examples for conversation memory, incident memory, workflow memory, and
    benchmark memory.
 4. Add domain-owned temporal and multidimensional traversal.
 5. Add memory-to-projection translation for `ingest` in the application layer.
 6. Add typed gRPC `KernelMemoryService`.
-7. Migrate MCP onto `KernelMemoryService` after the typed API is stable.
+7. Keep MCP live mode on `KernelMemoryService`.
+   This migration is implemented for live MCP mode.
 8. Add NATS `kernel.memory.ingest/ingested/rejected`.
 9. Re-run the benchmark and publish what improves and what still fails.
 
@@ -1391,8 +1386,10 @@ The design is ready to implement when:
 - `goto`, `near`, `rewind`, and `forward` traverse one, several, or all
   dimensions by time;
 - `trace` shows the relation path behind an answer;
-- `inspect` can audit the raw stored facts;
-- the same memory move can be carried through MCP, gRPC, or NATS;
+- `inspect` can audit typed stored facts; raw expansion fails fast until the
+  typed raw shape exists;
+- the same synchronous memory move can be carried through MCP and gRPC; NATS KMP
+  subjects remain design guidance until implemented;
 - existing Kernel 1.0 clients remain valid;
 - the docs do not claim benchmark success before implementation and
   measurement.

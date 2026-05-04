@@ -442,7 +442,9 @@ HAS_SCOPE
 
 Semantic traversal is not enough. Debugging and audit require raw inspection.
 
-Raw context should be traversable without polluting normal semantic reads:
+Raw context should eventually be traversable without polluting normal semantic
+reads. In the current typed gRPC/MCP cut, raw expansion is fail-fast until the
+response shape is typed:
 
 ```text
 raw_context -> scope -> entry -> next entry
@@ -890,26 +892,20 @@ Input:
     "incoming": true,
     "outgoing": true,
     "details": true,
-    "raw": true
+    "raw": false
   }
 }
 ```
 
 ### Advanced/Alias Tools
 
-Advanced tools or migration aliases may exist, but should not be the normal
-caller path:
+Advanced tools or migration aliases may exist in future cuts, but should not be
+the normal caller path. The current MCP live adapter implements only the ingest
+aliases:
 
 ```text
 kernel_remember           -> alias for kernel_ingest
 kernel_ingest_context     -> alias for kernel_ingest
-kernel_explore_context    -> alias for kernel_ask
-kernel_get_context        -> alias for kernel_wake or advanced bundle read
-kernel_inspect_context    -> alias for kernel_inspect
-kernel_get_context_window
-kernel_get_context_path
-kernel_search_context
-kernel_publish_graph_batch
 ```
 
 ## Storage And Indexing Requirements

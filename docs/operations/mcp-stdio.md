@@ -127,6 +127,10 @@ Dimension scope is explicit and auditable:
 `include.raw=true` fails fast until the gRPC response shape has a typed raw
 payload.
 
+Temporal `include.raw_refs=true` also fails fast in live mode until
+`TemporalMoveResponse` has a typed raw reference shape. `include.evidence` and
+`include.relations` are supported.
+
 ## Smoke Test
 
 Fixture mode:

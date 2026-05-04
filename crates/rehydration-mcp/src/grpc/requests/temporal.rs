@@ -81,10 +81,17 @@ pub(super) fn temporal_include_from_arguments(
     else {
         return Ok(None);
     };
+    let raw_refs = optional_bool_field(include, "raw_refs", "include.raw_refs")?.unwrap_or(false);
+    if raw_refs {
+        return Err(
+            "temporal raw_refs expansion is not available on the current typed response shape"
+                .to_string(),
+        );
+    }
     Ok(Some(TemporalInclude {
         evidence: optional_bool_field(include, "evidence", "include.evidence")?.unwrap_or(false),
         relations: optional_bool_field(include, "relations", "include.relations")?.unwrap_or(false),
-        raw_refs: optional_bool_field(include, "raw_refs", "include.raw_refs")?.unwrap_or(false),
+        raw_refs,
     }))
 }
 

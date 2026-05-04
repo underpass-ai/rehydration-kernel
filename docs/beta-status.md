@@ -40,7 +40,7 @@ changes to fields that are implemented. Deprecated fields may be removed in `v1`
 
 | RPC | Status | Notes |
 |-----|--------|-------|
-| `UpdateContext` | Production-ready | Persists full domain events (changes, requested_by, occurred_at) to the context event store as JSON. Optimistic concurrency via `expected_revision`. Content hash validated via `expected_content_hash`. Idempotency via `idempotency_key`. Returns `ABORTED` on revision or hash conflict. |
+| `UpdateContext` | Production-ready | Persists full domain events (changes, requested_by, occurred_at) to the context event store as JSON. Optimistic concurrency via `expected_revision`. Content hash validated via `expected_content_hash`. Idempotency via `idempotency_key`; replaying a key with different content returns `ABORTED`. Returns `ABORTED` on revision or hash conflict. |
 
 ## KernelMemoryService
 
@@ -65,6 +65,10 @@ Dimension selection scope defaults to `CURRENT_ABOUT`. `ABOUTS` is valid only
 with a non-empty `abouts` list. `ALL_ABOUTS` uses the kernel memory about index
 to traverse every memory anchor. Temporal coverage preserves the requested
 scope for audit instead of normalizing `CURRENT_ABOUT` to an `ABOUTS` list.
+Temporal `raw_refs=true` is reserved and fails fast until the temporal response
+has a typed raw-reference shape. `Ask` currently uses deterministic evidence for
+all answer policies; conflict detection and generated/best-effort fallback text
+are not implemented.
 
 ## Async Contract (NATS JetStream)
 

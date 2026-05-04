@@ -155,6 +155,7 @@ fn temporal_query(parts: TemporalQueryParts) -> ProtoMappingResult<TemporalMemor
         include: parts
             .include
             .map(temporal_include_from_proto)
+            .transpose()?
             .unwrap_or_default(),
         token_budget: if let Some(tokens) = limit_tokens {
             tokens
@@ -168,12 +169,19 @@ fn temporal_query(parts: TemporalQueryParts) -> ProtoMappingResult<TemporalMemor
     })
 }
 
-fn temporal_include_from_proto(value: TemporalInclude) -> TemporalIncludeOptions {
-    TemporalIncludeOptions {
+fn temporal_include_from_proto(
+    value: TemporalInclude,
+) -> ProtoMappingResult<TemporalIncludeOptions> {
+    if value.raw_refs {
+        return Err(invalid_argument(
+            "temporal raw_refs expansion is not available on the current typed response shape",
+        ));
+    }
+    Ok(TemporalIncludeOptions {
         evidence: value.evidence,
         relations: value.relations,
         raw_refs: value.raw_refs,
-    }
+    })
 }
 
 fn validate_inspect_include(value: &InspectInclude) -> ProtoMappingResult<()> {

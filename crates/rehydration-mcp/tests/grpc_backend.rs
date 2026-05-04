@@ -173,7 +173,7 @@ async fn grpc_backend_maps_temporal_tools_to_kernel_memory_service() {
             },
             "include": {
                 "relations": true,
-                "raw_refs": true
+                "raw_refs": false
             },
             "depth": 4
         }),
@@ -215,7 +215,7 @@ async fn grpc_backend_maps_temporal_tools_to_kernel_memory_service() {
             .scope_ids,
         vec!["conversation:rachel".to_string()]
     );
-    assert!(moves[0].request.include.as_ref().expect("include").raw_refs);
+    assert!(!moves[0].request.include.as_ref().expect("include").raw_refs);
     assert_eq!(moves[0].request.budget.as_ref().expect("budget").depth, 4);
 
     let near = call_tool(
@@ -247,6 +247,38 @@ async fn grpc_backend_maps_temporal_tools_to_kernel_memory_service() {
             .time
             .is_some()
     );
+}
+
+#[tokio::test]
+async fn grpc_backend_rejects_temporal_raw_refs_until_typed_shape_exists() {
+    let recorded = RecordedMemoryRequests::default();
+    let endpoint = spawn_fake_memory_server(recorded.clone()).await;
+    let server = KernelMcpServer::grpc(endpoint);
+
+    let forward = call_tool(
+        &server,
+        17,
+        "kernel_forward",
+        json!({
+            "about": "question:temporal",
+            "from": {
+                "ref": "claim:rachel-denver"
+            },
+            "include": {
+                "raw_refs": true
+            }
+        }),
+    )
+    .await;
+
+    assert_eq!(forward["result"]["isError"], true);
+    assert!(
+        forward["result"]["content"][0]["text"]
+            .as_str()
+            .expect("error text")
+            .contains("temporal raw_refs expansion")
+    );
+    assert!(recorded.moves().await.is_empty());
 }
 
 #[tokio::test]
