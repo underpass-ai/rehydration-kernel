@@ -199,6 +199,87 @@
         }
       }
     },
+    "resolved_temporal_coordinate": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "dimension": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "scope_id": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "occurred_at": {
+          "$ref": "#/$defs/date_time"
+        },
+        "observed_at": {
+          "$ref": "#/$defs/date_time"
+        },
+        "ingested_at": {
+          "$ref": "#/$defs/date_time"
+        },
+        "valid_from": {
+          "$ref": "#/$defs/date_time"
+        },
+        "valid_until": {
+          "$ref": "#/$defs/date_time"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "rank": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "metadata": {
+          "$ref": "#/$defs/metadata"
+        }
+      },
+      "anyOf": [
+        {
+          "required": [
+            "occurred_at"
+          ]
+        },
+        {
+          "required": [
+            "observed_at"
+          ]
+        },
+        {
+          "required": [
+            "ingested_at"
+          ]
+        },
+        {
+          "required": [
+            "valid_from"
+          ]
+        },
+        {
+          "required": [
+            "valid_until"
+          ]
+        },
+        {
+          "required": [
+            "sequence"
+          ]
+        },
+        {
+          "required": [
+            "rank"
+          ]
+        },
+        {
+          "required": [
+            "dimension",
+            "scope_id"
+          ]
+        }
+      ]
+    },
     "entry": {
       "type": "object",
       "additionalProperties": false,
@@ -482,7 +563,7 @@
           "minimum": 1
         }
       },
-      "anyOf": [
+      "oneOf": [
         {
           "required": [
             "ref"
@@ -525,14 +606,6 @@
         "after_entries": {
           "type": "integer",
           "minimum": 0
-        },
-        "before_seconds": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "after_seconds": {
-          "type": "integer",
-          "minimum": 1
         }
       }
     },
@@ -574,6 +647,9 @@
         },
         "include": {
           "$ref": "#/$defs/temporal_include"
+        },
+        "budget": {
+          "$ref": "#/$defs/budget"
         }
       }
     },
@@ -582,6 +658,7 @@
       "additionalProperties": false,
       "required": [
         "ref",
+        "kind",
         "text",
         "coordinates"
       ],
@@ -589,17 +666,11 @@
         "ref": {
           "$ref": "#/$defs/non_empty_string"
         },
-        "text": {
+        "kind": {
           "$ref": "#/$defs/non_empty_string"
         },
-        "position": {
-          "type": "string",
-          "enum": [
-            "before",
-            "at",
-            "after",
-            "near"
-          ]
+        "text": {
+          "$ref": "#/$defs/non_empty_string"
         },
         "coordinates": {
           "type": "array",
@@ -628,7 +699,9 @@
           "type": "object",
           "additionalProperties": false,
           "required": [
-            "direction"
+            "direction",
+            "requested",
+            "resolved"
           ],
           "properties": {
             "direction": {
@@ -640,17 +713,11 @@
                 "forward"
               ]
             },
-            "at": {
+            "requested": {
               "$ref": "#/$defs/temporal_cursor"
             },
-            "around": {
-              "$ref": "#/$defs/temporal_cursor"
-            },
-            "from": {
-              "$ref": "#/$defs/temporal_cursor"
-            },
-            "window": {
-              "$ref": "#/$defs/temporal_window"
+            "resolved": {
+              "$ref": "#/$defs/resolved_temporal_coordinate"
             }
           }
         },
@@ -713,6 +780,9 @@
         },
         "include": {
           "$ref": "#/$defs/temporal_include"
+        },
+        "budget": {
+          "$ref": "#/$defs/budget"
         }
       }
     },
@@ -741,6 +811,9 @@
         },
         "include": {
           "$ref": "#/$defs/temporal_include"
+        },
+        "budget": {
+          "$ref": "#/$defs/budget"
         }
       }
     },
@@ -987,26 +1060,6 @@
         "answer_policy": {
           "$ref": "#/$defs/answer_policy"
         },
-        "prefer": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "time": {
-              "type": "string",
-              "enum": [
-                "latest",
-                "earliest",
-                "as_of"
-              ]
-            },
-            "relations": {
-              "type": "array",
-              "items": {
-                "$ref": "#/$defs/non_empty_string"
-              }
-            }
-          }
-        },
         "budget": {
           "$ref": "#/$defs/budget"
         },
@@ -1082,6 +1135,9 @@
         },
         "goal": {
           "$ref": "#/$defs/non_empty_string"
+        },
+        "budget": {
+          "$ref": "#/$defs/budget"
         }
       }
     },

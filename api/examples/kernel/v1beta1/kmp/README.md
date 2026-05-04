@@ -51,6 +51,10 @@ Current binding note:
 
 - KMP temporal fixture aliases such as `at` and `from` map to the gRPC
   `TemporalCursor` field on `TemporalMoveRequest`.
+- KMP temporal responses follow the typed gRPC shape: `temporal.requested`
+  carries the submitted cursor and `temporal.resolved` carries the resolved
+  coordinate. They do not synthesize transport-specific `at`/`from`/`around`
+  response fields.
 - `IngestRequest.about` is the default dimension namespace. Logical dimension
   ids in KMP map to internal kernel ids shaped as
   `about:<about>:dimension:<dimension_id>`.

@@ -248,7 +248,10 @@ async fn kernel_ask_returns_fixture_backed_structured_content() {
     .await;
 
     assert_eq!(response["result"]["isError"], false);
-    assert_eq!(response["result"]["structuredContent"]["answer"], "Austin");
+    assert_eq!(
+        response["result"]["structuredContent"]["answer"],
+        "Later she corrected it: the move is to Austin."
+    );
     assert_eq!(
         response["result"]["structuredContent"]["proof"]["confidence"],
         "high"

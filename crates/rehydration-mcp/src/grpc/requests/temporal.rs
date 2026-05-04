@@ -50,6 +50,12 @@ pub(super) fn temporal_window_from_arguments(
     else {
         return Ok(None);
     };
+    if window.contains_key("before_seconds") || window.contains_key("after_seconds") {
+        return Err(
+            "temporal window seconds are not supported by KernelMemoryService in this cut"
+                .to_string(),
+        );
+    }
     Ok(Some(TemporalWindow {
         before_entries: optional_u32_field(window, "before_entries", "window.before_entries")?
             .unwrap_or_default(),
@@ -140,6 +146,22 @@ mod tests {
         assert_eq!(
             error,
             "temporal cursor `from` requires exactly one of `ref`, `time`, or `sequence`"
+        );
+    }
+
+    #[test]
+    fn temporal_window_rejects_unsupported_seconds_bounds() {
+        let error = temporal_window_from_arguments(&json!({
+            "window": {
+                "before_seconds": 60,
+                "after_entries": 2
+            }
+        }))
+        .expect_err("seconds window bounds are not in the typed gRPC contract");
+
+        assert_eq!(
+            error,
+            "temporal window seconds are not supported by KernelMemoryService in this cut"
         );
     }
 }

@@ -28,6 +28,11 @@ pub(in crate::grpc) fn wake_request_from_arguments(
 pub(in crate::grpc) fn ask_request_from_arguments(arguments: &Value) -> Result<AskRequest, String> {
     validate_required_arguments(arguments, &["about", "question"])?;
     let arguments_object = object(arguments, "tool arguments")?;
+    if arguments_object.contains_key("prefer") {
+        return Err(
+            "kernel_ask.prefer is not supported by KernelMemoryService.Ask in this cut".to_string(),
+        );
+    }
     Ok(AskRequest {
         about: required_string(arguments, "about")?,
         question: required_string(arguments, "question")?,
@@ -96,4 +101,28 @@ pub(in crate::grpc) fn inspect_request_from_arguments(
         r#ref: required_string(arguments, "ref")?,
         include: inspect_include_from_arguments(arguments)?,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn ask_request_rejects_unsupported_prefer_hint() {
+        let error = ask_request_from_arguments(&json!({
+            "about": "question:830ce83f",
+            "question": "Where did Rachel move?",
+            "prefer": {
+                "time": "latest"
+            }
+        }))
+        .expect_err("prefer is not part of KernelMemoryService.Ask");
+
+        assert_eq!(
+            error,
+            "kernel_ask.prefer is not supported by KernelMemoryService.Ask in this cut"
+        );
+    }
 }

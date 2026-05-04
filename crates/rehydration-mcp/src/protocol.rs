@@ -175,10 +175,6 @@ pub(crate) fn tools_list_result() -> Value {
                             "description": "Deterministic evidence policy. show_conflicts does not run conflict detection yet, and best_effort does not generate fallback text.",
                             "enum": ["evidence_or_unknown", "show_conflicts", "best_effort"]
                         },
-                        "prefer": {
-                            "type": "object",
-                            "additionalProperties": true
-                        },
                         "dimensions": dimensions_schema(),
                         "depth": integer_schema("Optional graph traversal depth for live gRPC mode."),
                         "budget": budget_schema()
@@ -507,6 +503,11 @@ mod tests {
         assert_eq!(tools[1]["inputSchema"]["required"][0], "about");
         assert_eq!(tools[2]["name"], "kernel_ask");
         assert_eq!(tools[2]["inputSchema"]["required"][1], "question");
+        assert!(
+            tools[2]["inputSchema"]["properties"]
+                .get("prefer")
+                .is_none()
+        );
         assert_eq!(tools[3]["name"], "kernel_goto");
         assert_eq!(tools[3]["inputSchema"]["required"][1], "at");
     }
