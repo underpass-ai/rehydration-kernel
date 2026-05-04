@@ -74,12 +74,17 @@ pub(super) fn select_positions(
                     .collect(),
                 request.window().before_entries(),
             );
+            let exact = comparable
+                .iter()
+                .filter(|position| position.axis_key == cursor.axis_key)
+                .cloned()
+                .collect::<Vec<_>>();
             let after = comparable
                 .into_iter()
                 .filter(|position| position.axis_key > cursor.axis_key)
                 .take(request.window().after_entries());
 
-            before.into_iter().chain(after).collect()
+            before.into_iter().chain(exact).chain(after).collect()
         }
     }
 }

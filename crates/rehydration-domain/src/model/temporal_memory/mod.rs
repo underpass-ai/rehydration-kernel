@@ -11,6 +11,7 @@ use crate::{
 };
 
 use self::extract::{bundle_nodes_by_id, temporal_positions};
+use self::position::TemporalPosition;
 use self::select::{coordinates_by_ref, ordered_unique_ref_ids, resolve_cursor, select_positions};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -159,8 +160,12 @@ impl TemporalMemoryTraversal {
             })
             .collect::<Vec<_>>();
         positions.sort();
+        let available_dimensions = dimensions_from_positions(&positions);
 
         let cursor = resolve_cursor(&positions, request.cursor())?;
+        let has_comparable_positions = positions
+            .iter()
+            .any(|position| position.axis_key.axis() == cursor.axis_key.axis());
         let selected_positions = select_positions(&positions, &cursor, request);
         let selected_ref_ids = ordered_unique_ref_ids(selected_positions);
         let coordinates_by_ref = coordinates_by_ref(&positions);
@@ -171,8 +176,13 @@ impl TemporalMemoryTraversal {
             request.dimensions(),
         );
         let included_dimensions = included_dimensions(&entries);
-        let missing_dimensions = missing_dimensions(request.dimensions(), &included_dimensions);
-        let missing = if entries.is_empty() {
+        let coverage_dimensions = if entries.is_empty() && has_comparable_positions {
+            &available_dimensions
+        } else {
+            &included_dimensions
+        };
+        let missing_dimensions = missing_dimensions(request.dimensions(), coverage_dimensions);
+        let missing = if positions.is_empty() || !has_comparable_positions {
             vec!["temporal_positions".to_string()]
         } else {
             Vec::new()
@@ -230,6 +240,15 @@ fn included_dimensions(entries: &[TemporalEntry]) -> Vec<String> {
         .collect()
 }
 
+fn dimensions_from_positions(positions: &[TemporalPosition]) -> Vec<String> {
+    positions
+        .iter()
+        .map(|position| position.coordinate.dimension().to_string())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
 fn missing_dimensions(requested: &DimensionSelection, included: &[String]) -> Vec<String> {
     if requested.mode() != DimensionSelectionMode::Only {
         return Vec::new();
@@ -241,4 +260,125 @@ fn missing_dimensions(requested: &DimensionSelection, included: &[String]) -> Ve
         .difference(&included)
         .cloned()
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use crate::{
+        BundleMetadata, BundleNode, BundleRelationship, CaseId, RelationExplanation,
+        RelationSemanticClass, Role,
+    };
+
+    use super::*;
+
+    #[test]
+    fn near_includes_exact_cursor_positions_between_before_and_after() {
+        let bundle = temporal_bundle(&[
+            ("claim:one", "conversation", "conversation:main", 1),
+            ("claim:two", "conversation", "conversation:main", 2),
+            ("claim:three", "conversation", "conversation:main", 3),
+        ]);
+        let request = TemporalTraversalRequest::new(
+            TemporalDirection::Near,
+            TemporalCursor::sequence(2).expect("sequence cursor should be valid"),
+        )
+        .with_dimensions(DimensionSelection::only(["conversation"]))
+        .with_window(TemporalWindow::new(1, 1));
+
+        let result =
+            TemporalMemoryTraversal::traverse(&bundle, &request).expect("near should traverse");
+        let refs = result
+            .entries()
+            .iter()
+            .map(|entry| entry.ref_id())
+            .collect::<Vec<_>>();
+
+        assert_eq!(refs, vec!["claim:one", "claim:two", "claim:three"]);
+        assert!(result.missing().is_empty());
+    }
+
+    #[test]
+    fn near_includes_exact_position_when_no_neighbors_exist() {
+        let bundle = temporal_bundle(&[("claim:one", "decision", "decision:main", 1)]);
+        let request = TemporalTraversalRequest::new(
+            TemporalDirection::Near,
+            TemporalCursor::sequence(1).expect("sequence cursor should be valid"),
+        )
+        .with_dimensions(DimensionSelection::only(["decision"]))
+        .with_window(TemporalWindow::new(2, 2));
+
+        let result =
+            TemporalMemoryTraversal::traverse(&bundle, &request).expect("near should traverse");
+
+        assert_eq!(result.entries()[0].ref_id(), "claim:one");
+        assert_eq!(result.included_dimensions(), &["decision".to_string()]);
+        assert!(result.missing_dimensions().is_empty());
+        assert!(result.missing().is_empty());
+    }
+
+    #[test]
+    fn forward_boundary_reports_no_entries_without_missing_positions() {
+        let bundle = temporal_bundle(&[("claim:one", "decision", "decision:main", 1)]);
+        let request = TemporalTraversalRequest::new(
+            TemporalDirection::Forward,
+            TemporalCursor::sequence(1).expect("sequence cursor should be valid"),
+        )
+        .with_dimensions(DimensionSelection::only(["decision"]));
+
+        let result =
+            TemporalMemoryTraversal::traverse(&bundle, &request).expect("forward should traverse");
+
+        assert!(result.entries().is_empty());
+        assert!(result.missing_dimensions().is_empty());
+        assert!(result.missing().is_empty());
+    }
+
+    fn temporal_bundle(entries: &[(&str, &str, &str, u32)]) -> RehydrationBundle {
+        let mut nodes = BTreeMap::new();
+        for (ref_id, _, scope_id, _) in entries {
+            nodes.insert(
+                (*scope_id).to_string(),
+                node(scope_id, "memory_dimension", scope_id),
+            );
+            nodes.insert((*ref_id).to_string(), node(ref_id, "claim", ref_id));
+        }
+
+        RehydrationBundle::new(
+            CaseId::new("question:a").expect("case id should be valid"),
+            Role::new("temporal-reader").expect("role should be valid"),
+            node("question:a", "question", "Question A"),
+            nodes.into_values().collect(),
+            entries
+                .iter()
+                .map(|(ref_id, dimension, scope_id, sequence)| {
+                    BundleRelationship::new(
+                        *scope_id,
+                        *ref_id,
+                        "contains_entry",
+                        RelationExplanation::new(RelationSemanticClass::Structural)
+                            .with_dimension(*dimension)
+                            .with_scope_id(*scope_id)
+                            .with_sequence(*sequence),
+                    )
+                })
+                .collect(),
+            Vec::new(),
+            BundleMetadata::initial("test"),
+        )
+        .expect("test bundle should be valid")
+    }
+
+    fn node(node_id: &str, kind: &str, title: &str) -> BundleNode {
+        BundleNode::new(
+            node_id,
+            kind,
+            title,
+            title,
+            "ACTIVE",
+            Vec::new(),
+            BTreeMap::new(),
+        )
+    }
 }

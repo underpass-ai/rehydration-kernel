@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use rehydration_domain::{
@@ -431,6 +431,7 @@ fn filter_bundle_by_memory_dimensions(
 ) -> Result<RehydrationBundle, ApplicationError> {
     let mut included_node_ids = BTreeSet::from([bundle.root_node().node_id().to_string()]);
     let mut selected_entry_ids = BTreeSet::new();
+    let node_kinds = bundle_node_kinds(bundle);
 
     for relationship in bundle
         .relationships()
@@ -451,6 +452,9 @@ fn filter_bundle_by_memory_dimensions(
     for relationship in bundle.relationships().iter().filter(|relationship| {
         relationship.relationship_type() == "supports"
             && selected_entry_ids.contains(relationship.target_node_id())
+            && node_kinds
+                .get(relationship.source_node_id())
+                .is_some_and(|kind| *kind == "memory_evidence")
     }) {
         included_node_ids.insert(relationship.source_node_id().to_string());
     }
@@ -494,6 +498,15 @@ fn filter_bundle_by_memory_dimensions(
         bundle.metadata().clone(),
     )
     .map_err(Into::into)
+}
+
+fn bundle_node_kinds(bundle: &RehydrationBundle) -> BTreeMap<&str, &str> {
+    let mut node_kinds =
+        BTreeMap::from([(bundle.root_node().node_id(), bundle.root_node().node_kind())]);
+    for node in bundle.neighbor_nodes() {
+        node_kinds.insert(node.node_id(), node.node_kind());
+    }
+    node_kinds
 }
 
 fn existing_refs_from_bundle(bundle: &RehydrationBundle) -> ExistingMemoryRefs {
@@ -723,6 +736,48 @@ mod tests {
     }
 
     #[test]
+    fn bundle_filter_only_pulls_support_sources_when_source_is_memory_evidence() {
+        let bundle = scoped_conversation_bundle_with_supports();
+        let selection = DimensionSelection::only(["conversation"])
+            .resolve_current_about("question:a")
+            .with_scope_ids(["conversation:alpha"]);
+
+        let filtered =
+            filter_bundle_by_memory_dimensions(&bundle, &selection).expect("bundle should filter");
+        let node_ids = filtered
+            .neighbor_nodes()
+            .iter()
+            .map(|node| node.node_id())
+            .collect::<Vec<_>>();
+        let relationships = filtered
+            .relationships()
+            .iter()
+            .map(|relationship| {
+                (
+                    relationship.source_node_id(),
+                    relationship.target_node_id(),
+                    relationship.relationship_type(),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        assert!(node_ids.contains(&"claim:alpha"));
+        assert!(node_ids.contains(&"evidence:alpha"));
+        assert!(!node_ids.contains(&"claim:beta"));
+        assert_eq!(
+            relationships,
+            vec![
+                (
+                    "about:question:a:dimension:conversation:alpha",
+                    "claim:alpha",
+                    "contains_entry"
+                ),
+                ("evidence:alpha", "claim:alpha", "supports")
+            ]
+        );
+    }
+
+    #[test]
     fn normalize_about_roots_trims_sorts_and_deduplicates() {
         assert_eq!(
             normalize_about_roots(vec![
@@ -792,6 +847,46 @@ mod tests {
         .expect("test bundle should be valid")
     }
 
+    fn scoped_conversation_bundle_with_supports() -> RehydrationBundle {
+        RehydrationBundle::new(
+            CaseId::new("question:a").expect("case id should be valid"),
+            Role::new("temporal-reader").expect("role should be valid"),
+            BundleNode::new(
+                "question:a",
+                "question",
+                "Question A",
+                "Test question",
+                "ACTIVE",
+                Vec::new(),
+                BTreeMap::new(),
+            ),
+            vec![
+                memory_dimension_node("about:question:a:dimension:conversation:alpha"),
+                memory_dimension_node("about:question:a:dimension:conversation:beta"),
+                claim_node("claim:alpha"),
+                claim_node("claim:beta"),
+                evidence_node("evidence:alpha"),
+            ],
+            vec![
+                contains_entry(
+                    "about:question:a:dimension:conversation:alpha",
+                    "claim:alpha",
+                    1,
+                ),
+                contains_entry(
+                    "about:question:a:dimension:conversation:beta",
+                    "claim:beta",
+                    2,
+                ),
+                supports("claim:beta", "claim:alpha"),
+                supports("evidence:alpha", "claim:alpha"),
+            ],
+            Vec::new(),
+            BundleMetadata::initial("test"),
+        )
+        .expect("test bundle should be valid")
+    }
+
     fn memory_dimension_node(node_id: &str) -> BundleNode {
         BundleNode::new(
             node_id,
@@ -810,6 +905,18 @@ mod tests {
             "claim",
             node_id,
             "Claim",
+            "ACTIVE",
+            Vec::new(),
+            BTreeMap::new(),
+        )
+    }
+
+    fn evidence_node(node_id: &str) -> BundleNode {
+        BundleNode::new(
+            node_id,
+            "memory_evidence",
+            node_id,
+            "Evidence",
             "ACTIVE",
             Vec::new(),
             BTreeMap::new(),
@@ -835,6 +942,17 @@ mod tests {
             "contextual_constraint",
             RelationExplanation::new(RelationSemanticClass::Constraint)
                 .with_rationale("Off-scope relation must not leak through exact scope filtering.")
+                .with_confidence("medium"),
+        )
+    }
+
+    fn supports(source_node_id: &str, target_node_id: &str) -> BundleRelationship {
+        BundleRelationship::new(
+            source_node_id,
+            target_node_id,
+            "supports",
+            RelationExplanation::new(RelationSemanticClass::Evidential)
+                .with_rationale("Support relation for scoped filtering.")
                 .with_confidence("medium"),
         )
     }

@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use rehydration_application::RenderedContext;
 use rehydration_domain::{RehydrationBundle, TemporalCoordinate};
@@ -61,10 +61,14 @@ pub(super) fn temporal_evidence_from_bundle(
     bundle: &RehydrationBundle,
     selected_refs: &BTreeSet<String>,
 ) -> Vec<MemoryEvidence> {
+    let node_kinds = bundle_node_kinds(bundle);
     let mut evidence_refs = selected_refs.clone();
     for relationship in bundle.relationships().iter().filter(|relationship| {
         relationship.relationship_type() == "supports"
             && selected_refs.contains(relationship.target_node_id())
+            && node_kinds
+                .get(relationship.source_node_id())
+                .is_some_and(|kind| *kind == "memory_evidence")
     }) {
         evidence_refs.insert(relationship.source_node_id().to_string());
     }
@@ -82,6 +86,15 @@ pub(super) fn temporal_evidence_from_bundle(
             metadata: Default::default(),
         })
         .collect()
+}
+
+fn bundle_node_kinds(bundle: &RehydrationBundle) -> BTreeMap<&str, &str> {
+    let mut node_kinds =
+        BTreeMap::from([(bundle.root_node().node_id(), bundle.root_node().node_kind())]);
+    for node in bundle.neighbor_nodes() {
+        node_kinds.insert(node.node_id(), node.node_kind());
+    }
+    node_kinds
 }
 
 pub(super) fn proof(
@@ -144,5 +157,79 @@ pub(super) fn proto_coordinate_from_domain(
         sequence: coordinate.sequence(),
         rank: coordinate.rank(),
         metadata: Default::default(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::{BTreeMap, BTreeSet};
+
+    use rehydration_domain::{
+        BundleMetadata, BundleNode, BundleNodeDetail, BundleRelationship, CaseId,
+        RelationExplanation, RelationSemanticClass, Role,
+    };
+
+    use super::*;
+
+    #[test]
+    fn temporal_evidence_only_expands_memory_evidence_support_sources() {
+        let bundle = RehydrationBundle::new(
+            CaseId::new("question:a").expect("case id should be valid"),
+            Role::new("temporal-reader").expect("role should be valid"),
+            node("question:a", "question"),
+            vec![
+                node("claim:selected", "claim"),
+                node("claim:offscope", "claim"),
+                node("evidence:selected", "memory_evidence"),
+            ],
+            vec![
+                supports("claim:offscope", "claim:selected"),
+                supports("evidence:selected", "claim:selected"),
+            ],
+            vec![
+                BundleNodeDetail::new("claim:selected", "Selected detail", "hash-1", 1),
+                BundleNodeDetail::new("claim:offscope", "Offscope detail", "hash-2", 1),
+                BundleNodeDetail::new("evidence:selected", "Evidence detail", "hash-3", 1),
+            ],
+            BundleMetadata::initial("test"),
+        )
+        .expect("test bundle should be valid");
+        let selected_refs = BTreeSet::from(["claim:selected".to_string()]);
+
+        let evidence = temporal_evidence_from_bundle(&bundle, &selected_refs)
+            .into_iter()
+            .map(|evidence| evidence.id)
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            evidence,
+            vec![
+                "detail:claim:selected".to_string(),
+                "detail:evidence:selected".to_string()
+            ]
+        );
+    }
+
+    fn node(node_id: &str, kind: &str) -> BundleNode {
+        BundleNode::new(
+            node_id,
+            kind,
+            node_id,
+            node_id,
+            "ACTIVE",
+            Vec::new(),
+            BTreeMap::new(),
+        )
+    }
+
+    fn supports(source_node_id: &str, target_node_id: &str) -> BundleRelationship {
+        BundleRelationship::new(
+            source_node_id,
+            target_node_id,
+            "supports",
+            RelationExplanation::new(RelationSemanticClass::Evidential)
+                .with_rationale("Support relation for scoped temporal evidence.")
+                .with_confidence("medium"),
+        )
     }
 }
