@@ -53,7 +53,7 @@ kernel services.
 |-----|--------|-------|
 | `Ingest` | Production-ready | Validates dimensions, entries, coordinates, relations, evidence, idempotency, provenance, and positive temporal coordinates. `about` namespaces submitted dimensions internally as `about:<about>:dimension:<dimension_id>`. Relation/evidence refs may be submitted in the request or already materialized in the read model. |
 | `Wake` | Production-ready | Reads live context through the application query port. Honors budget detail, dimension selection, and dimension about scope. |
-| `Ask` | Production-ready for deterministic memory answers | Honors answer policy, budget detail, dimension selection, and dimension about scope. Does not generate novel answers; `evidence_or_unknown` returns `UNKNOWN` when no evidence is available. |
+| `Ask` | Production-ready for deterministic memory answers | Honors answer policy, budget detail, dimension selection, and dimension about scope. Does not generate novel answers; `answer` is derived from selected evidence reasons, not from an anchor summary. `evidence_or_unknown` returns `UNKNOWN` when no evidence is available. |
 | `Goto` | Production-ready | Domain-owned temporal traversal over `contains_entry` coordinates. Honors dimensions, window, entry limit, token limit, and include flags. |
 | `Near` | Production-ready | Domain-owned temporal neighborhood traversal. |
 | `Rewind` | Production-ready | Domain-owned backward traversal. |
@@ -63,7 +63,8 @@ kernel services.
 
 Dimension selection scope defaults to `CURRENT_ABOUT`. `ABOUTS` is valid only
 with a non-empty `abouts` list. `ALL_ABOUTS` uses the kernel memory about index
-to traverse every memory anchor.
+to traverse every memory anchor. Temporal coverage preserves the requested
+scope for audit instead of normalizing `CURRENT_ABOUT` to an `ABOUTS` list.
 
 ## Async Contract (NATS JetStream)
 
@@ -144,7 +145,7 @@ metrics. `RehydrateSession` renders per-role bundles and emits quality via the o
 - **No authorization backend (deliberate)** — `ValidateScope` is a pure set-comparison utility, not an access control gate. `GetContext` does not invoke scope validation. This is a conscious design decision for v1beta1: the kernel delegates access control to the transport layer (mTLS client certificates) and the integrating product. Scope enforcement is not planned for the kernel itself — consumers are expected to validate scopes at their own boundary
 - **No timeline filtering** — `RehydrateSession` echoes `timeline_window` but does not filter events by time range
 - **`context.bundle.generated` not emitted** — defined in AsyncAPI contract but the kernel runtime does not publish this event. Test fixtures simulate it for downstream integration tests
-- **No generated `Ask` answers** — `KernelMemoryService.Ask` returns deterministic rendered memory context or `UNKNOWN` according to the answer policy.
+- **No generated `Ask` answers** — `KernelMemoryService.Ask` returns deterministic evidence-derived answer text or `UNKNOWN` according to the answer policy.
 - **No inspect raw expansion yet** — `KernelMemoryService.Inspect` supports explicit incoming/outgoing links through the typed node relationship reader. `raw=true` still fails fast until raw inspection has a typed response contract.
 - **Single token estimator** — `cl100k_base` BPE via `tiktoken-rs` for all counting. No model-specific estimator selection
 - **Idempotency outcome** — outcome publish is fire-and-forget. If it fails, retries are treated as new requests
@@ -153,6 +154,8 @@ metrics. `RehydrateSession` renders per-role bundles and emits quality via the o
 
 - MCP live adapter is a thin `KernelMemoryService` client for KMP tools. It has
   no compatibility fallback to `ContextQueryService` or `ContextCommandService`.
+- `KernelMemoryService` emits structured request/response logs for all nine
+  KMP RPCs, including dimension mode/scope/abouts/scope IDs where applicable.
 - **Event store atomic CAS** — NATS uses `expected_last_subject_sequence` header; Valkey uses a Lua EVAL script. Both reject concurrent writes with `PortError::Conflict`. Validated with container integration tests.
 - **Async quality observer** — `CompositeQualityObserver` spawns observer calls via `tokio::spawn` (fire-and-forget). Observer I/O no longer blocks the gRPC handler hot path.
 - **TruncationMetadata in proto** — `RenderedContext.truncation` (field 8) carries budget_requested, budget_used, sections_kept, sections_dropped, token_estimator when a budget is applied.

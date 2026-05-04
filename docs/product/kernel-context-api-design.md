@@ -1,7 +1,8 @@
 # Kernel Memory Protocol API Design
 
 Date: 2026-04-30
-Status: Draft contract for the Kernel 1.0 public memory slice
+Status: implemented typed gRPC/MCP live cut for the core synchronous KMP moves;
+NATS KMP ingest remains design guidance.
 
 ## Product Stance
 
@@ -95,8 +96,9 @@ traversable.
 `wake` is not "get context". It returns the minimal state needed to resume
 agency.
 
-`ask` is not search. It requires an answer policy: evidence-backed answer,
-conflict, or unknown.
+`ask` is not search. It requires an answer policy: deterministic evidence text,
+conflict, or unknown. It does not run a generative answer engine in the current
+typed gRPC/MCP cut.
 
 `goto`, `near`, `rewind`, and `forward` are not time filters. They move through
 memory over a dimension selection: one dimension, a set of dimensions, or every
@@ -444,7 +446,7 @@ MCP response:
       "relations": 1,
       "evidence": 1
     },
-    "read_after_write_ready": false
+    "read_after_write_ready": true
   },
   "warnings": []
 }
@@ -453,7 +455,10 @@ MCP response:
 Rules:
 
 - `idempotency_key` is required for non-dry-run requests.
-- Acceptance is not read-model completion.
+- Synchronous gRPC/MCP live ingest reports `read_after_write_ready=true` only
+  after the memory projection mutation path completes.
+- Fixture, dry-run, and asynchronous examples may report
+  `read_after_write_ready=false`.
 - The same memory replay with the same idempotency key returns the same
   acceptance.
 - The same idempotency key with different memory is rejected.

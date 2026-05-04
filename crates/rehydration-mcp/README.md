@@ -1,6 +1,6 @@
 # Rehydration MCP
 
-Draft stdio MCP adapter for Kernel Memory Protocol (KMP).
+Installable stdio MCP adapter for Kernel Memory Protocol (KMP).
 
 Current status:
 
@@ -11,8 +11,12 @@ Current status:
   `api/examples/kernel/v1beta1/kmp`;
 - can use the live gRPC kernel when `REHYDRATION_KERNEL_GRPC_ENDPOINT` is set;
 - live mode calls the typed `KernelMemoryService` gRPC API directly;
-- live `kernel_ask` returns deterministic memory context or `UNKNOWN`, not a
-  generated answer.
+- live `kernel_ask` returns a deterministic evidence-derived answer or
+  `UNKNOWN`, not a generated answer;
+- dimension scope defaults to `current_about`; `abouts` requires a non-empty
+  about list; `all_abouts` is explicit and uses the kernel memory about index;
+- `kernel_inspect` supports typed detail/link lookup; `include.raw=true` fails
+  fast until a typed raw response shape exists.
 
 Run locally:
 

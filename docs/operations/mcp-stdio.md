@@ -110,9 +110,22 @@ Live mapping:
 | `kernel_trace` | `KernelMemoryService.Trace` |
 | `kernel_inspect` | `KernelMemoryService.Inspect` |
 
-In live mode, `kernel_ask` returns deterministic memory context or `UNKNOWN`;
-it does not generate a final answer. The temporal tools return deterministic
-traversal slices from kernel-owned temporal traversal.
+In live mode, `kernel_ask` returns a deterministic evidence-derived answer or
+`UNKNOWN`; it does not generate a final LLM answer. The temporal tools return
+deterministic traversal slices from kernel-owned temporal traversal.
+
+Dimension scope is explicit and auditable:
+
+- omitted scope defaults to `current_about`;
+- `abouts` requires a non-empty `abouts` list and fails fast otherwise;
+- `all_abouts` intentionally traverses every memory anchor from the kernel
+  memory about index;
+- `scope_ids` can use local dimension ids or fully namespaced
+  `about:<about>:dimension:<dimension_id>` ids.
+
+`kernel_inspect` supports typed object/detail/incoming/outgoing/evidence lookup.
+`include.raw=true` fails fast until the gRPC response shape has a typed raw
+payload.
 
 ## Smoke Test
 

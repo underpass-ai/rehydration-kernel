@@ -91,7 +91,8 @@ the existing v1beta1 services.
 - No silent compatibility fallback: once MCP live mode moves to
   `KernelMemoryService`, it must fail clearly if the service is unavailable.
 - `Ask` must not invent a generated answer. Until a real answer engine exists,
-  it returns deterministic rendered memory context plus evidence/proof.
+  it returns a deterministic evidence-derived answer, or `UNKNOWN`, plus
+  evidence/proof.
 
 ## Proto Shape
 
@@ -253,8 +254,8 @@ Temporal traversal rules:
 `Ask` rules:
 
 - generated answers are not part of this slice;
-- `answer` is the deterministic rendered memory context returned by
-  `GetContext`;
+- `answer` is deterministic and derived from selected evidence reasons, not a
+  generated response and not the anchor summary;
 - `answer_policy=evidence_or_unknown` returns `UNKNOWN` when the selected
   context has no evidence;
 - `answer_policy=show_conflicts` keeps deterministic context and exposes
@@ -273,6 +274,26 @@ and returns KMP relationship proof.
 Incoming/outgoing expansion is backed by the typed node relationship reader and
 does not synthesize reverse links from an outgoing traversal. Raw expansion
 remains fail-fast until a typed raw response shape exists.
+
+## Observability
+
+Every `KernelMemoryService` method emits structured request and response logs at
+the gRPC boundary:
+
+- `Ingest` logs `about`, `dry_run`, submitted counts, accepted counts, and
+  `read_after_write_ready`;
+- `Wake` and `Ask` log `about`, dimension mode/scope, requested dimensions,
+  selected abouts, `scope_ids`, evidence/proof counts, answer presence, and
+  warnings;
+- `Goto`, `Near`, `Rewind`, and `Forward` log `about`, dimension mode/scope,
+  requested dimensions, selected abouts, `scope_ids`, entry counts, and
+  warnings;
+- `Trace` logs source/target refs and returned path size;
+- `Inspect` logs requested include flags and returned incoming/outgoing/evidence
+  counts.
+
+These logs make intentional cross-about traversal auditable: `CURRENT_ABOUT`,
+`ABOUTS`, and `ALL_ABOUTS` are emitted as distinct `dimension_scope` values.
 
 ## MCP Migration Cut
 
@@ -338,6 +359,16 @@ Current or follow-up integration tests:
 - forward or rewind proves temporal traversal from real `contains_entry`
   relations;
 - trace and inspect run against seeded kernel data.
+
+Live MCP/gRPC smoke now additionally verifies:
+
+- current-about selection stays visible as `coverage.requested.scope =
+  current_about`;
+- `ABOUTS` without a non-empty about list fails fast;
+- `ALL_ABOUTS` traverses through the kernel memory about index;
+- `Ask` returns deterministic evidence text instead of an anchor summary;
+- `Inspect` succeeds for typed detail/link lookup and fails fast for
+  `include.raw=true`.
 
 ## Deployment And Live Smoke
 

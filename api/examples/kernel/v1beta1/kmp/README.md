@@ -1,6 +1,7 @@
 # Kernel Memory Protocol Fixtures
 
-Status: draft contract fixtures for the Kernel 1.0 public memory slice.
+Status: executable contract fixtures for the Kernel Memory Protocol public
+memory slice.
 
 This folder defines the transport-neutral Kernel Memory Protocol (KMP) shape.
 MCP, gRPC, and NATS should carry these same memory moves instead of inventing
@@ -58,5 +59,10 @@ Current binding note:
 - `DimensionSelection.scope_ids` is an exact scope filter applied after
   `mode/include/exclude`. It accepts local dimension ids or fully namespaced
   ids shaped as `about:<about>:dimension:<dimension_id>`.
-- MCP live-mode migration to `KernelMemoryService` is intentionally a later
-  slice; these fixtures should not drive direct MCP-owned behavior.
+- MCP live mode is a thin `KernelMemoryService` client. It must not call
+  `ContextQueryService` or `ContextCommandService` directly for KMP moves.
+- `kernel_ask.answer` is deterministic evidence text, or `UNKNOWN`, not a
+  generated answer and not an anchor summary.
+- `kernel_inspect` supports typed object/detail/link/evidence lookup.
+  `include.raw=true` is intentionally fail-fast until a typed raw response
+  shape exists.
