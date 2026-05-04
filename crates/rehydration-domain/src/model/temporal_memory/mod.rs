@@ -19,6 +19,7 @@ pub struct TemporalTraversalRequest {
     direction: TemporalDirection,
     cursor: TemporalCursor,
     dimensions: DimensionSelection,
+    requested_dimensions: Option<DimensionSelection>,
     window: TemporalWindow,
     limit_entries: Option<usize>,
 }
@@ -29,6 +30,7 @@ impl TemporalTraversalRequest {
             direction,
             cursor,
             dimensions: DimensionSelection::all(),
+            requested_dimensions: None,
             window: TemporalWindow::default(),
             limit_entries: None,
         }
@@ -36,6 +38,11 @@ impl TemporalTraversalRequest {
 
     pub fn with_dimensions(mut self, dimensions: DimensionSelection) -> Self {
         self.dimensions = dimensions;
+        self
+    }
+
+    pub fn with_requested_dimensions(mut self, dimensions: DimensionSelection) -> Self {
+        self.requested_dimensions = Some(dimensions);
         self
     }
 
@@ -64,6 +71,12 @@ impl TemporalTraversalRequest {
 
     pub fn dimensions(&self) -> &DimensionSelection {
         &self.dimensions
+    }
+
+    pub fn requested_dimensions(&self) -> &DimensionSelection {
+        self.requested_dimensions
+            .as_ref()
+            .unwrap_or(&self.dimensions)
     }
 
     pub(super) fn window(&self) -> TemporalWindow {
@@ -191,7 +204,7 @@ impl TemporalMemoryTraversal {
         Ok(TemporalTraversalResult {
             direction: request.direction,
             resolved_cursor: cursor.coordinate,
-            requested_dimensions: request.dimensions.clone(),
+            requested_dimensions: request.requested_dimensions().clone(),
             included_dimensions,
             missing_dimensions,
             entries,

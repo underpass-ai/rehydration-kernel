@@ -1188,10 +1188,14 @@ async fn memory_service_temporal_methods_use_domain_traversal() {
         .expect("forward should respect dimension selection")
         .into_inner();
     assert_eq!(forward.entries[0].r#ref, "claim:rachel-austin");
+    let forward_coverage = forward.coverage.expect("coverage");
+    assert_eq!(forward_coverage.included, ["conversation"]);
+    let requested = forward_coverage.requested.expect("requested");
     assert_eq!(
-        forward.coverage.expect("coverage").included,
-        ["conversation"]
+        requested.scope,
+        ProtoDimensionScopeMode::CurrentAbout as i32
     );
+    assert!(requested.abouts.is_empty());
 
     let all_abouts_forward = service
         .forward(Request::new(temporal_move_request(

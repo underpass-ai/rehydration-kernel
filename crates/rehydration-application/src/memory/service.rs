@@ -143,6 +143,7 @@ where
 
         let request = TemporalTraversalRequest::new(query.direction, query.cursor)
             .with_dimensions(dimensions.clone())
+            .with_requested_dimensions(query.dimensions.clone())
             .with_window(query.window);
         let request = if let Some(limit_entries) = query.limit_entries {
             request.with_limit_entries(limit_entries)?

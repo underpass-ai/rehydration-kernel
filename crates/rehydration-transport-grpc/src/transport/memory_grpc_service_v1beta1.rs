@@ -2,8 +2,9 @@ use std::sync::Arc;
 
 use rehydration_application::KernelMemoryApplicationService;
 use rehydration_domain::{
-    ContextEventStore, GraphNeighborhoodReader, MemoryAboutIndexReader, NodeDetailReader,
-    NodeRelationshipReader, ProjectionWriter, SnapshotStore, TemporalDirection,
+    ContextEventStore, DimensionScopeMode, DimensionSelection, DimensionSelectionMode,
+    GraphNeighborhoodReader, MemoryAboutIndexReader, NodeDetailReader, NodeRelationshipReader,
+    ProjectionWriter, SnapshotStore, TemporalDirection,
 };
 use rehydration_proto::v1beta1::{
     AskRequest, AskResponse, IngestRequest, IngestResponse, InspectRequest, InspectResponse,
@@ -51,11 +52,29 @@ where
         request: Request<IngestRequest>,
     ) -> Result<Response<IngestResponse>, Status> {
         let command = ingest_command_from_proto(request.into_inner()).map_err(|status| *status)?;
+        tracing::info!(
+            rpc = "KernelMemoryService.Ingest",
+            about = %command.about,
+            dry_run = command.dry_run,
+            entries = command.memory.entries.len(),
+            relations = command.memory.relations.len(),
+            evidence = command.memory.evidence.len(),
+            "kernel memory grpc request"
+        );
         let outcome = self
             .application
             .ingest(command)
             .await
             .map_err(map_application_error)?;
+        tracing::info!(
+            rpc = "KernelMemoryService.Ingest",
+            about = %outcome.about,
+            accepted_entries = outcome.accepted.entries,
+            accepted_relations = outcome.accepted.relations,
+            accepted_evidence = outcome.accepted.evidence,
+            read_after_write_ready = outcome.read_after_write_ready,
+            "kernel memory grpc response"
+        );
 
         Ok(Response::new(ingest_response_from_outcome(outcome)))
     }
@@ -65,13 +84,26 @@ where
         let request = request.into_inner();
         let query = wake_query_from_proto(request.clone()).map_err(|status| *status)?;
         let intent = query.intent.clone();
+        log_dimensioned_request("KernelMemoryService.Wake", &query.about, &query.dimensions);
         let result = self
             .application
             .wake(query)
             .await
             .map_err(map_application_error)?;
+        let response = wake_response_from_result(&intent, result);
+        let proof_paths = response
+            .proof
+            .as_ref()
+            .map(|proof| proof.path.len())
+            .unwrap_or_default();
+        tracing::info!(
+            rpc = "KernelMemoryService.Wake",
+            proof_paths,
+            warnings = response.warnings.len(),
+            "kernel memory grpc response"
+        );
 
-        Ok(Response::new(wake_response_from_result(&intent, result)))
+        Ok(Response::new(response))
     }
 
     #[tracing::instrument(skip(self, request), fields(rpc = "KernelMemory.Ask"))]
@@ -80,17 +112,22 @@ where
         let question = request.question.clone();
         let query = ask_query_from_proto(request).map_err(|status| *status)?;
         let answer_policy = query.answer_policy;
+        log_dimensioned_request("KernelMemoryService.Ask", &query.about, &query.dimensions);
         let result = self
             .application
             .ask(query)
             .await
             .map_err(map_application_error)?;
+        let response = ask_response_from_result(&question, answer_policy, result);
+        tracing::info!(
+            rpc = "KernelMemoryService.Ask",
+            evidence = response.because.len(),
+            answer = %answer_presence_label(&response.answer),
+            warnings = response.warnings.len(),
+            "kernel memory grpc response"
+        );
 
-        Ok(Response::new(ask_response_from_result(
-            &question,
-            answer_policy,
-            result,
-        )))
+        Ok(Response::new(response))
     }
 
     #[tracing::instrument(skip(self, request), fields(rpc = "KernelMemory.Goto"))]
@@ -110,17 +147,22 @@ where
         let request = request.into_inner();
         let requested_cursor = request.around.clone().unwrap_or_default();
         let query = temporal_query_from_near_proto(request).map_err(|status| *status)?;
+        log_temporal_request("KernelMemoryService.Near", &query.about, &query.dimensions);
         let result = self
             .application
             .temporal(query)
             .await
             .map_err(map_application_error)?;
+        let response =
+            temporal_response_from_result(requested_cursor, TemporalDirection::Near, result);
+        tracing::info!(
+            rpc = "KernelMemoryService.Near",
+            entries = response.entries.len(),
+            warnings = response.warnings.len(),
+            "kernel memory grpc response"
+        );
 
-        Ok(Response::new(temporal_response_from_result(
-            requested_cursor,
-            TemporalDirection::Near,
-            result,
-        )))
+        Ok(Response::new(response))
     }
 
     #[tracing::instrument(skip(self, request), fields(rpc = "KernelMemory.Rewind"))]
@@ -146,14 +188,28 @@ where
         &self,
         request: Request<TraceRequest>,
     ) -> Result<Response<TraceResponse>, Status> {
-        let query = trace_query_from_proto(request.into_inner());
+        let request = request.into_inner();
+        tracing::info!(
+            rpc = "KernelMemoryService.Trace",
+            from = %request.from,
+            to = %request.to,
+            "kernel memory grpc request"
+        );
+        let query = trace_query_from_proto(request);
         let result = self
             .application
             .trace(query)
             .await
             .map_err(map_application_error)?;
+        let response = trace_response_from_result(result);
+        tracing::info!(
+            rpc = "KernelMemoryService.Trace",
+            path = response.trace.len(),
+            warnings = response.warnings.len(),
+            "kernel memory grpc response"
+        );
 
-        Ok(Response::new(trace_response_from_result(result)))
+        Ok(Response::new(response))
     }
 
     #[tracing::instrument(skip(self, request), fields(rpc = "KernelMemory.Inspect"))]
@@ -162,13 +218,38 @@ where
         request: Request<InspectRequest>,
     ) -> Result<Response<InspectResponse>, Status> {
         let query = inspect_query_from_proto(request.into_inner()).map_err(|status| *status)?;
+        tracing::info!(
+            rpc = "KernelMemoryService.Inspect",
+            ref_id = %query.ref_id,
+            include_details = query.include_details,
+            include_incoming = query.include_incoming,
+            include_outgoing = query.include_outgoing,
+            "kernel memory grpc request"
+        );
         let result = self
             .application
             .inspect(query)
             .await
             .map_err(map_application_error)?;
+        let response = inspect_response_from_result(result);
+        tracing::info!(
+            rpc = "KernelMemoryService.Inspect",
+            incoming = response
+                .links
+                .as_ref()
+                .map(|links| links.incoming.len())
+                .unwrap_or_default(),
+            outgoing = response
+                .links
+                .as_ref()
+                .map(|links| links.outgoing.len())
+                .unwrap_or_default(),
+            evidence = response.evidence.len(),
+            warnings = response.warnings.len(),
+            "kernel memory grpc response"
+        );
 
-        Ok(Response::new(inspect_response_from_result(result)))
+        Ok(Response::new(response))
     }
 }
 
@@ -192,16 +273,73 @@ where
     ) -> Result<Response<TemporalMoveResponse>, Status> {
         let requested_cursor = request.cursor.clone().unwrap_or_default();
         let query = temporal_query_from_move_proto(request, direction).map_err(|status| *status)?;
+        let rpc = temporal_rpc_label(direction);
+        log_temporal_request(rpc, &query.about, &query.dimensions);
         let result = self
             .application
             .temporal(query)
             .await
             .map_err(map_application_error)?;
+        let response = temporal_response_from_result(requested_cursor, direction, result);
+        tracing::info!(
+            rpc,
+            entries = response.entries.len(),
+            warnings = response.warnings.len(),
+            "kernel memory grpc response"
+        );
 
-        Ok(Response::new(temporal_response_from_result(
-            requested_cursor,
-            direction,
-            result,
-        )))
+        Ok(Response::new(response))
+    }
+}
+
+fn log_dimensioned_request(rpc: &'static str, about: &str, dimensions: &DimensionSelection) {
+    tracing::info!(
+        rpc,
+        about,
+        dimension_mode = %dimension_mode_label(dimensions.mode()),
+        dimension_scope = %dimension_scope_label(dimensions.scope_mode()),
+        dimensions = ?dimensions.dimensions().iter().cloned().collect::<Vec<_>>(),
+        abouts = ?dimensions.abouts().iter().cloned().collect::<Vec<_>>(),
+        scope_ids = ?dimensions.scope_ids().iter().cloned().collect::<Vec<_>>(),
+        "kernel memory grpc request"
+    );
+}
+
+fn log_temporal_request(rpc: &'static str, about: &str, dimensions: &DimensionSelection) {
+    log_dimensioned_request(rpc, about, dimensions);
+}
+
+fn temporal_rpc_label(direction: TemporalDirection) -> &'static str {
+    match direction {
+        TemporalDirection::Goto => "KernelMemoryService.Goto",
+        TemporalDirection::Near => "KernelMemoryService.Near",
+        TemporalDirection::Rewind => "KernelMemoryService.Rewind",
+        TemporalDirection::Forward => "KernelMemoryService.Forward",
+    }
+}
+
+fn dimension_mode_label(value: DimensionSelectionMode) -> &'static str {
+    match value {
+        DimensionSelectionMode::All => "all",
+        DimensionSelectionMode::Only => "only",
+        DimensionSelectionMode::Except => "except",
+    }
+}
+
+fn dimension_scope_label(value: DimensionScopeMode) -> &'static str {
+    match value {
+        DimensionScopeMode::CurrentAbout => "current_about",
+        DimensionScopeMode::Abouts => "abouts",
+        DimensionScopeMode::AllAbouts => "all_abouts",
+    }
+}
+
+fn answer_presence_label(answer: &str) -> &'static str {
+    if answer.trim().is_empty() {
+        "empty"
+    } else if answer == "UNKNOWN" {
+        "unknown"
+    } else {
+        "deterministic"
     }
 }
