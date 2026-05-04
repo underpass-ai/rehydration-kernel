@@ -331,6 +331,7 @@ enum DimensionScopeMode {
   DIMENSION_SCOPE_MODE_UNSPECIFIED = 0;
   DIMENSION_SCOPE_MODE_CURRENT_ABOUT = 1;
   DIMENSION_SCOPE_MODE_ABOUTS = 2;
+  // Reserved until the kernel exposes a global about index; requests fail fast.
   DIMENSION_SCOPE_MODE_ALL_ABOUTS = 3;
 }
 

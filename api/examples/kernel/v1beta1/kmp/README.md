@@ -53,6 +53,7 @@ Current binding note:
   ids in KMP map to internal kernel ids shaped as
   `about:<about>:dimension:<dimension_id>`.
 - gRPC `DimensionSelection` defaults to `CURRENT_ABOUT`. Cross-memory traversal
-  must use `ABOUTS` with an explicit non-empty about list or `ALL_ABOUTS`.
+  must use `ABOUTS` with an explicit non-empty about list. `ALL_ABOUTS` is
+  reserved and fails fast until the kernel has a global about index.
 - MCP live-mode migration to `KernelMemoryService` is intentionally a later
   slice; these fixtures should not drive direct MCP-owned behavior.

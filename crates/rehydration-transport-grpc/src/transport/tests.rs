@@ -1123,6 +1123,29 @@ async fn memory_service_temporal_requests_fail_fast_on_ambiguous_inputs() {
         .expect_err("ABOUTS scope without abouts should fail");
     assert_eq!(empty_about_scope.code(), tonic::Code::InvalidArgument);
 
+    let all_abouts_scope = service
+        .goto(Request::new(temporal_move_request(
+            Some(ProtoTemporalCursor {
+                sequence: Some(1),
+                ..Default::default()
+            }),
+            ProtoDimensionSelection {
+                mode: ProtoDimensionSelectionMode::Only as i32,
+                include: vec!["conversation".to_string()],
+                exclude: Vec::new(),
+                scope: ProtoDimensionScopeMode::AllAbouts as i32,
+                abouts: Vec::new(),
+            },
+        )))
+        .await
+        .expect_err("ALL_ABOUTS scope should fail until global about index support exists");
+    assert_eq!(all_abouts_scope.code(), tonic::Code::InvalidArgument);
+    assert!(
+        all_abouts_scope
+            .message()
+            .contains("requires global about index support")
+    );
+
     let zero_sequence_cursor = service
         .goto(Request::new(temporal_move_request(
             Some(ProtoTemporalCursor {

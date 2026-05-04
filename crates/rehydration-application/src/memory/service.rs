@@ -21,6 +21,9 @@ use crate::queries::{
     QueryApplicationService, render_graph_bundle_with_options,
 };
 
+const ALL_ABOUTS_UNSUPPORTED_MESSAGE: &str =
+    "dimension scope ALL_ABOUTS requires global about index support";
+
 pub struct KernelMemoryApplicationService<G, D, S, E, W> {
     query_application: Arc<QueryApplicationService<G, D, S>>,
     command_application: Arc<CommandApplicationService<E, W>>,
@@ -217,7 +220,8 @@ where
         dimensions: &DimensionSelection,
         render_options: &ContextRenderOptions,
     ) -> Result<GetContextResult, ApplicationError> {
-        let roots = context_roots(about, dimensions);
+        let roots = context_roots(about, dimensions)?;
+        let requested_scopes = requested_dimension_scopes(about, dimensions)?;
         let mut results = Vec::new();
         for root in &roots {
             results.push(
@@ -226,7 +230,7 @@ where
                         root_node_id: root.clone(),
                         role: role.to_string(),
                         depth,
-                        requested_scopes: requested_dimension_scopes(about, dimensions),
+                        requested_scopes: requested_scopes.clone(),
                         render_options: render_options.clone(),
                     })
                     .await?,
@@ -252,15 +256,18 @@ fn memory_render_options(
     }
 }
 
-fn requested_dimension_scopes(current_about: &str, selection: &DimensionSelection) -> Vec<String> {
+fn requested_dimension_scopes(
+    current_about: &str,
+    selection: &DimensionSelection,
+) -> Result<Vec<String>, ApplicationError> {
     match selection.mode() {
         DimensionSelectionMode::Only => match selection.scope_mode() {
-            DimensionScopeMode::CurrentAbout => selection
+            DimensionScopeMode::CurrentAbout => Ok(selection
                 .dimensions()
                 .iter()
                 .filter_map(|dimension| namespaced_dimension_id(current_about, dimension))
-                .collect(),
-            DimensionScopeMode::Abouts => selection
+                .collect()),
+            DimensionScopeMode::Abouts => Ok(selection
                 .abouts()
                 .iter()
                 .flat_map(|about| {
@@ -270,21 +277,31 @@ fn requested_dimension_scopes(current_about: &str, selection: &DimensionSelectio
                         .filter_map(|dimension| namespaced_dimension_id(about, dimension))
                         .collect::<Vec<_>>()
                 })
-                .collect(),
-            DimensionScopeMode::AllAbouts => Vec::new(),
+                .collect()),
+            DimensionScopeMode::AllAbouts => Err(unsupported_all_abouts()),
         },
-        DimensionSelectionMode::Except | DimensionSelectionMode::All => Vec::new(),
+        DimensionSelectionMode::Except | DimensionSelectionMode::All => {
+            if selection.scope_mode() == DimensionScopeMode::AllAbouts {
+                return Err(unsupported_all_abouts());
+            }
+            Ok(Vec::new())
+        }
     }
 }
 
-fn context_roots(current_about: &str, selection: &DimensionSelection) -> Vec<String> {
+fn context_roots(
+    current_about: &str,
+    selection: &DimensionSelection,
+) -> Result<Vec<String>, ApplicationError> {
     match selection.scope_mode() {
         DimensionScopeMode::Abouts if !selection.abouts().is_empty() => {
-            selection.abouts().iter().cloned().collect()
+            Ok(selection.abouts().iter().cloned().collect())
         }
-        DimensionScopeMode::CurrentAbout
-        | DimensionScopeMode::Abouts
-        | DimensionScopeMode::AllAbouts => vec![current_about.to_string()],
+        DimensionScopeMode::CurrentAbout => Ok(vec![current_about.to_string()]),
+        DimensionScopeMode::Abouts => Err(ApplicationError::Validation(
+            "dimension scope ABOUTS requires at least one about".to_string(),
+        )),
+        DimensionScopeMode::AllAbouts => Err(unsupported_all_abouts()),
     }
 }
 
@@ -293,15 +310,13 @@ fn apply_dimension_selection(
     dimensions: &DimensionSelection,
     render_options: &ContextRenderOptions,
 ) -> Result<GetContextResult, ApplicationError> {
-    if dimensions.mode() == DimensionSelectionMode::All
-        && dimensions.scope_mode() == DimensionScopeMode::AllAbouts
-    {
-        return Ok(result);
-    }
-
     result.bundle = filter_bundle_by_memory_dimensions(&result.bundle, dimensions)?;
     result.rendered = render_graph_bundle_with_options(&result.bundle, render_options);
     Ok(result)
+}
+
+fn unsupported_all_abouts() -> ApplicationError {
+    ApplicationError::Validation(ALL_ABOUTS_UNSUPPORTED_MESSAGE.to_string())
 }
 
 fn filter_bundle_by_memory_dimensions(
@@ -484,4 +499,35 @@ fn is_unknown_memory_ref_validation(error: &ApplicationError) -> bool {
         ApplicationError::Validation(message)
             if message.contains("unknown ref") || message.contains("unknown dimension scope")
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn all_abouts_scope_fails_until_global_about_index_exists() {
+        let selection = DimensionSelection::all().with_all_about_scope();
+        let error = context_roots("question:current", &selection)
+            .expect_err("ALL_ABOUTS must not fall back to current about");
+
+        assert!(matches!(
+            error,
+            ApplicationError::Validation(message)
+                if message == ALL_ABOUTS_UNSUPPORTED_MESSAGE
+        ));
+    }
+
+    #[test]
+    fn requested_scopes_fails_for_all_abouts_only_selection() {
+        let selection = DimensionSelection::only(["timeline"]).with_all_about_scope();
+        let error = requested_dimension_scopes("question:current", &selection)
+            .expect_err("ALL_ABOUTS requires an about index before selecting scopes");
+
+        assert!(matches!(
+            error,
+            ApplicationError::Validation(message)
+                if message == ALL_ABOUTS_UNSUPPORTED_MESSAGE
+        ));
+    }
 }
