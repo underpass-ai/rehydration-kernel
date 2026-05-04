@@ -6,16 +6,22 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 cd "${ROOT_DIR}"
 
+MCP_BIN="${REHYDRATION_MCP_BIN:-rehydration-mcp}"
+
 if [[ -n "${REHYDRATION_KERNEL_GRPC_ENDPOINT:-}" ]]; then
   REF="${KMP_MCP_SMOKE_REF:-node:mission:engine-core-failure}"
   REQUEST=$(printf '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"kernel_inspect","arguments":{"ref":"%s"}}}' "${REF}")
   EXPECTED='"isError":false'
 else
+  if [[ "${REHYDRATION_MCP_BACKEND:-}" != "fixture" ]]; then
+    echo "MCP smoke requires REHYDRATION_KERNEL_GRPC_ENDPOINT for live mode or REHYDRATION_MCP_BACKEND=fixture for fixture mode" >&2
+    exit 2
+  fi
   REQUEST='{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"kernel_ask","arguments":{"about":"question:830ce83f","question":"Where did Rachel move after her recent relocation?","answer_policy":"evidence_or_unknown"}}}'
   EXPECTED='"answer":"Austin"'
 fi
 
-RESPONSE="$(printf '%s\n' "${REQUEST}" | cargo run -q -p rehydration-mcp --locked)"
+RESPONSE="$(printf '%s\n' "${REQUEST}" | "${MCP_BIN}")"
 
 printf '%s\n' "${RESPONSE}"
 

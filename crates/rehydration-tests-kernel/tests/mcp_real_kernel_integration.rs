@@ -55,23 +55,46 @@ async fn mcp_tools_read_from_live_kernel_grpc_server() -> Result<(), Box<dyn Err
                     ],
                     "entries": [
                         {
-                            "id": "claim:mcp-ingest-smoke",
+                            "id": "claim:mcp-ingest-before",
+                            "kind": "claim",
+                            "text": "The MCP adapter should first prove memory can be submitted.",
+                            "coordinates": [
+                                {
+                                    "dimension": "conversation",
+                                    "scope_id": "conversation:mcp-ingest-smoke",
+                                    "sequence": 1,
+                                    "occurred_at": "2026-05-04T10:00:00Z"
+                                }
+                            ]
+                        },
+                        {
+                            "id": "claim:mcp-ingest-after",
                             "kind": "claim",
                             "text": "The MCP adapter can submit memory through the live kernel command service.",
                             "coordinates": [
                                 {
                                     "dimension": "conversation",
                                     "scope_id": "conversation:mcp-ingest-smoke",
-                                    "sequence": 1
+                                    "sequence": 2,
+                                    "occurred_at": "2026-05-04T10:05:00Z"
                                 }
                             ]
                         }
                     ],
-                    "relations": [],
+                    "relations": [
+                        {
+                            "from": "claim:mcp-ingest-after",
+                            "to": "claim:mcp-ingest-before",
+                            "rel": "supersedes",
+                            "class": "evidential",
+                            "why": "The later smoke claim proves the intended capability.",
+                            "confidence": "high"
+                        }
+                    ],
                     "evidence": [
                         {
                             "id": "evidence:mcp-ingest-smoke",
-                            "supports": ["claim:mcp-ingest-smoke"],
+                            "supports": ["claim:mcp-ingest-after"],
                             "text": "The live smoke accepted kernel_ingest over gRPC.",
                             "source": "mcp_real_kernel_integration"
                         }
@@ -95,7 +118,7 @@ async fn mcp_tools_read_from_live_kernel_grpc_server() -> Result<(), Box<dyn Err
         );
         assert_eq!(
             ingest_content.pointer("/memory/accepted/entries"),
-            Some(&Value::from(1))
+            Some(&Value::from(2))
         );
         assert_eq!(
             ingest_content.pointer("/memory/accepted/evidence"),
@@ -127,20 +150,52 @@ async fn mcp_tools_read_from_live_kernel_grpc_server() -> Result<(), Box<dyn Err
             ingested_wake_content,
             "/proof/path",
             "question:mcp-ingest-smoke",
-            "claim:mcp-ingest-smoke",
+            "claim:mcp-ingest-after",
             "records",
         );
         assert_array_contains_relation(
             ingested_wake_content,
             "/proof/path",
             "evidence:mcp-ingest-smoke",
-            "claim:mcp-ingest-smoke",
+            "claim:mcp-ingest-after",
             "supports",
         );
         assert_array_contains_evidence(
             ingested_wake_content,
             "/proof/evidence",
-            "claim:mcp-ingest-smoke",
+            "claim:mcp-ingest-after",
+        );
+
+        let temporal_forward = call_tool(
+            &server,
+            31,
+            "kernel_forward",
+            json!({
+                "about": "question:mcp-ingest-smoke",
+                "from": {
+                    "ref": "claim:mcp-ingest-before"
+                },
+                "dimensions": {
+                    "mode": "only",
+                    "include": ["conversation"]
+                },
+                "limit": {
+                    "entries": 5
+                },
+                "depth": 3
+            }),
+        )
+        .await;
+        assert_tool_success(&temporal_forward);
+        let temporal_forward_content = structured_content(&temporal_forward);
+        assert_eq!(
+            temporal_forward_content.pointer("/temporal/direction"),
+            Some(&Value::String("forward".to_string()))
+        );
+        assert_array_contains_entry(
+            temporal_forward_content,
+            "/entries",
+            "claim:mcp-ingest-after",
         );
 
         let wake = call_tool(
@@ -348,6 +403,15 @@ fn assert_array_contains_relation(value: &Value, pointer: &str, from: &str, to: 
                 && entry.get("rel").and_then(Value::as_str) == Some(rel)
         }),
         "{pointer} should contain relation {from} -[{rel}]-> {to}"
+    );
+}
+
+fn assert_array_contains_entry(value: &Value, pointer: &str, ref_id: &str) {
+    assert!(
+        array_at(value, pointer)
+            .iter()
+            .any(|entry| entry.get("ref").and_then(Value::as_str) == Some(ref_id)),
+        "{pointer} should contain entry {ref_id}"
     );
 }
 

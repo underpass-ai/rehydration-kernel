@@ -4,6 +4,6 @@ use crate::{NodeDetailProjection, NodeProjection, NodeRelationProjection};
 pub enum ProjectionMutation {
     EnsureNode(NodeProjection),
     UpsertNode(NodeProjection),
-    UpsertNodeRelation(NodeRelationProjection),
+    UpsertNodeRelation(Box<NodeRelationProjection>),
     UpsertNodeDetail(NodeDetailProjection),
 }

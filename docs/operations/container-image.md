@@ -100,6 +100,13 @@ echo "$(cat /tmp/github.txt)" | docker login ghcr.io -u USERNAME --password-stdi
 docker push ghcr.io/underpass-ai/rehydration-kernel:dev-$(git rev-parse --short HEAD)
 ```
 
+Podman equivalent:
+
+```bash
+podman login ghcr.io -u USERNAME --password-stdin < /tmp/github.txt
+podman push ghcr.io/underpass-ai/rehydration-kernel:dev-$(git rev-parse --short HEAD)
+```
+
 ## Deploy after push
 
 ```bash

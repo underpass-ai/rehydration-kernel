@@ -21,7 +21,7 @@ use crate::backend::{
 use crate::ingest::{build_ingest_plan, ingest_response};
 use crate::kmp::{
     ask_from_get_context, bundle_relationships, inspect_from_get_node_detail, live_warnings,
-    relationships_is_empty, rendered_summary, wake_from_get_context,
+    relationships_is_empty, rendered_summary, temporal_from_get_context, wake_from_get_context,
 };
 use crate::protocol::tool_success_result;
 
@@ -74,6 +74,10 @@ async fn grpc_tool_result(
         }
         "kernel_wake" => grpc_wake(endpoint, tls, arguments).await,
         "kernel_ask" => grpc_ask(endpoint, tls, arguments).await,
+        "kernel_goto" => grpc_temporal(endpoint, tls, "goto", arguments).await,
+        "kernel_near" => grpc_temporal(endpoint, tls, "near", arguments).await,
+        "kernel_rewind" => grpc_temporal(endpoint, tls, "rewind", arguments).await,
+        "kernel_forward" => grpc_temporal(endpoint, tls, "forward", arguments).await,
         "kernel_trace" => grpc_trace(endpoint, tls, arguments).await,
         "kernel_inspect" => grpc_inspect(endpoint, tls, arguments).await,
         other => Err(format!("unknown KMP tool `{other}`")),
@@ -193,6 +197,59 @@ async fn grpc_ask(
 
     Ok(tool_success_result(ask_from_get_context(
         &about, &question, &response,
+    )))
+}
+
+async fn grpc_temporal(
+    endpoint: &str,
+    tls: &KernelMcpGrpcTlsConfig,
+    direction: &str,
+    arguments: &Value,
+) -> Result<Value, String> {
+    validate_required_arguments(arguments, &["about"])?;
+    let cursor_key = match direction {
+        "goto" => "at",
+        "near" => "around",
+        "rewind" | "forward" => "from",
+        _ => return Err(format!("unknown temporal direction `{direction}`")),
+    };
+    if !arguments
+        .get(cursor_key)
+        .and_then(Value::as_object)
+        .is_some_and(|cursor| {
+            ["time", "sequence", "ref"]
+                .iter()
+                .any(|key| cursor.get(*key).is_some())
+        })
+    {
+        return Err(format!(
+            "missing required temporal cursor object `{cursor_key}` with one of `time`, `sequence`, or `ref`"
+        ));
+    }
+
+    let mut client = connect_query_client(endpoint, tls).await?;
+    let about = required_string(arguments, "about")?;
+    let token_budget = budget_tokens(arguments).unwrap_or(2400);
+    let depth = optional_u32(arguments, "depth").unwrap_or(3);
+
+    let response = client
+        .get_context(GetContextRequest {
+            root_node_id: about.clone(),
+            role: "temporal-reader".to_string(),
+            token_budget,
+            requested_scopes: Vec::new(),
+            depth,
+            max_tier: ResolutionTier::L2EvidencePack as i32,
+            rehydration_mode: RehydrationMode::ReasonPreserving as i32,
+        })
+        .await
+        .map_err(|status| {
+            format!("GetContext failed for temporal {direction} `{about}`: {status}")
+        })?
+        .into_inner();
+
+    Ok(tool_success_result(temporal_from_get_context(
+        direction, arguments, &response,
     )))
 }
 

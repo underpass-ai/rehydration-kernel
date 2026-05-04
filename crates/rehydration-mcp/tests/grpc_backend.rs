@@ -140,6 +140,46 @@ async fn grpc_backend_maps_live_query_service_responses_to_kmp_tools() {
 }
 
 #[tokio::test]
+async fn grpc_backend_maps_temporal_tools_from_live_context_relationships() {
+    let endpoint = spawn_fake_query_server().await;
+    let server = KernelMcpServer::grpc(endpoint);
+
+    let forward = call_tool(
+        &server,
+        7,
+        "kernel_forward",
+        json!({
+            "about": "question:temporal",
+            "from": {
+                "ref": "claim:rachel-denver"
+            },
+            "dimensions": {
+                "mode": "only",
+                "include": ["conversation"]
+            },
+            "limit": {
+                "entries": 5
+            }
+        }),
+    )
+    .await;
+
+    assert_eq!(forward["result"]["isError"], false);
+    assert_eq!(
+        forward["result"]["structuredContent"]["temporal"]["direction"],
+        "forward"
+    );
+    assert_eq!(
+        forward["result"]["structuredContent"]["entries"][0]["ref"],
+        "claim:rachel-austin"
+    );
+    assert_eq!(
+        forward["result"]["structuredContent"]["entries"][0]["coordinates"][0]["dimension"],
+        "conversation"
+    );
+}
+
+#[tokio::test]
 async fn grpc_backend_maps_kernel_ingest_to_update_context() {
     let recorded_commands = RecordedCommands::default();
     let endpoint = spawn_fake_kernel_server_with_commands(recorded_commands.clone()).await;
@@ -509,6 +549,10 @@ fn fake_bundle(
     depth: u32,
     token_budget: u32,
 ) -> RehydrationBundle {
+    if root_node_id == "question:temporal" {
+        return fake_temporal_bundle(root_node_id);
+    }
+
     RehydrationBundle {
         root_node_id: root_node_id.to_string(),
         bundles: vec![GraphRoleBundle {
@@ -524,6 +568,67 @@ fn fake_bundle(
                 content_hash: format!("sha256:{root_node_id}:{depth}:{token_budget}"),
                 revision: 7,
             }],
+            rendered: None,
+        }],
+        stats: None,
+        version: None,
+    }
+}
+
+fn fake_temporal_bundle(root_node_id: &str) -> RehydrationBundle {
+    let conversation = fake_memory_node(
+        "conversation:rachel-2026-04-12",
+        "memory_dimension",
+        "Rachel relocation discussion",
+    );
+    let denver = fake_memory_node(
+        "claim:rachel-denver",
+        "claim",
+        "Rachel said she was moving to Denver.",
+    );
+    let austin = fake_memory_node(
+        "claim:rachel-austin",
+        "claim",
+        "Rachel later corrected the destination to Austin.",
+    );
+
+    RehydrationBundle {
+        root_node_id: root_node_id.to_string(),
+        bundles: vec![GraphRoleBundle {
+            role: "temporal-reader".to_string(),
+            root_node: Some(fake_node(root_node_id)),
+            neighbor_nodes: vec![conversation, denver, austin],
+            relationships: vec![
+                fake_memory_relationship(
+                    root_node_id,
+                    "conversation:rachel-2026-04-12",
+                    "has_dimension",
+                    None,
+                    None,
+                ),
+                fake_memory_relationship(
+                    "conversation:rachel-2026-04-12",
+                    "claim:rachel-denver",
+                    "contains_entry",
+                    Some(1),
+                    Some("2026-04-12T15:00:00Z"),
+                ),
+                fake_memory_relationship(
+                    "conversation:rachel-2026-04-12",
+                    "claim:rachel-austin",
+                    "contains_entry",
+                    Some(2),
+                    Some("2026-04-12T15:05:00Z"),
+                ),
+                fake_memory_relationship(
+                    "claim:rachel-austin",
+                    "claim:rachel-denver",
+                    "supersedes",
+                    None,
+                    None,
+                ),
+            ],
+            node_details: Vec::new(),
             rendered: None,
         }],
         stats: None,
@@ -594,6 +699,19 @@ fn fake_node(node_id: &str) -> GraphNode {
     }
 }
 
+fn fake_memory_node(node_id: &str, node_kind: &str, summary: &str) -> GraphNode {
+    GraphNode {
+        node_id: node_id.to_string(),
+        node_kind: node_kind.to_string(),
+        title: summary.to_string(),
+        summary: summary.to_string(),
+        status: "active".to_string(),
+        labels: vec!["memory".to_string()],
+        properties: HashMap::new(),
+        provenance: None,
+    }
+}
+
 fn fake_relationship(source_node_id: &str, target_node_id: &str) -> GraphRelationship {
     GraphRelationship {
         source_node_id: source_node_id.to_string(),
@@ -609,6 +727,56 @@ fn fake_relationship(source_node_id: &str, target_node_id: &str) -> GraphRelatio
             evidence: format!("Evidence connects {source_node_id} to {target_node_id}."),
             confidence: "high".to_string(),
             sequence: 1,
+            dimension: String::new(),
+            scope_id: String::new(),
+            occurred_at: String::new(),
+            observed_at: String::new(),
+            ingested_at: String::new(),
+            valid_from: String::new(),
+            valid_until: String::new(),
+            rank: 0,
+        }),
+        provenance: None,
+    }
+}
+
+fn fake_memory_relationship(
+    source_node_id: &str,
+    target_node_id: &str,
+    relationship_type: &str,
+    sequence: Option<u32>,
+    occurred_at: Option<&str>,
+) -> GraphRelationship {
+    GraphRelationship {
+        source_node_id: source_node_id.to_string(),
+        target_node_id: target_node_id.to_string(),
+        relationship_type: relationship_type.to_string(),
+        explanation: Some(GraphRelationshipExplanation {
+            semantic_class: GraphRelationshipSemanticClass::Structural as i32,
+            rationale: "Memory traversal edge.".to_string(),
+            motivation: String::new(),
+            method: String::new(),
+            decision_id: String::new(),
+            caused_by_node_id: String::new(),
+            evidence: String::new(),
+            confidence: String::new(),
+            sequence: sequence.unwrap_or_default(),
+            dimension: if relationship_type == "contains_entry" {
+                "conversation".to_string()
+            } else {
+                String::new()
+            },
+            scope_id: if relationship_type == "contains_entry" {
+                source_node_id.to_string()
+            } else {
+                String::new()
+            },
+            occurred_at: occurred_at.unwrap_or_default().to_string(),
+            observed_at: String::new(),
+            ingested_at: String::new(),
+            valid_from: String::new(),
+            valid_until: String::new(),
+            rank: 0,
         }),
         provenance: None,
     }

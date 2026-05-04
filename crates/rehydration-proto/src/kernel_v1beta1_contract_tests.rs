@@ -61,6 +61,14 @@ fn v1beta1_graph_relationship_fields_are_stable() {
             "evidence",
             "confidence",
             "sequence",
+            "dimension",
+            "scope_id",
+            "occurred_at",
+            "observed_at",
+            "ingested_at",
+            "valid_from",
+            "valid_until",
+            "rank",
         ]
     );
 }

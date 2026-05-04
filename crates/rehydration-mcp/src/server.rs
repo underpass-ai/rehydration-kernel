@@ -4,6 +4,7 @@ use serde_json::Value;
 
 use crate::backend::{
     GRPC_ENDPOINT_ENV, KernelMcpGrpcTlsConfig, KernelMcpToolBackend, KernelMcpToolFuture,
+    MCP_BACKEND_ENV,
 };
 use crate::fixture::FixtureKernelMcpBackend;
 use crate::grpc::GrpcKernelMcpBackend;
@@ -45,9 +46,32 @@ impl KernelMcpServer {
     }
 
     pub fn from_env() -> Self {
+        Self::try_from_env().expect("valid MCP backend configuration")
+    }
+
+    pub fn try_from_env() -> Result<Self, String> {
+        let backend = std::env::var(MCP_BACKEND_ENV)
+            .ok()
+            .map(|value| value.trim().to_ascii_lowercase())
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| "grpc".to_string());
         let endpoint = std::env::var(GRPC_ENDPOINT_ENV).ok();
         let tls = KernelMcpGrpcTlsConfig::from_env_for_endpoint(endpoint.as_deref());
-        Self::from_optional_endpoint_and_tls(endpoint, tls)
+
+        match backend.as_str() {
+            "grpc" | "live" => {
+                let Some(endpoint) = endpoint.filter(|endpoint| !endpoint.trim().is_empty()) else {
+                    return Err(format!(
+                        "{GRPC_ENDPOINT_ENV} is required when {MCP_BACKEND_ENV}=grpc"
+                    ));
+                };
+                Ok(Self::grpc_with_tls(endpoint, tls))
+            }
+            "fixture" | "fixtures" => Ok(Self::fixture()),
+            other => Err(format!(
+                "unsupported {MCP_BACKEND_ENV} value `{other}`; use `grpc` or `fixture`"
+            )),
+        }
     }
 
     pub fn from_optional_endpoint(endpoint: Option<String>) -> Self {

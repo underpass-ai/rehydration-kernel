@@ -98,6 +98,37 @@ cargo test -p rehydration-tests-paper --features container-tests \
   --test vllm_benchmark_integration -- --nocapture --test-threads=1
 ```
 
+For an already configured live release, prefer preserving live values instead
+of reapplying the default values file. This avoids accidentally dropping mTLS,
+Ingress, `imagePullSecrets`, or cluster-specific secrets:
+
+```bash
+helm upgrade --install rehydration-kernel charts/rehydration-kernel \
+  -n underpass-runtime \
+  --reuse-values \
+  --set image.tag=dev-$(git rev-parse --short HEAD) \
+  --set image.digest= \
+  --wait \
+  --timeout 10m
+```
+
+To force a restart with the same image tag, add a simple pod annotation:
+
+```bash
+helm upgrade --install rehydration-kernel charts/rehydration-kernel \
+  -n underpass-runtime \
+  --reuse-values \
+  --set image.tag=dev-$(git rev-parse --short HEAD) \
+  --set image.digest= \
+  --set-json 'podAnnotations={"redeployAt":"<timestamp>"}' \
+  --wait \
+  --timeout 10m
+```
+
+Use a plain annotation key for `podAnnotations` unless you are deliberately
+escaping dotted annotation names for Helm. Mis-escaped dotted keys can render a
+nested object where Kubernetes expects string annotations.
+
 ## Smoke Validation
 
 After deploying transport-security changes, use the dedicated smoke script:

@@ -1,12 +1,21 @@
 use rehydration_mcp::{
     GRPC_ENDPOINT_ENV, GRPC_TLS_CA_PATH_ENV, GRPC_TLS_CERT_PATH_ENV, GRPC_TLS_DOMAIN_NAME_ENV,
-    GRPC_TLS_KEY_PATH_ENV, GRPC_TLS_MODE_ENV, KernelMcpServer,
+    GRPC_TLS_KEY_PATH_ENV, GRPC_TLS_MODE_ENV, KernelMcpServer, MCP_BACKEND_ENV,
 };
 use std::io::{self, BufRead, Write};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let server = KernelMcpServer::from_env();
+    let server = match KernelMcpServer::try_from_env() {
+        Ok(server) => server,
+        Err(message) => {
+            eprintln!("rehydration-mcp: {message}");
+            eprintln!(
+                "rehydration-mcp: set {GRPC_ENDPOINT_ENV} for live gRPC, or set {MCP_BACKEND_ENV}=fixture explicitly for fixture mode"
+            );
+            std::process::exit(2);
+        }
+    };
     let stdin = io::stdin();
     let mut stdout = io::stdout();
 
@@ -21,7 +30,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
         }
     } else {
-        eprintln!("rehydration-mcp: using fixture backend; set {GRPC_ENDPOINT_ENV} for live reads");
+        eprintln!("rehydration-mcp: using explicit fixture backend");
     }
 
     for line in stdin.lock().lines() {

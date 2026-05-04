@@ -102,6 +102,14 @@ fn proto_graph_relationship_explanation_v1beta1(
         evidence: explanation.evidence().unwrap_or_default().to_string(),
         confidence: explanation.confidence().unwrap_or_default().to_string(),
         sequence: explanation.sequence().unwrap_or_default(),
+        dimension: explanation.dimension().unwrap_or_default().to_string(),
+        scope_id: explanation.scope_id().unwrap_or_default().to_string(),
+        occurred_at: explanation.occurred_at().unwrap_or_default().to_string(),
+        observed_at: explanation.observed_at().unwrap_or_default().to_string(),
+        ingested_at: explanation.ingested_at().unwrap_or_default().to_string(),
+        valid_from: explanation.valid_from().unwrap_or_default().to_string(),
+        valid_until: explanation.valid_until().unwrap_or_default().to_string(),
+        rank: explanation.rank().unwrap_or_default(),
     }
 }
 
