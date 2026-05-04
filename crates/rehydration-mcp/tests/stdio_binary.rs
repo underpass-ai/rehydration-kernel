@@ -4,6 +4,7 @@ use std::process::{Command, Stdio};
 use serde_json::Value;
 
 const TLS_ENV_VARS: &[&str] = &[
+    "REHYDRATION_MCP_BACKEND",
     "REHYDRATION_KERNEL_GRPC_ENDPOINT",
     "REHYDRATION_KERNEL_GRPC_TLS_MODE",
     "REHYDRATION_KERNEL_GRPC_TLS_CA_PATH",
@@ -13,9 +14,19 @@ const TLS_ENV_VARS: &[&str] = &[
 ];
 
 #[test]
-fn stdio_binary_serves_fixture_jsonrpc_until_stdin_eof() {
+fn stdio_binary_fails_fast_without_backend_configuration() {
+    let output = run_binary(&[], "");
+
+    assert!(!output.status.success());
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
+    assert!(stderr.contains("REHYDRATION_KERNEL_GRPC_ENDPOINT is required"));
+}
+
+#[test]
+fn stdio_binary_serves_explicit_fixture_jsonrpc_until_stdin_eof() {
     let output = run_binary(
-        &[],
+        &[("REHYDRATION_MCP_BACKEND", "fixture")],
         "\n\
          {\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}\n\
          {\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\",\"params\":{}}\n\
@@ -24,7 +35,7 @@ fn stdio_binary_serves_fixture_jsonrpc_until_stdin_eof() {
 
     assert!(output.status.success());
     let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
-    assert!(stderr.contains("using fixture backend"));
+    assert!(stderr.contains("using explicit fixture backend"));
 
     let stdout = String::from_utf8(output.stdout).expect("stdout should be UTF-8");
     let responses = stdout

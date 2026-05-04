@@ -175,13 +175,7 @@ fn memory_entry_mutations(
         let Some(scope_id) = payload_string(coordinate, "scope_id") else {
             continue;
         };
-        mutations.push(structural_relation(
-            &scope_id,
-            &entry_id,
-            "contains_entry",
-            Some("Memory scope contains this entry."),
-            payload_u32(coordinate, "sequence"),
-        ));
+        mutations.push(contains_entry_relation(&scope_id, &entry_id, coordinate));
     }
 
     Ok(mutations)
@@ -204,14 +198,14 @@ fn memory_relation_mutation(change: &UpdateContextChange) -> Result<ProjectionMu
         .with_optional_confidence(payload_string(&payload, "confidence"))
         .with_optional_sequence(payload_u32(&payload, "sequence"));
 
-    Ok(ProjectionMutation::UpsertNodeRelation(
+    Ok(ProjectionMutation::UpsertNodeRelation(Box::new(
         NodeRelationProjection {
             source_node_id: source,
             target_node_id: target,
             relation_type,
             explanation,
         },
-    ))
+    )))
 }
 
 fn memory_evidence_mutations(
@@ -267,7 +261,7 @@ fn memory_evidence_mutations(
         .map(str::trim)
         .filter(|value| !value.is_empty())
     {
-        mutations.push(ProjectionMutation::UpsertNodeRelation(
+        mutations.push(ProjectionMutation::UpsertNodeRelation(Box::new(
             NodeRelationProjection {
                 source_node_id: evidence_id.clone(),
                 target_node_id: supported.to_string(),
@@ -276,7 +270,7 @@ fn memory_evidence_mutations(
                     .with_rationale("Evidence supports this memory entry.")
                     .with_evidence(text.clone()),
             },
-        ));
+        )));
     }
 
     Ok(mutations)
@@ -289,14 +283,37 @@ fn structural_relation(
     rationale: Option<&str>,
     sequence: Option<u32>,
 ) -> ProjectionMutation {
-    ProjectionMutation::UpsertNodeRelation(NodeRelationProjection {
+    ProjectionMutation::UpsertNodeRelation(Box::new(NodeRelationProjection {
         source_node_id: source.to_string(),
         target_node_id: target.to_string(),
         relation_type: relation_type.to_string(),
         explanation: RelationExplanation::new(RelationSemanticClass::Structural)
             .with_optional_rationale(rationale.map(str::to_string))
             .with_optional_sequence(sequence),
-    })
+    }))
+}
+
+fn contains_entry_relation(
+    scope_id: &str,
+    entry_id: &str,
+    coordinate: &Value,
+) -> ProjectionMutation {
+    ProjectionMutation::UpsertNodeRelation(Box::new(NodeRelationProjection {
+        source_node_id: scope_id.to_string(),
+        target_node_id: entry_id.to_string(),
+        relation_type: "contains_entry".to_string(),
+        explanation: RelationExplanation::new(RelationSemanticClass::Structural)
+            .with_rationale("Memory scope contains this entry.")
+            .with_optional_dimension(payload_string(coordinate, "dimension"))
+            .with_scope_id(scope_id)
+            .with_optional_occurred_at(payload_string(coordinate, "occurred_at"))
+            .with_optional_observed_at(payload_string(coordinate, "observed_at"))
+            .with_optional_ingested_at(payload_string(coordinate, "ingested_at"))
+            .with_optional_valid_from(payload_string(coordinate, "valid_from"))
+            .with_optional_valid_until(payload_string(coordinate, "valid_until"))
+            .with_optional_sequence(payload_u32(coordinate, "sequence"))
+            .with_optional_rank(payload_u32(coordinate, "rank")),
+    }))
 }
 
 fn payload(change: &UpdateContextChange) -> Result<Value, PortError> {

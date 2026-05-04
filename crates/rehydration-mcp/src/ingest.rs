@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use serde_json::{Value, json};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -45,6 +47,10 @@ pub(crate) fn build_ingest_plan(arguments: &Value) -> Result<KmpIngestPlan, Stri
     let relations = optional_array(memory.get("relations"), "memory.relations")?;
     let evidence = optional_array(memory.get("evidence"), "memory.evidence")?;
     let provenance = arguments.get("provenance").and_then(Value::as_object);
+    let dimension_ids = dimensions
+        .iter()
+        .filter_map(|dimension| required_object_string(dimension, "memory.dimensions[].id").ok())
+        .collect::<BTreeSet<_>>();
 
     let mut changes = Vec::new();
     for dimension in dimensions {
@@ -60,6 +66,7 @@ pub(crate) fn build_ingest_plan(arguments: &Value) -> Result<KmpIngestPlan, Stri
 
     for entry in entries {
         let id = required_object_string(entry, "memory.entries[].id")?;
+        validate_entry_positions(entry, &dimension_ids)?;
         changes.push(KmpIngestChange {
             entity_kind: "memory_entry".to_string(),
             entity_id: id.to_string(),
@@ -226,6 +233,31 @@ fn entry_scopes(entry: &Value) -> Vec<String> {
         .collect()
 }
 
+fn validate_entry_positions(entry: &Value, dimension_ids: &BTreeSet<&str>) -> Result<(), String> {
+    for position in entry
+        .get("coordinates")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let Some(scope_id) = position.get("scope_id").and_then(Value::as_str) else {
+            return Err(
+                "memory.entries[].coordinates[] is missing required `scope_id`".to_string(),
+            );
+        };
+        if scope_id.trim().is_empty() {
+            return Err("memory.entries[].coordinates[].scope_id must not be empty".to_string());
+        }
+        if !dimension_ids.contains(scope_id) {
+            return Err(format!(
+                "memory entry coordinate references unknown dimension scope `{scope_id}`"
+            ));
+        }
+    }
+
+    Ok(())
+}
+
 fn evidence_scopes(evidence_item: &Value) -> Vec<String> {
     evidence_item
         .get("supports")
@@ -304,6 +336,41 @@ mod tests {
         .expect_err("missing memory should fail");
 
         assert_eq!(error, "missing required object argument `memory`");
+    }
+
+    #[test]
+    fn build_ingest_plan_rejects_unknown_entry_position_scope() {
+        let error = build_ingest_plan(&json!({
+            "about": "question:830ce83f",
+            "memory": {
+                "dimensions": [
+                    {
+                        "id": "conversation:rachel",
+                        "kind": "conversation"
+                    }
+                ],
+                "entries": [
+                    {
+                        "id": "claim:rachel-austin",
+                        "text": "Rachel moved to Austin.",
+                        "coordinates": [
+                            {
+                                "dimension": "conversation",
+                                "scope_id": "conversation:missing",
+                                "sequence": 1
+                            }
+                        ]
+                    }
+                ]
+            },
+            "idempotency_key": "ingest:830ce83f:1"
+        }))
+        .expect_err("unknown position scope should fail");
+
+        assert_eq!(
+            error,
+            "memory entry coordinate references unknown dimension scope `conversation:missing`"
+        );
     }
 
     #[test]

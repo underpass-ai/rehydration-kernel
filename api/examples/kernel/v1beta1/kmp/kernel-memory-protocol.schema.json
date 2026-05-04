@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://underpass.ai/schemas/rehydration-kernel/v1beta1/kernel-memory-protocol.schema.json",
   "title": "KernelMemoryProtocol",
-  "description": "Transport-neutral Kernel Memory Protocol draft contract for ingest, wake, ask, rewind, forward, trace, and inspect moves.",
+  "description": "Transport-neutral Kernel Memory Protocol draft contract for ingest, wake, ask, goto, near, rewind, forward, trace, and inspect moves.",
   "oneOf": [
     {
       "$ref": "#/$defs/ingest_request"
@@ -186,6 +186,10 @@
           "$ref": "#/$defs/date_time"
         },
         "sequence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "rank": {
           "type": "integer",
           "minimum": 1
         },
@@ -490,11 +494,11 @@
       "properties": {
         "before_entries": {
           "type": "integer",
-          "minimum": 1
+          "minimum": 0
         },
         "after_entries": {
           "type": "integer",
-          "minimum": 1
+          "minimum": 0
         },
         "before_seconds": {
           "type": "integer",

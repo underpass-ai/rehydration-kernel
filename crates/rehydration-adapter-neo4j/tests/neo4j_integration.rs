@@ -82,27 +82,27 @@ async fn load_neighborhood_respects_directed_depth() -> Result<(), Box<dyn Error
                     properties: BTreeMap::new(),
                     provenance: None,
                 }),
-                ProjectionMutation::UpsertNodeRelation(NodeRelationProjection {
+                ProjectionMutation::UpsertNodeRelation(Box::new(NodeRelationProjection {
                     source_node_id: "node-root".to_string(),
                     target_node_id: "decision-1".to_string(),
                     relation_type: "records".to_string(),
                     explanation: RelationExplanation::new(RelationSemanticClass::Structural)
                         .with_sequence(1),
-                }),
-                ProjectionMutation::UpsertNodeRelation(NodeRelationProjection {
+                })),
+                ProjectionMutation::UpsertNodeRelation(Box::new(NodeRelationProjection {
                     source_node_id: "decision-1".to_string(),
                     target_node_id: "task-1".to_string(),
                     relation_type: "informs".to_string(),
                     explanation: RelationExplanation::new(RelationSemanticClass::Motivational)
                         .with_sequence(2)
                         .with_rationale("the task implements the accepted decision"),
-                }),
-                ProjectionMutation::UpsertNodeRelation(NodeRelationProjection {
+                })),
+                ProjectionMutation::UpsertNodeRelation(Box::new(NodeRelationProjection {
                     source_node_id: "blocker-1".to_string(),
                     target_node_id: "node-root".to_string(),
                     relation_type: "blocks".to_string(),
                     explanation: RelationExplanation::new(RelationSemanticClass::Constraint),
-                }),
+                })),
             ])
             .await?;
 
@@ -199,13 +199,13 @@ async fn apply_mutations_persists_generic_nodes_and_relations()
                     properties: BTreeMap::from([("phase".to_string(), "build".to_string())]),
                     provenance: None,
                 }),
-                ProjectionMutation::UpsertNodeRelation(NodeRelationProjection {
+                ProjectionMutation::UpsertNodeRelation(Box::new(NodeRelationProjection {
                     source_node_id: "node-123".to_string(),
                     target_node_id: "node-122".to_string(),
                     relation_type: "depends_on".to_string(),
                     explanation: RelationExplanation::new(RelationSemanticClass::Constraint)
                         .with_rationale("the capability relies on an upstream dependency"),
-                }),
+                })),
             ])
             .await?;
 
@@ -279,7 +279,7 @@ async fn relation_only_mutation_creates_explicit_placeholder_nodes()
         let store =
             Neo4jProjectionReader::new(format!("neo4j://neo4j:{NEO4J_PASSWORD}@{host}:{port}"))?;
         store
-            .apply_mutations(vec![ProjectionMutation::UpsertNodeRelation(
+            .apply_mutations(vec![ProjectionMutation::UpsertNodeRelation(Box::new(
                 NodeRelationProjection {
                     source_node_id: "decision-missing".to_string(),
                     target_node_id: "finding-missing".to_string(),
@@ -287,7 +287,7 @@ async fn relation_only_mutation_creates_explicit_placeholder_nodes()
                     explanation: RelationExplanation::new(RelationSemanticClass::Causal)
                         .with_rationale("decision addresses finding"),
                 },
-            )])
+            ))])
             .await?;
 
         let source_row = single_row(
@@ -432,33 +432,33 @@ async fn load_context_path_returns_shortest_path_and_target_subtree()
                     properties: BTreeMap::new(),
                     provenance: None,
                 }),
-                ProjectionMutation::UpsertNodeRelation(NodeRelationProjection {
+                ProjectionMutation::UpsertNodeRelation(Box::new(NodeRelationProjection {
                     source_node_id: "node-root".to_string(),
                     target_node_id: "story-1".to_string(),
                     relation_type: "HAS_STORY".to_string(),
                     explanation: RelationExplanation::new(RelationSemanticClass::Structural)
                         .with_sequence(1),
-                }),
-                ProjectionMutation::UpsertNodeRelation(NodeRelationProjection {
+                })),
+                ProjectionMutation::UpsertNodeRelation(Box::new(NodeRelationProjection {
                     source_node_id: "story-1".to_string(),
                     target_node_id: "task-1".to_string(),
                     relation_type: "HAS_TASK".to_string(),
                     explanation: RelationExplanation::new(RelationSemanticClass::Structural)
                         .with_sequence(2),
-                }),
-                ProjectionMutation::UpsertNodeRelation(NodeRelationProjection {
+                })),
+                ProjectionMutation::UpsertNodeRelation(Box::new(NodeRelationProjection {
                     source_node_id: "task-1".to_string(),
                     target_node_id: "artifact-1".to_string(),
                     relation_type: "HAS_ARTIFACT".to_string(),
                     explanation: RelationExplanation::new(RelationSemanticClass::Structural)
                         .with_sequence(3),
-                }),
-                ProjectionMutation::UpsertNodeRelation(NodeRelationProjection {
+                })),
+                ProjectionMutation::UpsertNodeRelation(Box::new(NodeRelationProjection {
                     source_node_id: "node-root".to_string(),
                     target_node_id: "detour-1".to_string(),
                     relation_type: "HAS_STORY".to_string(),
                     explanation: RelationExplanation::new(RelationSemanticClass::Structural),
-                }),
+                })),
             ])
             .await?;
 

@@ -924,6 +924,7 @@ dimension
 dimension_id
 entry_index
 sequence
+rank
 timestamp / observed_at / occurred_at / valid_from / valid_until
 relation_type
 semantic_class
