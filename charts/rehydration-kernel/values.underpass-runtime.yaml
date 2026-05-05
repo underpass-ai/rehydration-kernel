@@ -1,6 +1,9 @@
 image:
   pullPolicy: Always
 
+imagePullSecrets:
+  - name: ghcr-pull
+
 ingress:
   enabled: true
   className: nginx
@@ -37,3 +40,5 @@ grafana:
 otelCollector:
   enabled: true
 
+e2e:
+  enabled: true

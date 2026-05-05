@@ -131,6 +131,37 @@ When `REHYDRATION_LOG_FORMAT=json`, the `TracingQualityObserver` emits:
 }
 ```
 
+`KernelMemoryService` also emits structured request, response, and error logs
+at the gRPC boundary for every KMP RPC. These events use the message values
+`kernel memory grpc request`, `kernel memory grpc response`, and
+`kernel memory grpc error`.
+
+Request logs include:
+
+- `rpc`;
+- `about` for memory reads/writes;
+- `dimension_mode`, `dimension_scope`, `dimensions`, requested `abouts`, and
+  `scope_ids` for dimensioned reads;
+- submitted counts for `Ingest`;
+- source and target refs for `Trace`;
+- include flags for `Inspect`.
+
+Response logs include:
+
+- accepted counts and `read_after_write_ready` for `Ingest`;
+- evidence/answer/warning counts for `Ask`;
+- entry/warning counts for temporal traversal;
+- `selected_abouts` for dimensioned reads after `CURRENT_ABOUT`, `ABOUTS`, or
+  `ALL_ABOUTS` resolution;
+- path/warning counts for `Trace`;
+- incoming/outgoing/evidence/warning counts for `Inspect`.
+
+Error logs include:
+
+- `rpc`;
+- tonic `code`;
+- the mapped error `message`.
+
 ### LogQL Examples
 
 ```logql
@@ -145,6 +176,18 @@ When `REHYDRATION_LOG_FORMAT=json`, the `TracingQualityObserver` emits:
 
 # Quality by RPC
 {app_kubernetes_io_name="rehydration-kernel"} | json | rpc = "GetContext"
+
+# KMP calls scoped to the current memory anchor
+{app_kubernetes_io_name="rehydration-kernel"} | json | message = "kernel memory grpc request" | dimension_scope = "current_about"
+
+# Intentional all-about KMP reads
+{app_kubernetes_io_name="rehydration-kernel"} | json | message = "kernel memory grpc request" | dimension_scope = "all_abouts"
+
+# Resolved memory anchors for all-about KMP reads
+{app_kubernetes_io_name="rehydration-kernel"} | json | message = "kernel memory grpc response" | selected_abouts != ""
+
+# KMP fail-fast or storage conflict errors
+{app_kubernetes_io_name="rehydration-kernel"} | json | message = "kernel memory grpc error"
 ```
 
 ### PromQL Examples
@@ -219,8 +262,6 @@ kubectl port-forward svc/<release>-grafana 3000:3000 -n <namespace>
 
 ## Limitations
 
-- Quality metrics fan-out is synchronous. Async fan-out is planned to avoid
-  latency impact on the gRPC hot path.
 - OTLP export supports mTLS via `OTEL_EXPORTER_OTLP_{CA,CERT,KEY}_PATH` env vars. Plaintext by default when no env vars set.
 - `rehydration.projection.lag` is defined but not yet recorded by any handler.
 - All three render RPCs (`GetContext`, `GetContextPath`, `RehydrateSession`)

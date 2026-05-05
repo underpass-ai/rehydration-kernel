@@ -44,11 +44,12 @@ pub(crate) fn tools_list_result() -> Value {
                                     "items": {
                                         "type": "object",
                                         "additionalProperties": true,
-                                        "required": ["id"],
+                                        "required": ["id", "kind"],
                                         "properties": {
                                             "id": string_schema("Dimension scope id."),
                                             "kind": string_schema("Dimension kind."),
-                                            "title": string_schema("Optional dimension title.")
+                                            "title": string_schema("Optional dimension title."),
+                                            "metadata": string_map_schema()
                                         }
                                     }
                                 },
@@ -58,11 +59,17 @@ pub(crate) fn tools_list_result() -> Value {
                                     "items": {
                                         "type": "object",
                                         "additionalProperties": true,
-                                        "required": ["id", "text"],
+                                        "required": ["id", "kind", "text", "coordinates"],
                                         "properties": {
                                             "id": string_schema("Memory entry id."),
                                             "kind": string_schema("Memory entry kind."),
-                                            "text": string_schema("Memory entry text.")
+                                            "text": string_schema("Memory entry text."),
+                                            "coordinates": {
+                                                "type": "array",
+                                                "minItems": 1,
+                                                "items": temporal_coordinate_schema()
+                                            },
+                                            "metadata": string_map_schema()
                                         }
                                     }
                                 },
@@ -71,11 +78,25 @@ pub(crate) fn tools_list_result() -> Value {
                                     "items": {
                                         "type": "object",
                                         "additionalProperties": true,
-                                        "required": ["from", "to", "rel"],
+                                        "required": ["from", "to", "rel", "class"],
                                         "properties": {
                                             "from": string_schema("Source memory entry id."),
                                             "to": string_schema("Target memory entry id."),
-                                            "rel": string_schema("Relationship type.")
+                                            "rel": string_schema("Relationship type."),
+                                            "class": {
+                                                "type": "string",
+                                                "enum": ["structural", "causal", "motivational", "procedural", "evidential", "constraint"]
+                                            },
+                                            "why": string_schema("Optional relation rationale; required for non-structural relations unless evidence is set."),
+                                            "evidence": string_schema("Optional relation evidence; required for non-structural relations unless why is set."),
+                                            "confidence": {
+                                                "type": "string",
+                                                "enum": ["high", "medium", "low", "unknown"]
+                                            },
+                                            "sequence": {
+                                                "type": "integer",
+                                                "minimum": 1
+                                            }
                                         }
                                     }
                                 },
@@ -87,8 +108,14 @@ pub(crate) fn tools_list_result() -> Value {
                                         "required": ["id", "text"],
                                         "properties": {
                                             "id": string_schema("Evidence id."),
+                                            "supports": {
+                                                "type": "array",
+                                                "items": string_schema("Memory ref supported by this evidence.")
+                                            },
                                             "text": string_schema("Evidence text."),
-                                            "source": string_schema("Evidence source.")
+                                            "source": string_schema("Evidence source."),
+                                            "time": string_schema("Evidence timestamp."),
+                                            "metadata": string_map_schema()
                                         }
                                     }
                                 }
@@ -96,7 +123,18 @@ pub(crate) fn tools_list_result() -> Value {
                         },
                         "provenance": {
                             "type": "object",
-                            "additionalProperties": true
+                            "additionalProperties": false,
+                            "required": ["source_kind", "source_agent", "observed_at"],
+                            "properties": {
+                                "source_kind": {
+                                    "type": "string",
+                                    "enum": ["human", "agent", "projection", "derived"]
+                                },
+                                "source_agent": string_schema("Agent or component that observed the memory."),
+                                "observed_at": string_schema("RFC3339 observation timestamp."),
+                                "correlation_id": string_schema("Optional correlation id."),
+                                "causation_id": string_schema("Optional causation id.")
+                            }
                         },
                         "idempotency_key": string_schema("Required stable idempotency key for replay-safe ingest."),
                         "dry_run": {
@@ -116,6 +154,7 @@ pub(crate) fn tools_list_result() -> Value {
                         "about": string_schema("Memory anchor or root ref to wake from."),
                         "role": string_schema("Optional caller role."),
                         "intent": string_schema("Optional continuation intent."),
+                        "dimensions": dimensions_schema(),
                         "depth": integer_schema("Optional graph traversal depth for live gRPC mode."),
                         "budget": budget_schema()
                     }
@@ -123,7 +162,7 @@ pub(crate) fn tools_list_result() -> Value {
             ),
             tool_definition(
                 "kernel_ask",
-                "Answer a question from kernel memory with proof, or return unknown/conflict.",
+                "Return a deterministic evidence answer from kernel memory, or UNKNOWN.",
                 json!({
                     "type": "object",
                     "additionalProperties": false,
@@ -133,12 +172,10 @@ pub(crate) fn tools_list_result() -> Value {
                         "question": string_schema("Natural-language question."),
                         "answer_policy": {
                             "type": "string",
+                            "description": "Deterministic evidence policy. show_conflicts surfaces explicit conflict relations in proof.conflicts; best_effort does not generate fallback text.",
                             "enum": ["evidence_or_unknown", "show_conflicts", "best_effort"]
                         },
-                        "prefer": {
-                            "type": "object",
-                            "additionalProperties": true
-                        },
+                        "dimensions": dimensions_schema(),
                         "depth": integer_schema("Optional graph traversal depth for live gRPC mode."),
                         "budget": budget_schema()
                     }
@@ -176,21 +213,13 @@ pub(crate) fn tools_list_result() -> Value {
                         "to": string_schema("Target memory ref. In live gRPC mode this must resolve to a kernel node id."),
                         "role": string_schema("Optional caller role."),
                         "goal": string_schema("Optional trace goal."),
-                        "budget": budget_schema(),
-                        "include": {
-                            "type": "object",
-                            "additionalProperties": false,
-                            "properties": {
-                                "evidence": {"type": "boolean"},
-                                "raw_refs": {"type": "boolean"}
-                            }
-                        }
+                        "budget": budget_schema()
                     }
                 })
             ),
             tool_definition(
                 "kernel_inspect",
-                "Inspect the raw stored memory object, links, and evidence for one ref.",
+                "Inspect the typed stored memory object, direct links, and evidence for one ref.",
                 json!({
                     "type": "object",
                     "additionalProperties": false,
@@ -204,7 +233,10 @@ pub(crate) fn tools_list_result() -> Value {
                                 "incoming": {"type": "boolean"},
                                 "outgoing": {"type": "boolean"},
                                 "details": {"type": "boolean"},
-                                "raw": {"type": "boolean"}
+                                "raw": {
+                                    "type": "boolean",
+                                    "description": "Return typed raw audit refs for the inspected object."
+                                }
                             }
                         }
                     }
@@ -222,7 +254,7 @@ fn temporal_tool_definition(name: &str, description: &str, cursor_key: &str) -> 
             "time": string_schema("ISO-8601 temporal cursor."),
             "sequence": {
                 "type": "integer",
-                "minimum": 0
+                "minimum": 1
             },
             "ref": string_schema("Memory ref cursor.")
         }
@@ -254,6 +286,10 @@ fn temporal_tool_definition(name: &str, description: &str, cursor_key: &str) -> 
                     "entries": {
                         "type": "integer",
                         "minimum": 1
+                    },
+                    "tokens": {
+                        "type": "integer",
+                        "minimum": 1
                     }
                 }
             },
@@ -263,7 +299,11 @@ fn temporal_tool_definition(name: &str, description: &str, cursor_key: &str) -> 
                 "additionalProperties": false,
                 "properties": {
                     "evidence": {"type": "boolean"},
-                    "relations": {"type": "boolean"}
+                    "relations": {"type": "boolean"},
+                    "raw_refs": {
+                        "type": "boolean",
+                        "description": "Return typed raw audit refs for selected temporal entries."
+                    }
                 }
             },
             "depth": integer_schema("Optional graph traversal depth for live gRPC mode."),
@@ -290,7 +330,54 @@ fn dimensions_schema() -> Value {
             "exclude": {
                 "type": "array",
                 "items": string_schema("Dimension kind to exclude.")
+            },
+            "scope_ids": {
+                "type": "array",
+                "items": string_schema("Exact dimension scope id to include. Values may be local memory dimension ids or namespaced about:<about>:dimension:<dimension_id> ids.")
+            },
+            "scope": {
+                "type": "string",
+                "enum": ["current_about", "abouts", "all_abouts"]
+            },
+            "abouts": {
+                "type": "array",
+                "items": string_schema("Memory about id.")
             }
+        }
+    })
+}
+
+fn temporal_coordinate_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["dimension", "scope_id"],
+        "properties": {
+            "dimension": string_schema("Dimension kind for this coordinate."),
+            "scope_id": string_schema("Dimension scope id."),
+            "occurred_at": string_schema("Optional RFC3339 occurrence timestamp."),
+            "observed_at": string_schema("Optional RFC3339 observation timestamp."),
+            "ingested_at": string_schema("Optional RFC3339 ingest timestamp."),
+            "valid_from": string_schema("Optional RFC3339 validity start."),
+            "valid_until": string_schema("Optional RFC3339 validity end."),
+            "sequence": {
+                "type": "integer",
+                "minimum": 1
+            },
+            "rank": {
+                "type": "integer",
+                "minimum": 1
+            },
+            "metadata": string_map_schema()
+        }
+    })
+}
+
+fn string_map_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": {
+            "type": "string"
         }
     })
 }
@@ -331,6 +418,10 @@ fn budget_schema() -> Value {
             "detail": {
                 "type": "string",
                 "enum": ["compact", "balanced", "full"]
+            },
+            "depth": {
+                "type": "integer",
+                "minimum": 1
             }
         }
     })
@@ -412,6 +503,11 @@ mod tests {
         assert_eq!(tools[1]["inputSchema"]["required"][0], "about");
         assert_eq!(tools[2]["name"], "kernel_ask");
         assert_eq!(tools[2]["inputSchema"]["required"][1], "question");
+        assert!(
+            tools[2]["inputSchema"]["properties"]
+                .get("prefer")
+                .is_none()
+        );
         assert_eq!(tools[3]["name"], "kernel_goto");
         assert_eq!(tools[3]["inputSchema"]["required"][1], "at");
     }

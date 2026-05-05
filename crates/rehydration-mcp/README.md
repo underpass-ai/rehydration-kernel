@@ -1,6 +1,6 @@
 # Rehydration MCP
 
-Draft stdio MCP adapter for Kernel Memory Protocol (KMP).
+Installable stdio MCP adapter for Kernel Memory Protocol (KMP).
 
 Current status:
 
@@ -10,12 +10,16 @@ Current status:
 - can serve explicit fixture-backed KMP responses from
   `api/examples/kernel/v1beta1/kmp`;
 - can use the live gRPC kernel when `REHYDRATION_KERNEL_GRPC_ENDPOINT` is set;
-- maps live `kernel_ingest` to `ContextCommandService.UpdateContext` and
-  read-model projection for basic KMP memory changes;
-- maps live temporal tools to `GetContext` and traverses `contains_entry`
-  relations with dimension/scope/time positions;
-- live `kernel_ask` returns evidence/proof from `GetContext`, not a generated
-  answer.
+- live mode calls the typed `KernelMemoryService` gRPC API directly;
+- live `kernel_ask` returns a deterministic evidence-derived answer or
+  `UNKNOWN`, not a generated answer;
+- dimension scope defaults to `current_about`; `abouts` requires a non-empty
+  about list; `all_abouts` is explicit and uses the kernel memory about index;
+- `kernel_inspect` supports typed detail/link lookup and typed raw audit refs
+  when `include.raw=true`, including dimension coordinates when the inspected
+  object is contained by memory dimensions;
+- temporal `include.raw_refs=true` returns typed raw audit refs for the selected
+  entries.
 
 Run locally:
 
@@ -82,14 +86,14 @@ Tool call example:
 
 Live backend mapping:
 
-| Tool | Kernel read |
-|:-----|:------------|
-| `kernel_ingest` | `UpdateContext` |
-| `kernel_wake` | `GetContext` |
-| `kernel_ask` | `GetContext` |
-| `kernel_goto` | `GetContext` |
-| `kernel_near` | `GetContext` |
-| `kernel_rewind` | `GetContext` |
-| `kernel_forward` | `GetContext` |
-| `kernel_trace` | `GetContextPath` |
-| `kernel_inspect` | `GetNodeDetail` |
+| Tool | Kernel read/write |
+|:-----|:------------------|
+| `kernel_ingest` | `KernelMemoryService.Ingest` |
+| `kernel_wake` | `KernelMemoryService.Wake` |
+| `kernel_ask` | `KernelMemoryService.Ask` |
+| `kernel_goto` | `KernelMemoryService.Goto` |
+| `kernel_near` | `KernelMemoryService.Near` |
+| `kernel_rewind` | `KernelMemoryService.Rewind` |
+| `kernel_forward` | `KernelMemoryService.Forward` |
+| `kernel_trace` | `KernelMemoryService.Trace` |
+| `kernel_inspect` | `KernelMemoryService.Inspect` |

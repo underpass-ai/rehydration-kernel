@@ -6,26 +6,31 @@ use std::sync::Arc;
 
 use rehydration_application::{
     ApplicationError, CommandApplicationService, DEFAULT_NATIVE_GRAPH_TRAVERSAL_DEPTH,
-    QueryApplicationService, RehydrationApplication, RoutingProjectionWriter, UpdateContextUseCase,
+    KernelMemoryApplicationService, QueryApplicationService, RehydrationApplication,
+    RoutingProjectionWriter, UpdateContextUseCase,
 };
 use rehydration_config::{AppConfig, GrpcTlsConfig, GrpcTlsMode};
 use rehydration_domain::{
-    ContextEventStore, GraphNeighborhoodReader, NodeDetailReader, ProjectionWriter,
-    QualityMetricsObserver, RehydrationBundle, SnapshotStore,
+    ContextEventStore, GraphNeighborhoodReader, MemoryAboutIndexReader, NodeDetailReader,
+    NodeRelationshipReader, ProjectionWriter, QualityMetricsObserver, RehydrationBundle,
+    SnapshotStore,
 };
 use rehydration_proto::v1beta1::{
     FILE_DESCRIPTOR_SET, GetContextRequest,
     context_command_service_server::ContextCommandServiceServer,
     context_query_service_server::ContextQueryServiceServer,
+    kernel_memory_service_server::KernelMemoryServiceServer,
 };
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::transport::{Certificate, Identity, Server, ServerTlsConfig};
 
-use crate::transport::{CommandGrpcService, QueryGrpcService};
+use crate::transport::{CommandGrpcService, MemoryGrpcService, QueryGrpcService};
 
 type ServerProjectionWriter<G, D> = RoutingProjectionWriter<Arc<G>, Arc<D>>;
 type ServerCommandApplication<E, G, D> = CommandApplicationService<E, ServerProjectionWriter<G, D>>;
+type ServerMemoryApplication<G, D, S, E> =
+    KernelMemoryApplicationService<G, D, S, E, ServerProjectionWriter<G, D>>;
 
 pub struct GrpcServer<G, D, S, E> {
     bind_addr: String,
@@ -38,7 +43,12 @@ pub struct GrpcServer<G, D, S, E> {
 
 impl<G, D, S, E> GrpcServer<G, D, S, E>
 where
-    G: GraphNeighborhoodReader + Send + Sync + 'static,
+    G: GraphNeighborhoodReader
+        + MemoryAboutIndexReader
+        + NodeRelationshipReader
+        + Send
+        + Sync
+        + 'static,
     G: ProjectionWriter + Send + Sync + 'static,
     D: NodeDetailReader + Send + Sync + 'static,
     D: ProjectionWriter + Send + Sync + 'static,
@@ -122,6 +132,13 @@ where
         CommandGrpcService::new(Arc::clone(&self.command_application))
     }
 
+    pub fn memory_service(&self) -> MemoryGrpcService<G, D, S, E, ServerProjectionWriter<G, D>> {
+        MemoryGrpcService::new(Arc::new(ServerMemoryApplication::new(
+            Arc::clone(&self.query_application),
+            Arc::clone(&self.command_application),
+        )))
+    }
+
     pub fn query_application(&self) -> Arc<QueryApplicationService<G, D, S>> {
         Arc::clone(&self.query_application)
     }
@@ -152,6 +169,7 @@ where
         self.transport_builder()?
             .add_service(ContextQueryServiceServer::new(self.query_service()))
             .add_service(ContextCommandServiceServer::new(self.command_service()))
+            .add_service(KernelMemoryServiceServer::new(self.memory_service()))
             .serve_with_incoming_shutdown(TcpListenerStream::new(listener), shutdown)
             .await?;
 

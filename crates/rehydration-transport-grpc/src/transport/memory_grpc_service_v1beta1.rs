@@ -1,0 +1,600 @@
+use std::collections::BTreeSet;
+use std::sync::Arc;
+
+use rehydration_application::{
+    ApplicationError, KernelMemoryApplicationService, TemporalMemoryResult,
+};
+use rehydration_domain::{
+    ContextEventStore, DimensionScopeMode, DimensionSelection, DimensionSelectionMode,
+    GraphNeighborhoodReader, MemoryAboutIndexReader, MemoryDimensionIdentity, NodeDetailReader,
+    NodeRelationshipReader, ProjectionWriter, RehydrationBundle, SnapshotStore, TemporalDirection,
+};
+use rehydration_proto::v1beta1::{
+    AskRequest, AskResponse, ForwardRequest, ForwardResponse, GotoRequest, GotoResponse,
+    IngestRequest, IngestResponse, InspectRequest, InspectResponse, NearRequest, NearResponse,
+    RewindRequest, RewindResponse, TemporalMoveRequest, TemporalMoveResponse, TemporalNearRequest,
+    TraceRequest, TraceResponse, WakeRequest, WakeResponse,
+    kernel_memory_service_server::KernelMemoryService,
+};
+use tonic::{Request, Response, Status};
+
+use crate::transport::proto_mapping_v1beta1::{
+    ask_query_from_proto, ask_response_from_result, ingest_command_from_proto,
+    ingest_response_from_outcome, inspect_query_from_proto, inspect_response_from_result,
+    temporal_query_from_move_proto, temporal_query_from_near_proto, temporal_response_from_result,
+    trace_query_from_proto, trace_response_from_result, wake_query_from_proto,
+    wake_response_from_result,
+};
+use crate::transport::support::map_application_error;
+
+pub struct MemoryGrpcServiceV1Beta1<G, D, S, E, W> {
+    application: Arc<KernelMemoryApplicationService<G, D, S, E, W>>,
+}
+
+impl<G, D, S, E, W> MemoryGrpcServiceV1Beta1<G, D, S, E, W> {
+    pub fn new(application: Arc<KernelMemoryApplicationService<G, D, S, E, W>>) -> Self {
+        Self { application }
+    }
+}
+
+#[tonic::async_trait]
+impl<G, D, S, E, W> KernelMemoryService for MemoryGrpcServiceV1Beta1<G, D, S, E, W>
+where
+    G: GraphNeighborhoodReader
+        + MemoryAboutIndexReader
+        + NodeRelationshipReader
+        + Send
+        + Sync
+        + 'static,
+    D: NodeDetailReader + Send + Sync + 'static,
+    S: SnapshotStore + Send + Sync + 'static,
+    E: ContextEventStore + Send + Sync + 'static,
+    W: ProjectionWriter + Send + Sync + 'static,
+{
+    #[tracing::instrument(skip(self, request), fields(rpc = "KernelMemory.Ingest"))]
+    async fn ingest(
+        &self,
+        request: Request<IngestRequest>,
+    ) -> Result<Response<IngestResponse>, Status> {
+        let command = ingest_command_from_proto(request.into_inner())
+            .map_err(|status| map_proto_error("KernelMemoryService.Ingest", *status))?;
+        tracing::info!(
+            rpc = "KernelMemoryService.Ingest",
+            about = %command.about,
+            dry_run = command.dry_run,
+            entries = command.memory.entries.len(),
+            relations = command.memory.relations.len(),
+            evidence = command.memory.evidence.len(),
+            "kernel memory grpc request"
+        );
+        let outcome =
+            self.application.ingest(command).await.map_err(|error| {
+                map_application_error_with_log("KernelMemoryService.Ingest", error)
+            })?;
+        tracing::info!(
+            rpc = "KernelMemoryService.Ingest",
+            about = %outcome.about,
+            accepted_entries = outcome.accepted.entries,
+            accepted_relations = outcome.accepted.relations,
+            accepted_evidence = outcome.accepted.evidence,
+            read_after_write_ready = outcome.read_after_write_ready,
+            "kernel memory grpc response"
+        );
+
+        Ok(Response::new(ingest_response_from_outcome(outcome)))
+    }
+
+    #[tracing::instrument(skip(self, request), fields(rpc = "KernelMemory.Wake"))]
+    async fn wake(&self, request: Request<WakeRequest>) -> Result<Response<WakeResponse>, Status> {
+        let request = request.into_inner();
+        let query = wake_query_from_proto(request.clone())
+            .map_err(|status| map_proto_error("KernelMemoryService.Wake", *status))?;
+        let intent = query.intent.clone();
+        log_dimensioned_request("KernelMemoryService.Wake", &query.about, &query.dimensions);
+        let result =
+            self.application.wake(query).await.map_err(|error| {
+                map_application_error_with_log("KernelMemoryService.Wake", error)
+            })?;
+        let selected_abouts = selected_abouts_from_bundle(&result.bundle);
+        let response = wake_response_from_result(&intent, result);
+        let proof_paths = response
+            .proof
+            .as_ref()
+            .map(|proof| proof.path.len())
+            .unwrap_or_default();
+        tracing::info!(
+            rpc = "KernelMemoryService.Wake",
+            selected_abouts = ?selected_abouts,
+            proof_paths,
+            warnings = response.warnings.len(),
+            "kernel memory grpc response"
+        );
+
+        Ok(Response::new(response))
+    }
+
+    #[tracing::instrument(skip(self, request), fields(rpc = "KernelMemory.Ask"))]
+    async fn ask(&self, request: Request<AskRequest>) -> Result<Response<AskResponse>, Status> {
+        let request = request.into_inner();
+        let question = request.question.clone();
+        let query = ask_query_from_proto(request)
+            .map_err(|status| map_proto_error("KernelMemoryService.Ask", *status))?;
+        let answer_policy = query.answer_policy;
+        log_dimensioned_request("KernelMemoryService.Ask", &query.about, &query.dimensions);
+        let result =
+            self.application.ask(query).await.map_err(|error| {
+                map_application_error_with_log("KernelMemoryService.Ask", error)
+            })?;
+        let selected_abouts = selected_abouts_from_bundle(&result.bundle);
+        let response = ask_response_from_result(&question, answer_policy, result);
+        tracing::info!(
+            rpc = "KernelMemoryService.Ask",
+            selected_abouts = ?selected_abouts,
+            evidence = response.because.len(),
+            answer = %answer_presence_label(&response.answer),
+            warnings = response.warnings.len(),
+            "kernel memory grpc response"
+        );
+
+        Ok(Response::new(response))
+    }
+
+    #[tracing::instrument(skip(self, request), fields(rpc = "KernelMemory.Goto"))]
+    async fn goto(&self, request: Request<GotoRequest>) -> Result<Response<GotoResponse>, Status> {
+        self.temporal_move(
+            temporal_move_request_from_goto(request.into_inner()),
+            TemporalDirection::Goto,
+        )
+        .await
+        .map(|response| Response::new(goto_response_from_temporal(response)))
+    }
+
+    #[tracing::instrument(skip(self, request), fields(rpc = "KernelMemory.Near"))]
+    async fn near(&self, request: Request<NearRequest>) -> Result<Response<NearResponse>, Status> {
+        let request = temporal_near_request_from_near(request.into_inner());
+        let requested_cursor = request.around.clone().unwrap_or_default();
+        let query = temporal_query_from_near_proto(request)
+            .map_err(|status| map_proto_error("KernelMemoryService.Near", *status))?;
+        log_temporal_request("KernelMemoryService.Near", &query.about, &query.dimensions);
+        let result =
+            self.application.temporal(query).await.map_err(|error| {
+                map_application_error_with_log("KernelMemoryService.Near", error)
+            })?;
+        let selected_abouts = selected_abouts_from_temporal_result(&result);
+        let response =
+            temporal_response_from_result(requested_cursor, TemporalDirection::Near, result);
+        tracing::info!(
+            rpc = "KernelMemoryService.Near",
+            selected_abouts = ?selected_abouts,
+            entries = response.entries.len(),
+            warnings = response.warnings.len(),
+            "kernel memory grpc response"
+        );
+
+        Ok(Response::new(near_response_from_temporal(response)))
+    }
+
+    #[tracing::instrument(skip(self, request), fields(rpc = "KernelMemory.Rewind"))]
+    async fn rewind(
+        &self,
+        request: Request<RewindRequest>,
+    ) -> Result<Response<RewindResponse>, Status> {
+        self.temporal_move(
+            temporal_move_request_from_rewind(request.into_inner()),
+            TemporalDirection::Rewind,
+        )
+        .await
+        .map(|response| Response::new(rewind_response_from_temporal(response)))
+    }
+
+    #[tracing::instrument(skip(self, request), fields(rpc = "KernelMemory.Forward"))]
+    async fn forward(
+        &self,
+        request: Request<ForwardRequest>,
+    ) -> Result<Response<ForwardResponse>, Status> {
+        self.temporal_move(
+            temporal_move_request_from_forward(request.into_inner()),
+            TemporalDirection::Forward,
+        )
+        .await
+        .map(|response| Response::new(forward_response_from_temporal(response)))
+    }
+
+    #[tracing::instrument(skip(self, request), fields(rpc = "KernelMemory.Trace"))]
+    async fn trace(
+        &self,
+        request: Request<TraceRequest>,
+    ) -> Result<Response<TraceResponse>, Status> {
+        let request = request.into_inner();
+        tracing::info!(
+            rpc = "KernelMemoryService.Trace",
+            from = %request.from,
+            to = %request.to,
+            "kernel memory grpc request"
+        );
+        let query = trace_query_from_proto(request);
+        let result =
+            self.application.trace(query).await.map_err(|error| {
+                map_application_error_with_log("KernelMemoryService.Trace", error)
+            })?;
+        let response = trace_response_from_result(result);
+        tracing::info!(
+            rpc = "KernelMemoryService.Trace",
+            path = response.trace.len(),
+            warnings = response.warnings.len(),
+            "kernel memory grpc response"
+        );
+
+        Ok(Response::new(response))
+    }
+
+    #[tracing::instrument(skip(self, request), fields(rpc = "KernelMemory.Inspect"))]
+    async fn inspect(
+        &self,
+        request: Request<InspectRequest>,
+    ) -> Result<Response<InspectResponse>, Status> {
+        let query = inspect_query_from_proto(request.into_inner())
+            .map_err(|status| map_proto_error("KernelMemoryService.Inspect", *status))?;
+        tracing::info!(
+            rpc = "KernelMemoryService.Inspect",
+            ref_id = %query.ref_id,
+            include_details = query.include_details,
+            include_incoming = query.include_incoming,
+            include_outgoing = query.include_outgoing,
+            include_raw = query.include_raw,
+            "kernel memory grpc request"
+        );
+        let result = self.application.inspect(query).await.map_err(|error| {
+            map_application_error_with_log("KernelMemoryService.Inspect", error)
+        })?;
+        let response = inspect_response_from_result(result);
+        tracing::info!(
+            rpc = "KernelMemoryService.Inspect",
+            incoming = response
+                .links
+                .as_ref()
+                .map(|links| links.incoming.len())
+                .unwrap_or_default(),
+            outgoing = response
+                .links
+                .as_ref()
+                .map(|links| links.outgoing.len())
+                .unwrap_or_default(),
+            evidence = response.evidence.len(),
+            raw_refs = response.raw.len(),
+            raw_coordinates = response
+                .raw
+                .iter()
+                .map(|raw| raw.coordinates.len())
+                .sum::<usize>(),
+            warnings = response.warnings.len(),
+            "kernel memory grpc response"
+        );
+
+        Ok(Response::new(response))
+    }
+}
+
+impl<G, D, S, E, W> MemoryGrpcServiceV1Beta1<G, D, S, E, W>
+where
+    G: GraphNeighborhoodReader
+        + MemoryAboutIndexReader
+        + NodeRelationshipReader
+        + Send
+        + Sync
+        + 'static,
+    D: NodeDetailReader + Send + Sync + 'static,
+    S: SnapshotStore + Send + Sync + 'static,
+    E: ContextEventStore + Send + Sync + 'static,
+    W: ProjectionWriter + Send + Sync + 'static,
+{
+    async fn temporal_move(
+        &self,
+        request: TemporalMoveRequest,
+        direction: TemporalDirection,
+    ) -> Result<TemporalMoveResponse, Status> {
+        let requested_cursor = request.cursor.clone().unwrap_or_default();
+        let rpc = temporal_rpc_label(direction);
+        let query = temporal_query_from_move_proto(request, direction)
+            .map_err(|status| map_proto_error(rpc, *status))?;
+        log_temporal_request(rpc, &query.about, &query.dimensions);
+        let result = self
+            .application
+            .temporal(query)
+            .await
+            .map_err(|error| map_application_error_with_log(rpc, error))?;
+        let selected_abouts = selected_abouts_from_temporal_result(&result);
+        let response = temporal_response_from_result(requested_cursor, direction, result);
+        tracing::info!(
+            rpc,
+            selected_abouts = ?selected_abouts,
+            entries = response.entries.len(),
+            warnings = response.warnings.len(),
+            "kernel memory grpc response"
+        );
+
+        Ok(response)
+    }
+}
+
+fn temporal_move_request_from_goto(request: GotoRequest) -> TemporalMoveRequest {
+    TemporalMoveRequest {
+        about: request.about,
+        cursor: request.cursor,
+        dimensions: request.dimensions,
+        window: request.window,
+        limit: request.limit,
+        include: request.include,
+        budget: request.budget,
+    }
+}
+
+fn temporal_move_request_from_rewind(request: RewindRequest) -> TemporalMoveRequest {
+    TemporalMoveRequest {
+        about: request.about,
+        cursor: request.cursor,
+        dimensions: request.dimensions,
+        window: request.window,
+        limit: request.limit,
+        include: request.include,
+        budget: request.budget,
+    }
+}
+
+fn temporal_move_request_from_forward(request: ForwardRequest) -> TemporalMoveRequest {
+    TemporalMoveRequest {
+        about: request.about,
+        cursor: request.cursor,
+        dimensions: request.dimensions,
+        window: request.window,
+        limit: request.limit,
+        include: request.include,
+        budget: request.budget,
+    }
+}
+
+fn temporal_near_request_from_near(request: NearRequest) -> TemporalNearRequest {
+    TemporalNearRequest {
+        about: request.about,
+        around: request.around,
+        dimensions: request.dimensions,
+        window: request.window,
+        limit: request.limit,
+        include: request.include,
+        budget: request.budget,
+    }
+}
+
+fn goto_response_from_temporal(response: TemporalMoveResponse) -> GotoResponse {
+    GotoResponse {
+        summary: response.summary,
+        temporal: response.temporal,
+        coverage: response.coverage,
+        entries: response.entries,
+        proof: response.proof,
+        warnings: response.warnings,
+        raw_refs: response.raw_refs,
+    }
+}
+
+fn near_response_from_temporal(response: TemporalMoveResponse) -> NearResponse {
+    NearResponse {
+        summary: response.summary,
+        temporal: response.temporal,
+        coverage: response.coverage,
+        entries: response.entries,
+        proof: response.proof,
+        warnings: response.warnings,
+        raw_refs: response.raw_refs,
+    }
+}
+
+fn rewind_response_from_temporal(response: TemporalMoveResponse) -> RewindResponse {
+    RewindResponse {
+        summary: response.summary,
+        temporal: response.temporal,
+        coverage: response.coverage,
+        entries: response.entries,
+        proof: response.proof,
+        warnings: response.warnings,
+        raw_refs: response.raw_refs,
+    }
+}
+
+fn forward_response_from_temporal(response: TemporalMoveResponse) -> ForwardResponse {
+    ForwardResponse {
+        summary: response.summary,
+        temporal: response.temporal,
+        coverage: response.coverage,
+        entries: response.entries,
+        proof: response.proof,
+        warnings: response.warnings,
+        raw_refs: response.raw_refs,
+    }
+}
+
+fn log_dimensioned_request(rpc: &'static str, about: &str, dimensions: &DimensionSelection) {
+    tracing::info!(
+        rpc,
+        about,
+        dimension_mode = %dimension_mode_label(dimensions.mode()),
+        dimension_scope = %dimension_scope_label(dimensions.scope_mode()),
+        dimensions = ?dimensions.dimensions().iter().cloned().collect::<Vec<_>>(),
+        abouts = ?dimensions.abouts().iter().cloned().collect::<Vec<_>>(),
+        scope_ids = ?dimensions.scope_ids().iter().cloned().collect::<Vec<_>>(),
+        "kernel memory grpc request"
+    );
+}
+
+fn log_temporal_request(rpc: &'static str, about: &str, dimensions: &DimensionSelection) {
+    log_dimensioned_request(rpc, about, dimensions);
+}
+
+fn selected_abouts_from_bundle(bundle: &RehydrationBundle) -> Vec<String> {
+    selected_abouts_from_bundle_and_scope_ids(bundle, std::iter::empty())
+}
+
+fn selected_abouts_from_temporal_result(result: &TemporalMemoryResult) -> Vec<String> {
+    selected_abouts_from_bundle_and_scope_ids(
+        &result.source_bundle,
+        result
+            .traversal
+            .entries()
+            .iter()
+            .flat_map(|entry| entry.coordinates().iter())
+            .map(|coordinate| coordinate.scope_id()),
+    )
+}
+
+fn selected_abouts_from_bundle_and_scope_ids<'a>(
+    bundle: &RehydrationBundle,
+    scope_ids: impl IntoIterator<Item = &'a str>,
+) -> Vec<String> {
+    let mut seen = BTreeSet::from([bundle.root_node_id().as_str().to_string()]);
+    let mut selected = vec![bundle.root_node_id().as_str().to_string()];
+
+    for node in bundle
+        .neighbor_nodes()
+        .iter()
+        .filter(|node| node.node_kind() == "memory_anchor")
+    {
+        if seen.insert(node.node_id().to_string()) {
+            selected.push(node.node_id().to_string());
+        }
+    }
+
+    for scope_id in scope_ids {
+        let Some(identity) = MemoryDimensionIdentity::parse(scope_id) else {
+            continue;
+        };
+        let about = identity.about().to_string();
+        if seen.insert(about.clone()) {
+            selected.push(about);
+        }
+    }
+
+    selected
+}
+
+fn map_proto_error(rpc: &'static str, status: Status) -> Status {
+    log_grpc_error(rpc, &status);
+    status
+}
+
+fn map_application_error_with_log(rpc: &'static str, error: ApplicationError) -> Status {
+    let status = map_application_error(error);
+    log_grpc_error(rpc, &status);
+    status
+}
+
+fn log_grpc_error(rpc: &'static str, status: &Status) {
+    tracing::warn!(
+        rpc,
+        code = ?status.code(),
+        message = %status.message(),
+        "kernel memory grpc error"
+    );
+}
+
+fn temporal_rpc_label(direction: TemporalDirection) -> &'static str {
+    match direction {
+        TemporalDirection::Goto => "KernelMemoryService.Goto",
+        TemporalDirection::Near => "KernelMemoryService.Near",
+        TemporalDirection::Rewind => "KernelMemoryService.Rewind",
+        TemporalDirection::Forward => "KernelMemoryService.Forward",
+    }
+}
+
+fn dimension_mode_label(value: DimensionSelectionMode) -> &'static str {
+    match value {
+        DimensionSelectionMode::All => "all",
+        DimensionSelectionMode::Only => "only",
+        DimensionSelectionMode::Except => "except",
+    }
+}
+
+fn dimension_scope_label(value: DimensionScopeMode) -> &'static str {
+    match value {
+        DimensionScopeMode::CurrentAbout => "current_about",
+        DimensionScopeMode::Abouts => "abouts",
+        DimensionScopeMode::AllAbouts => "all_abouts",
+    }
+}
+
+fn answer_presence_label(answer: &str) -> &'static str {
+    if answer.trim().is_empty() {
+        "empty"
+    } else if answer == "UNKNOWN" {
+        "unknown"
+    } else {
+        "deterministic"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use rehydration_domain::{BundleMetadata, BundleNode, CaseId, RehydrationBundle, Role};
+
+    use super::{selected_abouts_from_bundle, selected_abouts_from_bundle_and_scope_ids};
+
+    #[test]
+    fn selected_abouts_preserve_resolved_root_order() {
+        let bundle = RehydrationBundle::new(
+            CaseId::new("question:current").expect("valid case id"),
+            Role::new("memory").expect("valid role"),
+            node("question:current", "memory_anchor"),
+            vec![
+                node("question:other", "memory_anchor"),
+                node("claim:current", "claim"),
+            ],
+            Vec::new(),
+            Vec::new(),
+            BundleMetadata::initial("test"),
+        )
+        .expect("bundle should be valid");
+
+        assert_eq!(
+            selected_abouts_from_bundle(&bundle),
+            vec!["question:current", "question:other"]
+        );
+    }
+
+    #[test]
+    fn selected_abouts_include_temporal_scope_about_ids() {
+        let bundle = RehydrationBundle::new(
+            CaseId::new("question:current").expect("valid case id"),
+            Role::new("memory").expect("valid role"),
+            node("question:current", "memory_anchor"),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            BundleMetadata::initial("test"),
+        )
+        .expect("bundle should be valid");
+
+        assert_eq!(
+            selected_abouts_from_bundle_and_scope_ids(
+                &bundle,
+                [
+                    "about:question:other:dimension:timeline",
+                    "about:question:current:dimension:timeline",
+                ],
+            ),
+            vec!["question:current", "question:other"]
+        );
+    }
+
+    fn node(node_id: &str, node_kind: &str) -> BundleNode {
+        BundleNode::new(
+            node_id,
+            node_kind,
+            node_id,
+            node_id,
+            "ACTIVE",
+            Vec::new(),
+            BTreeMap::new(),
+        )
+    }
+}

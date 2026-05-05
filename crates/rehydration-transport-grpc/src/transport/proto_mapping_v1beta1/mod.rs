@@ -1,5 +1,6 @@
 mod bundle_mapping;
 mod graph_mapping;
+mod memory_mapping;
 mod rendered_mapping;
 mod scope_mapping;
 mod version_mapping;
@@ -11,6 +12,13 @@ pub(crate) use bundle_mapping::{
 pub(crate) use graph_mapping::{
     proto_bundle_node_detail_v1beta1, proto_bundle_node_v1beta1, proto_bundle_relationship_v1beta1,
     proto_graph_node_v1beta1, proto_node_detail_view_v1beta1,
+};
+pub(crate) use memory_mapping::{
+    ask_query_from_proto, ask_response_from_result, ingest_command_from_proto,
+    ingest_response_from_outcome, inspect_query_from_proto, inspect_response_from_result,
+    temporal_query_from_move_proto, temporal_query_from_near_proto, temporal_response_from_result,
+    trace_query_from_proto, trace_response_from_result, wake_query_from_proto,
+    wake_response_from_result,
 };
 pub(crate) use rendered_mapping::{
     proto_rendered_context_from_result_v1beta1, proto_rendered_context_v1beta1,

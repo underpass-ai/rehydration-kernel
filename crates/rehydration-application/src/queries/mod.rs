@@ -6,8 +6,10 @@ pub mod context_render_options;
 pub mod get_context;
 pub mod get_context_path;
 pub mod get_node_detail;
+pub mod get_node_relationships;
 pub mod graph_relationships;
 pub mod graph_traversal_depth;
+pub mod list_memory_abouts;
 pub(crate) mod mode_heuristic;
 pub mod node_centric_projection_reader;
 pub mod ordered_neighborhood;
@@ -24,6 +26,9 @@ pub use get_context::{GetContextQuery, GetContextResult, GetContextUseCase};
 pub use get_context_path::{GetContextPathQuery, GetContextPathResult, GetContextPathUseCase};
 pub use get_node_detail::{
     GetNodeDetailQuery, GetNodeDetailResult, GetNodeDetailUseCase, NodeDetailView,
+};
+pub use get_node_relationships::{
+    GetNodeRelationshipsQuery, GetNodeRelationshipsResult, GetNodeRelationshipsUseCase,
 };
 pub use graph_relationships::{
     GetGraphRelationshipsQuery, GetGraphRelationshipsResult, GetGraphRelationshipsUseCase,

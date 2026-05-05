@@ -97,10 +97,21 @@ where
         let case_id = CaseId::new(&command.root_node_id)?;
         let role = Role::new(&command.role)?;
 
+        // Compute content hash from actual change payloads. Duplicate idempotency keys
+        // must replay the same logical command, not mask a conflicting payload.
+        let content_hash = compute_content_hash(&command.changes);
+
         // Idempotency check
         if let Some(ref key) = command.idempotency_key
             && let Some(outcome) = self.event_store.find_by_idempotency_key(key).await?
         {
+            if outcome.content_hash != content_hash {
+                return Err(ApplicationError::Ports(
+                    rehydration_domain::PortError::Conflict(format!(
+                        "idempotency key '{key}' was already accepted with different content"
+                    )),
+                ));
+            }
             return Ok(UpdateContextOutcome {
                 accepted_version: AcceptedVersion {
                     revision: outcome.revision,
@@ -141,9 +152,6 @@ where
                 )),
             ));
         }
-
-        // Compute content hash from actual change payloads
-        let content_hash = compute_content_hash(&command.changes);
 
         let mut warnings = Vec::new();
         if command.changes.is_empty() {
@@ -371,6 +379,43 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn execute_rejects_duplicate_idempotency_key_with_different_content() {
+        let store = event_store();
+        let uc = use_case(Arc::clone(&store));
+
+        uc.execute(UpdateContextCommand {
+            root_node_id: "node-1".to_string(),
+            role: "developer".to_string(),
+            work_item_id: "task-1".to_string(),
+            changes: vec![sample_change()],
+            expected_revision: None,
+            expected_content_hash: None,
+            idempotency_key: Some("idem-1".to_string()),
+            requested_by: None,
+        })
+        .await
+        .expect("first call should succeed");
+
+        let mut changed = sample_change();
+        changed.payload_json = r#"{"status":"CHANGED"}"#.to_string();
+        let error = uc
+            .execute(UpdateContextCommand {
+                root_node_id: "node-1".to_string(),
+                role: "developer".to_string(),
+                work_item_id: "task-1".to_string(),
+                changes: vec![changed],
+                expected_revision: None,
+                expected_content_hash: None,
+                idempotency_key: Some("idem-1".to_string()),
+                requested_by: None,
+            })
+            .await
+            .expect_err("duplicate idempotency key with changed payload should fail");
+
+        assert!(error.to_string().contains("different content"));
+    }
+
+    #[tokio::test]
     async fn execute_warns_on_empty_changes() {
         let store = event_store();
         let uc = use_case(Arc::clone(&store));
@@ -522,6 +567,13 @@ mod tests {
             ProjectionMutation::UpsertNodeDetail(detail)
                 if detail.node_id == "claim:mcp"
                     && detail.detail == "MCP ingest materializes into the read model."
+        )));
+        assert!(mutations.iter().any(|mutation| matches!(
+            mutation,
+            ProjectionMutation::UpsertNode(node)
+                if node.node_id == "evidence:mcp"
+                    && node.node_kind == "memory_evidence"
+                    && node.summary == "Projection writer recorded the detail."
         )));
         assert!(mutations.iter().any(|mutation| matches!(
             mutation,

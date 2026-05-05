@@ -3,9 +3,10 @@ use std::sync::Arc;
 
 use rehydration_domain::{
     ContextEventStore, ContextPathNeighborhood, ContextUpdatedEvent, GraphNeighborhoodReader,
-    IdempotentOutcome, NodeDetailProjection, NodeDetailReader, NodeNeighborhood, PortError,
-    ProcessedEventStore, ProjectionCheckpoint, ProjectionCheckpointStore, ProjectionMutation,
-    ProjectionWriter, RehydrationBundle, SnapshotSaveOptions, SnapshotStore,
+    IdempotentOutcome, MemoryAboutIndexReader, NodeDetailProjection, NodeDetailReader,
+    NodeNeighborhood, NodeRelationshipReader, NodeRelationships, PortError, ProcessedEventStore,
+    ProjectionCheckpoint, ProjectionCheckpointStore, ProjectionMutation, ProjectionWriter,
+    RehydrationBundle, SnapshotSaveOptions, SnapshotStore,
 };
 use tokio::sync::Mutex;
 
@@ -38,6 +39,39 @@ impl GraphNeighborhoodReader for InMemoryGraphNeighborhoodReader {
         _subtree_depth: u32,
     ) -> Result<Option<ContextPathNeighborhood>, PortError> {
         Ok(None)
+    }
+}
+
+impl MemoryAboutIndexReader for InMemoryGraphNeighborhoodReader {
+    async fn list_memory_abouts(&self) -> Result<Vec<String>, PortError> {
+        let mut abouts = self.neighborhoods.keys().cloned().collect::<Vec<_>>();
+        abouts.sort();
+        Ok(abouts)
+    }
+}
+
+impl NodeRelationshipReader for InMemoryGraphNeighborhoodReader {
+    async fn load_node_relationships(
+        &self,
+        node_id: &str,
+    ) -> Result<Option<NodeRelationships>, PortError> {
+        let Some(neighborhood) = self.neighborhoods.get(node_id) else {
+            return Ok(None);
+        };
+        Ok(Some(NodeRelationships {
+            incoming: neighborhood
+                .relations
+                .iter()
+                .filter(|relation| relation.target_node_id == node_id)
+                .cloned()
+                .collect(),
+            outgoing: neighborhood
+                .relations
+                .iter()
+                .filter(|relation| relation.source_node_id == node_id)
+                .cloned()
+                .collect(),
+        }))
     }
 }
 

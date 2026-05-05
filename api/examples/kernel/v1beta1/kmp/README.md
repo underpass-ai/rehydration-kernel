@@ -1,6 +1,7 @@
 # Kernel Memory Protocol Fixtures
 
-Status: draft contract fixtures for the Kernel 1.0 public memory slice.
+Status: executable contract fixtures for the Kernel Memory Protocol public
+memory slice.
 
 This folder defines the transport-neutral Kernel Memory Protocol (KMP) shape.
 MCP, gRPC, and NATS should carry these same memory moves instead of inventing
@@ -32,13 +33,43 @@ ingest -> wake -> ask -> goto/near/rewind/forward -> trace -> inspect
 
 Transport bindings:
 
-- MCP tools should expose `kernel_ingest`, `kernel_wake`, `kernel_ask`,
+- MCP tools expose `kernel_ingest`, `kernel_wake`, `kernel_ask`,
   `kernel_goto`, `kernel_near`, `kernel_rewind`, `kernel_forward`,
   `kernel_trace`, and `kernel_inspect`.
-- gRPC should expose the same moves through a typed `KernelMemoryService`.
-- NATS should start with asynchronous `kernel.memory.ingest`,
-  `kernel.memory.ingested`, and `kernel.memory.rejected`.
+- gRPC exposes the same moves through the typed
+  [`KernelMemoryService`](../../../../proto/underpass/rehydration/kernel/v1beta1/memory.proto).
+  The gRPC contract is the executable binding for this cut.
+- NATS KMP subjects such as `kernel.memory.ingest`,
+  `kernel.memory.ingested`, and `kernel.memory.rejected` remain design
+  guidance; they are not implemented in this cut.
 
 These fixtures are not a replacement for the existing node-centric gRPC and
 AsyncAPI contracts. They define the higher-level public memory shape that maps
 onto those existing Kernel 1.0 primitives.
+
+Current binding note:
+
+- KMP temporal fixture aliases such as `at` and `from` map to the gRPC
+  `TemporalCursor` field on method-specific temporal requests such as
+  `GotoRequest`, `RewindRequest`, or `ForwardRequest`.
+- KMP temporal responses follow the typed gRPC shape: `temporal.requested`
+  carries the submitted cursor and `temporal.resolved` carries the resolved
+  coordinate. They do not synthesize transport-specific `at`/`from`/`around`
+  response fields.
+- `IngestRequest.about` is the default dimension namespace. Logical dimension
+  ids in KMP map to internal kernel ids shaped as
+  `about:<about>:dimension:<dimension_id>`.
+- gRPC `DimensionSelection` defaults to `CURRENT_ABOUT`. Cross-memory traversal
+  must use `ABOUTS` with an explicit non-empty about list or `ALL_ABOUTS` to
+  traverse every memory anchor from the kernel memory about index.
+- `DimensionSelection.scope_ids` is an exact scope filter applied after
+  `mode/include/exclude`. It accepts local dimension ids or fully namespaced
+  ids shaped as `about:<about>:dimension:<dimension_id>`.
+- MCP live mode is a thin `KernelMemoryService` client. It must not call
+  `ContextQueryService` or `ContextCommandService` directly for KMP moves.
+- `kernel_ask.answer` is deterministic evidence text, or `UNKNOWN`, not a
+  generated answer and not an anchor summary.
+- `kernel_inspect` supports typed object/detail/link/evidence lookup and typed
+  raw audit refs when `include.raw=true`.
+- Temporal `include.raw_refs=true` returns typed raw audit refs for selected
+  entries without polluting normal semantic reads.

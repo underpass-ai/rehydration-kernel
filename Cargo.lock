@@ -2186,6 +2186,7 @@ dependencies = [
 name = "rehydration-mcp"
 version = "0.1.0"
 dependencies = [
+ "prost-types",
  "rehydration-proto",
  "serde_json",
  "tempfile",

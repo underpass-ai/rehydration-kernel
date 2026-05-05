@@ -163,7 +163,7 @@ async fn fixture_tools_cover_ingest_wake_trace_and_inspect() {
         "params": {
             "name": "kernel_wake",
             "arguments": {
-                "about": "project:kernel-memory-protocol"
+                "about": "memory:kernel-memory-protocol"
             }
         }
     }))
@@ -248,7 +248,10 @@ async fn kernel_ask_returns_fixture_backed_structured_content() {
     .await;
 
     assert_eq!(response["result"]["isError"], false);
-    assert_eq!(response["result"]["structuredContent"]["answer"], "Austin");
+    assert_eq!(
+        response["result"]["structuredContent"]["answer"],
+        "Later she corrected it: the move is to Austin."
+    );
     assert_eq!(
         response["result"]["structuredContent"]["proof"]["confidence"],
         "high"

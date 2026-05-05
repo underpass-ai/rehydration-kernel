@@ -1,7 +1,8 @@
 # Kernel Memory Protocol API Design
 
 Date: 2026-04-30
-Status: Draft contract for the Kernel 1.0 public memory slice
+Status: implemented typed gRPC/MCP live cut for the core synchronous KMP moves;
+NATS KMP ingest remains design guidance.
 
 ## Product Stance
 
@@ -75,17 +76,14 @@ KMP exposes nine memory moves.
 | `rewind` | `kernel_rewind` | `Rewind` | Not recommended for async MVP | Move backward in time over one, several, or all dimensions of a memory. |
 | `forward` | `kernel_forward` | `Forward` | Not recommended for async MVP | Move forward in time over one, several, or all dimensions of a memory. |
 | `trace` | `kernel_trace` | `Trace` | Not recommended for async MVP | Return the relationship path and evidence trail behind an answer. |
-| `inspect` | `kernel_inspect` | `Inspect` | Not recommended for async MVP | Show raw graph/detail state for audits and debugging. |
+| `inspect` | `kernel_inspect` | `Inspect` | Not recommended for async MVP | Show typed graph/detail/link/raw audit state for audits and debugging. |
 
-The old descriptive names remain valid as aliases during migration:
+Only the ingest aliases are implemented in MCP live mode during migration:
 
 | Alias | Canonical move |
 |:------|:---------------|
 | `kernel_remember` | `kernel_ingest` |
 | `kernel_ingest_context` | `kernel_ingest` |
-| `kernel_explore_context` | `kernel_ask` |
-| `kernel_get_context` | `kernel_wake` or advanced bundle read |
-| `kernel_inspect_context` | `kernel_inspect` |
 
 ## Why These Moves
 
@@ -95,8 +93,9 @@ traversable.
 `wake` is not "get context". It returns the minimal state needed to resume
 agency.
 
-`ask` is not search. It requires an answer policy: evidence-backed answer,
-conflict, or unknown.
+`ask` is not search. It requires an answer policy: deterministic evidence text,
+conflict, or unknown. It does not run a generative answer engine in the current
+typed gRPC/MCP cut.
 
 `goto`, `near`, `rewind`, and `forward` are not time filters. They move through
 memory over a dimension selection: one dimension, a set of dimensions, or every
@@ -444,7 +443,7 @@ MCP response:
       "relations": 1,
       "evidence": 1
     },
-    "read_after_write_ready": false
+    "read_after_write_ready": true
   },
   "warnings": []
 }
@@ -452,12 +451,16 @@ MCP response:
 
 Rules:
 
-- `idempotency_key` is required for non-dry-run requests.
-- Acceptance is not read-model completion.
+- `idempotency_key` is required for every request, including `dry_run`.
+- Synchronous gRPC/MCP live ingest reports `read_after_write_ready=true` only
+  after the memory projection mutation path completes.
+- Fixture, dry-run, and asynchronous examples may report
+  `read_after_write_ready=false`.
 - The same memory replay with the same idempotency key returns the same
   acceptance.
 - The same idempotency key with different memory is rejected.
-- `dry_run=true` validates and returns the translated projection summary.
+- `dry_run=true` validates and returns the translated projection summary
+  without writing.
 
 ## Move: `wake`
 
@@ -485,7 +488,7 @@ MCP request:
 
 ```json
 {
-  "about": "project:kernel-memory-protocol",
+  "about": "memory:kernel-memory-protocol",
   "role": "implementer",
   "intent": "continue designing the public API",
   "budget": {
@@ -546,7 +549,7 @@ Wake response fields:
 | `wake.open_loops` | Known unresolved work or uncertainty. |
 | `wake.next_actions` | Concrete continuation options. |
 | `wake.guardrails` | Constraints that prevent harmful or wrong continuation. |
-| `proof` | Evidence, missing data, confidence, and optional raw refs. |
+| `proof` | Evidence, missing data, confidence, and typed proof refs. Raw audit refs stay explicit and opt-in. |
 
 This is different from `GetContext`: `GetContext` returns a bundle;
 `wake` returns a continuation state.
@@ -565,11 +568,7 @@ MCP request:
 {
   "about": "question:830ce83f",
   "question": "Where did Rachel move after her recent relocation?",
-  "answer_policy": "evidence_or_unknown",
-  "prefer": {
-    "time": "latest",
-    "relations": ["supersedes", "supports"]
-  }
+  "answer_policy": "evidence_or_unknown"
 }
 ```
 
@@ -577,8 +576,8 @@ MCP response:
 
 ```json
 {
-  "summary": "Rachel moved to Austin. The Austin claim supersedes the earlier Denver claim.",
-  "answer": "Austin",
+  "summary": "Deterministic memory answer from 1 evidence item for: Where did Rachel move after her recent relocation?",
+  "answer": "Later she corrected it: the move is to Austin.",
   "because": [
     {
       "claim": "Rachel later corrected the destination to Austin.",
@@ -593,7 +592,17 @@ MCP response:
         "to": "claim:rachel-denver",
         "rel": "supersedes",
         "class": "evidential",
+        "why": "The later statement corrects the earlier destination.",
+        "evidence": "Later she corrected it: the move is to Austin.",
         "confidence": "high"
+      }
+    ],
+    "evidence": [
+      {
+        "id": "evidence:rachel-turn-2",
+        "supports": ["claim:rachel-austin"],
+        "text": "Later she corrected it: the move is to Austin.",
+        "source": "conversation turn 2"
       }
     ],
     "conflicts": [],
@@ -609,8 +618,8 @@ Answer policy values:
 | Policy | Behavior |
 |:-------|:---------|
 | `evidence_or_unknown` | Return an answer only when evidence exists. |
-| `show_conflicts` | Return competing claims if conflict is unresolved. |
-| `best_effort` | Return the best supported answer and mark uncertainty. |
+| `show_conflicts` | Uses the same deterministic evidence path and surfaces explicit conflict relations in `proof.conflicts`; it does not infer hidden contradictions. |
+| `best_effort` | Current live cut does not fall back to generated or anchor-summary text; without evidence it returns `UNKNOWN`. |
 
 Default policy should be `evidence_or_unknown`.
 
@@ -648,42 +657,56 @@ MCP response:
   "summary": "At 2026-04-12T15:03:00Z, memory still supported Denver as Rachel's destination.",
   "temporal": {
     "direction": "goto",
-    "at": {
+    "requested": {
       "time": "2026-04-12T15:03:00Z"
+    },
+    "resolved": {
+      "occurred_at": "2026-04-12T15:03:00Z"
     }
   },
   "coverage": {
     "requested": {
-      "mode": "all"
+      "mode": "all",
+      "scope": "current_about"
     },
-    "included": ["conversation", "entity", "benchmark_record"],
+    "included": ["conversation", "entity"],
     "missing": []
   },
   "entries": [
     {
       "ref": "claim:rachel-denver",
+      "kind": "claim",
       "text": "Rachel said she was moving to Denver.",
       "coordinates": [
         {
           "dimension": "conversation",
-          "scope_id": "conversation:rachel-2026-04-12",
+          "scope_id": "about:question:830ce83f:dimension:conversation:rachel-2026-04-12",
           "sequence": 1,
           "occurred_at": "2026-04-12T15:00:00Z"
         },
         {
           "dimension": "entity",
-          "scope_id": "person:rachel",
+          "scope_id": "about:question:830ce83f:dimension:person:rachel",
           "valid_from": "2026-04-12T15:00:00Z"
         }
       ]
     }
   ],
   "proof": {
-    "path": [],
+    "path": [
+      {
+        "from": "claim:rachel-austin",
+        "to": "claim:rachel-denver",
+        "rel": "supersedes",
+        "class": "evidential",
+        "why": "The later statement corrects the earlier destination.",
+        "confidence": "high"
+      }
+    ],
     "evidence": [],
     "conflicts": [],
     "missing": [],
-    "confidence": "high"
+    "confidence": "medium"
   },
   "warnings": []
 }
@@ -731,18 +754,18 @@ MCP response:
   "summary": "Near 2026-04-12T15:03:00Z, Denver appeared before the cursor and Austin appeared after it.",
   "temporal": {
     "direction": "near",
-    "around": {
+    "requested": {
       "time": "2026-04-12T15:03:00Z"
     },
-    "window": {
-      "before_entries": 2,
-      "after_entries": 2
+    "resolved": {
+      "occurred_at": "2026-04-12T15:03:00Z"
     }
   },
   "coverage": {
     "requested": {
       "mode": "only",
-      "include": ["conversation", "entity"]
+      "include": ["conversation", "entity"],
+      "scope": "current_about"
     },
     "included": ["conversation", "entity"],
     "missing": []
@@ -750,27 +773,37 @@ MCP response:
   "entries": [
     {
       "ref": "claim:rachel-denver",
+      "kind": "claim",
       "text": "Rachel said she was moving to Denver.",
-      "position": "before",
       "coordinates": [
         {
           "dimension": "conversation",
-          "scope_id": "conversation:rachel-2026-04-12",
+          "scope_id": "about:question:830ce83f:dimension:conversation:rachel-2026-04-12",
           "sequence": 1,
           "occurred_at": "2026-04-12T15:00:00Z"
+        },
+        {
+          "dimension": "entity",
+          "scope_id": "about:question:830ce83f:dimension:person:rachel",
+          "valid_from": "2026-04-12T15:00:00Z"
         }
       ]
     },
     {
       "ref": "claim:rachel-austin",
+      "kind": "claim",
       "text": "Rachel later corrected the destination to Austin.",
-      "position": "after",
       "coordinates": [
         {
           "dimension": "conversation",
-          "scope_id": "conversation:rachel-2026-04-12",
+          "scope_id": "about:question:830ce83f:dimension:conversation:rachel-2026-04-12",
           "sequence": 2,
           "occurred_at": "2026-04-12T15:05:00Z"
+        },
+        {
+          "dimension": "entity",
+          "scope_id": "about:question:830ce83f:dimension:person:rachel",
+          "valid_from": "2026-04-12T15:05:00Z"
         }
       ]
     }
@@ -782,13 +815,14 @@ MCP response:
         "to": "claim:rachel-denver",
         "rel": "supersedes",
         "class": "evidential",
+        "why": "The later statement corrects the earlier destination.",
         "confidence": "high"
       }
     ],
     "evidence": [],
     "conflicts": [],
     "missing": [],
-    "confidence": "high"
+    "confidence": "medium"
   },
   "warnings": []
 }
@@ -832,15 +866,21 @@ MCP response:
   "summary": "Before claim:rachel-austin, the active supported location was Denver across conversation and entity dimensions.",
   "temporal": {
     "direction": "rewind",
-    "from": {
-      "ref": "claim:rachel-austin",
-      "time": "2026-04-12T15:05:00Z"
+    "requested": {
+      "ref": "claim:rachel-austin"
+    },
+    "resolved": {
+      "dimension": "conversation",
+      "scope_id": "about:question:830ce83f:dimension:conversation:rachel-2026-04-12",
+      "sequence": 2,
+      "occurred_at": "2026-04-12T15:05:00Z"
     }
   },
   "coverage": {
     "requested": {
       "mode": "only",
-      "include": ["conversation", "entity"]
+      "include": ["conversation", "entity"],
+      "scope": "current_about"
     },
     "included": ["conversation", "entity"],
     "missing": []
@@ -848,28 +888,38 @@ MCP response:
   "entries": [
     {
       "ref": "claim:rachel-denver",
+      "kind": "claim",
       "text": "Rachel said she was moving to Denver.",
       "coordinates": [
         {
           "dimension": "conversation",
-          "scope_id": "conversation:rachel-2026-04-12",
+          "scope_id": "about:question:830ce83f:dimension:conversation:rachel-2026-04-12",
           "sequence": 1,
           "occurred_at": "2026-04-12T15:00:00Z"
         },
         {
           "dimension": "entity",
-          "scope_id": "person:rachel",
+          "scope_id": "about:question:830ce83f:dimension:person:rachel",
           "valid_from": "2026-04-12T15:00:00Z"
         }
       ]
     }
   ],
   "proof": {
-    "path": [],
+    "path": [
+      {
+        "from": "claim:rachel-austin",
+        "to": "claim:rachel-denver",
+        "rel": "supersedes",
+        "class": "evidential",
+        "why": "The later statement corrects the earlier destination.",
+        "confidence": "high"
+      }
+    ],
     "evidence": [],
     "conflicts": [],
     "missing": [],
-    "confidence": "high"
+    "confidence": "medium"
   },
   "warnings": []
 }
@@ -908,32 +958,39 @@ MCP response:
   "summary": "After claim:rachel-denver, claim:rachel-austin superseded it.",
   "temporal": {
     "direction": "forward",
-    "from": {
-      "ref": "claim:rachel-denver",
-      "time": "2026-04-12T15:00:00Z"
+    "requested": {
+      "ref": "claim:rachel-denver"
+    },
+    "resolved": {
+      "dimension": "conversation",
+      "scope_id": "about:question:830ce83f:dimension:conversation:rachel-2026-04-12",
+      "sequence": 1,
+      "occurred_at": "2026-04-12T15:00:00Z"
     }
   },
   "coverage": {
     "requested": {
-      "mode": "all"
+      "mode": "all",
+      "scope": "current_about"
     },
-    "included": ["conversation", "entity", "benchmark_record"],
+    "included": ["conversation", "entity"],
     "missing": []
   },
   "entries": [
     {
       "ref": "claim:rachel-austin",
+      "kind": "claim",
       "text": "Rachel later corrected the destination to Austin.",
       "coordinates": [
         {
           "dimension": "conversation",
-          "scope_id": "conversation:rachel-2026-04-12",
+          "scope_id": "about:question:830ce83f:dimension:conversation:rachel-2026-04-12",
           "sequence": 2,
           "occurred_at": "2026-04-12T15:05:00Z"
         },
         {
           "dimension": "entity",
-          "scope_id": "person:rachel",
+          "scope_id": "about:question:830ce83f:dimension:person:rachel",
           "valid_from": "2026-04-12T15:05:00Z"
         }
       ]
@@ -946,13 +1003,14 @@ MCP response:
         "to": "claim:rachel-denver",
         "rel": "supersedes",
         "class": "evidential",
+        "why": "The later statement corrects the earlier destination.",
         "confidence": "high"
       }
     ],
     "evidence": [],
     "conflicts": [],
     "missing": [],
-    "confidence": "high"
+    "confidence": "medium"
   },
   "warnings": []
 }
@@ -980,11 +1038,7 @@ MCP request:
 {
   "from": "claim:rachel-austin",
   "to": "claim:rachel-denver",
-  "goal": "explain_update",
-  "include": {
-    "evidence": true,
-    "raw_refs": true
-  }
+  "goal": "explain_update"
 }
 ```
 
@@ -1028,7 +1082,7 @@ MCP request:
     "incoming": true,
     "outgoing": true,
     "details": true,
-    "raw": true
+    "raw": false
   }
 }
 ```
@@ -1089,30 +1143,34 @@ SDKs. They should answer:
 - what proof will come back?
 - when should the model call a different memory move?
 
-MCP must not duplicate kernel logic. The MCP server calls the same application
-services used by gRPC and NATS ingress.
+MCP must not duplicate kernel logic. The current stdio adapter is a thin live
+client of the typed `KernelMemoryService`; it does not call
+`ContextQueryService` or `ContextCommandService` directly for KMP moves.
 
 ## Binding: gRPC
 
 gRPC carries the same protocol for typed clients.
 
-Recommended service:
+Implemented binding:
+[`kernel-memory-service-grpc-plan.md`](./kernel-memory-service-grpc-plan.md)
+
+Service:
 
 ```proto
 service KernelMemoryService {
   rpc Ingest(IngestRequest) returns (IngestResponse);
   rpc Wake(WakeRequest) returns (WakeResponse);
   rpc Ask(AskRequest) returns (AskResponse);
-  rpc Goto(TemporalMoveRequest) returns (TemporalMoveResponse);
-  rpc Near(TemporalNearRequest) returns (TemporalMoveResponse);
-  rpc Rewind(TemporalMoveRequest) returns (TemporalMoveResponse);
-  rpc Forward(TemporalMoveRequest) returns (TemporalMoveResponse);
+  rpc Goto(GotoRequest) returns (GotoResponse);
+  rpc Near(NearRequest) returns (NearResponse);
+  rpc Rewind(RewindRequest) returns (RewindResponse);
+  rpc Forward(ForwardRequest) returns (ForwardResponse);
   rpc Trace(TraceRequest) returns (TraceResponse);
   rpc Inspect(InspectRequest) returns (InspectResponse);
 }
 ```
 
-This service should live additively beside current services:
+This service lives additively beside current services:
 
 - `ContextQueryService`
 - `ContextCommandService`
@@ -1123,7 +1181,7 @@ Existing RPCs remain valid:
 |:-------------|:-----------------|
 | `GetContext` | Low-level bundle read used by `wake` or advanced callers. |
 | `GetContextPath` | Low-level path read used by `trace`. |
-| `GetNodeDetail` | Low-level detail read used by `inspect`. |
+| `GetNodeDetail` + node relationship reader | Low-level detail and direct link reads used by `inspect`. |
 | `RehydrateSession` | Compatibility rehydration call; public product vocabulary should use `wake` and `scope`. |
 | `UpdateContext` | Generic command/event-store path; not the preferred memory ingest path. |
 
@@ -1132,7 +1190,10 @@ CRUD names.
 
 ## Binding: NATS
 
-NATS carries asynchronous memory ingestion and notifications.
+NATS KMP ingestion is design guidance in the current cut. The implemented async
+surface remains the projection subjects (`graph.node.materialized`,
+`graph.relation.materialized`, and `node.detail.materialized`); KMP-specific
+subjects are not emitted or consumed yet.
 
 Recommended subjects:
 
@@ -1146,8 +1207,8 @@ Recommended subjects:
 | `graph.relation.materialized` | kernel subscribes | Existing relation-only projection input. |
 | `node.detail.materialized` | kernel subscribes | Existing detail projection input. |
 
-`kernel.memory.ingest` is the simple async path. Existing `graph.*` and
-`node.detail.*` subjects remain the lower-level projection contract.
+`kernel.memory.ingest` is the proposed simple async path. Existing `graph.*`
+and `node.detail.*` subjects remain the lower-level projection contract.
 
 NATS envelope:
 
@@ -1241,7 +1302,8 @@ Default read behavior:
 - current/superseding facts beat stale facts when the path proves it;
 - conflicts are returned explicitly;
 - unknown is a valid answer;
-- raw state is hidden unless requested.
+- raw state is hidden by default; requested raw expansion returns typed raw
+  audit refs.
 
 For `ask`, the default answer policy is:
 
@@ -1265,15 +1327,20 @@ proof
 
 Writes are idempotent and validation-first.
 
-Required behavior:
+Current `KernelMemoryService.Ingest` behavior:
 
 - require `idempotency_key`;
-- validate references before accepting;
-- reject duplicate relations inside one memory ingest;
-- reject unresolved link refs unless pending refs are explicitly enabled;
-- reject entry coordinates that reference dimensions absent from the memory;
+- validate dimensions, entries, entry coordinates, relation endpoints, relation
+  classes, relation proof material, evidence refs, provenance, and positive
+  temporal coordinate numbers before accepting;
+- reject unresolved relation and evidence refs unless they already exist in the
+  current memory read model;
+- reject entry coordinates that reference dimensions absent from the submitted
+  memory or existing memory read model;
+- reject replay of the same idempotency key with different memory content;
 - preserve provenance;
-- acknowledge acceptance separately from read-model completion;
+- report `read_after_write_ready=true` only after the synchronous projection
+  mutation path completes;
 - expose dry-run validation.
 
 Dry-run behavior:
@@ -1337,38 +1404,47 @@ The differentiated product is:
 - wake packets instead of context dumps;
 - temporal goto/near/rewind/forward across selected memory dimensions;
 - proof as a first-class response field;
-- unknown/conflict as honest first-class outcomes;
+- unknown as an honest first-class outcome, with conflict reporting reserved
+  for the future proof model;
 - LLM-produced relations stored as inspectable facts;
 - deterministic traversal over causal/evidential links;
 - one protocol that works locally through MCP, synchronously through gRPC, and
-  asynchronously through NATS.
+  asynchronously through NATS once the KMP NATS subjects are implemented.
 
 ## Implementation Order
 
-Recommended order:
+Implemented:
 
 1. Rename the public API direction to Kernel Memory Protocol in product docs.
 2. Add JSON schemas for `kernel_ingest`, `kernel_wake`, `kernel_ask`,
    `kernel_goto`, `kernel_near`, `kernel_rewind`, `kernel_forward`,
    `kernel_trace`, and `kernel_inspect`.
-   Draft fixtures live under
+   Contract fixtures live under
    [`api/examples/kernel/v1beta1/kmp`](../../api/examples/kernel/v1beta1/kmp).
 3. Add examples for conversation memory, incident memory, workflow memory, and
    benchmark memory.
-4. Implement local stdio MCP read moves first: `wake`, `ask`, `trace`,
-   `inspect`. The first adapter lives in
-   [`crates/rehydration-mcp`](../../crates/rehydration-mcp) and supports
-   fixture-backed mode plus live gRPC reads through
-   `REHYDRATION_KERNEL_GRPC_ENDPOINT`.
-5. Map read moves onto existing `GetContext`, `GetContextPath`, and
-   `GetNodeDetail`.
-6. Add memory-to-projection translation for `ingest`.
-7. Add typed gRPC `KernelMemoryService`.
-8. Add NATS `kernel.memory.ingest/ingested/rejected`.
-9. Re-run the benchmark and publish what improves and what still fails.
+4. Add domain-owned temporal and multidimensional traversal.
+5. Add memory-to-projection translation for `ingest` in the application layer.
+6. Add typed gRPC `KernelMemoryService`.
+7. Keep MCP live mode on `KernelMemoryService`.
+   This migration is implemented for live MCP mode.
 
-This order avoids over-promising write-side memory before the wake/ask/trace
-experience is real.
+Remaining follow-up:
+
+1. Add NATS `kernel.memory.ingest/ingested/rejected` if an async KMP write
+   workload needs it.
+2. Add a real generated answer engine only after its ownership, policy, and
+   tests are explicit.
+3. Re-run the benchmark and publish what improves and what still fails.
+
+The `KernelMemoryService` work was delivered API-first: `memory.proto` and
+contract tests define the public boundary, and existing query/command
+application services are reused behind typed KMP use cases. MCP live mode now
+calls the typed memory service instead of the lower-level gRPC services. See
+[`kernel-memory-service-grpc-plan.md`](./kernel-memory-service-grpc-plan.md).
+
+This keeps domain behavior, application use cases, and transport bindings
+separated while MCP remains another adapter over the same API.
 
 ## Acceptance Criteria
 
@@ -1381,8 +1457,9 @@ The design is ready to implement when:
 - `goto`, `near`, `rewind`, and `forward` traverse one, several, or all
   dimensions by time;
 - `trace` shows the relation path behind an answer;
-- `inspect` can audit the raw stored facts;
-- the same memory move can be carried through MCP, gRPC, or NATS;
+- `inspect` can audit typed stored facts and typed raw refs;
+- the same synchronous memory move can be carried through MCP and gRPC; NATS KMP
+  subjects remain design guidance until implemented;
 - existing Kernel 1.0 clients remain valid;
 - the docs do not claim benchmark success before implementation and
   measurement.

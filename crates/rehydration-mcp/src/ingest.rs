@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use serde_json::{Value, json};
+use serde_json::{Map, Value};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct KmpIngestPlan {
@@ -47,6 +47,9 @@ pub(crate) fn build_ingest_plan(arguments: &Value) -> Result<KmpIngestPlan, Stri
     let relations = optional_array(memory.get("relations"), "memory.relations")?;
     let evidence = optional_array(memory.get("evidence"), "memory.evidence")?;
     let provenance = arguments.get("provenance").and_then(Value::as_object);
+    if let Some(provenance) = provenance {
+        validate_provenance(provenance)?;
+    }
     let dimension_ids = dimensions
         .iter()
         .filter_map(|dimension| required_object_string(dimension, "memory.dimensions[].id").ok())
@@ -55,6 +58,7 @@ pub(crate) fn build_ingest_plan(arguments: &Value) -> Result<KmpIngestPlan, Stri
     let mut changes = Vec::new();
     for dimension in dimensions {
         let id = required_object_string(dimension, "memory.dimensions[].id")?;
+        let _kind = required_object_string(dimension, "memory.dimensions[].kind")?;
         changes.push(KmpIngestChange {
             entity_kind: "memory_dimension".to_string(),
             entity_id: id.to_string(),
@@ -66,6 +70,8 @@ pub(crate) fn build_ingest_plan(arguments: &Value) -> Result<KmpIngestPlan, Stri
 
     for entry in entries {
         let id = required_object_string(entry, "memory.entries[].id")?;
+        let _kind = required_object_string(entry, "memory.entries[].kind")?;
+        let _text = required_object_string(entry, "memory.entries[].text")?;
         validate_entry_positions(entry, &dimension_ids)?;
         changes.push(KmpIngestChange {
             entity_kind: "memory_entry".to_string(),
@@ -80,6 +86,9 @@ pub(crate) fn build_ingest_plan(arguments: &Value) -> Result<KmpIngestPlan, Stri
         let from = required_object_string(relation, "memory.relations[].from")?;
         let to = required_object_string(relation, "memory.relations[].to")?;
         let rel = required_object_string(relation, "memory.relations[].rel")?;
+        let semantic_class = required_object_string(relation, "memory.relations[].class")?;
+        validate_semantic_class(semantic_class)?;
+        validate_relation_explanation(relation, semantic_class)?;
         changes.push(KmpIngestChange {
             entity_kind: "memory_relation".to_string(),
             entity_id: format!("relation:{from}:{rel}:{to}"),
@@ -96,6 +105,8 @@ pub(crate) fn build_ingest_plan(arguments: &Value) -> Result<KmpIngestPlan, Stri
 
     for evidence_item in evidence {
         let id = required_object_string(evidence_item, "memory.evidence[].id")?;
+        let _text = required_object_string(evidence_item, "memory.evidence[].text")?;
+        validate_evidence_supports(evidence_item)?;
         changes.push(KmpIngestChange {
             entity_kind: "memory_evidence".to_string(),
             entity_id: id.to_string(),
@@ -146,43 +157,6 @@ pub(crate) fn build_ingest_plan(arguments: &Value) -> Result<KmpIngestPlan, Stri
     })
 }
 
-pub(crate) fn ingest_response(
-    plan: &KmpIngestPlan,
-    mut warnings: Vec<String>,
-    read_after_write_ready: bool,
-) -> Value {
-    if plan.dry_run {
-        warnings.push(
-            "dry_run=true; validated and translated memory without sending a kernel command"
-                .to_string(),
-        );
-    }
-
-    json!({
-        "summary": format!(
-            "Ingested {} {}, {} {}, and {} {} for {}.",
-            plan.accepted.entries,
-            plural(plan.accepted.entries, "entry", "entries"),
-            plan.accepted.relations,
-            plural(plan.accepted.relations, "relation", "relations"),
-            plan.accepted.evidence,
-            plural(plan.accepted.evidence, "evidence item", "evidence items"),
-            plan.about
-        ),
-        "memory": {
-            "about": plan.about,
-            "memory_id": plan.memory_id,
-            "accepted": {
-                "entries": plan.accepted.entries,
-                "relations": plan.accepted.relations,
-                "evidence": plan.accepted.evidence
-            },
-            "read_after_write_ready": read_after_write_ready
-        },
-        "warnings": warnings
-    })
-}
-
 fn required_string(value: Option<&Value>, key: &str) -> Result<String, String> {
     value
         .and_then(Value::as_str)
@@ -220,6 +194,99 @@ fn required_object_string<'a>(value: &'a Value, key: &str) -> Result<&'a str, St
         .ok_or_else(|| format!("missing required argument `{key}`"))
 }
 
+fn required_map_string<'a>(
+    object: &'a Map<String, Value>,
+    key: &str,
+    path: &str,
+) -> Result<&'a str, String> {
+    object
+        .get(key)
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| format!("missing required argument `{path}`"))
+}
+
+fn validate_provenance(provenance: &Map<String, Value>) -> Result<(), String> {
+    validate_source_kind(required_map_string(
+        provenance,
+        "source_kind",
+        "provenance.source_kind",
+    )?)?;
+    let _source_agent = required_map_string(provenance, "source_agent", "provenance.source_agent")?;
+    let _observed_at = required_map_string(provenance, "observed_at", "provenance.observed_at")?;
+    Ok(())
+}
+
+fn validate_source_kind(value: &str) -> Result<(), String> {
+    match value.trim() {
+        "human" | "agent" | "projection" | "derived" => Ok(()),
+        other => Err(format!("invalid memory provenance source_kind `{other}`")),
+    }
+}
+
+fn validate_semantic_class(value: &str) -> Result<(), String> {
+    match value.trim() {
+        "structural" | "causal" | "motivational" | "procedural" | "evidential" | "constraint" => {
+            Ok(())
+        }
+        other => Err(format!("invalid memory relation class `{other}`")),
+    }
+}
+
+fn validate_confidence(value: &str) -> Result<(), String> {
+    match value.trim() {
+        "high" | "medium" | "low" | "unknown" => Ok(()),
+        other => Err(format!("invalid memory relation confidence `{other}`")),
+    }
+}
+
+fn validate_relation_explanation(relation: &Value, semantic_class: &str) -> Result<(), String> {
+    let confidence = relation
+        .get("confidence")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty());
+    if let Some(confidence) = confidence {
+        validate_confidence(confidence)?;
+    }
+    if semantic_class != "structural" {
+        if confidence.is_none() {
+            return Err("non-structural memory relations require confidence".to_string());
+        }
+        let has_why = relation
+            .get("why")
+            .and_then(Value::as_str)
+            .is_some_and(|value| !value.trim().is_empty());
+        let has_evidence = relation
+            .get("evidence")
+            .and_then(Value::as_str)
+            .is_some_and(|value| !value.trim().is_empty());
+        if !has_why && !has_evidence {
+            return Err("non-structural memory relations require why or evidence".to_string());
+        }
+    }
+    Ok(())
+}
+
+fn validate_evidence_supports(evidence_item: &Value) -> Result<(), String> {
+    for (index, support) in evidence_item
+        .get("supports")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .enumerate()
+    {
+        if support
+            .as_str()
+            .is_none_or(|support| support.trim().is_empty())
+        {
+            return Err(format!(
+                "argument `memory.evidence[].supports[{index}]` must be a non-empty string"
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn entry_scopes(entry: &Value) -> Vec<String> {
     entry
         .get("coordinates")
@@ -234,12 +301,27 @@ fn entry_scopes(entry: &Value) -> Vec<String> {
 }
 
 fn validate_entry_positions(entry: &Value, dimension_ids: &BTreeSet<&str>) -> Result<(), String> {
-    for position in entry
+    let positions = entry
         .get("coordinates")
         .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-    {
+        .ok_or_else(|| {
+            "missing required array argument `memory.entries[].coordinates`".to_string()
+        })?;
+    if positions.is_empty() {
+        return Err(
+            "required array argument `memory.entries[].coordinates` must not be empty".to_string(),
+        );
+    }
+
+    for position in positions {
+        let Some(dimension) = position.get("dimension").and_then(Value::as_str) else {
+            return Err(
+                "memory.entries[].coordinates[] is missing required `dimension`".to_string(),
+            );
+        };
+        if dimension.trim().is_empty() {
+            return Err("memory.entries[].coordinates[].dimension must not be empty".to_string());
+        }
         let Some(scope_id) = position.get("scope_id").and_then(Value::as_str) else {
             return Err(
                 "memory.entries[].coordinates[] is missing required `scope_id`".to_string(),
@@ -282,12 +364,10 @@ fn memory_id_from_idempotency_key(idempotency_key: &str) -> String {
         .unwrap_or_else(|| format!("memory:{idempotency_key}"))
 }
 
-fn plural<'a>(count: usize, singular: &'a str, plural: &'a str) -> &'a str {
-    if count == 1 { singular } else { plural }
-}
-
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
     use super::*;
 
     #[test]
@@ -352,6 +432,7 @@ mod tests {
                 "entries": [
                     {
                         "id": "claim:rachel-austin",
+                        "kind": "claim",
                         "text": "Rachel moved to Austin.",
                         "coordinates": [
                             {
@@ -370,25 +451,6 @@ mod tests {
         assert_eq!(
             error,
             "memory entry coordinate references unknown dimension scope `conversation:missing`"
-        );
-    }
-
-    #[test]
-    fn ingest_response_reports_counts_and_dry_run_warning() {
-        let mut plan = build_ingest_plan(&sample_ingest_request()).expect("plan should build");
-        plan.dry_run = true;
-
-        let response = ingest_response(&plan, vec!["kernel warning".to_string()], false);
-
-        assert_eq!(response["memory"]["about"], "question:830ce83f");
-        assert_eq!(response["memory"]["accepted"]["entries"], 1);
-        assert_eq!(response["memory"]["read_after_write_ready"], false);
-        assert_eq!(response["warnings"][0], "kernel warning");
-        assert!(
-            response["warnings"][1]
-                .as_str()
-                .expect("dry-run warning should be text")
-                .contains("dry_run=true")
         );
     }
 
@@ -437,7 +499,9 @@ mod tests {
                 ]
             },
             "provenance": {
+                "source_kind": "agent",
                 "source_agent": "longmemeval-adapter",
+                "observed_at": "2026-05-04T10:00:00Z",
                 "correlation_id": "corr:830ce83f",
                 "causation_id": "eval:item:830ce83f"
             },

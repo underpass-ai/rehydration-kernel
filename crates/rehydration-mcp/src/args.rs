@@ -41,24 +41,6 @@ pub(crate) fn optional_string(arguments: &Value, key: &str) -> Option<String> {
         .map(ToString::to_string)
 }
 
-pub(crate) fn optional_u32(arguments: &Value, key: &str) -> Option<u32> {
-    arguments
-        .as_object()
-        .and_then(|arguments| arguments.get(key))
-        .and_then(Value::as_u64)
-        .and_then(|value| u32::try_from(value).ok())
-}
-
-pub(crate) fn budget_tokens(arguments: &Value) -> Option<u32> {
-    arguments
-        .as_object()
-        .and_then(|arguments| arguments.get("budget"))
-        .and_then(Value::as_object)
-        .and_then(|budget| budget.get("tokens"))
-        .and_then(Value::as_u64)
-        .and_then(|value| u32::try_from(value).ok())
-}
-
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -98,14 +80,9 @@ mod tests {
     }
 
     #[test]
-    fn reads_optional_strings_numbers_and_budget_tokens() {
+    fn reads_optional_strings() {
         let arguments = json!({
-            "role": "reader",
-            "depth": 3,
-            "too_large": u64::from(u32::MAX) + 1,
-            "budget": {
-                "tokens": 2048
-            }
+            "role": "reader"
         });
 
         assert_eq!(
@@ -113,8 +90,5 @@ mod tests {
             Some("reader")
         );
         assert_eq!(optional_string(&json!({"role": ""}), "role"), None);
-        assert_eq!(optional_u32(&arguments, "depth"), Some(3));
-        assert_eq!(optional_u32(&arguments, "too_large"), None);
-        assert_eq!(budget_tokens(&arguments), Some(2048));
     }
 }

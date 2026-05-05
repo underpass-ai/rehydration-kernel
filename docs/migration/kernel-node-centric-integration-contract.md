@@ -21,6 +21,7 @@ Services:
 
 - `ContextQueryService` — GetContext, GetContextPath, GetNodeDetail, RehydrateSession, ValidateScope
 - `ContextCommandService` — UpdateContext
+- `KernelMemoryService` — Ingest, Wake, Ask, Goto, Near, Rewind, Forward, Trace, Inspect
 
 Primary identifiers:
 
@@ -31,11 +32,26 @@ Primary identifiers:
 - `BundleNodeDetail` — extended per-node content
 - `RehydrationBundle` — validated context container
 
+Memory API identifiers:
+
+- `about` — memory anchor/root node for one memory graph
+- `MemoryDimension` — dimension scope, for example conversation, entity, or benchmark record
+- `MemoryEntry` — typed memory item with one or more temporal coordinates
+- `TemporalCursor` — exactly one of `ref`, `time`, or `sequence`
+- `DimensionSelection` — all, only, or except over memory coordinate dimensions
+
+`KernelMemoryService` is additive and API-first. It composes the lower-level
+query/command behavior inside the kernel application layer; consumers should not
+need to call `ContextQueryService` or `ContextCommandService` directly for KMP
+memory moves once they adopt this service.
+
 ### 2. Async contract (NATS JetStream)
 
 Inbound (kernel consumes):
 
 - `{prefix}.graph.node.materialized` — nodes + relationships
+- `{prefix}.graph.relation.materialized` — relation-only async projection
+  between existing or future graph nodes
 - `{prefix}.node.detail.materialized` — extended detail
 
 Outbound (kernel publishes):
@@ -68,6 +84,8 @@ See:
 - Render budget, focus, tiers, and mode are generic request concerns
 - Snapshot persistence is generic
 - Async projection inputs remain node-centric
+- Kernel Memory Protocol moves are available as typed gRPC through
+  `KernelMemoryService`
 
 ## What the Kernel Does NOT Own
 

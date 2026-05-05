@@ -40,7 +40,35 @@ changes to fields that are implemented. Deprecated fields may be removed in `v1`
 
 | RPC | Status | Notes |
 |-----|--------|-------|
-| `UpdateContext` | Production-ready | Persists full domain events (changes, requested_by, occurred_at) to the context event store as JSON. Optimistic concurrency via `expected_revision`. Content hash validated via `expected_content_hash`. Idempotency via `idempotency_key`. Returns `ABORTED` on revision or hash conflict. |
+| `UpdateContext` | Production-ready | Persists full domain events (changes, requested_by, occurred_at) to the context event store as JSON. Optimistic concurrency via `expected_revision`. Content hash validated via `expected_content_hash`. Idempotency via `idempotency_key`; replaying a key with different content returns `ABORTED`. Returns `ABORTED` on revision or hash conflict. |
+
+## KernelMemoryService
+
+Typed memory API in `api/proto/underpass/rehydration/kernel/v1beta1/memory.proto`.
+This is the API-first surface for Kernel Memory Protocol moves. It is additive;
+`ContextQueryService` and `ContextCommandService` remain supported lower-level
+kernel services.
+
+| RPC | Status | Notes |
+|-----|--------|-------|
+| `Ingest` | Production-ready | Validates dimensions, entries, coordinates, relations, evidence, idempotency, provenance, and positive temporal coordinates. `about` namespaces submitted dimensions internally as `about:<about>:dimension:<dimension_id>`. Relation/evidence refs may be submitted in the request or already materialized in the read model. |
+| `Wake` | Production-ready | Reads live context through the application query port. Honors budget detail, dimension selection, and dimension about scope. |
+| `Ask` | Production-ready for deterministic memory answers | Honors answer policy, budget detail, dimension selection, and dimension about scope. Does not generate novel answers; `answer` is derived from selected evidence reasons, not from an anchor summary. `evidence_or_unknown` returns `UNKNOWN` when no evidence is available. |
+| `Goto` | Production-ready | Domain-owned temporal traversal over `contains_entry` coordinates. Honors dimensions, window, entry limit, token limit, and include flags. |
+| `Near` | Production-ready | Domain-owned temporal neighborhood traversal. |
+| `Rewind` | Production-ready | Domain-owned backward traversal. |
+| `Forward` | Production-ready | Domain-owned forward traversal. |
+| `Trace` | Production-ready | Uses `GetContextPath` semantics and maps `goal` to the trace role. |
+| `Inspect` | Production-ready for object/detail/link/raw audit lookup | Honors `details=false`. Explicit `incoming` and `outgoing` use the typed node relationship reader. `raw=true` returns typed raw audit refs for the inspected object. |
+
+Dimension selection scope defaults to `CURRENT_ABOUT`. `ABOUTS` is valid only
+with a non-empty `abouts` list. `ALL_ABOUTS` uses the kernel memory about index
+to traverse every memory anchor. Temporal coverage preserves the requested
+scope for audit instead of normalizing `CURRENT_ABOUT` to an `ABOUTS` list.
+Temporal `raw_refs=true` returns typed raw audit refs for selected entries.
+`Ask` currently uses deterministic evidence for all answer policies. Explicit
+conflict relations are surfaced in `proof.conflicts`; inferred conflict
+resolution and generated/best-effort fallback text are not implemented.
 
 ## Async Contract (NATS JetStream)
 
@@ -49,6 +77,7 @@ Event channels defined in [`context-projection.v1beta1.yaml`](../api/asyncapi/co
 | Channel | Direction | Status | Notes |
 |:--------|:----------|:-------|:------|
 | `graph.node.materialized` | Subscribe (kernel consumes) | Production-ready | Materializes nodes + relationships into Neo4j. Full `EventEnvelope` with 7 required fields + `data` payload. `related_nodes` carries explanatory metadata (semantic_class, rationale, method, decision_id, caused_by_node_id, evidence, confidence, sequence) |
+| `graph.relation.materialized` | Subscribe (kernel consumes) | Implemented experimental | Materializes one relation without re-materializing the source node. Runtime routing, AsyncAPI contract, projection mapping, and initial PIR-like container integration are implemented. Out-of-order convergence and idempotency-specific relation tests are still pending. |
 | `node.detail.materialized` | Subscribe (kernel consumes) | Production-ready | Materializes extended detail into Valkey. Requires `node_id`, `detail`, `content_hash`, `revision` |
 | `context.bundle.generated` | Publish (kernel emits) | **Contract only** | Defined in AsyncAPI but **not emitted by the kernel runtime**. Test fixtures simulate it. Implementation pending |
 
@@ -71,6 +100,10 @@ What is stable:
 
 - the async projection subjects above
 - the gRPC query surface
+
+What is implemented but still experimental:
+
+- `graph.relation.materialized` as an additive relation-only async subject
 
 What remains experimental:
 
@@ -121,11 +154,18 @@ metrics. `RehydrateSession` renders per-role bundles and emits quality via the o
 - **No authorization backend (deliberate)** — `ValidateScope` is a pure set-comparison utility, not an access control gate. `GetContext` does not invoke scope validation. This is a conscious design decision for v1beta1: the kernel delegates access control to the transport layer (mTLS client certificates) and the integrating product. Scope enforcement is not planned for the kernel itself — consumers are expected to validate scopes at their own boundary
 - **No timeline filtering** — `RehydrateSession` echoes `timeline_window` but does not filter events by time range
 - **`context.bundle.generated` not emitted** — defined in AsyncAPI contract but the kernel runtime does not publish this event. Test fixtures simulate it for downstream integration tests
+- **No generated `Ask` answers** — `KernelMemoryService.Ask` returns deterministic evidence-derived answer text or `UNKNOWN` according to the answer policy.
 - **Single token estimator** — `cl100k_base` BPE via `tiktoken-rs` for all counting. No model-specific estimator selection
 - **Idempotency outcome** — outcome publish is fire-and-forget. If it fails, retries are treated as new requests
 
 **Implemented in this version:**
 
+- MCP live adapter is a thin `KernelMemoryService` client for KMP tools. It has
+  no compatibility fallback to `ContextQueryService` or `ContextCommandService`.
+- `KernelMemoryService` emits structured request/response/error logs for all
+  nine KMP RPCs, including dimension mode/scope/abouts/scope IDs where
+  applicable, resolved `selected_abouts` on dimensioned read responses, and
+  tonic code/message on errors.
 - **Event store atomic CAS** — NATS uses `expected_last_subject_sequence` header; Valkey uses a Lua EVAL script. Both reject concurrent writes with `PortError::Conflict`. Validated with container integration tests.
 - **Async quality observer** — `CompositeQualityObserver` spawns observer calls via `tokio::spawn` (fire-and-forget). Observer I/O no longer blocks the gRPC handler hot path.
 - **TruncationMetadata in proto** — `RenderedContext.truncation` (field 8) carries budget_requested, budget_used, sections_kept, sections_dropped, token_estimator when a budget is applied.

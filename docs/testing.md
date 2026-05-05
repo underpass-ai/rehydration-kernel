@@ -67,6 +67,7 @@ bash scripts/ci/testcontainers-runtime.sh
 | `agentic_integration` | Agent using kernel context | Neo4j + Valkey + NATS + gRPC | `scripts/ci/integration-agentic-context.sh` |
 | `agentic_event_integration` | Event-driven recording runtime | Neo4j + Valkey + NATS + gRPC | `scripts/ci/integration-agentic-event-context.sh` |
 | `mcp_real_kernel_integration` | MCP KMP tools reading from the live kernel gRPC server | Neo4j + Valkey + gRPC + MCP adapter | `scripts/ci/integration-mcp-real-kernel.sh` |
+| `relation_materialization_integration` | Relation-only async subject adds a PIR-like spine edge across waves without re-materializing the source node | Neo4j + Valkey + NATS + gRPC | — |
 | `tier_resolution_integration` | Multi-resolution tiers L0/L1/L2 | Neo4j + Valkey + NATS + gRPC | — |
 | `kernel_p1_performance_measurement` | Performance regression (batch vs N+1) | Neo4j + Valkey + NATS + gRPC | — |
 | `relationship_use_case_integration` | 4 paper use cases (failure, handoff, constraint, pressure) | Neo4j + Valkey + NATS + gRPC | `scripts/ci/integration-paper-use-cases.sh` |
@@ -99,26 +100,27 @@ slices:
 2. **Incremental-wave E2E** — same incident root, new nodes and details over time.
 3. **Live roundtrip smoke** — publish fixture to NATS and read it back from a live kernel.
 
-### Planned relation-boundary coverage
+### Relation-Boundary Coverage
 
-Status: proposed, not implemented yet.
+Status: initial additive subject implemented; broader convergence coverage is
+still pending.
 
-If the kernel adopts the additive async subject proposed in
-[`pir-kernel-relation-materialized-rfc.md`](migration/pir-kernel-relation-materialized-rfc.md),
-the next kernel-owned coverage should mirror the PIR sequential spine as
-closely as possible.
+The kernel consumes `graph.relation.materialized` and maps it to a direct
+relation projection without re-materializing the source node. The first
+container test proves a PIR-like cross-wave relation path through the real NATS
+projection runtime, Neo4j, Valkey, and gRPC read path.
 
-Planned tests:
+Coverage state:
 
-| Test | Purpose | Infra |
-|------|---------|-------|
-| `relation_materialization_integration` | Add a relation across waves without re-materializing the source node | Neo4j + Valkey + NATS + gRPC |
-| `relation_materialization_out_of_order_integration` | Prove convergence when a relation arrives before one or both node events | Neo4j + Valkey + NATS + gRPC |
-| `pir_sequential_spine_relation_integration` | Reproduce the full `incident -> finding -> decision -> task -> verification` spine with relation-only waves where needed | Neo4j + Valkey + NATS + gRPC |
-| `relation_materialization_idempotency_integration` | Prove duplicate relation events do not create duplicate edges | Neo4j + Valkey + NATS + gRPC |
-| `placeholder_filtering_integration` | Prove convergence placeholders do not leak into default rendered context | Neo4j + Valkey + NATS + gRPC |
-| `graph_relation_roundtrip_smoke` | Minimal live cluster smoke for one relation-only event | live kernel + live NATS |
-| `pir_sequential_spine_roundtrip_smoke` | Live PIR-like multi-wave smoke validating the full spine end to end | live kernel + live NATS |
+| Test | Status | Purpose | Infra |
+|------|--------|---------|-------|
+| `relation_materialization_integration` | Implemented | Add a relation across waves without re-materializing the source node | Neo4j + Valkey + NATS + gRPC |
+| `relation_materialization_out_of_order_integration` | Planned | Prove convergence when a relation arrives before one or both node events | Neo4j + Valkey + NATS + gRPC |
+| `pir_sequential_spine_relation_integration` | Planned | Reproduce the full `incident -> finding -> decision -> task -> verification` spine with relation-only waves where needed | Neo4j + Valkey + NATS + gRPC |
+| `relation_materialization_idempotency_integration` | Planned | Prove duplicate relation events do not create duplicate edges | Neo4j + Valkey + NATS + gRPC |
+| `placeholder_filtering_integration` | Planned | Prove convergence placeholders do not leak into default rendered context | Neo4j + Valkey + NATS + gRPC |
+| `graph_relation_roundtrip_smoke` | Planned | Minimal live cluster smoke for one relation-only event | live kernel + live NATS |
+| `pir_sequential_spine_roundtrip_smoke` | Planned | Live PIR-like multi-wave smoke validating the full spine end to end | live kernel + live NATS |
 
 Design rule for those tests:
 
@@ -265,11 +267,16 @@ Supported `TEST_ID` values:
 
 - `sync-grpc-handshake`
 - `sync-mtls-enforcement`
+- `sync-kernel-memory-service`
 - `async-graph-batch-roundtrip`
 - `async-graph-relation-roundtrip`
 - `async-vllm-spine-ab-comparison`
 - `async-vllm-graph-batch-roundtrip`
 - `async-vllm-blind-context-consumption`
+
+`sync-mtls-enforcement` is only applicable when `E2E_GRPC_TLS_MODE=mutual`;
+for `disabled` and `server` TLS modes it exits as skipped because those modes do
+not enforce client certificates.
 
 Example async fixture-driven run inside the cluster:
 

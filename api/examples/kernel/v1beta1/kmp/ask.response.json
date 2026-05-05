@@ -1,6 +1,6 @@
 {
-  "summary": "Rachel moved to Austin. The Austin claim supersedes the earlier Denver claim.",
-  "answer": "Austin",
+  "summary": "Deterministic memory answer from 1 evidence item for: Where did Rachel move after her recent relocation?",
+  "answer": "Later she corrected it: the move is to Austin.",
   "because": [
     {
       "claim": "Rachel later corrected the destination to Austin.",

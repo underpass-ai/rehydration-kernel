@@ -242,7 +242,7 @@ fn kmp_reference_fixtures_are_valid_json_and_memory_shaped() {
     );
     assert_eq!(
         sorted_keys(object_keys(&parse_fixture(KMP_ASK_REQUEST_FIXTURE))),
-        sorted_strs(&["about", "question", "answer_policy", "prefer"])
+        sorted_strs(&["about", "question", "answer_policy"])
     );
     assert_eq!(
         sorted_keys(object_keys(&parse_fixture(KMP_ASK_RESPONSE_FIXTURE))),
@@ -255,7 +255,7 @@ fn kmp_reference_fixtures_are_valid_json_and_memory_shaped() {
     assert_eq!(
         sorted_keys(object_keys(&parse_fixture(KMP_GOTO_RESPONSE_FIXTURE))),
         sorted_strs(&[
-            "summary", "temporal", "coverage", "entries", "proof", "warnings"
+            "summary", "temporal", "coverage", "entries", "proof", "warnings", "raw_refs"
         ])
     );
     assert_eq!(
@@ -265,7 +265,7 @@ fn kmp_reference_fixtures_are_valid_json_and_memory_shaped() {
     assert_eq!(
         sorted_keys(object_keys(&parse_fixture(KMP_NEAR_RESPONSE_FIXTURE))),
         sorted_strs(&[
-            "summary", "temporal", "coverage", "entries", "proof", "warnings"
+            "summary", "temporal", "coverage", "entries", "proof", "warnings", "raw_refs"
         ])
     );
     assert_eq!(
@@ -275,22 +275,22 @@ fn kmp_reference_fixtures_are_valid_json_and_memory_shaped() {
     assert_eq!(
         sorted_keys(object_keys(&parse_fixture(KMP_REWIND_RESPONSE_FIXTURE))),
         sorted_strs(&[
-            "summary", "temporal", "coverage", "entries", "proof", "warnings"
+            "summary", "temporal", "coverage", "entries", "proof", "warnings", "raw_refs"
         ])
     );
     assert_eq!(
         sorted_keys(object_keys(&parse_fixture(KMP_FORWARD_REQUEST_FIXTURE))),
-        sorted_strs(&["about", "from", "dimensions", "limit"])
+        sorted_strs(&["about", "from", "dimensions", "limit", "include"])
     );
     assert_eq!(
         sorted_keys(object_keys(&parse_fixture(KMP_FORWARD_RESPONSE_FIXTURE))),
         sorted_strs(&[
-            "summary", "temporal", "coverage", "entries", "proof", "warnings"
+            "summary", "temporal", "coverage", "entries", "proof", "warnings", "raw_refs"
         ])
     );
     assert_eq!(
         sorted_keys(object_keys(&parse_fixture(KMP_TRACE_REQUEST_FIXTURE))),
-        sorted_strs(&["from", "to", "goal", "include"])
+        sorted_strs(&["from", "to", "goal"])
     );
     assert_eq!(
         sorted_keys(object_keys(&parse_fixture(KMP_TRACE_RESPONSE_FIXTURE))),
@@ -302,7 +302,69 @@ fn kmp_reference_fixtures_are_valid_json_and_memory_shaped() {
     );
     assert_eq!(
         sorted_keys(object_keys(&parse_fixture(KMP_INSPECT_RESPONSE_FIXTURE))),
-        sorted_strs(&["summary", "object", "links", "evidence", "warnings"])
+        sorted_strs(&["summary", "object", "links", "evidence", "warnings", "raw"])
+    );
+}
+
+#[test]
+fn kmp_reference_fixtures_match_live_grpc_temporal_shape() {
+    let schema = parse_fixture(KMP_SCHEMA_FIXTURE);
+    let defs = fixture_object_field(&schema, "$defs");
+    let temporal_cursor = fixture_object_field(defs, "temporal_cursor");
+    assert!(temporal_cursor.get("oneOf").is_some());
+    assert!(temporal_cursor.get("anyOf").is_none());
+
+    let window_properties =
+        fixture_object_field(fixture_object_field(defs, "temporal_window"), "properties");
+    assert!(window_properties.get("before_seconds").is_none());
+    assert!(window_properties.get("after_seconds").is_none());
+
+    let ask_properties =
+        fixture_object_field(fixture_object_field(defs, "ask_request"), "properties");
+    assert!(ask_properties.get("prefer").is_none());
+
+    let temporal_entry = fixture_object_field(defs, "temporal_entry");
+    assert!(
+        fixture_array_field(temporal_entry, "required")
+            .iter()
+            .any(|value| value.as_str() == Some("kind"))
+    );
+    assert!(
+        fixture_object_field(temporal_entry, "properties")
+            .get("position")
+            .is_none()
+    );
+
+    let near = parse_fixture(KMP_NEAR_RESPONSE_FIXTURE);
+    let temporal = fixture_object_field(&near, "temporal");
+    assert!(temporal.get("requested").is_some());
+    assert!(temporal.get("resolved").is_some());
+    assert!(temporal.get("around").is_none());
+    let first_entry = fixture_array_field(&near, "entries")
+        .first()
+        .expect("near fixture should contain entries");
+    assert_eq!(
+        first_entry.get("kind").and_then(Value::as_str),
+        Some("claim")
+    );
+    assert!(first_entry.get("position").is_none());
+    let first_coordinate = fixture_array_field(first_entry, "coordinates")
+        .first()
+        .expect("near entry should contain coordinates");
+    assert!(
+        first_coordinate
+            .get("scope_id")
+            .and_then(Value::as_str)
+            .is_some_and(|scope_id| scope_id.starts_with("about:question:830ce83f:dimension:"))
+    );
+
+    let ask = parse_fixture(KMP_ASK_RESPONSE_FIXTURE);
+    let first_reason = fixture_array_field(&ask, "because")
+        .first()
+        .expect("ask fixture should contain evidence reasons");
+    assert_eq!(
+        ask.get("answer").and_then(Value::as_str),
+        first_reason.get("evidence").and_then(Value::as_str)
     );
 }
 

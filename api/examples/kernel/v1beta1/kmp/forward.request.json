@@ -8,5 +8,9 @@
   },
   "limit": {
     "entries": 5
+  },
+  "include": {
+    "evidence": true,
+    "relations": true
   }
 }

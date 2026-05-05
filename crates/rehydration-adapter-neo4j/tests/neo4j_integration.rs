@@ -6,8 +6,8 @@ use neo4rs::{Graph, query};
 use rehydration_adapter_neo4j::Neo4jProjectionReader;
 use rehydration_domain::{RelationExplanation, RelationSemanticClass};
 use rehydration_ports::{
-    GraphNeighborhoodReader, NodeProjection, NodeRelationProjection, ProjectionMutation,
-    ProjectionWriter,
+    GraphNeighborhoodReader, NodeProjection, NodeRelationProjection, NodeRelationshipReader,
+    ProjectionMutation, ProjectionWriter,
 };
 use rehydration_testkit::ensure_testcontainers_runtime;
 use testcontainers::{
@@ -167,6 +167,23 @@ async fn load_neighborhood_respects_directed_depth() -> Result<(), Box<dyn Error
             !(relation.source_node_id == "blocker-1"
                 && relation.target_node_id == "node-root"
                 && relation.relation_type == "blocks")
+        }));
+
+        let direct_relationships = store
+            .load_node_relationships("node-root")
+            .await?
+            .expect("seeded node should load direct relationships");
+        assert!(direct_relationships.outgoing.iter().any(|relation| {
+            relation.source_node_id == "node-root"
+                && relation.target_node_id == "decision-1"
+                && relation.relation_type == "records"
+                && relation.explanation.sequence() == Some(1)
+        }));
+        assert!(direct_relationships.incoming.iter().any(|relation| {
+            relation.source_node_id == "blocker-1"
+                && relation.target_node_id == "node-root"
+                && relation.relation_type == "blocks"
+                && relation.explanation.semantic_class() == &RelationSemanticClass::Constraint
         }));
 
         Ok(())

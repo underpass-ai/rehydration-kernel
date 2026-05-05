@@ -4,6 +4,6 @@
     "incoming": true,
     "outgoing": true,
     "details": true,
-    "raw": true
+    "raw": false
   }
 }

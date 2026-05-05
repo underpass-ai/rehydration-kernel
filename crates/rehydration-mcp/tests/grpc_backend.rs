@@ -1,18 +1,18 @@
-use std::collections::HashMap;
-
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use prost_types::Timestamp;
 use rehydration_mcp::{KernelMcpGrpcTlsConfig, KernelMcpServer};
 use rehydration_proto::v1beta1::{
-    BundleNodeDetail, BundleRenderFormat, BundleSection, BundleVersion, GetContextPathRequest,
-    GetContextPathResponse, GetContextRequest, GetContextResponse, GetNodeDetailRequest,
-    GetNodeDetailResponse, GraphNode, GraphRelationship, GraphRelationshipExplanation,
-    GraphRelationshipSemanticClass, GraphRoleBundle, RehydrateSessionRequest,
-    RehydrateSessionResponse, RehydrationBundle, RehydrationMode, RenderedContext,
-    UpdateContextRequest, UpdateContextResponse, ValidateScopeRequest, ValidateScopeResponse,
-    context_command_service_server::{ContextCommandService, ContextCommandServiceServer},
-    context_query_service_server::{ContextQueryService, ContextQueryServiceServer},
+    AcceptedCounts, AnswerReason, AskRequest, AskResponse, DimensionScopeMode, ForwardRequest,
+    ForwardResponse, GotoRequest, GotoResponse, IngestRequest, IngestResponse, IngestedMemory,
+    InspectRequest, InspectResponse, InspectedLinks, InspectedObject, MemoryConfidence,
+    MemoryEvidence, MemoryRelation, MemorySemanticClass, MemorySourceKind, NearRequest,
+    NearResponse, Proof, RawMemoryRef, RewindRequest, RewindResponse, TemporalCoordinate,
+    TemporalCursor, TemporalDirection, TemporalEntry, TemporalMoveRequest, TemporalMoveResponse,
+    TemporalNearRequest, TemporalState, TraceRequest, TraceResponse, WakeClaim, WakePacket,
+    WakeRequest, WakeResponse,
+    kernel_memory_service_server::{KernelMemoryService, KernelMemoryServiceServer},
 };
 use serde_json::{Value, json};
 use tokio::net::TcpListener;
@@ -22,8 +22,9 @@ use tonic::transport::{Certificate, Identity, ServerTlsConfig};
 use tonic::{Request, Response, Status};
 
 #[tokio::test]
-async fn grpc_backend_maps_live_query_service_responses_to_kmp_tools() {
-    let endpoint = spawn_fake_query_server().await;
+async fn grpc_backend_maps_kernel_memory_service_responses_to_kmp_tools() {
+    let recorded = RecordedMemoryRequests::default();
+    let endpoint = spawn_fake_memory_server(recorded.clone()).await;
     let server = KernelMcpServer::grpc(endpoint);
 
     let wake = call_tool(
@@ -36,7 +37,12 @@ async fn grpc_backend_maps_live_query_service_responses_to_kmp_tools() {
             "intent": "continue the live incident",
             "depth": 3,
             "budget": {
-                "tokens": 321
+                "tokens": 321,
+                "detail": "full"
+            },
+            "dimensions": {
+                "mode": "only",
+                "include": ["conversation"]
             }
         }),
     )
@@ -47,16 +53,25 @@ async fn grpc_backend_maps_live_query_service_responses_to_kmp_tools() {
         "continue the live incident"
     );
     assert_eq!(
-        wake["result"]["structuredContent"]["wake"]["current_state"][0],
-        "State: Live state for node:root as implementer at depth 3 with budget 321."
-    );
-    assert_eq!(
         wake["result"]["structuredContent"]["proof"]["path"][0]["class"],
         "evidential"
     );
+
+    let wake_requests = recorded.wakes().await;
+    assert_eq!(wake_requests.len(), 1);
+    assert_eq!(wake_requests[0].about, "node:root");
+    assert_eq!(wake_requests[0].role, "implementer");
     assert_eq!(
-        wake["result"]["structuredContent"]["proof"]["evidence"][0]["id"],
-        "detail:node:root:evidence"
+        wake_requests[0].budget.as_ref().expect("budget").tokens,
+        321
+    );
+    assert_eq!(
+        wake_requests[0]
+            .dimensions
+            .as_ref()
+            .expect("dimensions")
+            .include,
+        ["conversation"]
     );
 
     let ask = call_tool(
@@ -66,6 +81,7 @@ async fn grpc_backend_maps_live_query_service_responses_to_kmp_tools() {
         json!({
             "about": "node:root",
             "question": "What should the next agent trust?",
+            "answer_policy": "evidence_or_unknown",
             "budget": {
                 "tokens": 654
             }
@@ -73,14 +89,13 @@ async fn grpc_backend_maps_live_query_service_responses_to_kmp_tools() {
     )
     .await;
     assert_eq!(ask["result"]["isError"], false);
-    assert_eq!(ask["result"]["structuredContent"]["answer"], Value::Null);
     assert_eq!(
-        ask["result"]["structuredContent"]["because"][0]["evidence"],
-        "Evidence detail for node:root requested by answerer with budget 654."
+        ask["result"]["structuredContent"]["answer"],
+        "Trust the typed KernelMemoryService response."
     );
     assert_eq!(
-        ask["result"]["structuredContent"]["proof"]["missing"][0],
-        "generative_answer"
+        ask["result"]["structuredContent"]["because"][0]["ref"],
+        "claim:typed-answer"
     );
 
     let trace = call_tool(
@@ -90,7 +105,7 @@ async fn grpc_backend_maps_live_query_service_responses_to_kmp_tools() {
         json!({
             "from": "node:root",
             "to": "node:target",
-            "role": "auditor",
+            "goal": "prove path",
             "budget": {
                 "tokens": 111
             }
@@ -99,10 +114,6 @@ async fn grpc_backend_maps_live_query_service_responses_to_kmp_tools() {
     .await;
     assert_eq!(trace["result"]["isError"], false);
     assert_eq!(
-        trace["result"]["structuredContent"]["summary"],
-        "Live state for node:root as auditor at depth 1 with budget 111."
-    );
-    assert_eq!(
         trace["result"]["structuredContent"]["trace"][0]["from"],
         "node:root"
     );
@@ -110,17 +121,20 @@ async fn grpc_backend_maps_live_query_service_responses_to_kmp_tools() {
         trace["result"]["structuredContent"]["trace"][0]["to"],
         "node:target"
     );
-    assert_eq!(
-        trace["result"]["structuredContent"]["trace"][0]["rel"],
-        "supports"
-    );
+    assert_eq!(recorded.traces().await[0].goal, "prove path");
 
     let inspect = call_tool(
         &server,
         4,
         "kernel_inspect",
         json!({
-            "ref": "node:target"
+            "ref": "node:target",
+            "include": {
+                "incoming": true,
+                "outgoing": true,
+                "details": true,
+                "raw": true
+            }
         }),
     )
     .await;
@@ -130,18 +144,19 @@ async fn grpc_backend_maps_live_query_service_responses_to_kmp_tools() {
         "node:target"
     );
     assert_eq!(
-        inspect["result"]["structuredContent"]["object"]["kind"],
-        "claim"
+        inspect["result"]["structuredContent"]["links"]["incoming"][0]["from"],
+        "node:source"
     );
     assert_eq!(
-        inspect["result"]["structuredContent"]["evidence"][0]["text"],
-        "Node detail for node:target."
+        inspect["result"]["structuredContent"]["raw"][0]["ref"],
+        "node:target"
     );
 }
 
 #[tokio::test]
-async fn grpc_backend_maps_temporal_tools_from_live_context_relationships() {
-    let endpoint = spawn_fake_query_server().await;
+async fn grpc_backend_maps_temporal_tools_to_kernel_memory_service() {
+    let recorded = RecordedMemoryRequests::default();
+    let endpoint = spawn_fake_memory_server(recorded.clone()).await;
     let server = KernelMcpServer::grpc(endpoint);
 
     let forward = call_tool(
@@ -155,11 +170,19 @@ async fn grpc_backend_maps_temporal_tools_from_live_context_relationships() {
             },
             "dimensions": {
                 "mode": "only",
-                "include": ["conversation"]
+                "include": ["conversation"],
+                "scope": "all_abouts",
+                "scope_ids": ["conversation:rachel"]
             },
             "limit": {
-                "entries": 5
-            }
+                "entries": 5,
+                "tokens": 1000
+            },
+            "include": {
+                "relations": true,
+                "raw_refs": false
+            },
+            "depth": 4
         }),
     )
     .await;
@@ -173,16 +196,107 @@ async fn grpc_backend_maps_temporal_tools_from_live_context_relationships() {
         forward["result"]["structuredContent"]["entries"][0]["ref"],
         "claim:rachel-austin"
     );
+
+    let moves = recorded.moves().await;
+    assert_eq!(moves.len(), 1);
+    assert_eq!(moves[0].method, "forward");
     assert_eq!(
-        forward["result"]["structuredContent"]["entries"][0]["coordinates"][0]["dimension"],
-        "conversation"
+        moves[0].request.cursor.as_ref().expect("cursor").r#ref,
+        "claim:rachel-denver"
+    );
+    assert_eq!(
+        moves[0]
+            .request
+            .dimensions
+            .as_ref()
+            .expect("dimensions")
+            .scope,
+        DimensionScopeMode::AllAbouts as i32
+    );
+    assert_eq!(
+        moves[0]
+            .request
+            .dimensions
+            .as_ref()
+            .expect("dimensions")
+            .scope_ids,
+        vec!["conversation:rachel".to_string()]
+    );
+    assert!(!moves[0].request.include.as_ref().expect("include").raw_refs);
+    assert_eq!(moves[0].request.budget.as_ref().expect("budget").depth, 4);
+
+    let near = call_tool(
+        &server,
+        8,
+        "kernel_near",
+        json!({
+            "about": "question:temporal",
+            "around": {
+                "time": "2026-04-12T15:03:00Z"
+            },
+            "window": {
+                "before_entries": 1,
+                "after_entries": 1
+            }
+        }),
+    )
+    .await;
+    assert_eq!(near["result"]["isError"], false);
+    assert_eq!(
+        near["result"]["structuredContent"]["temporal"]["direction"],
+        "near"
+    );
+    assert!(
+        recorded.nears().await[0]
+            .around
+            .as_ref()
+            .expect("cursor")
+            .time
+            .is_some()
     );
 }
 
 #[tokio::test]
-async fn grpc_backend_maps_kernel_ingest_to_update_context() {
-    let recorded_commands = RecordedCommands::default();
-    let endpoint = spawn_fake_kernel_server_with_commands(recorded_commands.clone()).await;
+async fn grpc_backend_maps_temporal_raw_refs_to_kernel_memory_service() {
+    let recorded = RecordedMemoryRequests::default();
+    let endpoint = spawn_fake_memory_server(recorded.clone()).await;
+    let server = KernelMcpServer::grpc(endpoint);
+
+    let forward = call_tool(
+        &server,
+        17,
+        "kernel_forward",
+        json!({
+            "about": "question:temporal",
+            "from": {
+                "ref": "claim:rachel-denver"
+            },
+            "include": {
+                "raw_refs": true
+            }
+        }),
+    )
+    .await;
+
+    assert_eq!(forward["result"]["isError"], false);
+    assert_eq!(
+        forward["result"]["structuredContent"]["raw_refs"][0]["ref"],
+        "claim:rachel-austin"
+    );
+    assert!(
+        recorded.moves().await[0]
+            .request
+            .include
+            .as_ref()
+            .expect("include")
+            .raw_refs
+    );
+}
+
+#[tokio::test]
+async fn grpc_backend_maps_kernel_ingest_to_kernel_memory_service() {
+    let recorded = RecordedMemoryRequests::default();
+    let endpoint = spawn_fake_memory_server(recorded.clone()).await;
     let server = KernelMcpServer::grpc(endpoint);
 
     let ingest = call_tool(
@@ -207,7 +321,8 @@ async fn grpc_backend_maps_kernel_ingest_to_update_context() {
                             {
                                 "dimension": "conversation",
                                 "scope_id": "conversation:rachel",
-                                "sequence": 1
+                                "sequence": 1,
+                                "occurred_at": "2026-04-12T15:05:00Z"
                             }
                         ]
                     }
@@ -233,7 +348,9 @@ async fn grpc_backend_maps_kernel_ingest_to_update_context() {
                 ]
             },
             "provenance": {
+                "source_kind": "agent",
                 "source_agent": "longmemeval-adapter",
+                "observed_at": "2026-05-04T10:00:00Z",
                 "correlation_id": "corr:830ce83f",
                 "causation_id": "eval:item:830ce83f"
             },
@@ -256,31 +373,34 @@ async fn grpc_backend_maps_kernel_ingest_to_update_context() {
         true
     );
 
-    let commands = recorded_commands.requests().await;
-    assert_eq!(commands.len(), 1);
-    let command = &commands[0];
-    assert_eq!(command.root_node_id, "question:830ce83f");
-    assert_eq!(command.role, "memory");
-    assert_eq!(command.work_item_id, "ingest:830ce83f:1");
-    assert_eq!(command.changes.len(), 4);
-    assert_eq!(command.changes[0].entity_kind, "memory_dimension");
-    assert_eq!(command.changes[1].entity_kind, "memory_entry");
-    assert_eq!(command.changes[2].entity_kind, "memory_relation");
-    assert_eq!(command.changes[3].entity_kind, "memory_evidence");
+    let ingests = recorded.ingests().await;
+    assert_eq!(ingests.len(), 1);
+    let request = &ingests[0];
+    assert_eq!(request.about, "question:830ce83f");
+    assert_eq!(request.idempotency_key, "ingest:830ce83f:1");
     assert_eq!(
-        command
-            .metadata
-            .as_ref()
-            .expect("ingest should set command metadata")
-            .idempotency_key,
-        "ingest:830ce83f:1"
+        request.provenance.as_ref().expect("provenance").source_kind,
+        MemorySourceKind::Agent as i32
     );
+    assert_eq!(
+        request
+            .provenance
+            .as_ref()
+            .expect("provenance")
+            .source_agent,
+        "longmemeval-adapter"
+    );
+    let memory = request.memory.as_ref().expect("memory");
+    assert_eq!(memory.dimensions[0].id, "conversation:rachel");
+    assert_eq!(memory.entries[0].coordinates[0].sequence, Some(1));
+    assert_eq!(memory.relations[0].source_ref, "claim:rachel-austin");
+    assert_eq!(memory.relations[0].target_ref, "claim:rachel-denver");
 }
 
 #[tokio::test]
-async fn grpc_backend_dry_run_ingest_does_not_call_update_context() {
-    let recorded_commands = RecordedCommands::default();
-    let endpoint = spawn_fake_kernel_server_with_commands(recorded_commands.clone()).await;
+async fn grpc_backend_dry_run_ingest_does_not_call_kernel_memory_service() {
+    let recorded = RecordedMemoryRequests::default();
+    let endpoint = spawn_fake_memory_server(recorded.clone()).await;
     let server = KernelMcpServer::grpc(endpoint);
 
     let ingest = call_tool(
@@ -290,8 +410,21 @@ async fn grpc_backend_dry_run_ingest_does_not_call_update_context() {
         json!({
             "about": "question:dry-run",
             "memory": {
-                "dimensions": [{"id": "conversation:dry-run"}],
-                "entries": [{"id": "claim:dry-run", "text": "Dry run memory."}]
+                "dimensions": [{"id": "conversation:dry-run", "kind": "conversation"}],
+                "entries": [
+                    {
+                        "id": "claim:dry-run",
+                        "kind": "claim",
+                        "text": "Dry run memory.",
+                        "coordinates": [
+                            {
+                                "dimension": "conversation",
+                                "scope_id": "conversation:dry-run",
+                                "sequence": 1
+                            }
+                        ]
+                    }
+                ]
             },
             "idempotency_key": "ingest:dry-run:1",
             "dry_run": true
@@ -304,22 +437,23 @@ async fn grpc_backend_dry_run_ingest_does_not_call_update_context() {
         ingest["result"]["structuredContent"]["warnings"][0]
             .as_str()
             .expect("dry run warning should be text")
-            .contains("dry_run=true")
+            .contains("KernelMemoryService.Ingest")
     );
-    assert!(recorded_commands.requests().await.is_empty());
+    assert!(recorded.ingests().await.is_empty());
 }
 
 #[tokio::test]
-async fn grpc_backend_connects_to_mutual_tls_query_service() {
+async fn grpc_backend_connects_to_mutual_tls_kernel_memory_service() {
     install_test_crypto_provider();
 
     let certs = TestTlsFiles::write();
-    let endpoint = spawn_fake_query_server_with_mutual_tls().await;
+    let endpoint =
+        spawn_fake_memory_server_with_mutual_tls(RecordedMemoryRequests::default()).await;
     let server = KernelMcpServer::grpc_with_tls(endpoint, certs.client_config());
 
     let inspect = call_tool(
         &server,
-        1,
+        9,
         "kernel_inspect",
         json!({
             "ref": "node:mtls"
@@ -332,36 +466,27 @@ async fn grpc_backend_connects_to_mutual_tls_query_service() {
         inspect["result"]["structuredContent"]["object"]["ref"],
         "node:mtls"
     );
-    assert_eq!(
-        inspect["result"]["structuredContent"]["evidence"][0]["text"],
-        "Node detail for node:mtls."
-    );
 }
 
-async fn spawn_fake_query_server() -> String {
-    spawn_fake_query_server_with_tls(None).await
+async fn spawn_fake_memory_server(recorded: RecordedMemoryRequests) -> String {
+    spawn_fake_memory_server_with_tls(None, recorded).await
 }
 
-async fn spawn_fake_query_server_with_mutual_tls() -> String {
-    spawn_fake_query_server_with_tls(Some(
-        ServerTlsConfig::new()
-            .identity(Identity::from_pem(TEST_SERVER_CERT, TEST_SERVER_KEY))
-            .client_ca_root(Certificate::from_pem(TEST_CA_CERT)),
-    ))
+async fn spawn_fake_memory_server_with_mutual_tls(recorded: RecordedMemoryRequests) -> String {
+    spawn_fake_memory_server_with_tls(
+        Some(
+            ServerTlsConfig::new()
+                .identity(Identity::from_pem(TEST_SERVER_CERT, TEST_SERVER_KEY))
+                .client_ca_root(Certificate::from_pem(TEST_CA_CERT)),
+        ),
+        recorded,
+    )
     .await
 }
 
-async fn spawn_fake_query_server_with_tls(tls_config: Option<ServerTlsConfig>) -> String {
-    spawn_fake_kernel_server_with_tls(tls_config, RecordedCommands::default()).await
-}
-
-async fn spawn_fake_kernel_server_with_commands(recorded_commands: RecordedCommands) -> String {
-    spawn_fake_kernel_server_with_tls(None, recorded_commands).await
-}
-
-async fn spawn_fake_kernel_server_with_tls(
+async fn spawn_fake_memory_server_with_tls(
     tls_config: Option<ServerTlsConfig>,
-    recorded_commands: RecordedCommands,
+    recorded: RecordedMemoryRequests,
 ) -> String {
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
@@ -380,9 +505,8 @@ async fn spawn_fake_kernel_server_with_tls(
         }
 
         builder
-            .add_service(ContextQueryServiceServer::new(FakeQueryService))
-            .add_service(ContextCommandServiceServer::new(FakeCommandService {
-                recorded_commands,
+            .add_service(KernelMemoryServiceServer::new(FakeMemoryService {
+                recorded,
             }))
             .serve_with_incoming(incoming)
             .await
@@ -412,374 +536,423 @@ async fn call_tool(server: &KernelMcpServer, id: u64, name: &str, arguments: Val
     serde_json::from_str(&response).expect("tools/call response should be valid JSON")
 }
 
-struct FakeQueryService;
-
-#[derive(Clone, Default)]
-struct RecordedCommands {
-    requests: Arc<Mutex<Vec<UpdateContextRequest>>>,
+#[derive(Clone, Debug)]
+struct RecordedTemporalMove {
+    method: &'static str,
+    request: TemporalMoveRequest,
 }
 
-impl RecordedCommands {
-    async fn requests(&self) -> Vec<UpdateContextRequest> {
-        self.requests.lock().await.clone()
+#[derive(Clone, Default)]
+struct RecordedMemoryRequests {
+    ingests: Arc<Mutex<Vec<IngestRequest>>>,
+    wakes: Arc<Mutex<Vec<WakeRequest>>>,
+    asks: Arc<Mutex<Vec<AskRequest>>>,
+    moves: Arc<Mutex<Vec<RecordedTemporalMove>>>,
+    nears: Arc<Mutex<Vec<TemporalNearRequest>>>,
+    traces: Arc<Mutex<Vec<TraceRequest>>>,
+    inspects: Arc<Mutex<Vec<InspectRequest>>>,
+}
+
+impl RecordedMemoryRequests {
+    async fn ingests(&self) -> Vec<IngestRequest> {
+        self.ingests.lock().await.clone()
+    }
+
+    async fn wakes(&self) -> Vec<WakeRequest> {
+        self.wakes.lock().await.clone()
+    }
+
+    async fn moves(&self) -> Vec<RecordedTemporalMove> {
+        self.moves.lock().await.clone()
+    }
+
+    async fn nears(&self) -> Vec<TemporalNearRequest> {
+        self.nears.lock().await.clone()
+    }
+
+    async fn traces(&self) -> Vec<TraceRequest> {
+        self.traces.lock().await.clone()
     }
 }
 
 #[derive(Clone)]
-struct FakeCommandService {
-    recorded_commands: RecordedCommands,
+struct FakeMemoryService {
+    recorded: RecordedMemoryRequests,
 }
 
 #[tonic::async_trait]
-impl ContextCommandService for FakeCommandService {
-    async fn update_context(
+impl KernelMemoryService for FakeMemoryService {
+    async fn ingest(
         &self,
-        request: Request<UpdateContextRequest>,
-    ) -> Result<Response<UpdateContextResponse>, Status> {
+        request: Request<IngestRequest>,
+    ) -> Result<Response<IngestResponse>, Status> {
         let request = request.into_inner();
-        self.recorded_commands
-            .requests
-            .lock()
-            .await
-            .push(request.clone());
+        self.recorded.ingests.lock().await.push(request.clone());
+        let memory = request.memory.as_ref();
+        let memory_id = memory_id_from_idempotency_key(&request.idempotency_key);
 
-        Ok(Response::new(UpdateContextResponse {
-            accepted_version: Some(BundleVersion {
-                revision: 1,
-                content_hash: "sha256:ingest".to_string(),
-                schema_version: "v1beta1".to_string(),
-                projection_watermark: String::new(),
-                generated_at: None,
-                generator_version: "test".to_string(),
+        Ok(Response::new(IngestResponse {
+            summary: format!("Ingested memory for {}.", request.about),
+            memory: Some(IngestedMemory {
+                about: request.about,
+                memory_id,
+                accepted: Some(AcceptedCounts {
+                    entries: memory
+                        .map(|memory| memory.entries.len())
+                        .unwrap_or_default() as u32,
+                    relations: memory
+                        .map(|memory| memory.relations.len())
+                        .unwrap_or_default() as u32,
+                    evidence: memory
+                        .map(|memory| memory.evidence.len())
+                        .unwrap_or_default() as u32,
+                }),
+                read_after_write_ready: true,
             }),
             warnings: Vec::new(),
         }))
     }
-}
 
-#[tonic::async_trait]
-impl ContextQueryService for FakeQueryService {
-    async fn get_context(
-        &self,
-        request: Request<GetContextRequest>,
-    ) -> Result<Response<GetContextResponse>, Status> {
+    async fn wake(&self, request: Request<WakeRequest>) -> Result<Response<WakeResponse>, Status> {
         let request = request.into_inner();
-        Ok(Response::new(GetContextResponse {
-            bundle: Some(fake_bundle(
-                &request.root_node_id,
-                "node:root:evidence",
-                &request.role,
-                request.depth,
-                request.token_budget,
-            )),
-            rendered: Some(fake_rendered(
-                &request.root_node_id,
-                &request.role,
-                request.depth,
-                request.token_budget,
-            )),
-            scope_validation: None,
-            served_at: None,
-            timing: None,
-        }))
-    }
+        self.recorded.wakes.lock().await.push(request.clone());
 
-    async fn get_context_path(
-        &self,
-        request: Request<GetContextPathRequest>,
-    ) -> Result<Response<GetContextPathResponse>, Status> {
-        let request = request.into_inner();
-        Ok(Response::new(GetContextPathResponse {
-            path_bundle: Some(fake_path_bundle(
-                &request.root_node_id,
-                &request.target_node_id,
-                &request.role,
-                request.token_budget,
-            )),
-            rendered: Some(fake_rendered(
-                &request.root_node_id,
-                &request.role,
-                1,
-                request.token_budget,
-            )),
-            served_at: None,
-            timing: None,
-        }))
-    }
-
-    async fn get_node_detail(
-        &self,
-        request: Request<GetNodeDetailRequest>,
-    ) -> Result<Response<GetNodeDetailResponse>, Status> {
-        let node_id = request.into_inner().node_id;
-        Ok(Response::new(GetNodeDetailResponse {
-            node: Some(fake_node(&node_id)),
-            detail: Some(BundleNodeDetail {
-                node_id: node_id.clone(),
-                detail: format!("Node detail for {node_id}."),
-                content_hash: "sha256:inspect".to_string(),
-                revision: 1,
+        Ok(Response::new(WakeResponse {
+            summary: format!("Wake summary for {}.", request.about),
+            wake: Some(WakePacket {
+                objective: if request.intent.trim().is_empty() {
+                    "continue".to_string()
+                } else {
+                    request.intent.clone()
+                },
+                current_state: vec![format!("State for {}.", request.about)],
+                causal_spine: vec![WakeClaim {
+                    claim: "Typed wake claim.".to_string(),
+                    because: "KernelMemoryService.Wake returned it.".to_string(),
+                    evidence_ref: "evidence:typed".to_string(),
+                }],
+                open_loops: Vec::new(),
+                next_actions: Vec::new(),
+                guardrails: Vec::new(),
             }),
+            proof: Some(proof(&request.about, "claim:typed-wake")),
+            warnings: Vec::new(),
         }))
     }
 
-    async fn rehydrate_session(
-        &self,
-        _request: Request<RehydrateSessionRequest>,
-    ) -> Result<Response<RehydrateSessionResponse>, Status> {
-        Err(Status::unimplemented(
-            "fake query service only implements KMP read paths",
-        ))
-    }
+    async fn ask(&self, request: Request<AskRequest>) -> Result<Response<AskResponse>, Status> {
+        let request = request.into_inner();
+        self.recorded.asks.lock().await.push(request.clone());
 
-    async fn validate_scope(
-        &self,
-        _request: Request<ValidateScopeRequest>,
-    ) -> Result<Response<ValidateScopeResponse>, Status> {
-        Err(Status::unimplemented(
-            "fake query service only implements KMP read paths",
-        ))
-    }
-}
-
-fn fake_bundle(
-    root_node_id: &str,
-    evidence_node_id: &str,
-    role: &str,
-    depth: u32,
-    token_budget: u32,
-) -> RehydrationBundle {
-    if root_node_id == "question:temporal" {
-        return fake_temporal_bundle(root_node_id);
-    }
-
-    RehydrationBundle {
-        root_node_id: root_node_id.to_string(),
-        bundles: vec![GraphRoleBundle {
-            role: role.to_string(),
-            root_node: Some(fake_node(root_node_id)),
-            neighbor_nodes: vec![fake_node(evidence_node_id)],
-            relationships: vec![fake_relationship(root_node_id, evidence_node_id)],
-            node_details: vec![BundleNodeDetail {
-                node_id: evidence_node_id.to_string(),
-                detail: format!(
-                    "Evidence detail for {root_node_id} requested by {role} with budget {token_budget}."
-                ),
-                content_hash: format!("sha256:{root_node_id}:{depth}:{token_budget}"),
-                revision: 7,
+        Ok(Response::new(AskResponse {
+            summary: "Typed deterministic answer.".to_string(),
+            answer: "Trust the typed KernelMemoryService response.".to_string(),
+            because: vec![AnswerReason {
+                claim: "Typed answer claim.".to_string(),
+                evidence: "Typed answer evidence.".to_string(),
+                r#ref: "claim:typed-answer".to_string(),
             }],
-            rendered: None,
-        }],
-        stats: None,
-        version: None,
+            proof: Some(proof(&request.about, "claim:typed-answer")),
+            warnings: Vec::new(),
+        }))
     }
-}
 
-fn fake_temporal_bundle(root_node_id: &str) -> RehydrationBundle {
-    let conversation = fake_memory_node(
-        "conversation:rachel-2026-04-12",
-        "memory_dimension",
-        "Rachel relocation discussion",
-    );
-    let denver = fake_memory_node(
-        "claim:rachel-denver",
-        "claim",
-        "Rachel said she was moving to Denver.",
-    );
-    let austin = fake_memory_node(
-        "claim:rachel-austin",
-        "claim",
-        "Rachel later corrected the destination to Austin.",
-    );
-
-    RehydrationBundle {
-        root_node_id: root_node_id.to_string(),
-        bundles: vec![GraphRoleBundle {
-            role: "temporal-reader".to_string(),
-            root_node: Some(fake_node(root_node_id)),
-            neighbor_nodes: vec![conversation, denver, austin],
-            relationships: vec![
-                fake_memory_relationship(
-                    root_node_id,
-                    "conversation:rachel-2026-04-12",
-                    "has_dimension",
-                    None,
-                    None,
-                ),
-                fake_memory_relationship(
-                    "conversation:rachel-2026-04-12",
-                    "claim:rachel-denver",
-                    "contains_entry",
-                    Some(1),
-                    Some("2026-04-12T15:00:00Z"),
-                ),
-                fake_memory_relationship(
-                    "conversation:rachel-2026-04-12",
-                    "claim:rachel-austin",
-                    "contains_entry",
-                    Some(2),
-                    Some("2026-04-12T15:05:00Z"),
-                ),
-                fake_memory_relationship(
-                    "claim:rachel-austin",
-                    "claim:rachel-denver",
-                    "supersedes",
-                    None,
-                    None,
-                ),
-            ],
-            node_details: Vec::new(),
-            rendered: None,
-        }],
-        stats: None,
-        version: None,
+    async fn goto(&self, request: Request<GotoRequest>) -> Result<Response<GotoResponse>, Status> {
+        let response = self
+            .temporal_move(
+                "goto",
+                TemporalDirection::Goto,
+                temporal_move_request_from_goto(request.into_inner()),
+            )
+            .await?;
+        Ok(Response::new(goto_response_from_temporal(response)))
     }
-}
 
-fn fake_path_bundle(
-    root_node_id: &str,
-    target_node_id: &str,
-    role: &str,
-    token_budget: u32,
-) -> RehydrationBundle {
-    RehydrationBundle {
-        root_node_id: root_node_id.to_string(),
-        bundles: vec![GraphRoleBundle {
-            role: role.to_string(),
-            root_node: Some(fake_node(root_node_id)),
-            neighbor_nodes: vec![fake_node(target_node_id)],
-            relationships: vec![fake_relationship(root_node_id, target_node_id)],
-            node_details: vec![BundleNodeDetail {
-                node_id: target_node_id.to_string(),
-                detail: format!("Path detail for {root_node_id} to {target_node_id}."),
-                content_hash: format!("sha256:path:{token_budget}"),
-                revision: 2,
-            }],
-            rendered: None,
-        }],
-        stats: None,
-        version: None,
+    async fn near(&self, request: Request<NearRequest>) -> Result<Response<NearResponse>, Status> {
+        let request = temporal_near_request_from_near(request.into_inner());
+        self.recorded.nears.lock().await.push(request.clone());
+
+        Ok(Response::new(near_response_from_temporal(
+            temporal_response(TemporalDirection::Near, request.around),
+        )))
     }
-}
 
-fn fake_rendered(root_node_id: &str, role: &str, depth: u32, token_budget: u32) -> RenderedContext {
-    let content = format!(
-        "Live state for {root_node_id} as {role} at depth {depth} with budget {token_budget}."
-    );
-
-    RenderedContext {
-        format: BundleRenderFormat::Structured as i32,
-        content: content.clone(),
-        token_count: 12,
-        sections: vec![BundleSection {
-            key: "state".to_string(),
-            title: "State".to_string(),
-            content,
-            token_count: 12,
-            scopes: Vec::new(),
-        }],
-        tiers: Vec::new(),
-        resolved_mode: RehydrationMode::ResumeFocused as i32,
-        quality: None,
-        truncation: None,
-        content_hash: "sha256:rendered".to_string(),
+    async fn rewind(
+        &self,
+        request: Request<RewindRequest>,
+    ) -> Result<Response<RewindResponse>, Status> {
+        let response = self
+            .temporal_move(
+                "rewind",
+                TemporalDirection::Rewind,
+                temporal_move_request_from_rewind(request.into_inner()),
+            )
+            .await?;
+        Ok(Response::new(rewind_response_from_temporal(response)))
     }
-}
 
-fn fake_node(node_id: &str) -> GraphNode {
-    GraphNode {
-        node_id: node_id.to_string(),
-        node_kind: "claim".to_string(),
-        title: format!("Claim {node_id}"),
-        summary: format!("Summary for {node_id}."),
-        status: "active".to_string(),
-        labels: vec!["test".to_string()],
-        properties: HashMap::new(),
-        provenance: None,
+    async fn forward(
+        &self,
+        request: Request<ForwardRequest>,
+    ) -> Result<Response<ForwardResponse>, Status> {
+        let response = self
+            .temporal_move(
+                "forward",
+                TemporalDirection::Forward,
+                temporal_move_request_from_forward(request.into_inner()),
+            )
+            .await?;
+        Ok(Response::new(forward_response_from_temporal(response)))
     }
-}
 
-fn fake_memory_node(node_id: &str, node_kind: &str, summary: &str) -> GraphNode {
-    GraphNode {
-        node_id: node_id.to_string(),
-        node_kind: node_kind.to_string(),
-        title: summary.to_string(),
-        summary: summary.to_string(),
-        status: "active".to_string(),
-        labels: vec!["memory".to_string()],
-        properties: HashMap::new(),
-        provenance: None,
+    async fn trace(
+        &self,
+        request: Request<TraceRequest>,
+    ) -> Result<Response<TraceResponse>, Status> {
+        let request = request.into_inner();
+        self.recorded.traces.lock().await.push(request.clone());
+
+        Ok(Response::new(TraceResponse {
+            summary: format!("Trace from {} to {}.", request.from, request.to),
+            trace: vec![relation(&request.from, &request.to, "supports")],
+            warnings: Vec::new(),
+        }))
     }
-}
 
-fn fake_relationship(source_node_id: &str, target_node_id: &str) -> GraphRelationship {
-    GraphRelationship {
-        source_node_id: source_node_id.to_string(),
-        target_node_id: target_node_id.to_string(),
-        relationship_type: "supports".to_string(),
-        explanation: Some(GraphRelationshipExplanation {
-            semantic_class: GraphRelationshipSemanticClass::Evidential as i32,
-            rationale: format!("{source_node_id} is supported by {target_node_id}."),
-            motivation: String::new(),
-            method: String::new(),
-            decision_id: "decision:test".to_string(),
-            caused_by_node_id: String::new(),
-            evidence: format!("Evidence connects {source_node_id} to {target_node_id}."),
-            confidence: "high".to_string(),
-            sequence: 1,
-            dimension: String::new(),
-            scope_id: String::new(),
-            occurred_at: String::new(),
-            observed_at: String::new(),
-            ingested_at: String::new(),
-            valid_from: String::new(),
-            valid_until: String::new(),
-            rank: 0,
-        }),
-        provenance: None,
-    }
-}
+    async fn inspect(
+        &self,
+        request: Request<InspectRequest>,
+    ) -> Result<Response<InspectResponse>, Status> {
+        let request = request.into_inner();
+        self.recorded.inspects.lock().await.push(request.clone());
 
-fn fake_memory_relationship(
-    source_node_id: &str,
-    target_node_id: &str,
-    relationship_type: &str,
-    sequence: Option<u32>,
-    occurred_at: Option<&str>,
-) -> GraphRelationship {
-    GraphRelationship {
-        source_node_id: source_node_id.to_string(),
-        target_node_id: target_node_id.to_string(),
-        relationship_type: relationship_type.to_string(),
-        explanation: Some(GraphRelationshipExplanation {
-            semantic_class: GraphRelationshipSemanticClass::Structural as i32,
-            rationale: "Memory traversal edge.".to_string(),
-            motivation: String::new(),
-            method: String::new(),
-            decision_id: String::new(),
-            caused_by_node_id: String::new(),
-            evidence: String::new(),
-            confidence: String::new(),
-            sequence: sequence.unwrap_or_default(),
-            dimension: if relationship_type == "contains_entry" {
-                "conversation".to_string()
+        Ok(Response::new(InspectResponse {
+            summary: format!("Inspect {}.", request.r#ref),
+            object: Some(InspectedObject {
+                r#ref: request.r#ref.clone(),
+                kind: "claim".to_string(),
+                text: format!("Node detail for {}.", request.r#ref),
+            }),
+            links: Some(InspectedLinks {
+                incoming: vec![relation("node:source", &request.r#ref, "supports")],
+                outgoing: vec![relation(&request.r#ref, "node:target", "supports")],
+            }),
+            evidence: vec![evidence(&request.r#ref)],
+            warnings: Vec::new(),
+            raw: if request.include.as_ref().is_some_and(|include| include.raw) {
+                vec![raw_ref(&request.r#ref)]
             } else {
-                String::new()
+                Vec::new()
             },
-            scope_id: if relationship_type == "contains_entry" {
-                source_node_id.to_string()
-            } else {
-                String::new()
-            },
-            occurred_at: occurred_at.unwrap_or_default().to_string(),
-            observed_at: String::new(),
-            ingested_at: String::new(),
-            valid_from: String::new(),
-            valid_until: String::new(),
-            rank: 0,
-        }),
-        provenance: None,
+        }))
     }
+}
+
+impl FakeMemoryService {
+    async fn temporal_move(
+        &self,
+        method: &'static str,
+        direction: TemporalDirection,
+        request: TemporalMoveRequest,
+    ) -> Result<TemporalMoveResponse, Status> {
+        self.recorded.moves.lock().await.push(RecordedTemporalMove {
+            method,
+            request: request.clone(),
+        });
+
+        Ok(temporal_response(direction, request.cursor))
+    }
+}
+
+fn temporal_move_request_from_goto(request: GotoRequest) -> TemporalMoveRequest {
+    TemporalMoveRequest {
+        about: request.about,
+        cursor: request.cursor,
+        dimensions: request.dimensions,
+        window: request.window,
+        limit: request.limit,
+        include: request.include,
+        budget: request.budget,
+    }
+}
+
+fn temporal_move_request_from_rewind(request: RewindRequest) -> TemporalMoveRequest {
+    TemporalMoveRequest {
+        about: request.about,
+        cursor: request.cursor,
+        dimensions: request.dimensions,
+        window: request.window,
+        limit: request.limit,
+        include: request.include,
+        budget: request.budget,
+    }
+}
+
+fn temporal_move_request_from_forward(request: ForwardRequest) -> TemporalMoveRequest {
+    TemporalMoveRequest {
+        about: request.about,
+        cursor: request.cursor,
+        dimensions: request.dimensions,
+        window: request.window,
+        limit: request.limit,
+        include: request.include,
+        budget: request.budget,
+    }
+}
+
+fn temporal_near_request_from_near(request: NearRequest) -> TemporalNearRequest {
+    TemporalNearRequest {
+        about: request.about,
+        around: request.around,
+        dimensions: request.dimensions,
+        window: request.window,
+        limit: request.limit,
+        include: request.include,
+        budget: request.budget,
+    }
+}
+
+fn goto_response_from_temporal(response: TemporalMoveResponse) -> GotoResponse {
+    GotoResponse {
+        summary: response.summary,
+        temporal: response.temporal,
+        coverage: response.coverage,
+        entries: response.entries,
+        proof: response.proof,
+        warnings: response.warnings,
+        raw_refs: response.raw_refs,
+    }
+}
+
+fn near_response_from_temporal(response: TemporalMoveResponse) -> NearResponse {
+    NearResponse {
+        summary: response.summary,
+        temporal: response.temporal,
+        coverage: response.coverage,
+        entries: response.entries,
+        proof: response.proof,
+        warnings: response.warnings,
+        raw_refs: response.raw_refs,
+    }
+}
+
+fn rewind_response_from_temporal(response: TemporalMoveResponse) -> RewindResponse {
+    RewindResponse {
+        summary: response.summary,
+        temporal: response.temporal,
+        coverage: response.coverage,
+        entries: response.entries,
+        proof: response.proof,
+        warnings: response.warnings,
+        raw_refs: response.raw_refs,
+    }
+}
+
+fn forward_response_from_temporal(response: TemporalMoveResponse) -> ForwardResponse {
+    ForwardResponse {
+        summary: response.summary,
+        temporal: response.temporal,
+        coverage: response.coverage,
+        entries: response.entries,
+        proof: response.proof,
+        warnings: response.warnings,
+        raw_refs: response.raw_refs,
+    }
+}
+
+fn temporal_response(
+    direction: TemporalDirection,
+    requested: Option<TemporalCursor>,
+) -> TemporalMoveResponse {
+    TemporalMoveResponse {
+        summary: "Returned typed temporal entries.".to_string(),
+        temporal: Some(TemporalState {
+            direction: direction as i32,
+            requested,
+            resolved: Some(coordinate(2)),
+        }),
+        coverage: None,
+        entries: vec![TemporalEntry {
+            r#ref: "claim:rachel-austin".to_string(),
+            kind: "claim".to_string(),
+            text: "Rachel later corrected the destination to Austin.".to_string(),
+            coordinates: vec![coordinate(2)],
+        }],
+        proof: Some(proof("claim:rachel-denver", "claim:rachel-austin")),
+        warnings: Vec::new(),
+        raw_refs: vec![raw_ref("claim:rachel-austin")],
+    }
+}
+
+fn proof(source: &str, target: &str) -> Proof {
+    Proof {
+        path: vec![relation(source, target, "supports")],
+        evidence: vec![evidence(source)],
+        conflicts: Vec::new(),
+        missing: Vec::new(),
+        confidence: MemoryConfidence::High as i32,
+    }
+}
+
+fn relation(source_ref: &str, target_ref: &str, rel: &str) -> MemoryRelation {
+    MemoryRelation {
+        source_ref: source_ref.to_string(),
+        target_ref: target_ref.to_string(),
+        rel: rel.to_string(),
+        semantic_class: MemorySemanticClass::Evidential as i32,
+        why: "Typed relation rationale.".to_string(),
+        evidence: "Typed relation evidence.".to_string(),
+        confidence: MemoryConfidence::High as i32,
+        sequence: Some(1),
+    }
+}
+
+fn evidence(source: &str) -> MemoryEvidence {
+    MemoryEvidence {
+        id: "evidence:typed".to_string(),
+        supports: vec![source.to_string()],
+        text: "Typed evidence.".to_string(),
+        source: source.to_string(),
+        time: None,
+        metadata: Default::default(),
+    }
+}
+
+fn raw_ref(ref_id: &str) -> RawMemoryRef {
+    RawMemoryRef {
+        r#ref: ref_id.to_string(),
+        kind: "claim".to_string(),
+        text: format!("Raw text for {ref_id}."),
+        coordinates: vec![coordinate(2)],
+        detail: format!("Raw detail for {ref_id}."),
+        content_hash: "hash-raw".to_string(),
+        revision: 1,
+    }
+}
+
+fn coordinate(sequence: u32) -> TemporalCoordinate {
+    TemporalCoordinate {
+        dimension: "conversation".to_string(),
+        scope_id: "conversation:rachel".to_string(),
+        occurred_at: Some(Timestamp {
+            seconds: 1_765_000_000,
+            nanos: 0,
+        }),
+        observed_at: None,
+        ingested_at: None,
+        valid_from: None,
+        valid_until: None,
+        sequence: Some(sequence),
+        rank: None,
+        metadata: Default::default(),
+    }
+}
+
+fn memory_id_from_idempotency_key(idempotency_key: &str) -> String {
+    idempotency_key
+        .strip_prefix("ingest:")
+        .map(|suffix| format!("memory:{suffix}"))
+        .unwrap_or_else(|| format!("memory:{idempotency_key}"))
 }
 
 struct TestTlsFiles {

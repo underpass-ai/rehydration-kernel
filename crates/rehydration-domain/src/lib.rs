@@ -7,6 +7,7 @@ pub mod value_objects;
 pub use error::DomainError;
 pub use model::{
     BundleNode, BundleNodeDetail, BundleRelationship, RehydrationBundle, RehydrationStats,
+    TemporalEntry, TemporalMemoryTraversal, TemporalTraversalRequest, TemporalTraversalResult,
 };
 pub use projection::{
     ContextPathNeighborhood, GraphNodeMaterializedData, GraphNodeMaterializedEvent,
@@ -18,12 +19,15 @@ pub use projection::{
 };
 pub use repositories::{
     ContextEventChange, ContextEventStore, ContextUpdatedEvent, GraphNeighborhoodReader,
-    IdempotentOutcome, NodeDetailReader, PortError, ProcessedEventStore, ProjectionCheckpointStore,
-    ProjectionWriter, QualityMetricsObserver, QualityObservationContext, SnapshotSaveOptions,
-    SnapshotStore, TokenEstimator,
+    IdempotentOutcome, MemoryAboutIndexReader, NodeDetailReader, NodeRelationshipReader,
+    NodeRelationships, PortError, ProcessedEventStore, ProjectionCheckpointStore, ProjectionWriter,
+    QualityMetricsObserver, QualityObservationContext, SnapshotSaveOptions, SnapshotStore,
+    TokenEstimator,
 };
 pub use value_objects::{
-    BundleMetadata, BundleQualityMetrics, CaseId, Provenance, Role, SourceKind,
+    BundleMetadata, BundleQualityMetrics, CaseId, DimensionScopeMode, DimensionSelection,
+    DimensionSelectionMode, MemoryDimensionIdentity, Provenance, Role, SourceKind,
+    TemporalCoordinate, TemporalCursor, TemporalDirection, TemporalWindow,
 };
 pub use value_objects::{RehydrationMode, ResolutionTier, TierBudget};
 pub use value_objects::{RelationExplanation, RelationSemanticClass};
