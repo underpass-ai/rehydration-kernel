@@ -15,3 +15,5 @@ The demo supports:
 - node inspection with evidence and incoming/outgoing relations.
 - edge inspection with relation class, confidence, and rationale.
 - pan and zoom on the SVG graph.
+- deep links for article screenshots: `#core`, `#distractor`, `#wrong`,
+  `#final`, and `#decision`.

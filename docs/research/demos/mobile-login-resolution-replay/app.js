@@ -13,10 +13,10 @@ const bySessionId = new Map(DATA.sessions.map((session) => [session.id, session]
 const byViewId = new Map(DATA.views.map((view) => [view.id, view]));
 
 const state = {
-  viewId: "core",
+  viewId: initialViewId(),
   enabledSessions: new Set(DATA.sessions.map((session) => session.id)),
   selection: { type: "node", id: "hypothesis" },
-  viewBox: { x: 0, y: 20, width: GRAPH.width, height: 660 },
+  viewBox: initialViewBox(),
   drag: null,
 };
 
@@ -34,6 +34,7 @@ document.addEventListener("DOMContentLoaded", () => {
   renderStaticMeta();
   renderViewButtons();
   renderFilters();
+  selectPreferredForView();
   renderAll();
   bindInteractions();
 });
@@ -426,6 +427,8 @@ function bindInteractions() {
       return;
     }
     state.viewId = button.dataset.view;
+    writeViewHash(state.viewId);
+    selectPreferredForView();
     renderViewButtons();
     renderFilters();
     renderAll();
@@ -544,10 +547,42 @@ function bindInteractions() {
 
   els.graph.addEventListener("pointerup", endDrag);
   els.graph.addEventListener("pointercancel", endDrag);
+
+  window.addEventListener("hashchange", () => {
+    const nextView = initialViewId();
+    if (nextView === state.viewId) {
+      return;
+    }
+    state.viewId = nextView;
+    selectPreferredForView();
+    renderViewButtons();
+    renderFilters();
+    renderAll();
+  });
 }
 
 function getActiveView() {
   return byViewId.get(state.viewId);
+}
+
+function initialViewId() {
+  const value = window.location.hash.slice(1).trim();
+  return byViewId.has(value) ? value : "core";
+}
+
+function initialViewBox() {
+  if (window.innerWidth <= 680) {
+    return { x: 0, y: 58, width: 760, height: 580 };
+  }
+  if (window.innerWidth <= 1040) {
+    return { x: 0, y: 30, width: 980, height: 660 };
+  }
+  return { x: 0, y: 20, width: GRAPH.width, height: 660 };
+}
+
+function writeViewHash(viewId) {
+  const next = `${window.location.pathname}${window.location.search}#${viewId}`;
+  window.history.replaceState(null, "", next);
 }
 
 function getVisibleNodes(enabledSessions = state.enabledSessions) {
@@ -559,6 +594,15 @@ function getVisibleNodes(enabledSessions = state.enabledSessions) {
 function getVisibleEdges(visibleNodes = getVisibleNodes()) {
   const visibleNodeIds = new Set(visibleNodes.map((node) => node.id));
   return DATA.edges.filter((edge) => visibleNodeIds.has(edge.from) && visibleNodeIds.has(edge.to));
+}
+
+function selectPreferredForView() {
+  const visibleNodes = getVisibleNodes();
+  const highlight = getHighlightSets();
+  const preferred = visibleNodes.find((node) => highlight.nodes.has(node.id));
+  if (preferred) {
+    state.selection = { type: "node", id: preferred.id };
+  }
 }
 
 function getHighlightSets() {

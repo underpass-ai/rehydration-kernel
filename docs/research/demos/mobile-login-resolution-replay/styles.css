@@ -99,6 +99,9 @@ h1 {
 
 .app-shell {
   display: grid;
+  grid-template-areas:
+    "workspace inspector"
+    "timeline inspector";
   grid-template-columns: minmax(0, 1fr) 380px;
   grid-template-rows: minmax(0, 1fr) auto;
   gap: 12px;
@@ -117,6 +120,7 @@ h1 {
 }
 
 .workspace {
+  grid-area: workspace;
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
   min-width: 0;
@@ -240,7 +244,7 @@ h1 {
 }
 
 .inspector {
-  grid-row: 1 / span 2;
+  grid-area: inspector;
   min-width: 0;
   overflow: auto;
   padding: 16px;
@@ -361,6 +365,7 @@ h1 {
 }
 
 .timeline-panel {
+  grid-area: timeline;
   min-width: 0;
   padding: 10px;
 }
@@ -560,6 +565,10 @@ h1 {
   }
 
   .app-shell {
+    grid-template-areas:
+      "workspace"
+      "inspector"
+      "timeline";
     grid-template-columns: 1fr;
     grid-template-rows: auto auto auto;
     height: auto;
@@ -570,9 +579,6 @@ h1 {
     min-height: 620px;
   }
 
-  .inspector {
-    grid-row: auto;
-  }
 }
 
 @media (max-width: 680px) {
