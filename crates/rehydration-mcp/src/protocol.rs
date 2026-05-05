@@ -235,7 +235,7 @@ pub(crate) fn tools_list_result() -> Value {
                                 "details": {"type": "boolean"},
                                 "raw": {
                                     "type": "boolean",
-                                    "description": "Reserved; live mode fails fast when true until inspect raw output has a typed response shape."
+                                    "description": "Return typed raw audit refs for the inspected object."
                                 }
                             }
                         }
@@ -302,7 +302,7 @@ fn temporal_tool_definition(name: &str, description: &str, cursor_key: &str) -> 
                     "relations": {"type": "boolean"},
                     "raw_refs": {
                         "type": "boolean",
-                        "description": "Reserved; live mode fails fast when true until temporal raw refs have a typed response shape."
+                        "description": "Return typed raw audit refs for selected temporal entries."
                     }
                 }
             },

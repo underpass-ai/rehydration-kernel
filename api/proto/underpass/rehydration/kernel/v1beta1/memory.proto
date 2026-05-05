@@ -233,6 +233,7 @@ message TemporalMoveResponse {
   repeated TemporalEntry entries = 4;
   Proof proof = 5;
   repeated string warnings = 6;
+  repeated RawMemoryRef raw_refs = 7;
 }
 
 message GotoResponse {
@@ -242,6 +243,7 @@ message GotoResponse {
   repeated TemporalEntry entries = 4;
   Proof proof = 5;
   repeated string warnings = 6;
+  repeated RawMemoryRef raw_refs = 7;
 }
 
 message NearResponse {
@@ -251,6 +253,7 @@ message NearResponse {
   repeated TemporalEntry entries = 4;
   Proof proof = 5;
   repeated string warnings = 6;
+  repeated RawMemoryRef raw_refs = 7;
 }
 
 message RewindResponse {
@@ -260,6 +263,7 @@ message RewindResponse {
   repeated TemporalEntry entries = 4;
   Proof proof = 5;
   repeated string warnings = 6;
+  repeated RawMemoryRef raw_refs = 7;
 }
 
 message ForwardResponse {
@@ -269,6 +273,7 @@ message ForwardResponse {
   repeated TemporalEntry entries = 4;
   Proof proof = 5;
   repeated string warnings = 6;
+  repeated RawMemoryRef raw_refs = 7;
 }
 
 message TemporalState {
@@ -320,6 +325,7 @@ message InspectResponse {
   InspectedLinks links = 3;
   repeated MemoryEvidence evidence = 4;
   repeated string warnings = 5;
+  repeated RawMemoryRef raw = 6;
 }
 
 message InspectedObject {
@@ -331,6 +337,16 @@ message InspectedObject {
 message InspectedLinks {
   repeated MemoryRelation incoming = 1;
   repeated MemoryRelation outgoing = 2;
+}
+
+message RawMemoryRef {
+  string ref = 1;
+  string kind = 2;
+  string text = 3;
+  repeated TemporalCoordinate coordinates = 4;
+  string detail = 5;
+  string content_hash = 6;
+  uint64 revision = 7;
 }
 
 message Proof {

@@ -68,6 +68,7 @@ pub(super) fn temporal_response_from_goto(response: GotoResponse) -> TemporalMov
         entries: response.entries,
         proof: response.proof,
         warnings: response.warnings,
+        raw_refs: response.raw_refs,
     }
 }
 
@@ -79,6 +80,7 @@ pub(super) fn temporal_response_from_near(response: NearResponse) -> TemporalMov
         entries: response.entries,
         proof: response.proof,
         warnings: response.warnings,
+        raw_refs: response.raw_refs,
     }
 }
 
@@ -90,6 +92,7 @@ pub(super) fn temporal_response_from_rewind(response: RewindResponse) -> Tempora
         entries: response.entries,
         proof: response.proof,
         warnings: response.warnings,
+        raw_refs: response.raw_refs,
     }
 }
 
@@ -101,5 +104,6 @@ pub(super) fn temporal_response_from_forward(response: ForwardResponse) -> Tempo
         entries: response.entries,
         proof: response.proof,
         warnings: response.warnings,
+        raw_refs: response.raw_refs,
     }
 }

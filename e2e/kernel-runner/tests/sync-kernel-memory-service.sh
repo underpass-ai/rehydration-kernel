@@ -313,8 +313,7 @@ assert_jq "${forward}" \
   '.entries | map(.ref) | index($target_ref) != null' \
   "Forward did not include target entry"
 
-set +e
-temporal_raw_payload="$(
+temporal_raw="$(grpc_memory_call Goto "$(
   jq -nc --arg about "${about_a}" --arg dimension "${dimension}" '{
     about: $about,
     cursor: { sequence: 2 },
@@ -325,17 +324,12 @@ temporal_raw_payload="$(
     include: { rawRefs: true },
     budget: { tokens: 1600, depth: 3 }
   }'
-)"
-temporal_raw_output="$(grpc_memory_call Goto "${temporal_raw_payload}" 2>&1)"
-temporal_raw_status=$?
-set -e
-
-if [[ ${temporal_raw_status} -eq 0 ]]; then
-  fail "Temporal rawRefs=true unexpectedly succeeded: ${temporal_raw_output}"
-fi
-if ! grep -q "temporal raw_refs expansion is not available" <<<"${temporal_raw_output}"; then
-  fail "Temporal rawRefs=true failed with unexpected error: ${temporal_raw_output}"
-fi
+)")"
+assert_jq "${temporal_raw}" \
+  --arg target_ref "${target_ref}" \
+  '(.rawRefs | length) >= 1 and
+   (.rawRefs | any(.ref == $target_ref and (.coordinates | length) >= 1))' \
+  "Temporal rawRefs=true did not return typed raw refs"
 
 trace="$(grpc_memory_call Trace "$(
   jq -nc --arg source_ref "${source_ref}" --arg target_ref "${target_ref}" '{
@@ -358,7 +352,7 @@ inspect_target="$(grpc_memory_call Inspect "$(
       incoming: true,
       outgoing: true,
       details: true,
-      raw: false
+      raw: true
     }
   }'
 )")"
@@ -367,8 +361,9 @@ assert_jq "${inspect_target}" \
   --arg target_ref "${target_ref}" \
   '.object.ref == $target_ref and
    (.links.incoming // [] | any(.sourceRef == $source_ref and .targetRef == $target_ref and .rel == "supports")) and
-   (.evidence | length) >= 1' \
-  "Inspect target did not return incoming supports link and detail evidence"
+   (.evidence | length) >= 1 and
+   (.raw | any(.ref == $target_ref and (.detail | length) > 0))' \
+  "Inspect target did not return incoming supports link, detail evidence, and typed raw audit ref"
 
 inspect_source="$(grpc_memory_call Inspect "$(
   jq -nc --arg source_ref "${source_ref}" '{
@@ -387,28 +382,5 @@ assert_jq "${inspect_source}" \
   '.object.ref == $source_ref and
    (.links.outgoing // [] | any(.sourceRef == $source_ref and .targetRef == $target_ref and .rel == "supports"))' \
   "Inspect source did not return outgoing supports link"
-
-set +e
-raw_payload="$(
-  jq -nc --arg source_ref "${source_ref}" '{
-    ref: $source_ref,
-    include: {
-      incoming: false,
-      outgoing: false,
-      details: true,
-      raw: true
-    }
-  }'
-)"
-raw_output="$(grpc_memory_call Inspect "${raw_payload}" 2>&1)"
-raw_status=$?
-set -e
-
-if [[ ${raw_status} -eq 0 ]]; then
-  fail "Inspect raw=true unexpectedly succeeded: ${raw_output}"
-fi
-if ! grep -q "inspect raw expansion is not available" <<<"${raw_output}"; then
-  fail "Inspect raw=true failed with unexpected error: ${raw_output}"
-fi
 
 pass "KernelMemoryService typed gRPC lifecycle passed for ${run_id}"

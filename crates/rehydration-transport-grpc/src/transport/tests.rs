@@ -1359,7 +1359,7 @@ async fn memory_service_temporal_methods_use_domain_traversal() {
 }
 
 #[tokio::test]
-async fn memory_service_temporal_raw_refs_fail_fast_until_typed_shape_exists() {
+async fn memory_service_temporal_raw_refs_return_typed_audit_refs() {
     let service = memory_service(TemporalGraphNeighborhoodReader, EmptyNodeDetailReader);
     let mut request = temporal_move_request(
         Some(ProtoTemporalCursor {
@@ -1377,10 +1377,12 @@ async fn memory_service_temporal_raw_refs_fail_fast_until_typed_shape_exists() {
     let raw_refs = service
         .forward(Request::new(forward_request_from_temporal(request)))
         .await
-        .expect_err("unsupported temporal raw_refs should fail");
+        .expect("temporal raw_refs should return typed refs")
+        .into_inner();
 
-    assert_eq!(raw_refs.code(), tonic::Code::InvalidArgument);
-    assert!(raw_refs.message().contains("temporal raw_refs expansion"));
+    assert_eq!(raw_refs.raw_refs.len(), 1);
+    assert_eq!(raw_refs.raw_refs[0].r#ref, "claim:rachel-austin");
+    assert_eq!(raw_refs.raw_refs[0].coordinates[0].sequence, Some(2));
 }
 
 #[tokio::test]
@@ -1509,11 +1511,6 @@ async fn memory_service_trace_and_inspect_use_existing_query_ports() {
         "Summary for node-123"
     );
     assert!(summary_only.evidence.is_empty());
-}
-
-#[tokio::test]
-async fn memory_service_inspect_fails_fast_for_unsupported_raw() {
-    let service = memory_service(SeededGraphNeighborhoodReader, SeededNodeDetailReader);
 
     let raw = service
         .inspect(Request::new(InspectRequest {
@@ -1526,9 +1523,13 @@ async fn memory_service_inspect_fails_fast_for_unsupported_raw() {
             }),
         }))
         .await
-        .expect_err("unsupported raw expansion should fail");
+        .expect("inspect raw should return typed audit refs")
+        .into_inner();
 
-    assert_eq!(raw.code(), tonic::Code::InvalidArgument);
+    assert_eq!(raw.raw.len(), 1);
+    assert_eq!(raw.raw[0].r#ref, "node-123");
+    assert_eq!(raw.raw[0].detail, "Expanded detail");
+    assert_eq!(raw.raw[0].revision, 2);
 }
 
 #[test]

@@ -124,12 +124,10 @@ Dimension scope is explicit and auditable:
   `about:<about>:dimension:<dimension_id>` ids.
 
 `kernel_inspect` supports typed object/detail/incoming/outgoing/evidence lookup.
-`include.raw=true` fails fast until the gRPC response shape has a typed raw
-payload.
+`include.raw=true` returns typed raw audit refs for the inspected object.
 
-Temporal `include.raw_refs=true` also fails fast in live mode until
-the method-specific temporal responses have a typed raw reference shape.
-`include.evidence` and `include.relations` are supported.
+Temporal `include.raw_refs=true` returns typed raw audit refs for selected
+entries. `include.evidence` and `include.relations` are supported.
 
 ## Smoke Test
 

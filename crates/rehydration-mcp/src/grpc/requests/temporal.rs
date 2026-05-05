@@ -88,12 +88,6 @@ pub(super) fn temporal_include_from_arguments(
         return Ok(None);
     };
     let raw_refs = optional_bool_field(include, "raw_refs", "include.raw_refs")?.unwrap_or(false);
-    if raw_refs {
-        return Err(
-            "temporal raw_refs expansion is not available on the current typed response shape"
-                .to_string(),
-        );
-    }
     Ok(Some(TemporalInclude {
         evidence: optional_bool_field(include, "evidence", "include.evidence")?.unwrap_or(false),
         relations: optional_bool_field(include, "relations", "include.relations")?.unwrap_or(false),
@@ -110,12 +104,6 @@ pub(super) fn inspect_include_from_arguments(
         return Ok(None);
     };
     let raw = optional_bool_field(include, "raw", "include.raw")?.unwrap_or(false);
-    if raw {
-        return Err(
-            "inspect raw expansion is not available on the current typed response shape"
-                .to_string(),
-        );
-    }
     Ok(Some(InspectInclude {
         incoming: optional_bool_field(include, "incoming", "include.incoming")?.unwrap_or(false),
         outgoing: optional_bool_field(include, "outgoing", "include.outgoing")?.unwrap_or(false),

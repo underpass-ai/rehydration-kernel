@@ -66,12 +66,12 @@ Ingested memory:
 | trace hypothesis to mitigation | global graph path | 2 | causal mitigation edge plus recovery continuation |
 | inspect mitigation | node detail | 4 incoming, 1 outgoing, 1 evidence | audit-ready local explanation |
 
-## Fail-Fast Checks
+## Validation Checks
 
 | Check | Result |
 | --- | --- |
 | `scope=abouts` without `abouts` list | rejected: `dimension scope ABOUTS requires at least one about` |
-| temporal `raw_refs=true` | rejected by gRPC with `InvalidArgument`: `temporal raw_refs expansion is not available on the current typed response shape` |
+| temporal `raw_refs=true` | returns typed raw audit refs for selected entries in the current cut |
 
 ## Log Evidence
 
@@ -82,7 +82,7 @@ Relevant kernel log facts from the run:
 - `KernelMemoryService.Ingest` accepted frontend `entries=1`, `relations=0`, `evidence=1`.
 - `KernelMemoryService.Rewind` with `dimension_scope="abouts"` logged `selected_abouts` as payments + war-room and `entries=6`.
 - `KernelMemoryService.Rewind` with `dimension_scope="all_abouts"` logged `selected_abouts` as war-room + frontend + payments and `entries=7`.
-- `KernelMemoryService.Goto` with temporal `raw_refs=true` logged an `InvalidArgument` fail-fast error.
+- `KernelMemoryService.Goto` now supports temporal `raw_refs=true` as typed raw audit refs; older runs before this cut logged an `InvalidArgument` fail-fast error.
 
 ## Article Angle
 
@@ -106,5 +106,5 @@ Good post structure:
   retrieval and traversal, not task-quality uplift from an LLM.
 - `kernel_ask` is deterministic evidence retrieval. It should not be described
   as free-form generation.
-- Temporal `raw_refs=true` and inspect `raw=true` remain intentionally
-  fail-fast until typed raw expansion exists.
+- Temporal `raw_refs=true` and inspect `raw=true` are typed audit expansions,
+  not semantic answer paths.

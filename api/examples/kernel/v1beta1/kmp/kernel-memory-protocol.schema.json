@@ -621,7 +621,7 @@
         },
         "raw_refs": {
           "type": "boolean",
-          "description": "Reserved typed raw-reference expansion flag. Current live gRPC/MCP mode fails fast when true until the response shape is typed."
+          "description": "Return typed raw audit refs for selected temporal entries."
         }
       }
     },
@@ -680,6 +680,46 @@
         }
       }
     },
+    "raw_memory_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ref",
+        "kind",
+        "text",
+        "coordinates",
+        "detail",
+        "content_hash",
+        "revision"
+      ],
+      "properties": {
+        "ref": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "kind": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "text": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "coordinates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/temporal_coordinate"
+          }
+        },
+        "detail": {
+          "type": "string"
+        },
+        "content_hash": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
     "temporal_move_response": {
       "type": "object",
       "additionalProperties": false,
@@ -689,7 +729,8 @@
         "coverage",
         "entries",
         "proof",
-        "warnings"
+        "warnings",
+        "raw_refs"
       ],
       "properties": {
         "summary": {
@@ -758,6 +799,12 @@
         },
         "warnings": {
           "$ref": "#/$defs/warning_list"
+        },
+        "raw_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/raw_memory_ref"
+          }
         }
       }
     },
@@ -1202,7 +1249,8 @@
         "object",
         "links",
         "evidence",
-        "warnings"
+        "warnings",
+        "raw"
       ],
       "properties": {
         "summary": {
@@ -1257,6 +1305,12 @@
         },
         "warnings": {
           "$ref": "#/$defs/warning_list"
+        },
+        "raw": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/raw_memory_ref"
+          }
         }
       }
     }

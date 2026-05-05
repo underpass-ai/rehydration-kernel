@@ -15,10 +15,10 @@ Current status:
   `UNKNOWN`, not a generated answer;
 - dimension scope defaults to `current_about`; `abouts` requires a non-empty
   about list; `all_abouts` is explicit and uses the kernel memory about index;
-- `kernel_inspect` supports typed detail/link lookup; `include.raw=true` fails
-  fast until a typed raw response shape exists;
-- temporal `include.raw_refs=true` fails fast until a typed raw reference
-  response shape exists.
+- `kernel_inspect` supports typed detail/link lookup and typed raw audit refs
+  when `include.raw=true`;
+- temporal `include.raw_refs=true` returns typed raw audit refs for the selected
+  entries.
 
 Run locally:
 

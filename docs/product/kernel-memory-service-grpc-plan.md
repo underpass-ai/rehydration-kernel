@@ -116,7 +116,7 @@ messages:
 | `GotoRequest`, `RewindRequest`, `ForwardRequest` | Method-specific temporal movement requests with `about`, `cursor`, `dimensions`, `window`, `limit`, `include`, `budget`. |
 | `NearRequest` | Method-specific temporal neighborhood request with `about`, `around`, `dimensions`, `window`, `limit`, `include`, `budget`. |
 | `TemporalWindow` | Entry window controls for `Near`: `before_entries`, `after_entries`. |
-| `TemporalInclude` | `evidence` and `relations` include flags. `raw_refs=true` is fail-fast until a typed raw reference response shape exists. |
+| `TemporalInclude` | `evidence`, `relations`, and typed `raw_refs` include flags. |
 | `Proof` | `path`, `evidence`, `conflicts`, `missing`, `confidence`. |
 | `TraceRequest` | `from`, `to`, `goal`, `budget`. |
 | `InspectRequest` | `ref`, include flags for links, details, and raw state. |
@@ -279,7 +279,7 @@ and returns KMP relationship proof.
 `Inspect` reads node detail for one ref. It honors `details=false`.
 Incoming/outgoing expansion is backed by the typed node relationship reader and
 does not synthesize reverse links from an outgoing traversal. Raw expansion
-remains fail-fast until a typed raw response shape exists.
+returns typed raw audit refs rather than opaque storage payloads.
 
 ## Observability
 
@@ -345,8 +345,8 @@ Application tests:
 - temporal traversal covers all four directions, ref cursor, time cursor,
   sequence cursor, dimension `all`, `only`, and `except`;
 - ask never returns an invented generated answer;
-- inspect returns requested incoming/outgoing direct links and fails fast for
-  unsupported raw expansion.
+- inspect returns requested incoming/outgoing direct links and typed raw audit
+  refs when requested.
 
 Transport tests:
 
@@ -377,8 +377,8 @@ Live MCP/gRPC smoke now additionally verifies:
 - `ABOUTS` without a non-empty about list fails fast;
 - `ALL_ABOUTS` traverses through the kernel memory about index;
 - `Ask` returns deterministic evidence text instead of an anchor summary;
-- `Inspect` succeeds for typed detail/link lookup and fails fast for
-  `include.raw=true`.
+- `Inspect` succeeds for typed detail/link lookup and typed `include.raw=true`
+  audit refs.
 
 ## Deployment And Live Smoke
 
@@ -397,7 +397,7 @@ After the gRPC-only code and tests pass:
 The chart Helm tests include `kernel-memory-service` test id `05`. It runs the
 typed lifecycle through the e2e runner: ingest two abouts, read current-about
 and `ALL_ABOUTS` temporal traversal, verify `Trace`, verify `Inspect`
-incoming/outgoing links, and assert `raw=true` fails fast.
+incoming/outgoing links, and assert typed temporal/inspect raw audit refs.
 
 The public endpoint smoke target remains:
 

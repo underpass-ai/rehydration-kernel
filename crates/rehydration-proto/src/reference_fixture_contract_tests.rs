@@ -255,7 +255,7 @@ fn kmp_reference_fixtures_are_valid_json_and_memory_shaped() {
     assert_eq!(
         sorted_keys(object_keys(&parse_fixture(KMP_GOTO_RESPONSE_FIXTURE))),
         sorted_strs(&[
-            "summary", "temporal", "coverage", "entries", "proof", "warnings"
+            "summary", "temporal", "coverage", "entries", "proof", "warnings", "raw_refs"
         ])
     );
     assert_eq!(
@@ -265,7 +265,7 @@ fn kmp_reference_fixtures_are_valid_json_and_memory_shaped() {
     assert_eq!(
         sorted_keys(object_keys(&parse_fixture(KMP_NEAR_RESPONSE_FIXTURE))),
         sorted_strs(&[
-            "summary", "temporal", "coverage", "entries", "proof", "warnings"
+            "summary", "temporal", "coverage", "entries", "proof", "warnings", "raw_refs"
         ])
     );
     assert_eq!(
@@ -275,7 +275,7 @@ fn kmp_reference_fixtures_are_valid_json_and_memory_shaped() {
     assert_eq!(
         sorted_keys(object_keys(&parse_fixture(KMP_REWIND_RESPONSE_FIXTURE))),
         sorted_strs(&[
-            "summary", "temporal", "coverage", "entries", "proof", "warnings"
+            "summary", "temporal", "coverage", "entries", "proof", "warnings", "raw_refs"
         ])
     );
     assert_eq!(
@@ -285,7 +285,7 @@ fn kmp_reference_fixtures_are_valid_json_and_memory_shaped() {
     assert_eq!(
         sorted_keys(object_keys(&parse_fixture(KMP_FORWARD_RESPONSE_FIXTURE))),
         sorted_strs(&[
-            "summary", "temporal", "coverage", "entries", "proof", "warnings"
+            "summary", "temporal", "coverage", "entries", "proof", "warnings", "raw_refs"
         ])
     );
     assert_eq!(
@@ -302,7 +302,7 @@ fn kmp_reference_fixtures_are_valid_json_and_memory_shaped() {
     );
     assert_eq!(
         sorted_keys(object_keys(&parse_fixture(KMP_INSPECT_RESPONSE_FIXTURE))),
-        sorted_strs(&["summary", "object", "links", "evidence", "warnings"])
+        sorted_strs(&["summary", "object", "links", "evidence", "warnings", "raw"])
     );
 }
 

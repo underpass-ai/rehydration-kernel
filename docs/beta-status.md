@@ -59,16 +59,15 @@ kernel services.
 | `Rewind` | Production-ready | Domain-owned backward traversal. |
 | `Forward` | Production-ready | Domain-owned forward traversal. |
 | `Trace` | Production-ready | Uses `GetContextPath` semantics and maps `goal` to the trace role. |
-| `Inspect` | Production-ready for object/detail/link lookup | Honors `details=false`. Explicit `incoming` and `outgoing` use the typed node relationship reader. `raw` expansion fails fast until a typed raw response shape exists. |
+| `Inspect` | Production-ready for object/detail/link/raw audit lookup | Honors `details=false`. Explicit `incoming` and `outgoing` use the typed node relationship reader. `raw=true` returns typed raw audit refs for the inspected object. |
 
 Dimension selection scope defaults to `CURRENT_ABOUT`. `ABOUTS` is valid only
 with a non-empty `abouts` list. `ALL_ABOUTS` uses the kernel memory about index
 to traverse every memory anchor. Temporal coverage preserves the requested
 scope for audit instead of normalizing `CURRENT_ABOUT` to an `ABOUTS` list.
-Temporal `raw_refs=true` is reserved and fails fast until the temporal response
-has a typed raw-reference shape. `Ask` currently uses deterministic evidence for
-all answer policies; conflict detection and generated/best-effort fallback text
-are not implemented.
+Temporal `raw_refs=true` returns typed raw audit refs for selected entries.
+`Ask` currently uses deterministic evidence for all answer policies; conflict
+detection and generated/best-effort fallback text are not implemented.
 
 ## Async Contract (NATS JetStream)
 
@@ -155,7 +154,6 @@ metrics. `RehydrateSession` renders per-role bundles and emits quality via the o
 - **No timeline filtering** — `RehydrateSession` echoes `timeline_window` but does not filter events by time range
 - **`context.bundle.generated` not emitted** — defined in AsyncAPI contract but the kernel runtime does not publish this event. Test fixtures simulate it for downstream integration tests
 - **No generated `Ask` answers** — `KernelMemoryService.Ask` returns deterministic evidence-derived answer text or `UNKNOWN` according to the answer policy.
-- **No inspect raw expansion yet** — `KernelMemoryService.Inspect` supports explicit incoming/outgoing links through the typed node relationship reader. `raw=true` still fails fast until raw inspection has a typed response contract.
 - **Single token estimator** — `cl100k_base` BPE via `tiktoken-rs` for all counting. No model-specific estimator selection
 - **Idempotency outcome** — outcome publish is fire-and-forget. If it fails, retries are treated as new requests
 

@@ -8,8 +8,8 @@ use rehydration_proto::v1beta1::{
     ForwardResponse, GotoRequest, GotoResponse, IngestRequest, IngestResponse, IngestedMemory,
     InspectRequest, InspectResponse, InspectedLinks, InspectedObject, MemoryConfidence,
     MemoryEvidence, MemoryRelation, MemorySemanticClass, MemorySourceKind, NearRequest,
-    NearResponse, Proof, RewindRequest, RewindResponse, TemporalCoordinate, TemporalCursor,
-    TemporalDirection, TemporalEntry, TemporalMoveRequest, TemporalMoveResponse,
+    NearResponse, Proof, RawMemoryRef, RewindRequest, RewindResponse, TemporalCoordinate,
+    TemporalCursor, TemporalDirection, TemporalEntry, TemporalMoveRequest, TemporalMoveResponse,
     TemporalNearRequest, TemporalState, TraceRequest, TraceResponse, WakeClaim, WakePacket,
     WakeRequest, WakeResponse,
     kernel_memory_service_server::{KernelMemoryService, KernelMemoryServiceServer},
@@ -132,7 +132,8 @@ async fn grpc_backend_maps_kernel_memory_service_responses_to_kmp_tools() {
             "include": {
                 "incoming": true,
                 "outgoing": true,
-                "details": true
+                "details": true,
+                "raw": true
             }
         }),
     )
@@ -145,6 +146,10 @@ async fn grpc_backend_maps_kernel_memory_service_responses_to_kmp_tools() {
     assert_eq!(
         inspect["result"]["structuredContent"]["links"]["incoming"][0]["from"],
         "node:source"
+    );
+    assert_eq!(
+        inspect["result"]["structuredContent"]["raw"][0]["ref"],
+        "node:target"
     );
 }
 
@@ -252,7 +257,7 @@ async fn grpc_backend_maps_temporal_tools_to_kernel_memory_service() {
 }
 
 #[tokio::test]
-async fn grpc_backend_rejects_temporal_raw_refs_until_typed_shape_exists() {
+async fn grpc_backend_maps_temporal_raw_refs_to_kernel_memory_service() {
     let recorded = RecordedMemoryRequests::default();
     let endpoint = spawn_fake_memory_server(recorded.clone()).await;
     let server = KernelMcpServer::grpc(endpoint);
@@ -273,14 +278,19 @@ async fn grpc_backend_rejects_temporal_raw_refs_until_typed_shape_exists() {
     )
     .await;
 
-    assert_eq!(forward["result"]["isError"], true);
-    assert!(
-        forward["result"]["content"][0]["text"]
-            .as_str()
-            .expect("error text")
-            .contains("temporal raw_refs expansion")
+    assert_eq!(forward["result"]["isError"], false);
+    assert_eq!(
+        forward["result"]["structuredContent"]["raw_refs"][0]["ref"],
+        "claim:rachel-austin"
     );
-    assert!(recorded.moves().await.is_empty());
+    assert!(
+        recorded.moves().await[0]
+            .request
+            .include
+            .as_ref()
+            .expect("include")
+            .raw_refs
+    );
 }
 
 #[tokio::test]
@@ -729,6 +739,11 @@ impl KernelMemoryService for FakeMemoryService {
             }),
             evidence: vec![evidence(&request.r#ref)],
             warnings: Vec::new(),
+            raw: if request.include.as_ref().is_some_and(|include| include.raw) {
+                vec![raw_ref(&request.r#ref)]
+            } else {
+                Vec::new()
+            },
         }))
     }
 }
@@ -805,6 +820,7 @@ fn goto_response_from_temporal(response: TemporalMoveResponse) -> GotoResponse {
         entries: response.entries,
         proof: response.proof,
         warnings: response.warnings,
+        raw_refs: response.raw_refs,
     }
 }
 
@@ -816,6 +832,7 @@ fn near_response_from_temporal(response: TemporalMoveResponse) -> NearResponse {
         entries: response.entries,
         proof: response.proof,
         warnings: response.warnings,
+        raw_refs: response.raw_refs,
     }
 }
 
@@ -827,6 +844,7 @@ fn rewind_response_from_temporal(response: TemporalMoveResponse) -> RewindRespon
         entries: response.entries,
         proof: response.proof,
         warnings: response.warnings,
+        raw_refs: response.raw_refs,
     }
 }
 
@@ -838,6 +856,7 @@ fn forward_response_from_temporal(response: TemporalMoveResponse) -> ForwardResp
         entries: response.entries,
         proof: response.proof,
         warnings: response.warnings,
+        raw_refs: response.raw_refs,
     }
 }
 
@@ -861,6 +880,7 @@ fn temporal_response(
         }],
         proof: Some(proof("claim:rachel-denver", "claim:rachel-austin")),
         warnings: Vec::new(),
+        raw_refs: vec![raw_ref("claim:rachel-austin")],
     }
 }
 
@@ -895,6 +915,18 @@ fn evidence(source: &str) -> MemoryEvidence {
         source: source.to_string(),
         time: None,
         metadata: Default::default(),
+    }
+}
+
+fn raw_ref(ref_id: &str) -> RawMemoryRef {
+    RawMemoryRef {
+        r#ref: ref_id.to_string(),
+        kind: "claim".to_string(),
+        text: format!("Raw text for {ref_id}."),
+        coordinates: vec![coordinate(2)],
+        detail: format!("Raw detail for {ref_id}."),
+        content_hash: "hash-raw".to_string(),
+        revision: 1,
     }
 }
 

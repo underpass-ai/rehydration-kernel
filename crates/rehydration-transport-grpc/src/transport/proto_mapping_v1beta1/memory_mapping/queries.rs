@@ -103,12 +103,12 @@ pub(crate) fn inspect_query_from_proto(
         details: true,
         raw: false,
     });
-    validate_inspect_include(&include)?;
     Ok(InspectMemoryQuery {
         ref_id: request.r#ref,
         include_details: include.details,
         include_incoming: include.incoming,
         include_outgoing: include.outgoing,
+        include_raw: include.raw,
     })
 }
 
@@ -172,25 +172,11 @@ fn temporal_query(parts: TemporalQueryParts) -> ProtoMappingResult<TemporalMemor
 fn temporal_include_from_proto(
     value: TemporalInclude,
 ) -> ProtoMappingResult<TemporalIncludeOptions> {
-    if value.raw_refs {
-        return Err(invalid_argument(
-            "temporal raw_refs expansion is not available on the current typed response shape",
-        ));
-    }
     Ok(TemporalIncludeOptions {
         evidence: value.evidence,
         relations: value.relations,
         raw_refs: value.raw_refs,
     })
-}
-
-fn validate_inspect_include(value: &InspectInclude) -> ProtoMappingResult<()> {
-    if value.raw {
-        return Err(invalid_argument(
-            "inspect raw expansion is not available on the current typed response shape",
-        ));
-    }
-    Ok(())
 }
 
 fn domain_cursor_from_proto(

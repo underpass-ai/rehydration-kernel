@@ -310,8 +310,8 @@ These are not CRUD endpoints. They are memory moves:
 - `rewind` moves backward through one, several, or all dimensions of a memory;
 - `forward` moves forward through one, several, or all dimensions of a memory;
 - `trace` explains the relationship path;
-- `inspect` exposes typed stored facts, direct links, and evidence. Raw payload
-  expansion remains fail-fast until a typed raw response shape exists.
+- `inspect` exposes typed stored facts, direct links, evidence, and typed raw
+  audit refs when requested.
 
 Lower-level tools can exist for advanced/debug use, but the common path must
 feel like memory, not storage plumbing.
@@ -454,9 +454,8 @@ HAS_SCOPE
 
 Semantic traversal is not enough. Debugging and audit require raw inspection.
 
-Raw context should eventually be traversable without polluting normal semantic
-reads. In the current typed gRPC/MCP cut, raw expansion is fail-fast until the
-response shape is typed:
+Raw context should be traversable without polluting normal semantic reads. In
+the current typed gRPC/MCP cut, raw expansion returns typed raw audit refs:
 
 ```text
 raw_context -> scope -> entry -> next entry

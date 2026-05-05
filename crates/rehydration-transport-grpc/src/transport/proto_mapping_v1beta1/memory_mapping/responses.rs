@@ -1,14 +1,14 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use rehydration_application::{
     GetContextPathResult, GetContextResult, GraphRelationshipView, InspectMemoryResult,
     MemoryAnswerPolicy, TemporalMemoryResult,
 };
-use rehydration_domain::TemporalDirection;
+use rehydration_domain::{BundleNodeDetail, RehydrationBundle, TemporalDirection};
 use rehydration_proto::v1beta1::{
     AnswerReason, AskResponse, InspectResponse, InspectedLinks, InspectedObject, MemoryConfidence,
-    MemoryEvidence, MemoryRelation, TemporalEntry as ProtoTemporalEntry, TemporalMoveResponse,
-    TemporalState, TraceResponse, WakeClaim, WakePacket, WakeResponse,
+    MemoryEvidence, MemoryRelation, RawMemoryRef, TemporalEntry as ProtoTemporalEntry,
+    TemporalMoveResponse, TemporalState, TraceResponse, WakeClaim, WakePacket, WakeResponse,
 };
 
 use super::bundle_views::{
@@ -172,6 +172,11 @@ pub(crate) fn temporal_response_from_result(
         Vec::new()
     };
     let count = entries.len();
+    let raw_refs = if result.include.raw_refs {
+        raw_refs_from_temporal_entries(&entries, &result.source_bundle)
+    } else {
+        Vec::new()
+    };
 
     TemporalMoveResponse {
         summary: format!(
@@ -202,6 +207,7 @@ pub(crate) fn temporal_response_from_result(
             },
         )),
         warnings: Vec::new(),
+        raw_refs,
     }
 }
 
@@ -214,6 +220,8 @@ pub(crate) fn trace_response_from_result(result: GetContextPathResult) -> TraceR
 }
 
 pub(crate) fn inspect_response_from_result(result: InspectMemoryResult) -> InspectResponse {
+    let node_ref = result.detail.node.node_id.clone();
+    let node_kind = result.detail.node.node_kind.clone();
     let text = if result.include_details {
         result
             .detail
@@ -253,17 +261,84 @@ pub(crate) fn inspect_response_from_result(result: InspectMemoryResult) -> Inspe
         .iter()
         .map(memory_relation_from_graph_relationship)
         .collect();
+    let raw = if result.include_raw {
+        vec![RawMemoryRef {
+            r#ref: node_ref.clone(),
+            kind: node_kind.clone(),
+            text: result.detail.node.summary.clone(),
+            coordinates: Vec::new(),
+            detail: result
+                .detail
+                .detail
+                .as_ref()
+                .map(|detail| detail.detail.clone())
+                .unwrap_or_default(),
+            content_hash: result
+                .detail
+                .detail
+                .as_ref()
+                .map(|detail| detail.content_hash.clone())
+                .unwrap_or_default(),
+            revision: result
+                .detail
+                .detail
+                .as_ref()
+                .map(|detail| detail.revision)
+                .unwrap_or_default(),
+        }]
+    } else {
+        Vec::new()
+    };
 
     InspectResponse {
-        summary: format!("Found live kernel node `{}`.", result.detail.node.node_id),
+        summary: format!("Found live kernel node `{}`.", node_ref),
         object: Some(InspectedObject {
-            r#ref: result.detail.node.node_id,
-            kind: result.detail.node.node_kind,
+            r#ref: node_ref,
+            kind: node_kind,
             text,
         }),
         links: Some(InspectedLinks { incoming, outgoing }),
         evidence,
         warnings: Vec::new(),
+        raw,
+    }
+}
+
+fn raw_refs_from_temporal_entries(
+    entries: &[ProtoTemporalEntry],
+    bundle: &RehydrationBundle,
+) -> Vec<RawMemoryRef> {
+    let detail_by_ref = bundle
+        .node_details()
+        .iter()
+        .map(|detail| (detail.node_id(), detail))
+        .collect::<BTreeMap<_, _>>();
+
+    entries
+        .iter()
+        .map(|entry| {
+            let detail = detail_by_ref.get(entry.r#ref.as_str()).copied();
+            raw_ref_from_temporal_entry(entry, detail)
+        })
+        .collect()
+}
+
+fn raw_ref_from_temporal_entry(
+    entry: &ProtoTemporalEntry,
+    detail: Option<&BundleNodeDetail>,
+) -> RawMemoryRef {
+    RawMemoryRef {
+        r#ref: entry.r#ref.clone(),
+        kind: entry.kind.clone(),
+        text: entry.text.clone(),
+        coordinates: entry.coordinates.clone(),
+        detail: detail
+            .map(|detail| detail.detail().to_string())
+            .unwrap_or_default(),
+        content_hash: detail
+            .map(|detail| detail.content_hash().to_string())
+            .unwrap_or_default(),
+        revision: detail.map(BundleNodeDetail::revision).unwrap_or_default(),
     }
 }
 

@@ -219,6 +219,7 @@ where
                 .map(|links| links.outgoing.clone())
                 .unwrap_or_default(),
             include_details,
+            include_raw: query.include_raw,
         })
     }
 

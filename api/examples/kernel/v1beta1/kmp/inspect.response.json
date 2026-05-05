@@ -29,5 +29,16 @@
       "source": "conversation turn 2"
     }
   ],
-  "warnings": []
+  "warnings": [],
+  "raw": [
+    {
+      "ref": "claim:rachel-austin",
+      "kind": "claim",
+      "text": "Rachel later corrected the destination to Austin.",
+      "coordinates": [],
+      "detail": "Rachel later corrected the destination to Austin.",
+      "content_hash": "sha256:rachel-austin",
+      "revision": 1
+    }
+  ]
 }

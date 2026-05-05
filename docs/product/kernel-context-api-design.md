@@ -76,7 +76,7 @@ KMP exposes nine memory moves.
 | `rewind` | `kernel_rewind` | `Rewind` | Not recommended for async MVP | Move backward in time over one, several, or all dimensions of a memory. |
 | `forward` | `kernel_forward` | `Forward` | Not recommended for async MVP | Move forward in time over one, several, or all dimensions of a memory. |
 | `trace` | `kernel_trace` | `Trace` | Not recommended for async MVP | Return the relationship path and evidence trail behind an answer. |
-| `inspect` | `kernel_inspect` | `Inspect` | Not recommended for async MVP | Show typed graph/detail/link state for audits and debugging. Raw expansion is fail-fast until typed. |
+| `inspect` | `kernel_inspect` | `Inspect` | Not recommended for async MVP | Show typed graph/detail/link/raw audit state for audits and debugging. |
 
 Only the ingest aliases are implemented in MCP live mode during migration:
 
@@ -549,7 +549,7 @@ Wake response fields:
 | `wake.open_loops` | Known unresolved work or uncertainty. |
 | `wake.next_actions` | Concrete continuation options. |
 | `wake.guardrails` | Constraints that prevent harmful or wrong continuation. |
-| `proof` | Evidence, missing data, confidence, and typed proof refs. Raw expansion remains fail-fast until typed. |
+| `proof` | Evidence, missing data, confidence, and typed proof refs. Raw audit refs stay explicit and opt-in. |
 
 This is different from `GetContext`: `GetContext` returns a bundle;
 `wake` returns a continuation state.
@@ -1302,8 +1302,8 @@ Default read behavior:
 - current/superseding facts beat stale facts when the path proves it;
 - conflicts are returned explicitly;
 - unknown is a valid answer;
-- raw state is hidden; requested raw expansion fails fast until typed response
-  shapes exist.
+- raw state is hidden by default; requested raw expansion returns typed raw
+  audit refs.
 
 For `ask`, the default answer policy is:
 
@@ -1457,8 +1457,7 @@ The design is ready to implement when:
 - `goto`, `near`, `rewind`, and `forward` traverse one, several, or all
   dimensions by time;
 - `trace` shows the relation path behind an answer;
-- `inspect` can audit typed stored facts; raw expansion fails fast until the
-  typed raw shape exists;
+- `inspect` can audit typed stored facts and typed raw refs;
 - the same synchronous memory move can be carried through MCP and gRPC; NATS KMP
   subjects remain design guidance until implemented;
 - existing Kernel 1.0 clients remain valid;

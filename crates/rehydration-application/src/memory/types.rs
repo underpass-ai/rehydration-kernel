@@ -170,6 +170,7 @@ pub struct InspectMemoryQuery {
     pub include_details: bool,
     pub include_incoming: bool,
     pub include_outgoing: bool,
+    pub include_raw: bool,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -178,6 +179,7 @@ pub struct InspectMemoryResult {
     pub incoming: Vec<GraphRelationshipView>,
     pub outgoing: Vec<GraphRelationshipView>,
     pub include_details: bool,
+    pub include_raw: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

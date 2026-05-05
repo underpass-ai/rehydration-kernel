@@ -2,8 +2,8 @@ use prost_types::Timestamp;
 use rehydration_proto::v1beta1::{
     AnswerReason, AskResponse, DimensionScopeMode, DimensionSelection, DimensionSelectionMode,
     IngestResponse, InspectResponse, MemoryConfidence, MemoryEvidence, MemoryRelation,
-    MemorySemanticClass, TemporalCoordinate, TemporalCursor, TemporalDirection, TemporalEntry,
-    TemporalMoveResponse, TraceResponse, WakeClaim, WakeResponse,
+    MemorySemanticClass, RawMemoryRef, TemporalCoordinate, TemporalCursor, TemporalDirection,
+    TemporalEntry, TemporalMoveResponse, TraceResponse, WakeClaim, WakeResponse,
 };
 use serde_json::{Map, Value, json};
 
@@ -122,6 +122,7 @@ pub(crate) fn temporal_from_response(response: TemporalMoveResponse) -> Value {
                 "missing": Vec::<String>::new()
             })),
         "entries": response.entries.iter().map(temporal_entry_json).collect::<Vec<_>>(),
+        "raw_refs": response.raw_refs.iter().map(raw_memory_ref_json).collect::<Vec<_>>(),
         "proof": response.proof.as_ref().map(proof_json).unwrap_or_else(empty_proof_json),
         "warnings": response.warnings
     })
@@ -166,6 +167,7 @@ pub(crate) fn inspect_from_response(response: InspectResponse) -> Value {
                 .unwrap_or_default()
         },
         "evidence": response.evidence.iter().map(memory_evidence_json).collect::<Vec<_>>(),
+        "raw": response.raw.iter().map(raw_memory_ref_json).collect::<Vec<_>>(),
         "warnings": response.warnings
     })
 }
@@ -323,6 +325,18 @@ fn memory_evidence_json(evidence: &MemoryEvidence) -> Value {
     Value::Object(object)
 }
 
+fn raw_memory_ref_json(raw: &RawMemoryRef) -> Value {
+    json!({
+        "ref": raw.r#ref,
+        "kind": raw.kind,
+        "text": raw.text,
+        "coordinates": raw.coordinates.iter().map(temporal_coordinate_json).collect::<Vec<_>>(),
+        "detail": raw.detail,
+        "content_hash": raw.content_hash,
+        "revision": raw.revision
+    })
+}
+
 fn insert_optional_string(object: &mut Map<String, Value>, key: &str, value: &str) {
     if !value.trim().is_empty() {
         object.insert(key.to_string(), json!(value));
@@ -458,6 +472,7 @@ mod tests {
             }],
             proof: None,
             warnings: Vec::new(),
+            raw_refs: Vec::new(),
         };
 
         let value = temporal_from_response(response);

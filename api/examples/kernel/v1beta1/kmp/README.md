@@ -69,8 +69,7 @@ Current binding note:
   `ContextQueryService` or `ContextCommandService` directly for KMP moves.
 - `kernel_ask.answer` is deterministic evidence text, or `UNKNOWN`, not a
   generated answer and not an anchor summary.
-- `kernel_inspect` supports typed object/detail/link/evidence lookup.
-  `include.raw=true` is intentionally fail-fast until a typed raw response
-  shape exists.
-- Temporal `include.raw_refs=true` is intentionally fail-fast until a typed raw
-  reference response shape exists.
+- `kernel_inspect` supports typed object/detail/link/evidence lookup and typed
+  raw audit refs when `include.raw=true`.
+- Temporal `include.raw_refs=true` returns typed raw audit refs for selected
+  entries without polluting normal semantic reads.
