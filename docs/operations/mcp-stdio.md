@@ -124,7 +124,9 @@ Dimension scope is explicit and auditable:
   `about:<about>:dimension:<dimension_id>` ids.
 
 `kernel_inspect` supports typed object/detail/incoming/outgoing/evidence lookup.
-`include.raw=true` returns typed raw audit refs for the inspected object.
+`include.raw=true` returns typed raw audit refs for the inspected object,
+including dimension coordinates when the object is contained by memory
+dimensions.
 
 Temporal `include.raw_refs=true` returns typed raw audit refs for selected
 entries. `include.evidence` and `include.relations` are supported.

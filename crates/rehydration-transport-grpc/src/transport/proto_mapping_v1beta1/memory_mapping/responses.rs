@@ -266,7 +266,11 @@ pub(crate) fn inspect_response_from_result(result: InspectMemoryResult) -> Inspe
             r#ref: node_ref.clone(),
             kind: node_kind.clone(),
             text: result.detail.node.summary.clone(),
-            coordinates: Vec::new(),
+            coordinates: result
+                .raw_coordinates
+                .iter()
+                .map(proto_coordinate_from_domain)
+                .collect(),
             detail: result
                 .detail
                 .detail

@@ -1,5 +1,6 @@
 use rehydration_domain::{
-    DimensionSelection, ResolutionTier, TemporalCursor, TemporalDirection, TemporalWindow,
+    DimensionSelection, ResolutionTier, TemporalCoordinate, TemporalCursor, TemporalDirection,
+    TemporalWindow,
 };
 
 use crate::queries::{GetNodeDetailResult, GraphRelationshipView};
@@ -178,6 +179,7 @@ pub struct InspectMemoryResult {
     pub detail: GetNodeDetailResult,
     pub incoming: Vec<GraphRelationshipView>,
     pub outgoing: Vec<GraphRelationshipView>,
+    pub raw_coordinates: Vec<TemporalCoordinate>,
     pub include_details: bool,
     pub include_raw: bool,
 }

@@ -360,14 +360,25 @@ impl NodeRelationshipReader for SeededGraphNeighborhoodReader {
     ) -> Result<Option<NodeRelationships>, PortError> {
         Ok(match node_id {
             "node-123" => Some(NodeRelationships {
-                incoming: vec![NodeRelationProjection {
-                    source_node_id: "node-000".to_string(),
-                    target_node_id: "node-123".to_string(),
-                    relation_type: "supports".to_string(),
-                    explanation: RelationExplanation::new(RelationSemanticClass::Evidential)
-                        .with_rationale("seeded predecessor supports the inspected node")
-                        .with_confidence("high"),
-                }],
+                incoming: vec![
+                    temporal_contains_entry(
+                        "about:node-123:dimension:conversation",
+                        "node-123",
+                        "conversation",
+                        4,
+                        Some(sort_time(140)),
+                        None,
+                        None,
+                    ),
+                    NodeRelationProjection {
+                        source_node_id: "node-000".to_string(),
+                        target_node_id: "node-123".to_string(),
+                        relation_type: "supports".to_string(),
+                        explanation: RelationExplanation::new(RelationSemanticClass::Evidential)
+                            .with_rationale("seeded predecessor supports the inspected node")
+                            .with_confidence("high"),
+                    },
+                ],
                 outgoing: vec![NodeRelationProjection {
                     source_node_id: "node-123".to_string(),
                     target_node_id: "node-456".to_string(),
@@ -1636,8 +1647,13 @@ async fn memory_service_trace_and_inspect_use_existing_query_ports() {
     assert_eq!(inspect.object.expect("object").r#ref, "node-123");
     assert_eq!(inspect.evidence.len(), 1);
     let links = inspect.links.expect("links");
-    assert_eq!(links.incoming.len(), 1);
-    assert_eq!(links.incoming[0].source_ref, "node-000");
+    assert_eq!(links.incoming.len(), 2);
+    assert!(
+        links
+            .incoming
+            .iter()
+            .any(|relationship| relationship.source_ref == "node-000")
+    );
     assert_eq!(links.outgoing.len(), 1);
     assert_eq!(links.outgoing[0].target_ref, "node-456");
 
@@ -1678,6 +1694,13 @@ async fn memory_service_trace_and_inspect_use_existing_query_ports() {
     assert_eq!(raw.raw[0].r#ref, "node-123");
     assert_eq!(raw.raw[0].detail, "Expanded detail");
     assert_eq!(raw.raw[0].revision, 2);
+    assert_eq!(raw.raw[0].coordinates.len(), 1);
+    assert_eq!(raw.raw[0].coordinates[0].dimension, "conversation");
+    assert_eq!(
+        raw.raw[0].coordinates[0].scope_id,
+        "about:node-123:dimension:conversation"
+    );
+    assert_eq!(raw.raw[0].coordinates[0].sequence, Some(4));
 }
 
 #[test]

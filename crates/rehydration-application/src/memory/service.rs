@@ -5,8 +5,8 @@ use rehydration_domain::{
     BundleNode, BundleRelationship, ContextEventStore, DimensionScopeMode, DimensionSelection,
     DimensionSelectionMode, GraphNeighborhoodReader, MemoryAboutIndexReader,
     MemoryDimensionIdentity, NodeDetailReader, NodeRelationshipReader, ProjectionWriter,
-    RehydrationBundle, RehydrationMode, ResolutionTier, SnapshotStore, TemporalMemoryTraversal,
-    TemporalTraversalRequest,
+    RehydrationBundle, RehydrationMode, ResolutionTier, SnapshotStore, TemporalCoordinate,
+    TemporalMemoryTraversal, TemporalTraversalRequest,
 };
 
 use crate::ApplicationError;
@@ -194,16 +194,21 @@ where
             })
             .await?;
 
-        let links = if include_incoming || include_outgoing {
+        let links = if include_incoming || include_outgoing || query.include_raw {
             Some(
                 self.query_application
                     .get_node_relationships(GetNodeRelationshipsQuery {
-                        node_id: query.ref_id,
+                        node_id: query.ref_id.clone(),
                     })
                     .await?,
             )
         } else {
             None
+        };
+        let raw_coordinates = if query.include_raw {
+            inspect_raw_coordinates(&query.ref_id, links.as_ref())?
+        } else {
+            Vec::new()
         };
 
         Ok(InspectMemoryResult {
@@ -218,6 +223,7 @@ where
                 .filter(|_| include_outgoing)
                 .map(|links| links.outgoing.clone())
                 .unwrap_or_default(),
+            raw_coordinates,
             include_details,
             include_raw: query.include_raw,
         })
@@ -292,6 +298,31 @@ where
         }
         Ok(roots)
     }
+}
+
+fn inspect_raw_coordinates(
+    ref_id: &str,
+    links: Option<&crate::queries::GetNodeRelationshipsResult>,
+) -> Result<Vec<TemporalCoordinate>, ApplicationError> {
+    let Some(links) = links else {
+        return Ok(Vec::new());
+    };
+
+    let mut coordinates = Vec::new();
+    for relationship in links.incoming.iter().chain(links.outgoing.iter()) {
+        if relationship.relationship_type != "contains_entry"
+            || relationship.target_node_id != ref_id
+        {
+            continue;
+        }
+        if let Some(coordinate) =
+            TemporalCoordinate::from_relation_explanation(&relationship.explanation)?
+        {
+            coordinates.push(coordinate);
+        }
+    }
+
+    Ok(coordinates)
 }
 
 fn memory_render_options(
