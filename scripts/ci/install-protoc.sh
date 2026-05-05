@@ -36,6 +36,7 @@ rm -rf "${PROTOC_INSTALL_DIR}"
 mkdir -p "${PROTOC_INSTALL_DIR}"
 
 curl --fail --location --show-error --silent \
+  --proto '=https' --proto-redir '=https' --tlsv1.2 \
   --retry 3 --retry-delay 2 --connect-timeout 20 --max-time 120 \
   --output "${PROTOC_INSTALL_DIR}/${PROTOC_ZIP}" \
   "${PROTOC_URL}"
