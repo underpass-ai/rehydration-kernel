@@ -20,5 +20,8 @@ rehydration kernel research track.
 - [PLAN_GRAPH_EXPLORER.md](PLAN_GRAPH_EXPLORER.md) — Graph explorer plan (completed)
 - [REQUIREMENTS_GRAPH_EXPLORER.md](REQUIREMENTS_GRAPH_EXPLORER.md) — Graph explorer requirements (fulfilled)
 - [REPORT_GRAPH_ORDERING.md](REPORT_GRAPH_ORDERING.md) — Neo4j ordering analysis
+- [kernel-memory-story-demo-2026-05-05.md](kernel-memory-story-demo-2026-05-05.md) — Live MCP story demo for scoped temporal memory traversal
+- [mobile-login-resolution-replay-demo-2026-05-05.md](mobile-login-resolution-replay-demo-2026-05-05.md) — Live MCP resolution replay demo for a multi-agent mobile login incident
+- [demos/mobile-login-resolution-replay/](demos/mobile-login-resolution-replay/) — Static interactive incident replay for the mobile login demo
 - [incidents/](incidents/) — Benchmark post-mortems (2026-03-26)
 - [paper/](../paper/) — LaTeX submission package
