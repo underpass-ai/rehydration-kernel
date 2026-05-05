@@ -4,14 +4,16 @@ package underpass.rehydration.kernel.v1beta1;
 
 import "google/protobuf/timestamp.proto";
 
+option go_package = "github.com/underpass-ai/rehydration-kernel/api/gen/go/underpass/rehydration/kernel/v1beta1;rehydrationkernelv1beta1";
+
 service KernelMemoryService {
   rpc Ingest(IngestRequest) returns (IngestResponse);
   rpc Wake(WakeRequest) returns (WakeResponse);
   rpc Ask(AskRequest) returns (AskResponse);
-  rpc Goto(TemporalMoveRequest) returns (TemporalMoveResponse);
-  rpc Near(TemporalNearRequest) returns (TemporalMoveResponse);
-  rpc Rewind(TemporalMoveRequest) returns (TemporalMoveResponse);
-  rpc Forward(TemporalMoveRequest) returns (TemporalMoveResponse);
+  rpc Goto(GotoRequest) returns (GotoResponse);
+  rpc Near(NearRequest) returns (NearResponse);
+  rpc Rewind(RewindRequest) returns (RewindResponse);
+  rpc Forward(ForwardRequest) returns (ForwardResponse);
   rpc Trace(TraceRequest) returns (TraceResponse);
   rpc Inspect(InspectRequest) returns (InspectResponse);
 }
@@ -158,6 +160,8 @@ message AnswerReason {
   string ref = 3;
 }
 
+// Shared temporal movement payload shape used by transport adapters. Public
+// RPCs use method-specific request messages so gRPC contracts stay explicit.
 message TemporalMoveRequest {
   string about = 1;
   TemporalCursor cursor = 2;
@@ -168,6 +172,38 @@ message TemporalMoveRequest {
   MemoryBudget budget = 7;
 }
 
+message GotoRequest {
+  string about = 1;
+  TemporalCursor cursor = 2;
+  DimensionSelection dimensions = 3;
+  TemporalWindow window = 4;
+  TemporalLimit limit = 5;
+  TemporalInclude include = 6;
+  MemoryBudget budget = 7;
+}
+
+message RewindRequest {
+  string about = 1;
+  TemporalCursor cursor = 2;
+  DimensionSelection dimensions = 3;
+  TemporalWindow window = 4;
+  TemporalLimit limit = 5;
+  TemporalInclude include = 6;
+  MemoryBudget budget = 7;
+}
+
+message ForwardRequest {
+  string about = 1;
+  TemporalCursor cursor = 2;
+  DimensionSelection dimensions = 3;
+  TemporalWindow window = 4;
+  TemporalLimit limit = 5;
+  TemporalInclude include = 6;
+  MemoryBudget budget = 7;
+}
+
+// Shared temporal neighborhood payload shape used by transport adapters. Public
+// RPCs use NearRequest.
 message TemporalNearRequest {
   string about = 1;
   TemporalCursor around = 2;
@@ -178,7 +214,55 @@ message TemporalNearRequest {
   MemoryBudget budget = 7;
 }
 
+message NearRequest {
+  string about = 1;
+  TemporalCursor around = 2;
+  DimensionSelection dimensions = 3;
+  TemporalWindow window = 4;
+  TemporalLimit limit = 5;
+  TemporalInclude include = 6;
+  MemoryBudget budget = 7;
+}
+
+// Shared temporal response payload shape used by transport adapters. Public
+// RPCs use method-specific response messages.
 message TemporalMoveResponse {
+  string summary = 1;
+  TemporalState temporal = 2;
+  TemporalCoverage coverage = 3;
+  repeated TemporalEntry entries = 4;
+  Proof proof = 5;
+  repeated string warnings = 6;
+}
+
+message GotoResponse {
+  string summary = 1;
+  TemporalState temporal = 2;
+  TemporalCoverage coverage = 3;
+  repeated TemporalEntry entries = 4;
+  Proof proof = 5;
+  repeated string warnings = 6;
+}
+
+message NearResponse {
+  string summary = 1;
+  TemporalState temporal = 2;
+  TemporalCoverage coverage = 3;
+  repeated TemporalEntry entries = 4;
+  Proof proof = 5;
+  repeated string warnings = 6;
+}
+
+message RewindResponse {
+  string summary = 1;
+  TemporalState temporal = 2;
+  TemporalCoverage coverage = 3;
+  repeated TemporalEntry entries = 4;
+  Proof proof = 5;
+  repeated string warnings = 6;
+}
+
+message ForwardResponse {
   string summary = 1;
   TemporalState temporal = 2;
   TemporalCoverage coverage = 3;

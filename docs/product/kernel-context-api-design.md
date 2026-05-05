@@ -488,7 +488,7 @@ MCP request:
 
 ```json
 {
-  "about": "project:kernel-memory-protocol",
+  "about": "memory:kernel-memory-protocol",
   "role": "implementer",
   "intent": "continue designing the public API",
   "budget": {
@@ -1161,10 +1161,10 @@ service KernelMemoryService {
   rpc Ingest(IngestRequest) returns (IngestResponse);
   rpc Wake(WakeRequest) returns (WakeResponse);
   rpc Ask(AskRequest) returns (AskResponse);
-  rpc Goto(TemporalMoveRequest) returns (TemporalMoveResponse);
-  rpc Near(TemporalNearRequest) returns (TemporalMoveResponse);
-  rpc Rewind(TemporalMoveRequest) returns (TemporalMoveResponse);
-  rpc Forward(TemporalMoveRequest) returns (TemporalMoveResponse);
+  rpc Goto(GotoRequest) returns (GotoResponse);
+  rpc Near(NearRequest) returns (NearResponse);
+  rpc Rewind(RewindRequest) returns (RewindResponse);
+  rpc Forward(ForwardRequest) returns (ForwardResponse);
   rpc Trace(TraceRequest) returns (TraceResponse);
   rpc Inspect(InspectRequest) returns (InspectResponse);
 }

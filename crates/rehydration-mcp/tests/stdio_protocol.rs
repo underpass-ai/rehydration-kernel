@@ -163,7 +163,7 @@ async fn fixture_tools_cover_ingest_wake_trace_and_inspect() {
         "params": {
             "name": "kernel_wake",
             "arguments": {
-                "about": "project:kernel-memory-protocol"
+                "about": "memory:kernel-memory-protocol"
             }
         }
     }))

@@ -128,8 +128,8 @@ Dimension scope is explicit and auditable:
 payload.
 
 Temporal `include.raw_refs=true` also fails fast in live mode until
-`TemporalMoveResponse` has a typed raw reference shape. `include.evidence` and
-`include.relations` are supported.
+the method-specific temporal responses have a typed raw reference shape.
+`include.evidence` and `include.relations` are supported.
 
 ## Smoke Test
 

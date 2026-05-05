@@ -4,12 +4,14 @@ use std::sync::Arc;
 use prost_types::Timestamp;
 use rehydration_mcp::{KernelMcpGrpcTlsConfig, KernelMcpServer};
 use rehydration_proto::v1beta1::{
-    AcceptedCounts, AnswerReason, AskRequest, AskResponse, DimensionScopeMode, IngestRequest,
-    IngestResponse, IngestedMemory, InspectRequest, InspectResponse, InspectedLinks,
-    InspectedObject, MemoryConfidence, MemoryEvidence, MemoryRelation, MemorySemanticClass,
-    MemorySourceKind, Proof, TemporalCoordinate, TemporalCursor, TemporalDirection, TemporalEntry,
-    TemporalMoveRequest, TemporalMoveResponse, TemporalNearRequest, TemporalState, TraceRequest,
-    TraceResponse, WakeClaim, WakePacket, WakeRequest, WakeResponse,
+    AcceptedCounts, AnswerReason, AskRequest, AskResponse, DimensionScopeMode, ForwardRequest,
+    ForwardResponse, GotoRequest, GotoResponse, IngestRequest, IngestResponse, IngestedMemory,
+    InspectRequest, InspectResponse, InspectedLinks, InspectedObject, MemoryConfidence,
+    MemoryEvidence, MemoryRelation, MemorySemanticClass, MemorySourceKind, NearRequest,
+    NearResponse, Proof, RewindRequest, RewindResponse, TemporalCoordinate, TemporalCursor,
+    TemporalDirection, TemporalEntry, TemporalMoveRequest, TemporalMoveResponse,
+    TemporalNearRequest, TemporalState, TraceRequest, TraceResponse, WakeClaim, WakePacket,
+    WakeRequest, WakeResponse,
     kernel_memory_service_server::{KernelMemoryService, KernelMemoryServiceServer},
 };
 use serde_json::{Value, json};
@@ -645,41 +647,52 @@ impl KernelMemoryService for FakeMemoryService {
         }))
     }
 
-    async fn goto(
-        &self,
-        request: Request<TemporalMoveRequest>,
-    ) -> Result<Response<TemporalMoveResponse>, Status> {
-        self.temporal_move("goto", TemporalDirection::Goto, request)
-            .await
+    async fn goto(&self, request: Request<GotoRequest>) -> Result<Response<GotoResponse>, Status> {
+        let response = self
+            .temporal_move(
+                "goto",
+                TemporalDirection::Goto,
+                temporal_move_request_from_goto(request.into_inner()),
+            )
+            .await?;
+        Ok(Response::new(goto_response_from_temporal(response)))
     }
 
-    async fn near(
-        &self,
-        request: Request<TemporalNearRequest>,
-    ) -> Result<Response<TemporalMoveResponse>, Status> {
-        let request = request.into_inner();
+    async fn near(&self, request: Request<NearRequest>) -> Result<Response<NearResponse>, Status> {
+        let request = temporal_near_request_from_near(request.into_inner());
         self.recorded.nears.lock().await.push(request.clone());
 
-        Ok(Response::new(temporal_response(
-            TemporalDirection::Near,
-            request.around,
+        Ok(Response::new(near_response_from_temporal(
+            temporal_response(TemporalDirection::Near, request.around),
         )))
     }
 
     async fn rewind(
         &self,
-        request: Request<TemporalMoveRequest>,
-    ) -> Result<Response<TemporalMoveResponse>, Status> {
-        self.temporal_move("rewind", TemporalDirection::Rewind, request)
-            .await
+        request: Request<RewindRequest>,
+    ) -> Result<Response<RewindResponse>, Status> {
+        let response = self
+            .temporal_move(
+                "rewind",
+                TemporalDirection::Rewind,
+                temporal_move_request_from_rewind(request.into_inner()),
+            )
+            .await?;
+        Ok(Response::new(rewind_response_from_temporal(response)))
     }
 
     async fn forward(
         &self,
-        request: Request<TemporalMoveRequest>,
-    ) -> Result<Response<TemporalMoveResponse>, Status> {
-        self.temporal_move("forward", TemporalDirection::Forward, request)
-            .await
+        request: Request<ForwardRequest>,
+    ) -> Result<Response<ForwardResponse>, Status> {
+        let response = self
+            .temporal_move(
+                "forward",
+                TemporalDirection::Forward,
+                temporal_move_request_from_forward(request.into_inner()),
+            )
+            .await?;
+        Ok(Response::new(forward_response_from_temporal(response)))
     }
 
     async fn trace(
@@ -725,15 +738,106 @@ impl FakeMemoryService {
         &self,
         method: &'static str,
         direction: TemporalDirection,
-        request: Request<TemporalMoveRequest>,
-    ) -> Result<Response<TemporalMoveResponse>, Status> {
-        let request = request.into_inner();
+        request: TemporalMoveRequest,
+    ) -> Result<TemporalMoveResponse, Status> {
         self.recorded.moves.lock().await.push(RecordedTemporalMove {
             method,
             request: request.clone(),
         });
 
-        Ok(Response::new(temporal_response(direction, request.cursor)))
+        Ok(temporal_response(direction, request.cursor))
+    }
+}
+
+fn temporal_move_request_from_goto(request: GotoRequest) -> TemporalMoveRequest {
+    TemporalMoveRequest {
+        about: request.about,
+        cursor: request.cursor,
+        dimensions: request.dimensions,
+        window: request.window,
+        limit: request.limit,
+        include: request.include,
+        budget: request.budget,
+    }
+}
+
+fn temporal_move_request_from_rewind(request: RewindRequest) -> TemporalMoveRequest {
+    TemporalMoveRequest {
+        about: request.about,
+        cursor: request.cursor,
+        dimensions: request.dimensions,
+        window: request.window,
+        limit: request.limit,
+        include: request.include,
+        budget: request.budget,
+    }
+}
+
+fn temporal_move_request_from_forward(request: ForwardRequest) -> TemporalMoveRequest {
+    TemporalMoveRequest {
+        about: request.about,
+        cursor: request.cursor,
+        dimensions: request.dimensions,
+        window: request.window,
+        limit: request.limit,
+        include: request.include,
+        budget: request.budget,
+    }
+}
+
+fn temporal_near_request_from_near(request: NearRequest) -> TemporalNearRequest {
+    TemporalNearRequest {
+        about: request.about,
+        around: request.around,
+        dimensions: request.dimensions,
+        window: request.window,
+        limit: request.limit,
+        include: request.include,
+        budget: request.budget,
+    }
+}
+
+fn goto_response_from_temporal(response: TemporalMoveResponse) -> GotoResponse {
+    GotoResponse {
+        summary: response.summary,
+        temporal: response.temporal,
+        coverage: response.coverage,
+        entries: response.entries,
+        proof: response.proof,
+        warnings: response.warnings,
+    }
+}
+
+fn near_response_from_temporal(response: TemporalMoveResponse) -> NearResponse {
+    NearResponse {
+        summary: response.summary,
+        temporal: response.temporal,
+        coverage: response.coverage,
+        entries: response.entries,
+        proof: response.proof,
+        warnings: response.warnings,
+    }
+}
+
+fn rewind_response_from_temporal(response: TemporalMoveResponse) -> RewindResponse {
+    RewindResponse {
+        summary: response.summary,
+        temporal: response.temporal,
+        coverage: response.coverage,
+        entries: response.entries,
+        proof: response.proof,
+        warnings: response.warnings,
+    }
+}
+
+fn forward_response_from_temporal(response: TemporalMoveResponse) -> ForwardResponse {
+    ForwardResponse {
+        summary: response.summary,
+        temporal: response.temporal,
+        coverage: response.coverage,
+        entries: response.entries,
+        proof: response.proof,
+        warnings: response.warnings,
     }
 }
 

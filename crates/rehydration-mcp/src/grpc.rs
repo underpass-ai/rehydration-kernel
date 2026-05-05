@@ -1,6 +1,10 @@
 mod channel;
 mod requests;
 
+use rehydration_proto::v1beta1::{
+    ForwardRequest, ForwardResponse, GotoRequest, GotoResponse, NearRequest, NearResponse,
+    RewindRequest, RewindResponse, TemporalMoveRequest, TemporalMoveResponse, TemporalNearRequest,
+};
 use serde_json::Value;
 
 use crate::backend::{KernelMcpGrpcTlsConfig, KernelMcpToolBackend, KernelMcpToolFuture};
@@ -142,9 +146,18 @@ async fn grpc_temporal_move(
     let about = request.about.clone();
     let mut client = connect_memory_client(endpoint, tls).await?;
     let response = match direction {
-        "goto" => client.goto(request).await,
-        "rewind" => client.rewind(request).await,
-        "forward" => client.forward(request).await,
+        "goto" => client
+            .goto(goto_request_from_temporal(request))
+            .await
+            .map(|response| temporal_response_from_goto(response.into_inner())),
+        "rewind" => client
+            .rewind(rewind_request_from_temporal(request))
+            .await
+            .map(|response| temporal_response_from_rewind(response.into_inner())),
+        "forward" => client
+            .forward(forward_request_from_temporal(request))
+            .await
+            .map(|response| temporal_response_from_forward(response.into_inner())),
         _ => return Err(format!("unknown temporal direction `{direction}`")),
     }
     .map_err(|status| {
@@ -152,8 +165,7 @@ async fn grpc_temporal_move(
             "KernelMemoryService.{} failed for `{about}`: {status}",
             method_name(direction)
         )
-    })?
-    .into_inner();
+    })?;
 
     Ok(tool_success_result(temporal_from_response(response)))
 }
@@ -167,12 +179,14 @@ async fn grpc_temporal_near(
     let about = request.about.clone();
     let mut client = connect_memory_client(endpoint, tls).await?;
     let response = client
-        .near(request)
+        .near(near_request_from_temporal(request))
         .await
         .map_err(|status| format!("KernelMemoryService.Near failed for `{about}`: {status}"))?
         .into_inner();
 
-    Ok(tool_success_result(temporal_from_response(response)))
+    Ok(tool_success_result(temporal_from_response(
+        temporal_response_from_near(response),
+    )))
 }
 
 async fn grpc_trace(
@@ -218,5 +232,97 @@ fn method_name(direction: &str) -> &'static str {
         "rewind" => "Rewind",
         "forward" => "Forward",
         _ => "TemporalMove",
+    }
+}
+
+fn goto_request_from_temporal(request: TemporalMoveRequest) -> GotoRequest {
+    GotoRequest {
+        about: request.about,
+        cursor: request.cursor,
+        dimensions: request.dimensions,
+        window: request.window,
+        limit: request.limit,
+        include: request.include,
+        budget: request.budget,
+    }
+}
+
+fn rewind_request_from_temporal(request: TemporalMoveRequest) -> RewindRequest {
+    RewindRequest {
+        about: request.about,
+        cursor: request.cursor,
+        dimensions: request.dimensions,
+        window: request.window,
+        limit: request.limit,
+        include: request.include,
+        budget: request.budget,
+    }
+}
+
+fn forward_request_from_temporal(request: TemporalMoveRequest) -> ForwardRequest {
+    ForwardRequest {
+        about: request.about,
+        cursor: request.cursor,
+        dimensions: request.dimensions,
+        window: request.window,
+        limit: request.limit,
+        include: request.include,
+        budget: request.budget,
+    }
+}
+
+fn near_request_from_temporal(request: TemporalNearRequest) -> NearRequest {
+    NearRequest {
+        about: request.about,
+        around: request.around,
+        dimensions: request.dimensions,
+        window: request.window,
+        limit: request.limit,
+        include: request.include,
+        budget: request.budget,
+    }
+}
+
+fn temporal_response_from_goto(response: GotoResponse) -> TemporalMoveResponse {
+    TemporalMoveResponse {
+        summary: response.summary,
+        temporal: response.temporal,
+        coverage: response.coverage,
+        entries: response.entries,
+        proof: response.proof,
+        warnings: response.warnings,
+    }
+}
+
+fn temporal_response_from_near(response: NearResponse) -> TemporalMoveResponse {
+    TemporalMoveResponse {
+        summary: response.summary,
+        temporal: response.temporal,
+        coverage: response.coverage,
+        entries: response.entries,
+        proof: response.proof,
+        warnings: response.warnings,
+    }
+}
+
+fn temporal_response_from_rewind(response: RewindResponse) -> TemporalMoveResponse {
+    TemporalMoveResponse {
+        summary: response.summary,
+        temporal: response.temporal,
+        coverage: response.coverage,
+        entries: response.entries,
+        proof: response.proof,
+        warnings: response.warnings,
+    }
+}
+
+fn temporal_response_from_forward(response: ForwardResponse) -> TemporalMoveResponse {
+    TemporalMoveResponse {
+        summary: response.summary,
+        temporal: response.temporal,
+        coverage: response.coverage,
+        entries: response.entries,
+        proof: response.proof,
+        warnings: response.warnings,
     }
 }

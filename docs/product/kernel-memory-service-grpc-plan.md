@@ -59,10 +59,10 @@ service KernelMemoryService {
   rpc Ingest(IngestRequest) returns (IngestResponse);
   rpc Wake(WakeRequest) returns (WakeResponse);
   rpc Ask(AskRequest) returns (AskResponse);
-  rpc Goto(TemporalMoveRequest) returns (TemporalMoveResponse);
-  rpc Near(TemporalNearRequest) returns (TemporalMoveResponse);
-  rpc Rewind(TemporalMoveRequest) returns (TemporalMoveResponse);
-  rpc Forward(TemporalMoveRequest) returns (TemporalMoveResponse);
+  rpc Goto(GotoRequest) returns (GotoResponse);
+  rpc Near(NearRequest) returns (NearResponse);
+  rpc Rewind(RewindRequest) returns (RewindResponse);
+  rpc Forward(ForwardRequest) returns (ForwardResponse);
   rpc Trace(TraceRequest) returns (TraceResponse);
   rpc Inspect(InspectRequest) returns (InspectResponse);
 }
@@ -112,6 +112,9 @@ messages:
 | `MemoryBudget` | `tokens`, `detail`, `depth`. |
 | `DimensionSelection` | `mode`, `include`, `exclude`, `scope`, `abouts`, `scope_ids`. Scope defaults to `CURRENT_ABOUT`; `ABOUTS` requires an explicit non-empty list; `ALL_ABOUTS` uses the kernel memory about index; `scope_ids` narrows selection to exact dimension scopes using local ids or `about:<about>:dimension:<dimension_id>` ids. |
 | `TemporalCursor` | `ref`, `time`, or `sequence`; exactly one should be accepted. |
+| `TemporalMoveRequest`, `TemporalNearRequest`, `TemporalMoveResponse` | Shared temporal payload shapes used by transport adapters. Public RPCs use method-specific request and response messages. |
+| `GotoRequest`, `RewindRequest`, `ForwardRequest` | Method-specific temporal movement requests with `about`, `cursor`, `dimensions`, `window`, `limit`, `include`, `budget`. |
+| `NearRequest` | Method-specific temporal neighborhood request with `about`, `around`, `dimensions`, `window`, `limit`, `include`, `budget`. |
 | `TemporalWindow` | Entry window controls for `Near`: `before_entries`, `after_entries`. |
 | `TemporalInclude` | `evidence` and `relations` include flags. `raw_refs=true` is fail-fast until a typed raw reference response shape exists. |
 | `Proof` | `path`, `evidence`, `conflicts`, `missing`, `confidence`. |
@@ -125,7 +128,7 @@ Response families:
 | `IngestResponse` | Summary, accepted counts, memory id, read-after-write readiness, warnings. |
 | `WakeResponse` | Summary, wake payload, proof, warnings. |
 | `AskResponse` | Summary, optional answer, evidence reasons, proof, warnings. |
-| `TemporalMoveResponse` | Summary, resolved cursor, coverage, temporal entries, proof, warnings. |
+| `GotoResponse`, `NearResponse`, `RewindResponse`, `ForwardResponse` | Method-specific temporal responses with summary, resolved cursor, coverage, temporal entries, proof, warnings. |
 | `TraceResponse` | Summary, relationship trace, warnings. |
 | `InspectResponse` | Summary, inspected object, incoming/outgoing links, evidence, warnings. |
 

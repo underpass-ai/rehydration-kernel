@@ -794,7 +794,7 @@ Input:
 
 ```json
 {
-  "about": "project:kernel-memory-protocol",
+  "about": "memory:kernel-memory-protocol",
   "role": "implementer",
   "intent": "continue designing the public API",
   "budget": {

@@ -20,14 +20,14 @@ use rehydration_observability::quality_observers::NoopQualityObserver;
 use rehydration_proto::v1beta1::{
     AnswerPolicy, AskRequest, ContextChange, ContextChangeOperation,
     DimensionScopeMode as ProtoDimensionScopeMode, DimensionSelection as ProtoDimensionSelection,
-    DimensionSelectionMode as ProtoDimensionSelectionMode, GetContextPathRequest,
-    GetContextRequest, GetNodeDetailRequest, IngestRequest, InspectInclude, InspectRequest, Memory,
-    MemoryBudget, MemoryConfidence, MemoryDetailLevel, MemoryDimension, MemoryEntry,
-    MemoryEvidence, MemoryProvenance, MemoryRelation, MemorySemanticClass, MemorySourceKind,
-    ResolutionTier, TemporalCoordinate as ProtoTemporalCoordinate,
-    TemporalCursor as ProtoTemporalCursor, TemporalDirection as ProtoTemporalDirection,
-    TemporalInclude, TemporalLimit, TemporalMoveRequest, TemporalNearRequest,
-    TemporalWindow as ProtoTemporalWindow, TraceRequest, UpdateContextRequest,
+    DimensionSelectionMode as ProtoDimensionSelectionMode, ForwardRequest, GetContextPathRequest,
+    GetContextRequest, GetNodeDetailRequest, GotoRequest, IngestRequest, InspectInclude,
+    InspectRequest, Memory, MemoryBudget, MemoryConfidence, MemoryDetailLevel, MemoryDimension,
+    MemoryEntry, MemoryEvidence, MemoryProvenance, MemoryRelation, MemorySemanticClass,
+    MemorySourceKind, NearRequest, ResolutionTier, RewindRequest,
+    TemporalCoordinate as ProtoTemporalCoordinate, TemporalCursor as ProtoTemporalCursor,
+    TemporalDirection as ProtoTemporalDirection, TemporalInclude, TemporalLimit,
+    TemporalMoveRequest, TemporalWindow as ProtoTemporalWindow, TraceRequest, UpdateContextRequest,
     ValidateScopeRequest, WakeRequest, context_command_service_server::ContextCommandService,
     context_query_service_server::ContextQueryService,
     kernel_memory_service_server::KernelMemoryService,
@@ -1095,7 +1095,7 @@ async fn memory_service_temporal_methods_use_domain_traversal() {
     let service = memory_service(TemporalGraphNeighborhoodReader, EmptyNodeDetailReader);
 
     let goto = service
-        .goto(Request::new(temporal_move_request(
+        .goto(Request::new(goto_request(
             Some(ProtoTemporalCursor {
                 time: Some(ts(103)),
                 ..Default::default()
@@ -1112,7 +1112,7 @@ async fn memory_service_temporal_methods_use_domain_traversal() {
     assert_eq!(goto.entries[0].r#ref, "claim:rachel-denver");
 
     let near = service
-        .near(Request::new(TemporalNearRequest {
+        .near(Request::new(NearRequest {
             about: "question:830ce83f".to_string(),
             around: Some(ProtoTemporalCursor {
                 time: Some(ts(103)),
@@ -1152,7 +1152,7 @@ async fn memory_service_temporal_methods_use_domain_traversal() {
     );
 
     let rewind = service
-        .rewind(Request::new(temporal_move_request(
+        .rewind(Request::new(rewind_request(
             Some(ProtoTemporalCursor {
                 sequence: Some(7),
                 ..Default::default()
@@ -1172,7 +1172,7 @@ async fn memory_service_temporal_methods_use_domain_traversal() {
     );
 
     let forward = service
-        .forward(Request::new(temporal_move_request(
+        .forward(Request::new(forward_request(
             Some(ProtoTemporalCursor {
                 r#ref: "claim:rachel-denver".to_string(),
                 ..Default::default()
@@ -1198,7 +1198,7 @@ async fn memory_service_temporal_methods_use_domain_traversal() {
     assert!(requested.abouts.is_empty());
 
     let all_abouts_forward = service
-        .forward(Request::new(temporal_move_request(
+        .forward(Request::new(forward_request(
             Some(ProtoTemporalCursor {
                 r#ref: "claim:rachel-denver".to_string(),
                 ..Default::default()
@@ -1230,7 +1230,7 @@ async fn memory_service_temporal_methods_use_domain_traversal() {
     );
 
     let exact_scope_forward = service
-        .forward(Request::new(temporal_move_request(
+        .forward(Request::new(forward_request(
             Some(ProtoTemporalCursor {
                 r#ref: "claim:rachel-denver".to_string(),
                 ..Default::default()
@@ -1279,7 +1279,7 @@ async fn memory_service_temporal_raw_refs_fail_fast_until_typed_shape_exists() {
     });
 
     let raw_refs = service
-        .forward(Request::new(request))
+        .forward(Request::new(forward_request_from_temporal(request)))
         .await
         .expect_err("unsupported temporal raw_refs should fail");
 
@@ -1292,7 +1292,7 @@ async fn memory_service_temporal_requests_fail_fast_on_ambiguous_inputs() {
     let service = memory_service(TemporalGraphNeighborhoodReader, EmptyNodeDetailReader);
 
     let ambiguous_cursor = service
-        .forward(Request::new(temporal_move_request(
+        .forward(Request::new(forward_request(
             Some(ProtoTemporalCursor {
                 r#ref: "claim:rachel-denver".to_string(),
                 sequence: Some(1),
@@ -1305,7 +1305,7 @@ async fn memory_service_temporal_requests_fail_fast_on_ambiguous_inputs() {
     assert_eq!(ambiguous_cursor.code(), tonic::Code::InvalidArgument);
 
     let empty_only_selection = service
-        .goto(Request::new(temporal_move_request(
+        .goto(Request::new(goto_request(
             Some(ProtoTemporalCursor {
                 sequence: Some(1),
                 ..Default::default()
@@ -1322,7 +1322,7 @@ async fn memory_service_temporal_requests_fail_fast_on_ambiguous_inputs() {
     assert_eq!(empty_only_selection.code(), tonic::Code::InvalidArgument);
 
     let empty_about_scope = service
-        .goto(Request::new(temporal_move_request(
+        .goto(Request::new(goto_request(
             Some(ProtoTemporalCursor {
                 sequence: Some(1),
                 ..Default::default()
@@ -1341,7 +1341,7 @@ async fn memory_service_temporal_requests_fail_fast_on_ambiguous_inputs() {
     assert_eq!(empty_about_scope.code(), tonic::Code::InvalidArgument);
 
     let zero_sequence_cursor = service
-        .goto(Request::new(temporal_move_request(
+        .goto(Request::new(goto_request(
             Some(ProtoTemporalCursor {
                 sequence: Some(0),
                 ..Default::default()
@@ -1614,6 +1614,57 @@ fn temporal_move_request(
             depth: 3,
             ..Default::default()
         }),
+    }
+}
+
+fn goto_request(
+    cursor: Option<ProtoTemporalCursor>,
+    dimensions: ProtoDimensionSelection,
+) -> GotoRequest {
+    let request = temporal_move_request(cursor, dimensions);
+    GotoRequest {
+        about: request.about,
+        cursor: request.cursor,
+        dimensions: request.dimensions,
+        window: request.window,
+        limit: request.limit,
+        include: request.include,
+        budget: request.budget,
+    }
+}
+
+fn rewind_request(
+    cursor: Option<ProtoTemporalCursor>,
+    dimensions: ProtoDimensionSelection,
+) -> RewindRequest {
+    let request = temporal_move_request(cursor, dimensions);
+    RewindRequest {
+        about: request.about,
+        cursor: request.cursor,
+        dimensions: request.dimensions,
+        window: request.window,
+        limit: request.limit,
+        include: request.include,
+        budget: request.budget,
+    }
+}
+
+fn forward_request(
+    cursor: Option<ProtoTemporalCursor>,
+    dimensions: ProtoDimensionSelection,
+) -> ForwardRequest {
+    forward_request_from_temporal(temporal_move_request(cursor, dimensions))
+}
+
+fn forward_request_from_temporal(request: TemporalMoveRequest) -> ForwardRequest {
+    ForwardRequest {
+        about: request.about,
+        cursor: request.cursor,
+        dimensions: request.dimensions,
+        window: request.window,
+        limit: request.limit,
+        include: request.include,
+        budget: request.budget,
     }
 }
 

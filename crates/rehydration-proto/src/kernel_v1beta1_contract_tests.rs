@@ -46,6 +46,20 @@ fn v1beta1_kernel_memory_service_surface_is_stable() {
             "Ingest", "Wake", "Ask", "Goto", "Near", "Rewind", "Forward", "Trace", "Inspect"
         ]
     );
+    assert_eq!(
+        service_method_io_types(memory_file, "KernelMemoryService"),
+        method_io_types(&[
+            ("Ingest", "IngestRequest", "IngestResponse"),
+            ("Wake", "WakeRequest", "WakeResponse"),
+            ("Ask", "AskRequest", "AskResponse"),
+            ("Goto", "GotoRequest", "GotoResponse"),
+            ("Near", "NearRequest", "NearResponse"),
+            ("Rewind", "RewindRequest", "RewindResponse"),
+            ("Forward", "ForwardRequest", "ForwardResponse"),
+            ("Trace", "TraceRequest", "TraceResponse"),
+            ("Inspect", "InspectRequest", "InspectResponse"),
+        ])
+    );
 }
 
 #[test]
@@ -91,6 +105,42 @@ fn v1beta1_kernel_memory_core_fields_are_stable() {
         ]
     );
     assert_eq!(
+        message_field_names(memory_file, "GotoRequest"),
+        vec![
+            "about",
+            "cursor",
+            "dimensions",
+            "window",
+            "limit",
+            "include",
+            "budget",
+        ]
+    );
+    assert_eq!(
+        message_field_names(memory_file, "RewindRequest"),
+        vec![
+            "about",
+            "cursor",
+            "dimensions",
+            "window",
+            "limit",
+            "include",
+            "budget",
+        ]
+    );
+    assert_eq!(
+        message_field_names(memory_file, "ForwardRequest"),
+        vec![
+            "about",
+            "cursor",
+            "dimensions",
+            "window",
+            "limit",
+            "include",
+            "budget",
+        ]
+    );
+    assert_eq!(
         message_field_names(memory_file, "TemporalNearRequest"),
         vec![
             "about",
@@ -100,6 +150,42 @@ fn v1beta1_kernel_memory_core_fields_are_stable() {
             "limit",
             "include",
             "budget",
+        ]
+    );
+    assert_eq!(
+        message_field_names(memory_file, "NearRequest"),
+        vec![
+            "about",
+            "around",
+            "dimensions",
+            "window",
+            "limit",
+            "include",
+            "budget",
+        ]
+    );
+    assert_eq!(
+        message_field_names(memory_file, "GotoResponse"),
+        vec![
+            "summary", "temporal", "coverage", "entries", "proof", "warnings"
+        ]
+    );
+    assert_eq!(
+        message_field_names(memory_file, "NearResponse"),
+        vec![
+            "summary", "temporal", "coverage", "entries", "proof", "warnings"
+        ]
+    );
+    assert_eq!(
+        message_field_names(memory_file, "RewindResponse"),
+        vec![
+            "summary", "temporal", "coverage", "entries", "proof", "warnings"
+        ]
+    );
+    assert_eq!(
+        message_field_names(memory_file, "ForwardResponse"),
+        vec![
+            "summary", "temporal", "coverage", "entries", "proof", "warnings"
         ]
     );
     assert_eq!(
@@ -180,14 +266,50 @@ fn kernel_file<'a>(
 }
 
 fn service_method_names(file: &FileDescriptorProto, service_name: &str) -> Vec<String> {
-    file.service
-        .iter()
-        .find(|service| service.name.as_deref() == Some(service_name))
-        .unwrap_or_else(|| panic!("missing service `{service_name}`"))
+    service(file, service_name)
         .method
         .iter()
         .map(|method| method.name.clone().expect("method name should be present"))
         .collect()
+}
+
+fn service_method_io_types(
+    file: &FileDescriptorProto,
+    service_name: &str,
+) -> Vec<(String, String, String)> {
+    service(file, service_name)
+        .method
+        .iter()
+        .map(|method| {
+            (
+                method.name.clone().expect("method name should be present"),
+                stable_type_name(&method.input_type),
+                stable_type_name(&method.output_type),
+            )
+        })
+        .collect()
+}
+
+fn method_io_types(items: &[(&str, &str, &str)]) -> Vec<(String, String, String)> {
+    items
+        .iter()
+        .map(|(name, input, output)| (name.to_string(), input.to_string(), output.to_string()))
+        .collect()
+}
+
+fn service<'a>(file: &'a FileDescriptorProto, service_name: &str) -> &'a ServiceDescriptorProto {
+    file.service
+        .iter()
+        .find(|service| service.name.as_deref() == Some(service_name))
+        .unwrap_or_else(|| panic!("missing service `{service_name}`"))
+}
+
+fn stable_type_name(type_name: &Option<String>) -> String {
+    type_name
+        .as_deref()
+        .and_then(|name| name.rsplit('.').next())
+        .unwrap_or_default()
+        .to_string()
 }
 
 fn message_field_names(file: &FileDescriptorProto, message_name: &str) -> Vec<String> {

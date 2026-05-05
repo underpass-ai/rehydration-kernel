@@ -50,7 +50,8 @@ onto those existing Kernel 1.0 primitives.
 Current binding note:
 
 - KMP temporal fixture aliases such as `at` and `from` map to the gRPC
-  `TemporalCursor` field on `TemporalMoveRequest`.
+  `TemporalCursor` field on method-specific temporal requests such as
+  `GotoRequest`, `RewindRequest`, or `ForwardRequest`.
 - KMP temporal responses follow the typed gRPC shape: `temporal.requested`
   carries the submitted cursor and `temporal.resolved` carries the resolved
   coordinate. They do not synthesize transport-specific `at`/`from`/`around`
