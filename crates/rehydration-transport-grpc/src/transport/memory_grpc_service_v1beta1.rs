@@ -241,6 +241,7 @@ where
             include_details = query.include_details,
             include_incoming = query.include_incoming,
             include_outgoing = query.include_outgoing,
+            include_raw = query.include_raw,
             "kernel memory grpc request"
         );
         let result = self.application.inspect(query).await.map_err(|error| {
@@ -260,6 +261,12 @@ where
                 .map(|links| links.outgoing.len())
                 .unwrap_or_default(),
             evidence = response.evidence.len(),
+            raw_refs = response.raw.len(),
+            raw_coordinates = response
+                .raw
+                .iter()
+                .map(|raw| raw.coordinates.len())
+                .sum::<usize>(),
             warnings = response.warnings.len(),
             "kernel memory grpc response"
         );

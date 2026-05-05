@@ -297,8 +297,8 @@ application/storage errors:
   requested dimensions, requested abouts, and `scope_ids`; response logs
   include resolved `selected_abouts`, entry counts, and warnings;
 - `Trace` logs source/target refs and returned path size;
-- `Inspect` logs requested include flags and returned incoming/outgoing/evidence
-  counts.
+- `Inspect` logs requested include flags including `include_raw`, plus returned
+  incoming/outgoing/evidence counts and raw audit ref/coordinate counts.
 - error logs use message `kernel memory grpc error` and include `rpc`, tonic
   `code`, and mapped `message`.
 
