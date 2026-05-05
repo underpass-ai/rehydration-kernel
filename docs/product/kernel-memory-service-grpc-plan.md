@@ -362,7 +362,7 @@ MCP tests:
   `ContextCommandService`;
 - dry-run ingest remains local and does not call gRPC.
 
-Current or follow-up integration tests:
+Current integration tests:
 
 - real kernel container journey ingests KMP memory via the typed gRPC service;
 - wake reads the ingested memory back;
@@ -442,8 +442,8 @@ Typed gRPC cut:
 - A real deployed public endpoint smoke proves ingest, read, temporal
   traversal, trace, and inspect through the typed service.
 - Helm e2e includes `KernelMemoryService` typed lifecycle coverage, including
-  temporal `raw_refs` fail-fast behavior plus `Inspect` link expansion and raw
-  fail-fast behavior.
+  temporal `raw_refs` typed audit refs plus `Inspect` link expansion and typed
+  raw audit refs.
 
 MCP cut:
 

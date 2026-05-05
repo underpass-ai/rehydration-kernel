@@ -602,7 +602,8 @@ Raw mode:
 
 - caller provides dimensions and entries only;
 - kernel stores traversable typed memory entries with producer-provided
-  coordinates; typed raw payload expansion is still fail-fast;
+  coordinates; requested raw expansion returns typed audit refs rather than
+  opaque storage payloads;
 - use for transcripts, logs, histories, and benchmark haystacks.
 
 Semantic mode:
