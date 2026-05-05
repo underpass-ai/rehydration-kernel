@@ -1,0 +1,47 @@
+KERNEL SCOPED CONTEXT
+
+Scope requested:
+- dimension: timeline
+- scope: abouts
+- abouts: mobile, auth, release, coordinator, mitigation
+- infra about intentionally excluded
+
+Returned technical board:
+1. 09:55 release-agent deployed jwt-parser-v3 to Auth API.
+2. 10:01 mobile-agent observed iOS login failures jump from baseline to 38%.
+3. 10:03 auth-agent observed Auth API 401 responses spike for iOS client tokens.
+4. 10:04 mobile-agent recorded support tickets: users report being redirected to login after entering valid credentials.
+5. 10:07 auth-agent found rejected iOS tokens had a legacy audience claim shape.
+6. 10:08 mitigation-agent enabled stricter mobile retry backoff; valid iOS logins still failed.
+7. 10:10 mitigation-agent scaled Auth API replicas; 401 rate was unchanged.
+8. 10:11 coordinator-agent imported mobile failures, Auth API 401s, and jwt-parser-v3 rollout.
+9. 10:12 coordinator-agent hypothesis: jwt-parser-v3 rejects legacy iOS audience claims.
+10. 10:12 mitigation-agent purged auth edge cache; iOS 401 pattern did not change.
+11. 10:14 release-agent rolled Auth API back to jwt-parser-v2.
+12. 10:14 mitigation-agent selected Auth API jwt-parser rollback as effective fix candidate.
+13. 10:20 release-agent observed iOS login failures return to baseline after rollback.
+14. 10:20 mitigation-agent verified failures returned to baseline after rollback, not earlier attempts.
+15. 10:21 coordinator-agent closeout: rollback resolved the incident; add parser compatibility test.
+
+Relevant proof:
+- mobile failure spike supports user-impact tickets.
+- Auth 401 spike supports rejected-token investigation.
+- jwt-parser-v3 rollout motivates rollback.
+- rollback supports recovery.
+- coordinator context supports parser compatibility hypothesis.
+- hypothesis motivates workflow closeout.
+- backoff did not resolve scale-out.
+- scale-out did not resolve cache purge.
+- cache purge did not resolve rollback.
+- rollback supports recovery after earlier mitigations failed.
+
+Evidence available:
+- mobile telemetry: iOS login failure rate at 38%.
+- Auth logs: iOS token 401s starting at 10:03 UTC.
+- release dashboard: failures back to baseline at 10:20 UTC after rollback.
+- mitigation attempt log: backoff, scale-out, and cache purge did not restore login; rollback did.
+
+Audit summary:
+- technical board entries: 15
+- selected abouts: mobile, auth, release, coordinator, mitigation
+- infra cache deploy excluded

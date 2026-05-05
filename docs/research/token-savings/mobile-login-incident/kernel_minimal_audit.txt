@@ -1,0 +1,27 @@
+KERNEL MINIMAL AUDIT CONTEXT
+
+Trace target:
+from attempt-client-backoff to attempt-recovery
+
+Trace:
+1. attempt-client-backoff did_not_resolve attempt-scale-auth.
+   Reason: retry backoff reduced repeated attempts but did not restore valid logins.
+2. attempt-scale-auth did_not_resolve attempt-cache-purge.
+   Reason: scaling capacity did not change the 401 rate.
+3. attempt-cache-purge did_not_resolve attempt-rollback.
+   Reason: cache purge did not change the iOS-only 401 pattern.
+4. attempt-rollback supports attempt-recovery.
+   Reason: recovery followed rollback after earlier mitigations failed.
+
+Inspect attempt-recovery:
+- kind: observation
+- text: 10:20 mitigation-agent verified iOS login failures returned to baseline after rollback, not after earlier attempts.
+- incoming links: 5
+- outgoing links: 0
+- evidence items: 1
+- evidence: backoff, scale-out, and cache purge did not restore login; rollback did.
+
+Scope check:
+- technical board without infra: 15 timeline entries.
+- technical board with infra: 16 timeline entries.
+- infra is a distractor that appears only when explicitly selected.
