@@ -570,6 +570,13 @@ mod tests {
         )));
         assert!(mutations.iter().any(|mutation| matches!(
             mutation,
+            ProjectionMutation::UpsertNode(node)
+                if node.node_id == "evidence:mcp"
+                    && node.node_kind == "memory_evidence"
+                    && node.summary == "Projection writer recorded the detail."
+        )));
+        assert!(mutations.iter().any(|mutation| matches!(
+            mutation,
             ProjectionMutation::UpsertNodeRelation(relation)
                 if relation.source_node_id == "question:mcp"
                     && relation.target_node_id == "claim:mcp"

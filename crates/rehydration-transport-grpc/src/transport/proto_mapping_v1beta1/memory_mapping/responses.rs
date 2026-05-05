@@ -12,9 +12,9 @@ use rehydration_proto::v1beta1::{
 };
 
 use super::bundle_views::{
-    memory_evidence_from_bundle, memory_relations_from_bundle, proof, proto_coordinate_from_domain,
-    rendered_current_state, rendered_summary, temporal_evidence_from_bundle,
-    temporal_relations_from_bundle,
+    answer_evidence_from_bundle, memory_evidence_from_bundle, memory_relations_from_bundle, proof,
+    proto_coordinate_from_domain, rendered_current_state, rendered_summary,
+    temporal_evidence_from_bundle, temporal_relations_from_bundle,
 };
 use super::dimensions::proto_dimension_selection_from_domain;
 use super::scalars::{proto_confidence, proto_direction, proto_semantic_class};
@@ -62,7 +62,7 @@ pub(crate) fn ask_response_from_result(
     policy: MemoryAnswerPolicy,
     result: GetContextResult,
 ) -> AskResponse {
-    let evidence = memory_evidence_from_bundle(&result.bundle);
+    let evidence = answer_evidence_from_bundle(&result.bundle);
     let because = evidence
         .iter()
         .take(5)

@@ -455,7 +455,7 @@ fn filter_bundle_by_memory_dimensions(
             && selected_entry_ids.contains(relationship.target_node_id())
             && node_kinds
                 .get(relationship.source_node_id())
-                .is_some_and(|kind| *kind == "memory_evidence")
+                .is_some_and(|kind| is_memory_evidence_kind(kind))
     }) {
         included_node_ids.insert(relationship.source_node_id().to_string());
     }
@@ -508,6 +508,10 @@ fn bundle_node_kinds(bundle: &RehydrationBundle) -> BTreeMap<&str, &str> {
         node_kinds.insert(node.node_id(), node.node_kind());
     }
     node_kinds
+}
+
+fn is_memory_evidence_kind(kind: &str) -> bool {
+    matches!(kind, "memory_evidence" | "evidence")
 }
 
 fn existing_refs_from_bundle(bundle: &RehydrationBundle) -> ExistingMemoryRefs {

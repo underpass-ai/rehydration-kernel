@@ -206,7 +206,12 @@ ask="$(grpc_memory_call Ask "$(
     dimensions: $dimensions
   }'
 )")"
-assert_jq "${ask}" '.summary | length > 0' "Ask did not return deterministic context"
+assert_jq "${ask}" \
+  --arg expected_ref "detail:${evidence_ref}" \
+  '.answer == "Evidence for KernelMemoryService Helm e2e target." and
+   (.because | length) == 1 and
+   .because[0].ref == $expected_ref' \
+  "Ask did not return deterministic evidence text"
 
 goto="$(grpc_memory_call Goto "$(
   jq -nc --arg about "${about_a}" --arg dimension "${dimension}" '{

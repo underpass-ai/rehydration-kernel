@@ -229,7 +229,7 @@ fn memory_evidence_mutations(
     let mut mutations = vec![
         ProjectionMutation::UpsertNode(NodeProjection {
             node_id: evidence_id.clone(),
-            node_kind: "evidence".to_string(),
+            node_kind: "memory_evidence".to_string(),
             title,
             summary: text.clone(),
             status: "ACTIVE".to_string(),

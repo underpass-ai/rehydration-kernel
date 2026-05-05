@@ -199,6 +199,38 @@ async fn mcp_tools_read_from_live_kernel_grpc_server() -> Result<(), Box<dyn Err
             "claim:mcp-ingest-after",
         );
 
+        let ingested_ask = call_tool(
+            &server,
+            32,
+            "kernel_ask",
+            json!({
+                "about": "question:mcp-ingest-smoke",
+                "question": "What proved the MCP ingest path?",
+                "dimensions": {
+                    "mode": "only",
+                    "include": ["conversation"]
+                },
+                "depth": 3,
+                "budget": {
+                    "tokens": 2048
+                }
+            }),
+        )
+        .await;
+        assert_tool_success(&ingested_ask);
+        let ingested_ask_content = structured_content(&ingested_ask);
+        assert_eq!(
+            ingested_ask_content.pointer("/answer"),
+            Some(&Value::String(
+                "The live smoke accepted kernel_ingest over gRPC.".to_string()
+            ))
+        );
+        assert_array_contains_evidence(
+            ingested_ask_content,
+            "/proof/evidence",
+            "evidence:mcp-ingest-smoke",
+        );
+
         let wake = call_tool(
             &server,
             4,
@@ -236,8 +268,17 @@ async fn mcp_tools_read_from_live_kernel_grpc_server() -> Result<(), Box<dyn Err
         .await;
         assert_tool_success(&ask);
         let ask_content = structured_content(&ask);
-        assert_non_empty_string(ask_content, "/answer");
-        assert_non_empty_array(ask_content, "/because");
+        assert_eq!(
+            ask_content.pointer("/answer"),
+            Some(&Value::String("UNKNOWN".to_string()))
+        );
+        assert!(
+            ask_content
+                .pointer("/because")
+                .and_then(Value::as_array)
+                .is_some_and(Vec::is_empty),
+            "seeded node-centric context should not become a KMP Ask answer"
+        );
 
         let trace = call_tool(
             &server,

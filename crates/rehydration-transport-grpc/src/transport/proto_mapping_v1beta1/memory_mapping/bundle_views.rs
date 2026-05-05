@@ -44,6 +44,32 @@ pub(super) fn memory_evidence_from_bundle(bundle: &RehydrationBundle) -> Vec<Mem
         .collect()
 }
 
+pub(super) fn answer_evidence_from_bundle(bundle: &RehydrationBundle) -> Vec<MemoryEvidence> {
+    let node_kinds = bundle_node_kinds(bundle);
+    let support_targets = support_targets_by_source(bundle);
+
+    bundle
+        .node_details()
+        .iter()
+        .filter(|detail| {
+            node_kinds
+                .get(detail.node_id())
+                .is_some_and(|kind| is_memory_evidence_kind(kind))
+        })
+        .map(|detail| MemoryEvidence {
+            id: format!("detail:{}", detail.node_id()),
+            supports: support_targets
+                .get(detail.node_id())
+                .cloned()
+                .unwrap_or_else(|| vec![detail.node_id().to_string()]),
+            text: detail.detail().to_string(),
+            source: detail.node_id().to_string(),
+            time: None,
+            metadata: Default::default(),
+        })
+        .collect()
+}
+
 pub(super) fn temporal_relations_from_bundle(
     bundle: &RehydrationBundle,
     selected_refs: &BTreeSet<String>,
@@ -68,7 +94,7 @@ pub(super) fn temporal_evidence_from_bundle(
             && selected_refs.contains(relationship.target_node_id())
             && node_kinds
                 .get(relationship.source_node_id())
-                .is_some_and(|kind| *kind == "memory_evidence")
+                .is_some_and(|kind| is_memory_evidence_kind(kind))
     }) {
         evidence_refs.insert(relationship.source_node_id().to_string());
     }
@@ -95,6 +121,25 @@ fn bundle_node_kinds(bundle: &RehydrationBundle) -> BTreeMap<&str, &str> {
         node_kinds.insert(node.node_id(), node.node_kind());
     }
     node_kinds
+}
+
+fn support_targets_by_source(bundle: &RehydrationBundle) -> BTreeMap<&str, Vec<String>> {
+    let mut supports = BTreeMap::new();
+    for relationship in bundle
+        .relationships()
+        .iter()
+        .filter(|relationship| relationship.relationship_type() == "supports")
+    {
+        supports
+            .entry(relationship.source_node_id())
+            .or_insert_with(Vec::new)
+            .push(relationship.target_node_id().to_string());
+    }
+    supports
+}
+
+fn is_memory_evidence_kind(kind: &str) -> bool {
+    matches!(kind, "memory_evidence" | "evidence")
 }
 
 pub(super) fn proof(
@@ -207,6 +252,60 @@ mod tests {
                 "detail:claim:selected".to_string(),
                 "detail:evidence:selected".to_string()
             ]
+        );
+    }
+
+    #[test]
+    fn answer_evidence_uses_explicit_memory_evidence_and_not_anchor_detail() {
+        let bundle = RehydrationBundle::new(
+            CaseId::new("question:a").expect("case id should be valid"),
+            Role::new("answerer").expect("role is valid"),
+            node("question:a", "memory_anchor"),
+            vec![
+                node("claim:selected", "claim"),
+                node("evidence:selected", "memory_evidence"),
+                node("evidence:legacy", "evidence"),
+            ],
+            vec![
+                supports("evidence:selected", "claim:selected"),
+                supports("evidence:legacy", "claim:selected"),
+            ],
+            vec![
+                BundleNodeDetail::new("question:a", "Anchor detail", "hash-root", 1),
+                BundleNodeDetail::new("claim:selected", "Claim detail", "hash-claim", 1),
+                BundleNodeDetail::new(
+                    "evidence:selected",
+                    "Explicit evidence detail",
+                    "hash-evidence",
+                    1,
+                ),
+                BundleNodeDetail::new(
+                    "evidence:legacy",
+                    "Legacy projected evidence detail",
+                    "hash-legacy",
+                    1,
+                ),
+            ],
+            BundleMetadata::initial("test"),
+        )
+        .expect("test bundle should be valid");
+
+        let evidence = answer_evidence_from_bundle(&bundle);
+
+        assert_eq!(
+            evidence
+                .iter()
+                .map(|evidence| evidence.text.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "Explicit evidence detail",
+                "Legacy projected evidence detail"
+            ]
+        );
+        assert!(
+            evidence
+                .iter()
+                .all(|evidence| evidence.supports == vec!["claim:selected".to_string()])
         );
     }
 

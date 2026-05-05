@@ -168,6 +168,41 @@ impl GraphNeighborhoodReader for SeededGraphNeighborhoodReader {
         match root_node_id {
             "node-123" => Ok(Some(sample_node_neighborhood("node-123", "ACTIVE"))),
             "graph-only" => Ok(Some(sample_node_neighborhood("graph-only", "READY"))),
+            "question:evidence-answer" => Ok(Some(NodeNeighborhood {
+                root: temporal_projection(
+                    "question:evidence-answer",
+                    "memory_anchor",
+                    "Evidence-backed answer memory",
+                ),
+                neighbors: vec![
+                    temporal_projection(
+                        "about:question:evidence-answer:dimension:conversation",
+                        "memory_dimension",
+                        "Evidence answer conversation",
+                    ),
+                    temporal_projection("claim:answer", "claim", "Answer claim"),
+                    temporal_projection("evidence:answer", "memory_evidence", "Answer evidence"),
+                ],
+                relations: vec![
+                    temporal_contains_entry(
+                        "about:question:evidence-answer:dimension:conversation",
+                        "claim:answer",
+                        "conversation",
+                        1,
+                        Some(sort_time(120)),
+                        None,
+                        None,
+                    ),
+                    NodeRelationProjection {
+                        source_node_id: "evidence:answer".to_string(),
+                        target_node_id: "claim:answer".to_string(),
+                        relation_type: "supports".to_string(),
+                        explanation: RelationExplanation::new(RelationSemanticClass::Evidential)
+                            .with_rationale("Explicit evidence supports the answer claim.")
+                            .with_confidence("high"),
+                    },
+                ],
+            })),
             _ => Ok(None),
         }
     }
@@ -239,7 +274,11 @@ impl GraphNeighborhoodReader for SeededGraphNeighborhoodReader {
 
 impl MemoryAboutIndexReader for SeededGraphNeighborhoodReader {
     async fn list_memory_abouts(&self) -> Result<Vec<String>, PortError> {
-        Ok(vec!["node-123".to_string(), "graph-only".to_string()])
+        Ok(vec![
+            "node-123".to_string(),
+            "graph-only".to_string(),
+            "question:evidence-answer".to_string(),
+        ])
     }
 }
 
@@ -267,6 +306,7 @@ impl NodeRelationshipReader for SeededGraphNeighborhoodReader {
                         .with_sequence(1),
                 }],
             }),
+            "question:evidence-answer" => Some(NodeRelationships::default()),
             "graph-only" => Some(NodeRelationships::default()),
             _ => None,
         })
@@ -286,6 +326,24 @@ impl NodeDetailReader for SeededNodeDetailReader {
                 detail: "Expanded detail".to_string(),
                 content_hash: "hash-1".to_string(),
                 revision: 2,
+            }),
+            "question:evidence-answer" => Some(NodeDetailProjection {
+                node_id: "question:evidence-answer".to_string(),
+                detail: "Anchor summary must not become the Ask answer.".to_string(),
+                content_hash: "hash-anchor-answer".to_string(),
+                revision: 1,
+            }),
+            "claim:answer" => Some(NodeDetailProjection {
+                node_id: "claim:answer".to_string(),
+                detail: "Claim detail must not outrank explicit evidence.".to_string(),
+                content_hash: "hash-claim-answer".to_string(),
+                revision: 1,
+            }),
+            "evidence:answer" => Some(NodeDetailProjection {
+                node_id: "evidence:answer".to_string(),
+                detail: "Explicit memory evidence is the deterministic Ask answer.".to_string(),
+                content_hash: "hash-evidence-answer".to_string(),
+                revision: 1,
             }),
             "node-456" => Some(NodeDetailProjection {
                 node_id: "node-456".to_string(),
@@ -1013,10 +1071,48 @@ async fn memory_service_wake_and_ask_read_live_context() {
         .expect("ask should read live context")
         .into_inner();
 
-    assert_eq!(ask.answer, "Expanded detail");
-    assert!(ask.summary.contains("Deterministic memory answer"));
-    assert_eq!(ask.because[0].evidence, "Expanded detail");
+    assert_eq!(ask.answer, "UNKNOWN");
+    assert!(ask.summary.contains("No deterministic memory answer"));
+    assert!(ask.because.is_empty());
     assert!(ask.warnings.is_empty());
+}
+
+#[tokio::test]
+async fn memory_service_ask_uses_explicit_memory_evidence_not_anchor_detail() {
+    let service = memory_service(SeededGraphNeighborhoodReader, SeededNodeDetailReader);
+
+    let ask = service
+        .ask(Request::new(AskRequest {
+            about: "question:evidence-answer".to_string(),
+            question: "What is the explicit answer?".to_string(),
+            answer_policy: AnswerPolicy::EvidenceOrUnknown as i32,
+            budget: Some(MemoryBudget {
+                tokens: 1024,
+                detail: MemoryDetailLevel::Full as i32,
+                depth: 3,
+            }),
+            dimensions: Some(ProtoDimensionSelection {
+                mode: ProtoDimensionSelectionMode::Only as i32,
+                include: vec!["conversation".to_string()],
+                exclude: Vec::new(),
+                ..Default::default()
+            }),
+        }))
+        .await
+        .expect("ask should use explicit evidence")
+        .into_inner();
+
+    assert_eq!(
+        ask.answer,
+        "Explicit memory evidence is the deterministic Ask answer."
+    );
+    assert_eq!(ask.because.len(), 1);
+    assert_eq!(ask.because[0].r#ref, "detail:evidence:answer");
+    assert_eq!(ask.because[0].claim, "evidence:answer");
+    let proof = ask.proof.expect("ask proof should be present");
+    assert_eq!(proof.evidence.len(), 1);
+    assert_eq!(proof.evidence[0].supports, vec!["claim:answer".to_string()]);
+    assert!(proof.evidence[0].text.contains("deterministic Ask answer"));
 }
 
 #[tokio::test]
