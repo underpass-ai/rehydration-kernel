@@ -172,7 +172,7 @@ pub(crate) fn tools_list_result() -> Value {
                         "question": string_schema("Natural-language question."),
                         "answer_policy": {
                             "type": "string",
-                            "description": "Deterministic evidence policy. show_conflicts does not run conflict detection yet, and best_effort does not generate fallback text.",
+                            "description": "Deterministic evidence policy. show_conflicts surfaces explicit conflict relations in proof.conflicts; best_effort does not generate fallback text.",
                             "enum": ["evidence_or_unknown", "show_conflicts", "best_effort"]
                         },
                         "dimensions": dimensions_schema(),

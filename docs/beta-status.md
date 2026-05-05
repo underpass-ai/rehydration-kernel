@@ -66,8 +66,9 @@ with a non-empty `abouts` list. `ALL_ABOUTS` uses the kernel memory about index
 to traverse every memory anchor. Temporal coverage preserves the requested
 scope for audit instead of normalizing `CURRENT_ABOUT` to an `ABOUTS` list.
 Temporal `raw_refs=true` returns typed raw audit refs for selected entries.
-`Ask` currently uses deterministic evidence for all answer policies; conflict
-detection and generated/best-effort fallback text are not implemented.
+`Ask` currently uses deterministic evidence for all answer policies. Explicit
+conflict relations are surfaced in `proof.conflicts`; inferred conflict
+resolution and generated/best-effort fallback text are not implemented.
 
 ## Async Contract (NATS JetStream)
 

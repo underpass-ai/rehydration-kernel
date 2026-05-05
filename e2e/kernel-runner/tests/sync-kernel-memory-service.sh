@@ -14,6 +14,7 @@ about_a="e2e:kms:${run_id}:a"
 about_b="e2e:kms:${run_id}:b"
 source_ref="claim:${run_id}:source"
 target_ref="claim:${run_id}:target"
+conflict_ref="claim:${run_id}:conflict"
 other_ref="claim:${run_id}:other"
 evidence_ref="evidence:${run_id}:target"
 
@@ -49,6 +50,7 @@ ingest_a_payload="$(
     --arg dimension "${dimension}" \
     --arg source_ref "${source_ref}" \
     --arg target_ref "${target_ref}" \
+    --arg conflict_ref "${conflict_ref}" \
     --arg evidence_ref "${evidence_ref}" \
     --arg run_id "${run_id}" \
     '{
@@ -85,6 +87,18 @@ ingest_a_payload="$(
                 sequence: 2
               }
             ]
+          },
+          {
+            id: $conflict_ref,
+            kind: "claim",
+            text: "Conflicting claim for KernelMemoryService Helm e2e.",
+            coordinates: [
+              {
+                dimension: $dimension,
+                scopeId: $dimension,
+                sequence: 3
+              }
+            ]
           }
         ],
         relations: [
@@ -96,6 +110,15 @@ ingest_a_payload="$(
             why: "source supports target for KernelMemoryService Helm e2e",
             confidence: "MEMORY_CONFIDENCE_HIGH",
             sequence: 10
+          },
+          {
+            sourceRef: $target_ref,
+            targetRef: $conflict_ref,
+            rel: "contradicts",
+            semanticClass: "MEMORY_SEMANTIC_CLASS_EVIDENTIAL",
+            why: "target and conflict cannot both be true for KernelMemoryService Helm e2e",
+            confidence: "MEMORY_CONFIDENCE_HIGH",
+            sequence: 11
           }
         ],
         evidence: [
@@ -160,7 +183,7 @@ ingest_b_payload="$(
 
 ingest_a="$(grpc_memory_call Ingest "${ingest_a_payload}")"
 assert_jq "${ingest_a}" \
-  '.memory.readAfterWriteReady == true and .memory.accepted.entries == 2 and .memory.accepted.relations == 1 and .memory.accepted.evidence == 1' \
+  '.memory.readAfterWriteReady == true and .memory.accepted.entries == 3 and .memory.accepted.relations == 2 and .memory.accepted.evidence == 1' \
   "Ingest A did not accept expected memory"
 
 ingest_b="$(grpc_memory_call Ingest "${ingest_b_payload}")"
@@ -212,6 +235,25 @@ assert_jq "${ask}" \
    (.because | length) == 1 and
    .because[0].ref == $expected_ref' \
   "Ask did not return deterministic evidence text"
+
+ask_conflicts="$(grpc_memory_call Ask "$(
+  jq -nc --arg about "${about_a}" --argjson dimensions "${dimension_selection_current}" '{
+    about: $about,
+    question: "Which claims conflict?",
+    answerPolicy: "ANSWER_POLICY_SHOW_CONFLICTS",
+    budget: {
+      tokens: 1600,
+      detail: "MEMORY_DETAIL_LEVEL_FULL",
+      depth: 3
+    },
+    dimensions: $dimensions
+  }'
+)")"
+assert_jq "${ask_conflicts}" \
+  --arg target_ref "${target_ref}" \
+  --arg conflict_ref "${conflict_ref}" \
+  '.proof.conflicts | any(contains($target_ref) and contains("contradicts") and contains($conflict_ref))' \
+  "Ask show_conflicts did not surface explicit conflict relation"
 
 goto="$(grpc_memory_call Goto "$(
   jq -nc --arg about "${about_a}" --arg dimension "${dimension}" '{
@@ -268,7 +310,7 @@ rewind_current="$(grpc_memory_call Rewind "$(
 )")"
 assert_jq "${rewind_current}" \
   --arg other_ref "${other_ref}" \
-  '(.entries | length) == 2 and (.entries | map(.ref) | index($other_ref) == null)' \
+  '(.entries | length) == 3 and (.entries | map(.ref) | index($other_ref) == null)' \
   "Rewind current about leaked entries from another about"
 
 rewind_all="$(grpc_memory_call Rewind "$(

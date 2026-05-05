@@ -59,8 +59,7 @@ Kernel 1.0 already has:
 Kernel 1.0 still does not have:
 
 - generated `Ask` answers; `Ask` is deterministic evidence recovery plus proof;
-- semantic conflict detection for `show_conflicts`;
-- raw/raw-ref expansion in typed responses;
+- inferred conflict resolution beyond explicit relation proof;
 - KMP-specific NATS subjects such as `kernel.memory.ingest`;
 - a crates.io-published MCP package;
 - benchmark re-measurement proving which categories improved.
@@ -669,10 +668,11 @@ Current live `kernel_ask` behavior is deterministic and bounded:
 - callers may select one, several, or all abouts through `dimensions`;
 - the kernel reads the selected memory bundle and builds `answer` from selected
   evidence reasons;
-- `show_conflicts` follows the same deterministic evidence path in this cut;
+- `show_conflicts` follows the same deterministic evidence path and surfaces
+  explicit conflict relations in `proof.conflicts`;
 - `best_effort` does not generate fallback text;
-- raw neighboring claims and conflict resolution require future typed response
-  and proof-model work.
+- hidden conflict inference and conflict resolution require future proof-model
+  work.
 
 Optional constraints:
 
@@ -746,7 +746,8 @@ Reading defaults:
 - bounded output by token budget;
 - current/superseding facts are visible when producer-provided relations carry
   that path;
-- conflict arrays remain empty until conflict detection is implemented.
+- `proof.conflicts` includes explicit conflict relations such as `contradicts`
+  or `conflicts_with`; the kernel does not infer hidden contradictions.
 
 ## Public Memory Protocol Surface
 
@@ -1121,8 +1122,7 @@ Delivered application behavior:
 
 Remaining follow-up:
 
-- typed raw inspection expansion;
-- richer semantic conflict detection;
+- richer semantic conflict inference and resolution;
 - additional indexes only where live workloads show query pressure.
 
 ### Phase 3: Typed gRPC API Before MCP

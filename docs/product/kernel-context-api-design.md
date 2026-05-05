@@ -618,7 +618,7 @@ Answer policy values:
 | Policy | Behavior |
 |:-------|:---------|
 | `evidence_or_unknown` | Return an answer only when evidence exists. |
-| `show_conflicts` | Current live cut uses the same deterministic evidence path; conflict detection is not implemented yet. |
+| `show_conflicts` | Uses the same deterministic evidence path and surfaces explicit conflict relations in `proof.conflicts`; it does not infer hidden contradictions. |
 | `best_effort` | Current live cut does not fall back to generated or anchor-summary text; without evidence it returns `UNKNOWN`. |
 
 Default policy should be `evidence_or_unknown`.

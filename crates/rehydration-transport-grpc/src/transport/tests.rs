@@ -203,6 +203,76 @@ impl GraphNeighborhoodReader for SeededGraphNeighborhoodReader {
                     },
                 ],
             })),
+            "question:conflict-answer" => Ok(Some(NodeNeighborhood {
+                root: temporal_projection(
+                    "question:conflict-answer",
+                    "memory_anchor",
+                    "Conflict-backed answer memory",
+                ),
+                neighbors: vec![
+                    temporal_projection(
+                        "about:question:conflict-answer:dimension:conversation",
+                        "memory_dimension",
+                        "Conflict answer conversation",
+                    ),
+                    temporal_projection("claim:cache-enabled", "claim", "Cache was enabled."),
+                    temporal_projection(
+                        "evidence:cache-enabled",
+                        "memory_evidence",
+                        "Cache enabled evidence",
+                    ),
+                    temporal_projection("claim:cache-disabled", "claim", "Cache was disabled."),
+                    temporal_projection(
+                        "evidence:cache-disabled",
+                        "memory_evidence",
+                        "Cache disabled evidence",
+                    ),
+                ],
+                relations: vec![
+                    temporal_contains_entry(
+                        "about:question:conflict-answer:dimension:conversation",
+                        "claim:cache-enabled",
+                        "conversation",
+                        1,
+                        Some(sort_time(130)),
+                        None,
+                        None,
+                    ),
+                    temporal_contains_entry(
+                        "about:question:conflict-answer:dimension:conversation",
+                        "claim:cache-disabled",
+                        "conversation",
+                        2,
+                        Some(sort_time(131)),
+                        None,
+                        None,
+                    ),
+                    NodeRelationProjection {
+                        source_node_id: "evidence:cache-enabled".to_string(),
+                        target_node_id: "claim:cache-enabled".to_string(),
+                        relation_type: "supports".to_string(),
+                        explanation: RelationExplanation::new(RelationSemanticClass::Evidential)
+                            .with_rationale("Explicit evidence supports the enabled claim.")
+                            .with_confidence("high"),
+                    },
+                    NodeRelationProjection {
+                        source_node_id: "evidence:cache-disabled".to_string(),
+                        target_node_id: "claim:cache-disabled".to_string(),
+                        relation_type: "supports".to_string(),
+                        explanation: RelationExplanation::new(RelationSemanticClass::Evidential)
+                            .with_rationale("Explicit evidence supports the disabled claim.")
+                            .with_confidence("high"),
+                    },
+                    NodeRelationProjection {
+                        source_node_id: "claim:cache-enabled".to_string(),
+                        target_node_id: "claim:cache-disabled".to_string(),
+                        relation_type: "contradicts".to_string(),
+                        explanation: RelationExplanation::new(RelationSemanticClass::Evidential)
+                            .with_rationale("The cache cannot be both enabled and disabled in the same observed state.")
+                            .with_confidence("high"),
+                    },
+                ],
+            })),
             _ => Ok(None),
         }
     }
@@ -278,6 +348,7 @@ impl MemoryAboutIndexReader for SeededGraphNeighborhoodReader {
             "node-123".to_string(),
             "graph-only".to_string(),
             "question:evidence-answer".to_string(),
+            "question:conflict-answer".to_string(),
         ])
     }
 }
@@ -306,7 +377,9 @@ impl NodeRelationshipReader for SeededGraphNeighborhoodReader {
                         .with_sequence(1),
                 }],
             }),
-            "question:evidence-answer" => Some(NodeRelationships::default()),
+            "question:evidence-answer" | "question:conflict-answer" => {
+                Some(NodeRelationships::default())
+            }
             "graph-only" => Some(NodeRelationships::default()),
             _ => None,
         })
@@ -343,6 +416,37 @@ impl NodeDetailReader for SeededNodeDetailReader {
                 node_id: "evidence:answer".to_string(),
                 detail: "Explicit memory evidence is the deterministic Ask answer.".to_string(),
                 content_hash: "hash-evidence-answer".to_string(),
+                revision: 1,
+            }),
+            "question:conflict-answer" => Some(NodeDetailProjection {
+                node_id: "question:conflict-answer".to_string(),
+                detail: "Anchor detail must not hide explicit conflicts.".to_string(),
+                content_hash: "hash-anchor-conflict".to_string(),
+                revision: 1,
+            }),
+            "claim:cache-enabled" => Some(NodeDetailProjection {
+                node_id: "claim:cache-enabled".to_string(),
+                detail: "Claim detail: cache was enabled.".to_string(),
+                content_hash: "hash-claim-cache-enabled".to_string(),
+                revision: 1,
+            }),
+            "claim:cache-disabled" => Some(NodeDetailProjection {
+                node_id: "claim:cache-disabled".to_string(),
+                detail: "Claim detail: cache was disabled.".to_string(),
+                content_hash: "hash-claim-cache-disabled".to_string(),
+                revision: 1,
+            }),
+            "evidence:cache-enabled" => Some(NodeDetailProjection {
+                node_id: "evidence:cache-enabled".to_string(),
+                detail: "Metric sample reports cache=true at the incident checkpoint.".to_string(),
+                content_hash: "hash-evidence-cache-enabled".to_string(),
+                revision: 1,
+            }),
+            "evidence:cache-disabled" => Some(NodeDetailProjection {
+                node_id: "evidence:cache-disabled".to_string(),
+                detail: "Config snapshot reports cache=false at the incident checkpoint."
+                    .to_string(),
+                content_hash: "hash-evidence-cache-disabled".to_string(),
                 revision: 1,
             }),
             "node-456" => Some(NodeDetailProjection {
@@ -1113,6 +1217,50 @@ async fn memory_service_ask_uses_explicit_memory_evidence_not_anchor_detail() {
     assert_eq!(proof.evidence.len(), 1);
     assert_eq!(proof.evidence[0].supports, vec!["claim:answer".to_string()]);
     assert!(proof.evidence[0].text.contains("deterministic Ask answer"));
+}
+
+#[tokio::test]
+async fn memory_service_ask_show_conflicts_surfaces_explicit_conflict_relations() {
+    let service = memory_service(SeededGraphNeighborhoodReader, SeededNodeDetailReader);
+
+    let ask = service
+        .ask(Request::new(AskRequest {
+            about: "question:conflict-answer".to_string(),
+            question: "Is cache enabled at the incident checkpoint?".to_string(),
+            answer_policy: AnswerPolicy::ShowConflicts as i32,
+            budget: Some(MemoryBudget {
+                tokens: 1024,
+                detail: MemoryDetailLevel::Full as i32,
+                depth: 3,
+            }),
+            dimensions: Some(ProtoDimensionSelection {
+                mode: ProtoDimensionSelectionMode::Only as i32,
+                include: vec!["conversation".to_string()],
+                exclude: Vec::new(),
+                ..Default::default()
+            }),
+        }))
+        .await
+        .expect("ask should surface explicit conflicts")
+        .into_inner();
+
+    assert_eq!(ask.because.len(), 2);
+    assert!(ask.answer.contains("cache=true"));
+    assert!(ask.answer.contains("cache=false"));
+    let proof = ask.proof.expect("ask proof should be present");
+    assert_eq!(
+        proof.conflicts,
+        vec![
+            "claim:cache-enabled contradicts claim:cache-disabled: The cache cannot be both enabled and disabled in the same observed state."
+                .to_string()
+        ]
+    );
+    assert!(
+        proof
+            .path
+            .iter()
+            .any(|relation| relation.rel == "contradicts")
+    );
 }
 
 #[tokio::test]

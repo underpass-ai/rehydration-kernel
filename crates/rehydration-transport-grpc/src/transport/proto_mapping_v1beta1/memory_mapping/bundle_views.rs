@@ -148,13 +148,63 @@ pub(super) fn proof(
     missing: Vec<String>,
     confidence: MemoryConfidence,
 ) -> Proof {
+    let conflicts = conflicts_from_relations(&path);
     Proof {
         path,
         evidence,
-        conflicts: Vec::new(),
+        conflicts,
         missing,
         confidence: confidence as i32,
     }
+}
+
+fn conflicts_from_relations(path: &[MemoryRelation]) -> Vec<String> {
+    let mut seen = BTreeSet::new();
+    path.iter()
+        .filter(|relation| is_conflict_relation(&relation.rel))
+        .filter_map(|relation| {
+            let summary = conflict_summary(relation);
+            seen.insert(summary.clone()).then_some(summary)
+        })
+        .collect()
+}
+
+fn is_conflict_relation(value: &str) -> bool {
+    matches!(
+        normalize_relation_type(value).as_str(),
+        "contradicts" | "conflicts" | "conflicts_with" | "conflict_with"
+    )
+}
+
+fn conflict_summary(relation: &MemoryRelation) -> String {
+    let mut summary = format!(
+        "{} {} {}",
+        relation.source_ref,
+        normalize_relation_type(&relation.rel),
+        relation.target_ref
+    );
+    if !relation.why.trim().is_empty() {
+        summary.push_str(": ");
+        summary.push_str(relation.why.trim());
+    } else if !relation.evidence.trim().is_empty() {
+        summary.push_str(": ");
+        summary.push_str(relation.evidence.trim());
+    }
+    summary
+}
+
+fn normalize_relation_type(value: &str) -> String {
+    value
+        .trim()
+        .chars()
+        .map(|ch| {
+            if ch == '-' || ch == ' ' {
+                '_'
+            } else {
+                ch.to_ascii_lowercase()
+            }
+        })
+        .collect()
 }
 
 pub(super) fn rendered_summary(rendered: &RenderedContext) -> String {
@@ -213,6 +263,7 @@ mod tests {
         BundleMetadata, BundleNode, BundleNodeDetail, BundleRelationship, CaseId,
         RelationExplanation, RelationSemanticClass, Role,
     };
+    use rehydration_proto::v1beta1::MemorySemanticClass;
 
     use super::*;
 
@@ -306,6 +357,56 @@ mod tests {
             evidence
                 .iter()
                 .all(|evidence| evidence.supports == vec!["claim:selected".to_string()])
+        );
+    }
+
+    #[test]
+    fn proof_surfaces_explicit_conflict_relations() {
+        let conflicts = proof(
+            vec![
+                MemoryRelation {
+                    source_ref: "claim:a".to_string(),
+                    target_ref: "claim:b".to_string(),
+                    rel: "contains_entry".to_string(),
+                    semantic_class: MemorySemanticClass::Structural as i32,
+                    why: "Structural relation is not a conflict.".to_string(),
+                    evidence: String::new(),
+                    confidence: MemoryConfidence::Medium as i32,
+                    sequence: None,
+                },
+                MemoryRelation {
+                    source_ref: "claim:a".to_string(),
+                    target_ref: "claim:b".to_string(),
+                    rel: "contradicts".to_string(),
+                    semantic_class: MemorySemanticClass::Evidential as i32,
+                    why: "Both claims cannot be true at the same time.".to_string(),
+                    evidence: String::new(),
+                    confidence: MemoryConfidence::High as i32,
+                    sequence: None,
+                },
+                MemoryRelation {
+                    source_ref: "claim:a".to_string(),
+                    target_ref: "claim:b".to_string(),
+                    rel: "CONTRADICTS".to_string(),
+                    semantic_class: MemorySemanticClass::Evidential as i32,
+                    why: "Both claims cannot be true at the same time.".to_string(),
+                    evidence: String::new(),
+                    confidence: MemoryConfidence::High as i32,
+                    sequence: None,
+                },
+            ],
+            Vec::new(),
+            Vec::new(),
+            MemoryConfidence::Medium,
+        )
+        .conflicts;
+
+        assert_eq!(
+            conflicts,
+            vec![
+                "claim:a contradicts claim:b: Both claims cannot be true at the same time."
+                    .to_string()
+            ]
         );
     }
 

@@ -263,9 +263,9 @@ Temporal traversal rules:
   generated response and not the anchor summary;
 - `answer_policy=evidence_or_unknown` returns `UNKNOWN` when the selected
   context has no evidence;
-- `answer_policy=show_conflicts` uses the same deterministic evidence path in
-  this cut; conflict detection is not implemented yet, so `proof.conflicts`
-  remains empty unless a future proof model supplies conflicts;
+- `answer_policy=show_conflicts` uses the same deterministic evidence path and
+  surfaces explicit conflict relations such as `contradicts` or
+  `conflicts_with` in `proof.conflicts`;
 - `answer_policy=best_effort` does not fall back to generated or anchor-summary
   text; without evidence it still returns `UNKNOWN`;
 - the method returns evidence, path, conflicts, missing data, and confidence
@@ -377,6 +377,8 @@ Live MCP/gRPC smoke now additionally verifies:
 - `ABOUTS` without a non-empty about list fails fast;
 - `ALL_ABOUTS` traverses through the kernel memory about index;
 - `Ask` returns deterministic evidence text instead of an anchor summary;
+- `Ask` with `show_conflicts` surfaces explicit conflict relations in
+  `proof.conflicts`;
 - `Inspect` succeeds for typed detail/link lookup and typed `include.raw=true`
   audit refs.
 
@@ -397,7 +399,8 @@ After the gRPC-only code and tests pass:
 The chart Helm tests include `kernel-memory-service` test id `05`. It runs the
 typed lifecycle through the e2e runner: ingest two abouts, read current-about
 and `ALL_ABOUTS` temporal traversal, verify `Trace`, verify `Inspect`
-incoming/outgoing links, and assert typed temporal/inspect raw audit refs.
+incoming/outgoing links, assert explicit `Ask(show_conflicts)` conflict proof,
+and assert typed temporal/inspect raw audit refs.
 
 The public endpoint smoke target remains:
 
