@@ -1,8 +1,10 @@
 # MemoryArena Paper-Aligned Evaluator
 
 Date: 2026-05-06
-Status: local evaluator v1 implemented in `memoryarena_kmp_scorecard`; candidate
-for extraction to a standalone public repository.
+Status: local evaluator v1 implemented in `memoryarena_kmp_scorecard`, with
+domain answer scoring extracted into reusable `rehydration-testkit`
+`memoryarena_scorecard` primitives. Candidate for extraction to a standalone
+public repository.
 
 ## Sources
 
@@ -79,6 +81,9 @@ Inputs:
 - `<adapter-output-dir>/expected.jsonl`;
 - `<runner-output-dir>/results.jsonl`;
 - optional `<runner-output-dir>/summary.json`.
+
+The evaluator is fail-fast for empty filtered inputs: an empty `expected.jsonl`
+or `results.jsonl` is treated as invalid input, not as a valid zero-task score.
 
 Outputs:
 

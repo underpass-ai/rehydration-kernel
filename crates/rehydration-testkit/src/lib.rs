@@ -7,6 +7,7 @@ mod llm_graph;
 pub mod longmemeval;
 pub mod memoryagentbench;
 pub mod memoryarena;
+pub mod memoryarena_scorecard;
 pub mod raw_dump;
 pub mod seed_publisher;
 pub mod seed_to_bundle;
@@ -61,6 +62,11 @@ pub use memoryarena::{
     MemoryArenaKnownAtSnapshot, MemoryArenaPreparedTask, MemoryArenaReplay, MemoryArenaReplayEvent,
     memoryarena_answer_ref, memoryarena_question_ref, memoryarena_ref_scope,
     parse_memoryarena_dataset, prepare_memoryarena_item, prepare_memoryarena_items,
+};
+pub use memoryarena_scorecard::{
+    MemoryArenaAnswerScore, memoryarena_answer_candidates_from_text,
+    memoryarena_answer_candidates_from_value, memoryarena_answers_match,
+    memoryarena_task_success_rule, score_memoryarena_answer,
 };
 pub use seed_to_bundle::{seed_raw_equivalent_tokens, seed_to_bundle};
 
