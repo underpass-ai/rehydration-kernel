@@ -94,6 +94,33 @@ The runner treats failed KMP events as a non-zero run. It still writes the
 diagnostic artifacts before returning the failure so ingestion, projection,
 retrieval, or proof gaps remain inspectable.
 
+## Scorecard
+
+The deterministic scorecard consumes adapter and runner artifacts:
+
+```bash
+cargo run -p rehydration-testkit --bin memoryarena_kmp_scorecard --locked -- \
+  --artifacts artifacts/memoryarena-kmp/progressive-smoke \
+  --run artifacts/memoryarena-kmp/progressive-smoke-run \
+  --output artifacts/memoryarena-kmp/progressive-smoke-scorecard \
+  --force
+```
+
+Generated scorecard artifacts:
+
+| File | Purpose |
+| --- | --- |
+| `task_results.jsonl` | Per-task final-subtask score, extracted answers, known-at diagnostics, and ref recall. |
+| `hypotheses.jsonl` | Compact chosen answer stream for evaluator or dashboard ingestion. |
+| `score_summary.json` | Aggregate task success, candidate hit, known-at, leak, and runner metrics. |
+
+The current scorecard is `memoryarena-kmp-scorecard-exact-answer-v1`. It is a
+baseline reader, not the official MemoryArena evaluator. It extracts labelled
+`Exact Answer:` candidates from the final subtask answer, handles explicit alias
+phrases such as `also written as`, and scores whether the final chosen answer
+matches the expected final answer. It also reports candidate-answer hits so
+consumer failures can be separated from substrate retrieval failures.
+
 ## Generated Artifacts
 
 | File | Purpose |
@@ -135,6 +162,7 @@ Implemented:
 - run-id isolation;
 - live stage-aware runner against a deployed kernel;
 - known-at correctness and future-answer leak diagnostics;
+- deterministic exact-answer scorecard over runner artifacts;
 - incremental ingest through gRPC/MCP with empty dimension declarations after
   dimensions already exist;
 - fixture tests and adapter smoke.
@@ -142,7 +170,6 @@ Implemented:
 Not implemented yet:
 
 - MemoryArena official evaluator integration;
-- task-success scoring;
 - agentic retrieval loop that lets an LLM choose multiple KMP moves before
   answering;
 - benchmark dashboard or graph visualization.
@@ -299,6 +326,47 @@ Interpretation:
   memory only after the ask. Task-success scoring belongs in the next evaluator
   layer.
 
+Scorecard command:
+
+```bash
+cargo run -p rehydration-testkit --bin memoryarena_kmp_scorecard --locked -- \
+  --artifacts /tmp/memoryarena-progressive-real-3-artifacts \
+  --run /tmp/memoryarena-progressive-real-3-run \
+  --output /tmp/memoryarena-progressive-real-3-scorecard \
+  --force
+```
+
+Scorecard summary:
+
+```text
+tasks: 3
+ask_count: 27
+task_successes: 3
+task_success_rate: 1.0
+candidate_answer_hits: 3
+candidate_answer_hit_rate: 1.0
+known_at_clean_asks: 27
+full_ref_recall_asks: 27
+current_question_observed_asks: 27
+future_answer_leaks: 0
+unexpected_ref_asks: 0
+missing_allowed_ref_asks: 0
+runner_total_events: 81
+runner_successful_events: 81
+runner_failed_events: 0
+runner_elapsed_ms: 106581
+```
+
+Interpretation:
+
+- The deterministic scorecard recovered the final exact answer for all three
+  tasks in this first `progressive_search` slice.
+- One task required alias-aware matching: the expected answer used `Daniel Delos
+  Santos`, while the retrieved candidate used `John Daniel delos Santos` with an
+  explicit alias.
+- This is a local reader baseline over kernel evidence, not an official
+  MemoryArena score.
+
 Observed consumer gap:
 
 - The deterministic `answer` field can grow as accumulated prior feedback grows.
@@ -309,7 +377,7 @@ Observed consumer gap:
 
 ## Next Cut
 
-1. Add task-success scoring and official evaluator integration.
+1. Add official evaluator integration.
 2. Add an agentic retrieval loop that can choose `ask`, `near`, `trace`,
    `inspect`, and temporal moves before answering.
 3. Persist projection/traversal/proof metrics needed to classify benchmark

@@ -67,9 +67,10 @@ Exit criteria:
 
 Priority: P0
 
-Status: started. The first MemoryArena-to-KMP artifact adapter and live
-stage-aware runner are available in `rehydration-testkit` as
-`memoryarena_kmp_adapter` and `memoryarena_kmp_runner`.
+Status: started. The first MemoryArena-to-KMP artifact adapter, live
+stage-aware runner, and deterministic scorecard are available in
+`rehydration-testkit` as `memoryarena_kmp_adapter`,
+`memoryarena_kmp_runner`, and `memoryarena_kmp_scorecard`.
 
 Goal:
 
@@ -115,6 +116,9 @@ Current proof:
 - a real `progressive_search` slice from `ZexueHe/memoryarena` reached 81/81
   successful events, 27/27 known-at-clean asks, 0 future answer leaks, and 0
   missing allowed refs against the deployed kernel.
+- the deterministic exact-answer scorecard over that slice reached 3/3 task
+  successes and 3/3 candidate-answer hits, while preserving the distinction
+  between kernel substrate retrieval and benchmark answer consumption.
 
 Non-goals:
 
@@ -379,7 +383,7 @@ Recommended order:
 The immediate next slice should be:
 
 ```text
-MemoryArena task-success scoring
+MemoryArena official evaluator integration
 + agentic retrieval loop
 + minimum observability for projection/traversal/proof
 + LongMemEval left as secondary regression
