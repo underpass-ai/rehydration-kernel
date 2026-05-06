@@ -288,6 +288,14 @@ Exit criteria:
 
 Priority: P1
 
+Current status:
+
+- first reusable testkit slice implemented in
+  `rehydration_testkit::interpretation_plugins`;
+- documented in `docs/product/reusable-interpretation-plugins.md`;
+- current scope covers money extraction, date extraction, and deterministic
+  value operations over typed operands.
+
 Goal:
 
 Keep domain and benchmark operators outside core while still supporting

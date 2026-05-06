@@ -2,6 +2,7 @@ mod container_runtime;
 pub mod dataset_generator;
 mod graph_batch_llm;
 mod in_memory_stores;
+pub mod interpretation_plugins;
 pub mod llm_evaluator;
 mod llm_graph;
 pub mod longmemeval;
@@ -28,6 +29,13 @@ pub use in_memory_stores::{
     InMemoryContextEventStore, InMemoryGraphNeighborhoodReader, InMemoryNodeDetailReader,
     InMemoryProcessedEventStore, InMemoryProjectionCheckpointStore, InMemoryProjectionWriter,
     NoopSnapshotStore,
+};
+pub use interpretation_plugins::{
+    CalendarDate, CurrencyCode, DateValuePlugin, DerivationOperand, DerivationOperation,
+    DerivationRequest, DerivationResult, EvidenceFragment, EvidenceInterpretationInput,
+    EvidenceInterpretationOutput, EvidenceValuePlugin, InterpretationError, InterpretedValue,
+    InterpretedValueMention, MoneyValuePlugin, OperandLabel, OperandRole, TextSpan,
+    ValueOperationPlugin,
 };
 pub use llm_evaluator::{
     CalibrationCase, EvaluationGroundTruth, LlmEvaluationResult, LlmEvaluatorConfig, LlmProvider,
