@@ -259,6 +259,8 @@ fn kmp_reference_fixtures_are_valid_json_and_memory_shaped() {
             "current",
             "semantic_delta",
             "connect_to",
+            "read_context",
+            "idempotency_key",
             "options",
         ])
     );

@@ -1083,6 +1083,64 @@
         }
       }
     },
+    "trace_path_read_context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "from",
+        "to"
+      ],
+      "properties": {
+        "from": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "to": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/non_empty_string"
+          }
+        }
+      }
+    },
+    "write_read_context": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "inspected_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/non_empty_string"
+          }
+        },
+        "temporal_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/non_empty_string"
+          }
+        },
+        "wake_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/non_empty_string"
+          }
+        },
+        "ask_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/non_empty_string"
+          }
+        },
+        "trace_paths": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/trace_path_read_context"
+          }
+        }
+      }
+    },
     "relation_quality": {
       "type": "object",
       "additionalProperties": false,
@@ -1097,6 +1155,7 @@
         "fallback",
         "requires_prior_context",
         "prior_context_observed",
+        "prior_context_sources",
         "proof_complete",
         "target_present"
       ],
@@ -1138,6 +1197,12 @@
         "prior_context_observed": {
           "type": "boolean"
         },
+        "prior_context_sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/non_empty_string"
+          }
+        },
         "proof_complete": {
           "type": "boolean"
         },
@@ -1160,7 +1225,10 @@
         "relation_anemic_ratio",
         "relation_explanatory_ratio",
         "relation_proof_coverage",
-        "relation_target_coverage"
+        "relation_target_coverage",
+        "relation_prior_context_required_count",
+        "relation_prior_context_observed_count",
+        "relation_prior_context_coverage"
       ],
       "properties": {
         "relation_total": {
@@ -1208,6 +1276,19 @@
           "maximum": 1
         },
         "relation_target_coverage": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "relation_prior_context_required_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "relation_prior_context_observed_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "relation_prior_context_coverage": {
           "type": "number",
           "minimum": 0,
           "maximum": 1
@@ -1285,6 +1366,9 @@
           "items": {
             "$ref": "#/$defs/write_link"
           }
+        },
+        "read_context": {
+          "$ref": "#/$defs/write_read_context"
         },
         "idempotency_key": {
           "$ref": "#/$defs/non_empty_string"

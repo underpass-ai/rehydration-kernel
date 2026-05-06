@@ -368,6 +368,7 @@ fn write_memory_schema() -> Value {
                     }
                 }
             },
+            "read_context": read_context_schema(),
             "idempotency_key": string_schema("Optional stable idempotency key. Omit to generate one from the write payload."),
             "options": {
                 "type": "object",
@@ -384,6 +385,47 @@ fn write_memory_schema() -> Value {
                     "sequence": {
                         "type": "integer",
                         "minimum": 1
+                    }
+                }
+            }
+        }
+    })
+}
+
+fn read_context_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+            "inspected_refs": {
+                "type": "array",
+                "items": string_schema("Memory ref inspected with kernel_inspect before writing.")
+            },
+            "temporal_refs": {
+                "type": "array",
+                "items": string_schema("Memory ref observed through kernel_goto, kernel_near, kernel_rewind, or kernel_forward before writing.")
+            },
+            "wake_refs": {
+                "type": "array",
+                "items": string_schema("Memory ref observed in a kernel_wake packet before writing.")
+            },
+            "ask_refs": {
+                "type": "array",
+                "items": string_schema("Memory ref observed in deterministic kernel_ask proof/evidence before writing.")
+            },
+            "trace_paths": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["from", "to"],
+                    "properties": {
+                        "from": string_schema("Trace source ref observed before writing."),
+                        "to": string_schema("Trace target ref observed before writing."),
+                        "refs": {
+                            "type": "array",
+                            "items": string_schema("Optional intermediate ref observed in the trace path.")
+                        }
                     }
                 }
             }
@@ -650,6 +692,11 @@ mod tests {
             tools[1]["inputSchema"]["properties"]["connect_to"]["items"]["properties"]["rel"]["enum"]
                 [0],
             "follows"
+        );
+        assert!(
+            tools[1]["inputSchema"]["properties"]
+                .get("read_context")
+                .is_some()
         );
         assert_eq!(tools[2]["name"], "kernel_wake");
         assert_eq!(tools[2]["inputSchema"]["required"][0], "about");

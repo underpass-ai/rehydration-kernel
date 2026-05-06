@@ -42,6 +42,10 @@ Transport bindings:
   `kernel_ingest` payload. With `dry_run=true` it returns that payload as
   `ingest_preview`; with `dry_run=false` it forwards the same payload through
   the configured `kernel_ingest` backend.
+- Rich external relations in `kernel_write_memory` must carry `read_context`
+  evidence in strict mode, so a writer can prove it inspected, traced, asked,
+  woke, or temporally traversed the target before claiming a rich semantic
+  relation.
 - gRPC exposes the canonical memory moves through the typed
   [`KernelMemoryService`](../../../../proto/underpass/rehydration/kernel/v1beta1/memory.proto).
   `write-memory` is bound to gRPC by compiling to `KernelMemoryService.Ingest`;

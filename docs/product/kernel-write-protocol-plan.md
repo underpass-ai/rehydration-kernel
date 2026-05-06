@@ -2,7 +2,7 @@
 
 Date: 2026-05-06
 
-Status: P0 implementation document.
+Status: P1 implementation document.
 
 ## Problem
 
@@ -224,6 +224,12 @@ Initial shape:
       "evidence": "The chosen retry targets the refresh race seen in auth logs."
     }
   ],
+  "read_context": {
+    "inspected_refs": [
+      "incident:mobile-login:observation:401-refresh-race"
+    ]
+  },
+  "idempotency_key": "write:incident-mobile-login-decision-v1",
   "options": {
     "dry_run": true,
     "strict": true
@@ -249,6 +255,7 @@ Initial shape:
 | `connect_to[].class` | required for each link | Relation semantic class. |
 | `connect_to[].why` | required for non-structural links | Why the relation exists. |
 | `connect_to[].evidence` | required for non-structural links | Evidence for the relation. |
+| `read_context` | required for strict rich external relations | Audit refs observed through read tools before writing. |
 
 ## Intent Semantics
 
@@ -356,6 +363,7 @@ Core counters:
 | `relation_explanatory_ratio` | `(causal + motivational + evidential + constraint) / non_structural` | high |
 | `relation_proof_coverage` | relations with both `why` and `evidence` / writer relations | 1.0 in strict mode |
 | `relation_target_coverage` | relations whose target ref exists or is declared external / writer relations | 1.0 |
+| `relation_prior_context_coverage` | rich external relations whose target was read before write / rich external relations | 1.0 in strict mode |
 | `relation_endpoint_text_overlap` | relations whose evidence mentions terms from both endpoint texts / writer relations | advisory signal |
 | `process_elongation_ratio` | process edges forming a chain / total process entries | high for process memory |
 | `star_shape_ratio` | entries only attached structurally to anchor / total entries | should decrease for agentic processes |
@@ -369,7 +377,8 @@ Per-relation diagnostic fields:
   "quality_reason": "non-structural relation has target ref, why, evidence, and supported semantic class",
   "fallback": false,
   "requires_prior_context": true,
-  "prior_context_observed": true
+  "prior_context_observed": true,
+  "prior_context_sources": ["kernel_inspect"]
 }
 ```
 
@@ -382,14 +391,16 @@ For an anemic fallback:
   "quality_reason": "writer could prove temporal succession but not a richer semantic dependency",
   "fallback": true,
   "requires_prior_context": false,
-  "prior_context_observed": true
+  "prior_context_observed": false,
+  "prior_context_sources": []
 }
 ```
 
-This metric layer is not an LLM judge. P0 can implement deterministic quality
+This metric layer is not an LLM judge. P1 implements deterministic quality
 classification from the relation name, class, `why`, `evidence`, confidence,
-and endpoint refs. Later P1 can add an optional judge/plugin to audit whether
-`why` and `evidence` genuinely support the endpoint texts.
+endpoint refs, and declared read context. Later P2 can add an optional
+judge/plugin to audit whether `why` and `evidence` genuinely support the
+endpoint texts.
 
 ## Read Before Write
 
@@ -409,12 +420,38 @@ it must use kernel read tools first:
 | Reconstruct state at a point | `kernel_goto` |
 | Ask for deterministic evidence | `kernel_ask` |
 
-The planner may later support a "needs more context" diagnostic. P0 is
-fail-fast: if the writer cannot provide a target relation with proof, the write
-is rejected and the caller must read more context before retrying. If a memory
-write is still valuable and the writer has enough evidence for sequence,
-answerhood, or background usage, it may compile an explicit anemic fallback
-relation instead.
+P1 makes this auditable through `read_context`:
+
+```json
+{
+  "read_context": {
+    "inspected_refs": ["incident:mobile-login:observation:401-refresh-race"],
+    "trace_paths": [
+      {
+        "from": "incident:mobile-login:start",
+        "to": "incident:mobile-login:observation:401-refresh-race",
+        "refs": ["incident:mobile-login:observation:auth-logs"]
+      }
+    ],
+    "temporal_refs": ["incident:mobile-login:observation:401-refresh-race"],
+    "wake_refs": ["incident:mobile-login:current-state"],
+    "ask_refs": ["incident:mobile-login:evidence:auth-log"]
+  }
+}
+```
+
+In strict mode, a rich relation to an external target ref is rejected unless
+that target appears in `read_context`. A relation to a node generated in the
+same request is marked with `prior_context_sources=["current_request"]`.
+Anemic fallback relations remain allowed without prior-read proof, but the
+missing prior context is visible in `relation_quality`.
+
+The planner may later support a "needs more context" diagnostic. The current
+implementation is fail-fast: if the writer cannot provide a target relation
+with proof and required read context, the write is rejected and the caller must
+read more context before retrying. If a memory write is still valuable and the
+writer has enough evidence for sequence, answerhood, or background usage, it
+may compile an explicit anemic fallback relation instead.
 
 Example diagnostic:
 
@@ -604,10 +641,13 @@ P0.3:
 
 P1:
 
+- enforce `read_context` evidence for strict rich external relations;
+- return `prior_context_sources` per relation and prior-context coverage
+  metrics;
 - add specialized helper aliases for common writer tasks;
 - add schema-constrained LLM writer prompts/templates outside core;
-- add read-before-write writer policies for broad graph inspection across
-  dimensions and temporal windows;
+- add broader read-before-write writer policies across dimensions and temporal
+  windows;
 - add graph-quality metrics for process elongation and explanatory relation
   density;
 - add optional relation-quality judge/plugin to audit whether relation evidence

@@ -1,3 +1,5 @@
+use std::collections::{BTreeMap, BTreeSet};
+
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 
@@ -44,6 +46,106 @@ struct RelationSpec {
     reason: &'static str,
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct ReadContext {
+    ref_sources: BTreeMap<String, BTreeSet<String>>,
+}
+
+impl ReadContext {
+    fn from_arguments(arguments: &Map<String, Value>) -> Result<Self, String> {
+        let Some(read_context) = arguments.get("read_context") else {
+            return Ok(Self::default());
+        };
+        let read_context = read_context
+            .as_object()
+            .ok_or_else(|| "argument `read_context` must be an object".to_string())?;
+        let mut context = Self::default();
+        context.collect_ref_array(read_context, "inspected_refs", "kernel_inspect")?;
+        context.collect_ref_array(read_context, "temporal_refs", "kernel_temporal")?;
+        context.collect_ref_array(read_context, "wake_refs", "kernel_wake")?;
+        context.collect_ref_array(read_context, "ask_refs", "kernel_ask")?;
+        context.collect_trace_paths(read_context)?;
+        Ok(context)
+    }
+
+    fn add_ref(&mut self, ref_id: &str, source: &str) {
+        if ref_id.trim().is_empty() {
+            return;
+        }
+        self.ref_sources
+            .entry(ref_id.to_string())
+            .or_default()
+            .insert(source.to_string());
+    }
+
+    fn sources_for(&self, ref_id: &str) -> Vec<String> {
+        self.ref_sources
+            .get(ref_id)
+            .map(|sources| sources.iter().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    fn collect_ref_array(
+        &mut self,
+        object: &Map<String, Value>,
+        key: &str,
+        source: &str,
+    ) -> Result<(), String> {
+        for (index, ref_value) in optional_array(object.get(key), &format!("read_context.{key}"))?
+            .iter()
+            .enumerate()
+        {
+            let ref_id = ref_value
+                .as_str()
+                .filter(|value| !value.trim().is_empty())
+                .ok_or_else(|| format!("read_context.{key}[{index}] must be a non-empty string"))?;
+            self.add_ref(ref_id, source);
+        }
+        Ok(())
+    }
+
+    fn collect_trace_paths(&mut self, object: &Map<String, Value>) -> Result<(), String> {
+        for (index, trace) in optional_array(object.get("trace_paths"), "read_context.trace_paths")?
+            .iter()
+            .enumerate()
+        {
+            let trace = trace
+                .as_object()
+                .ok_or_else(|| format!("read_context.trace_paths[{index}] must be an object"))?;
+            let from = required_map_string(
+                trace,
+                "from",
+                &format!("read_context.trace_paths[{index}].from"),
+            )?;
+            let to = required_map_string(
+                trace,
+                "to",
+                &format!("read_context.trace_paths[{index}].to"),
+            )?;
+            self.add_ref(from, "kernel_trace");
+            self.add_ref(to, "kernel_trace");
+            for (ref_index, ref_value) in optional_array(
+                trace.get("refs"),
+                &format!("read_context.trace_paths[{index}].refs"),
+            )?
+            .iter()
+            .enumerate()
+            {
+                let ref_id = ref_value
+                    .as_str()
+                    .filter(|value| !value.trim().is_empty())
+                    .ok_or_else(|| {
+                        format!(
+                            "read_context.trace_paths[{index}].refs[{ref_index}] must be a non-empty string"
+                        )
+                    })?;
+                self.add_ref(ref_id, "kernel_trace");
+            }
+        }
+        Ok(())
+    }
+}
+
 pub(crate) fn build_write_plan(arguments: &Value) -> Result<KernelWritePlan, String> {
     let arguments = arguments
         .as_object()
@@ -54,6 +156,7 @@ pub(crate) fn build_write_plan(arguments: &Value) -> Result<KernelWritePlan, Str
     let actor = required_string(arguments, "actor")?;
     let observed_at = required_string(arguments, "observed_at")?;
     let scope = required_object(arguments, "scope")?;
+    let read_context = ReadContext::from_arguments(arguments)?;
     let process_scope = required_map_string(scope, "process", "scope.process")?;
     let task_scope = optional_map_string(scope, "task");
     let episode_scope = optional_map_string(scope, "episode");
@@ -86,6 +189,7 @@ pub(crate) fn build_write_plan(arguments: &Value) -> Result<KernelWritePlan, Str
         .map(ToString::to_string)
         .unwrap_or_else(|| generated_entry_ref(&about, current_kind, current_summary));
     let mut generated_refs = vec![current_ref.clone()];
+    let mut local_refs = BTreeSet::from([current_ref.clone()]);
     let mut dimensions = Vec::new();
     let mut coordinates = Vec::new();
     if let Some(task_scope) = task_scope {
@@ -170,6 +274,8 @@ pub(crate) fn build_write_plan(arguments: &Value) -> Result<KernelWritePlan, Str
             why,
             evidence: relation_evidence,
             strict,
+            read_context: &read_context,
+            local_refs: &local_refs,
         })?;
 
         relations.push(relation(
@@ -202,6 +308,7 @@ pub(crate) fn build_write_plan(arguments: &Value) -> Result<KernelWritePlan, Str
             .map(ToString::to_string)
             .unwrap_or_else(|| generated_entry_ref(&about, "semantic_delta", delta_to));
         reject_duplicate_ref(&mut generated_refs, &delta_ref)?;
+        local_refs.insert(delta_ref.clone());
         entries.push(json!({
             "id": delta_ref.clone(),
             "kind": "semantic_delta",
@@ -223,6 +330,8 @@ pub(crate) fn build_write_plan(arguments: &Value) -> Result<KernelWritePlan, Str
             why: delta_why,
             evidence: delta_evidence,
             strict,
+            read_context: &read_context,
+            local_refs: &local_refs,
         })?;
         relations.push(relation(
             &current_ref,
@@ -247,6 +356,8 @@ pub(crate) fn build_write_plan(arguments: &Value) -> Result<KernelWritePlan, Str
                 why: delta_why,
                 evidence: delta_evidence,
                 strict,
+                read_context: &read_context,
+                local_refs: &local_refs,
             })?;
             relations.push(relation(
                 &delta_ref,
@@ -440,6 +551,8 @@ struct RelationQualityInput<'a> {
     why: &'a str,
     evidence: &'a str,
     strict: bool,
+    read_context: &'a ReadContext,
+    local_refs: &'a BTreeSet<String>,
 }
 
 fn relation_quality_diagnostic(input: RelationQualityInput<'_>) -> Result<Value, String> {
@@ -462,6 +575,12 @@ fn relation_quality_diagnostic(input: RelationQualityInput<'_>) -> Result<Value,
             input.rel
         ));
     }
+    if input.from == input.to {
+        return Err(format!(
+            "kernel_write_memory relation `{}` cannot point from and to the same ref `{}`",
+            input.rel, input.from
+        ));
+    }
     if input.strict && input.semantic_class != "structural" && !proof_complete {
         return Err(format!(
             "kernel_write_memory relation `{}` requires both why and evidence in strict mode",
@@ -469,16 +588,33 @@ fn relation_quality_diagnostic(input: RelationQualityInput<'_>) -> Result<Value,
         ));
     }
 
+    let target_is_local = input.local_refs.contains(input.to);
+    let prior_context_sources = if target_is_local {
+        vec!["current_request".to_string()]
+    } else {
+        input.read_context.sources_for(input.to)
+    };
+    let prior_context_observed = !prior_context_sources.is_empty();
+    if input.strict
+        && spec.quality == RelationQuality::Rich
+        && !target_is_local
+        && !prior_context_observed
+    {
+        return Err(format!(
+            "strict kernel_write_memory rich relation `{}` to `{}` requires read_context evidence; inspect, trace, or traverse the target first, or use an explicit anemic fallback",
+            input.rel, input.to
+        ));
+    }
+
     let quality = if !input.strict
         && spec.quality == RelationQuality::Rich
-        && matches!(input.confidence, "low" | "unknown")
+        && (!prior_context_observed || matches!(input.confidence, "low" | "unknown"))
     {
         RelationQuality::Suspect
     } else {
         spec.quality
     };
-    let requires_prior_context = quality == RelationQuality::Rich;
-    let prior_context_observed = target_present;
+    let requires_prior_context = spec.quality == RelationQuality::Rich && !target_is_local;
 
     Ok(json!({
         "from": input.from,
@@ -491,6 +627,7 @@ fn relation_quality_diagnostic(input: RelationQualityInput<'_>) -> Result<Value,
         "fallback": quality == RelationQuality::Anemic,
         "requires_prior_context": requires_prior_context,
         "prior_context_observed": prior_context_observed,
+        "prior_context_sources": prior_context_sources,
         "proof_complete": proof_complete,
         "target_present": target_present
     }))
@@ -635,6 +772,25 @@ fn relation_quality_metrics(relation_quality: &[Value]) -> Value {
         .iter()
         .filter(|relation| relation["target_present"].as_bool().unwrap_or(false))
         .count();
+    let prior_context_required = relation_quality
+        .iter()
+        .filter(|relation| {
+            relation["requires_prior_context"]
+                .as_bool()
+                .unwrap_or(false)
+        })
+        .count();
+    let prior_context_observed = relation_quality
+        .iter()
+        .filter(|relation| {
+            relation["requires_prior_context"]
+                .as_bool()
+                .unwrap_or(false)
+                && relation["prior_context_observed"]
+                    .as_bool()
+                    .unwrap_or(false)
+        })
+        .count();
     let non_structural = relation_total.saturating_sub(relation_structural_count);
     let explanatory = relation_quality
         .iter()
@@ -657,7 +813,10 @@ fn relation_quality_metrics(relation_quality: &[Value]) -> Value {
         "relation_anemic_ratio": ratio(relation_anemic_count, semantic_total),
         "relation_explanatory_ratio": ratio(explanatory, non_structural),
         "relation_proof_coverage": ratio(proof_complete, relation_total),
-        "relation_target_coverage": ratio(target_present, relation_total)
+        "relation_target_coverage": ratio(target_present, relation_total),
+        "relation_prior_context_required_count": prior_context_required,
+        "relation_prior_context_observed_count": prior_context_observed,
+        "relation_prior_context_coverage": ratio(prior_context_observed, prior_context_required)
     })
 }
 
@@ -866,7 +1025,19 @@ mod tests {
             plan.relation_quality_metrics["relation_anemic_count"],
             json!(0)
         );
+        assert_eq!(
+            plan.relation_quality_metrics["relation_prior_context_required_count"],
+            json!(2)
+        );
+        assert_eq!(
+            plan.relation_quality_metrics["relation_prior_context_coverage"],
+            json!(1.0)
+        );
         assert_eq!(plan.relation_quality[0]["quality"], json!("rich"));
+        assert_eq!(
+            plan.relation_quality[0]["prior_context_sources"],
+            json!(["kernel_inspect"])
+        );
         assert_eq!(plan.ingest_arguments["about"], "incident:mobile-login");
         assert_eq!(
             plan.ingest_arguments["memory"]["dimensions"][0]["kind"],
@@ -955,12 +1126,47 @@ mod tests {
     }
 
     #[test]
+    fn rejects_rich_relation_without_read_context_in_strict_mode() {
+        let mut request = sample_write_request();
+        request
+            .as_object_mut()
+            .expect("sample request should be an object")
+            .remove("read_context");
+
+        let error = build_write_plan(&request).expect_err("rich relation requires prior read");
+
+        assert_eq!(
+            error,
+            "strict kernel_write_memory rich relation `chosen_because` to `incident:mobile-login:observation:401-refresh-race` requires read_context evidence; inspect, trace, or traverse the target first, or use an explicit anemic fallback"
+        );
+    }
+
+    #[test]
+    fn rejects_self_loop_relations() {
+        let mut request = sample_write_request();
+        let current_ref = "incident:mobile-login:entry:decision:self";
+        request["current"]["ref"] = json!(current_ref);
+        request["connect_to"][0]["ref"] = json!(current_ref);
+
+        let error = build_write_plan(&request).expect_err("self-loop should fail");
+
+        assert_eq!(
+            error,
+            "kernel_write_memory relation `chosen_because` cannot point from and to the same ref `incident:mobile-login:entry:decision:self`"
+        );
+    }
+
+    #[test]
     fn classifies_explicit_anemic_fallback_relations() {
         let mut request = sample_write_request();
         request
             .as_object_mut()
             .expect("sample request should be an object")
             .remove("semantic_delta");
+        request
+            .as_object_mut()
+            .expect("sample request should be an object")
+            .remove("read_context");
         request["connect_to"][0]["rel"] = json!("follows");
         request["connect_to"][0]["class"] = json!("procedural");
         request["connect_to"][0]["why"] =
@@ -1038,6 +1244,11 @@ mod tests {
                     "evidence": "The chosen retry targets the refresh race seen in auth logs."
                 }
             ],
+            "read_context": {
+                "inspected_refs": [
+                    "incident:mobile-login:observation:401-refresh-race"
+                ]
+            },
             "options": {
                 "dry_run": true,
                 "strict": true

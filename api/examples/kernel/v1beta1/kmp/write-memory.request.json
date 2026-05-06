@@ -29,6 +29,12 @@
       "confidence": "high"
     }
   ],
+  "read_context": {
+    "inspected_refs": [
+      "incident:mobile-login:observation:401-refresh-race"
+    ]
+  },
+  "idempotency_key": "write:incident-mobile-login-decision-v1",
   "options": {
     "dry_run": true,
     "strict": true
