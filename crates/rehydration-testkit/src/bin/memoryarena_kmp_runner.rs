@@ -11,6 +11,9 @@ use rehydration_testkit::MemoryArenaExpected;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
+type TaskKey = (String, String);
+type TaskSubtaskKey = (String, String, usize);
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Args {
     artifacts: PathBuf,
@@ -137,12 +140,18 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                 match content_result {
                     Ok(content) => {
                         if event.event == "ask" {
+                            let subtask_index = event.subtask_index.ok_or_else(|| {
+                                format!(
+                                    "ask event {} for task_type {} task {} has no subtask_index",
+                                    event.event_index, event.task_type, event.task_id
+                                )
+                            })?;
                             let expected = expected_by_ask
-                                .get(&(event.task_id.clone(), event.subtask_index.unwrap_or(0)))
+                                .get(&ask_key(&event.task_type, &event.task_id, subtask_index))
                                 .ok_or_else(|| {
                                     format!(
-                                        "missing expected row for task {} subtask {:?}",
-                                        event.task_id, event.subtask_index
+                                        "missing expected row for task_type {} task {} subtask {}",
+                                        event.task_type, event.task_id, subtask_index
                                     )
                                 })?;
                             ask_results
@@ -527,14 +536,14 @@ fn summarize_run(
 
 fn expected_by_ask_key(
     expected: Vec<MemoryArenaExpected>,
-) -> Result<BTreeMap<(String, usize), MemoryArenaExpected>, Box<dyn Error + Send + Sync>> {
+) -> Result<BTreeMap<TaskSubtaskKey, MemoryArenaExpected>, Box<dyn Error + Send + Sync>> {
     let mut by_key = BTreeMap::new();
     for item in expected {
-        let key = (item.task_id.clone(), item.subtask_index);
+        let key = ask_key(&item.task_type, &item.task_id, item.subtask_index);
         if by_key.insert(key.clone(), item).is_some() {
             return Err(format!(
-                "duplicate expected row for task {} subtask {}",
-                key.0, key.1
+                "duplicate expected row for task_type {} task {} subtask {}",
+                key.0, key.1, key.2
             )
             .into());
         }
@@ -544,32 +553,38 @@ fn expected_by_ask_key(
 
 fn validate_events_expected_alignment(
     events: &[MemoryArenaEvent],
-    expected_by_ask: &BTreeMap<(String, usize), MemoryArenaExpected>,
+    expected_by_ask: &BTreeMap<TaskSubtaskKey, MemoryArenaExpected>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let mut ask_keys = BTreeSet::new();
     for event in events.iter().filter(|event| event.event == "ask") {
         let subtask_index = event.subtask_index.ok_or_else(|| {
             format!(
-                "ask event {} for task {} has no subtask_index",
-                event.event_index, event.task_id
+                "ask event {} for task_type {} task {} has no subtask_index",
+                event.event_index, event.task_type, event.task_id
             )
         })?;
-        let key = (event.task_id.clone(), subtask_index);
+        let key = ask_key(&event.task_type, &event.task_id, subtask_index);
         if !ask_keys.insert(key.clone()) {
-            return Err(format!("duplicate ask event for task {} subtask {}", key.0, key.1).into());
+            return Err(format!(
+                "duplicate ask event for task_type {} task {} subtask {}",
+                key.0, key.1, key.2
+            )
+            .into());
         }
         if !expected_by_ask.contains_key(&key) {
-            return Err(
-                format!("missing expected row for task {} subtask {}", key.0, key.1).into(),
-            );
+            return Err(format!(
+                "missing expected row for task_type {} task {} subtask {}",
+                key.0, key.1, key.2
+            )
+            .into());
         }
     }
 
     for key in expected_by_ask.keys() {
         if !ask_keys.contains(key) {
             return Err(format!(
-                "expected row has no ask event for task {} subtask {}",
-                key.0, key.1
+                "expected row has no ask event for task_type {} task {} subtask {}",
+                key.0, key.1, key.2
             )
             .into());
         }
@@ -582,16 +597,16 @@ fn read_events(
     path: &Path,
     limit_tasks: Option<usize>,
 ) -> Result<Vec<MemoryArenaEvent>, Box<dyn Error + Send + Sync>> {
-    let selected_task_ids = selected_task_ids(path, limit_tasks)?;
+    let selected_task_keys = selected_task_keys(path, limit_tasks)?;
     let events = read_jsonl(path)?
         .into_iter()
         .map(serde_json::from_value)
         .collect::<Result<Vec<_>, _>>()?
         .into_iter()
         .filter(|event: &MemoryArenaEvent| {
-            selected_task_ids
+            selected_task_keys
                 .as_ref()
-                .is_none_or(|ids| ids.contains(&event.task_id))
+                .is_none_or(|keys| keys.contains(&task_key(&event.task_type, &event.task_id)))
         })
         .collect::<Vec<_>>();
     Ok(events)
@@ -601,32 +616,33 @@ fn read_expected(
     path: &Path,
     limit_tasks: Option<usize>,
 ) -> Result<Vec<MemoryArenaExpected>, Box<dyn Error + Send + Sync>> {
-    let selected_task_ids = selected_task_ids_from_expected(path, limit_tasks)?;
+    let selected_task_keys = selected_task_keys_from_expected(path, limit_tasks)?;
     let expected = read_jsonl(path)?
         .into_iter()
         .map(serde_json::from_value)
         .collect::<Result<Vec<_>, _>>()?
         .into_iter()
         .filter(|expected: &MemoryArenaExpected| {
-            selected_task_ids
+            selected_task_keys
                 .as_ref()
-                .is_none_or(|ids| ids.contains(&expected.task_id))
+                .is_none_or(|keys| keys.contains(&task_key(&expected.task_type, &expected.task_id)))
         })
         .collect::<Vec<_>>();
     Ok(expected)
 }
 
-fn selected_task_ids(
+fn selected_task_keys(
     path: &Path,
     limit_tasks: Option<usize>,
-) -> Result<Option<BTreeSet<String>>, Box<dyn Error + Send + Sync>> {
+) -> Result<Option<BTreeSet<TaskKey>>, Box<dyn Error + Send + Sync>> {
     let Some(limit) = limit_tasks else {
         return Ok(None);
     };
     let mut selected = BTreeSet::new();
     for value in read_jsonl(path)? {
+        let task_type = required_string(&value, "task_type")?;
         let task_id = required_string(&value, "task_id")?;
-        selected.insert(task_id);
+        selected.insert(task_key(&task_type, &task_id));
         if selected.len() >= limit {
             break;
         }
@@ -634,22 +650,31 @@ fn selected_task_ids(
     Ok(Some(selected))
 }
 
-fn selected_task_ids_from_expected(
+fn selected_task_keys_from_expected(
     path: &Path,
     limit_tasks: Option<usize>,
-) -> Result<Option<BTreeSet<String>>, Box<dyn Error + Send + Sync>> {
+) -> Result<Option<BTreeSet<TaskKey>>, Box<dyn Error + Send + Sync>> {
     let Some(limit) = limit_tasks else {
         return Ok(None);
     };
     let mut selected = BTreeSet::new();
     for value in read_jsonl(path)? {
+        let task_type = required_string(&value, "task_type")?;
         let task_id = required_string(&value, "task_id")?;
-        selected.insert(task_id);
+        selected.insert(task_key(&task_type, &task_id));
         if selected.len() >= limit {
             break;
         }
     }
     Ok(Some(selected))
+}
+
+fn task_key(task_type: &str, task_id: &str) -> TaskKey {
+    (task_type.to_string(), task_id.to_string())
+}
+
+fn ask_key(task_type: &str, task_id: &str, subtask_index: usize) -> TaskSubtaskKey {
+    (task_type.to_string(), task_id.to_string(), subtask_index)
 }
 
 fn read_jsonl(path: &Path) -> Result<Vec<Value>, Box<dyn Error + Send + Sync>> {
@@ -856,5 +881,67 @@ mod tests {
             result.unexpected_refs,
             vec!["memoryarena:task_type:progressive_search:task:1:subtask:1:answer"]
         );
+    }
+
+    #[test]
+    fn expected_alignment_keys_include_task_type() {
+        let expected = vec![
+            expected_fixture("progressive_search", "1", 1),
+            expected_fixture("formal_reasoning_phys", "1", 1),
+        ];
+        let expected_by_ask =
+            expected_by_ask_key(expected).expect("same task_id across configs is valid");
+        let events = vec![
+            ask_event_fixture("progressive_search", "1", 1, 1),
+            ask_event_fixture("formal_reasoning_phys", "1", 1, 2),
+        ];
+
+        validate_events_expected_alignment(&events, &expected_by_ask)
+            .expect("events should align by task_type plus task_id");
+    }
+
+    fn ask_event_fixture(
+        task_type: &str,
+        task_id: &str,
+        subtask_index: usize,
+        event_index: usize,
+    ) -> MemoryArenaEvent {
+        MemoryArenaEvent {
+            event: "ask".to_string(),
+            task_id: task_id.to_string(),
+            task_type: task_type.to_string(),
+            category: None,
+            event_index,
+            phase: "ask".to_string(),
+            subtask_index: Some(subtask_index),
+            about: format!("memoryarena:task_type:{task_type}:task:{task_id}"),
+            tool: "kernel_ask".to_string(),
+            arguments: json!({}),
+        }
+    }
+
+    fn expected_fixture(
+        task_type: &str,
+        task_id: &str,
+        subtask_index: usize,
+    ) -> MemoryArenaExpected {
+        MemoryArenaExpected {
+            task_id: task_id.to_string(),
+            task_type: task_type.to_string(),
+            category: None,
+            subtask_index,
+            question: format!("question {subtask_index}"),
+            answer: json!("answer"),
+            about: format!("memoryarena:task_type:{task_type}:task:{task_id}"),
+            current_question_ref: format!(
+                "memoryarena:task_type:{task_type}:task:{task_id}:subtask:{subtask_index}:question"
+            ),
+            expected_answer_ref: format!(
+                "memoryarena:task_type:{task_type}:task:{task_id}:subtask:{subtask_index}:answer"
+            ),
+            available_ref_ids: vec![format!(
+                "memoryarena:task_type:{task_type}:task:{task_id}:subtask:{subtask_index}:question"
+            )],
+        }
     }
 }

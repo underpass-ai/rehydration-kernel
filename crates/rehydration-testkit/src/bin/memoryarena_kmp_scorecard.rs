@@ -13,7 +13,8 @@ use rehydration_testkit::{
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-type TaskSubtaskKey = (String, usize);
+type TaskKey = (String, String);
+type TaskSubtaskKey = (String, String, usize);
 type ExpectedByAsk<'a> = BTreeMap<TaskSubtaskKey, &'a MemoryArenaExpected>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -226,26 +227,28 @@ fn score_subtasks(
     let mut run_by_key = BTreeMap::<TaskSubtaskKey, &RunAskResult>::new();
 
     for run in run_results {
-        let key = (run.task_id.clone(), run.subtask_index);
+        let key = ask_key(&run.task_type, &run.task_id, run.subtask_index);
         let expected = expected_by_key.get(&key).ok_or_else(|| {
             format!(
-                "run result has no expected row for task {} subtask {}",
-                key.0, key.1
+                "run result has no expected row for task_type {} task {} subtask {}",
+                key.0, key.1, key.2
             )
         })?;
         validate_matching_item(expected, run)?;
         if run_by_key.insert(key.clone(), run).is_some() {
-            return Err(
-                format!("duplicate run result for task {} subtask {}", key.0, key.1).into(),
-            );
+            return Err(format!(
+                "duplicate run result for task_type {} task {} subtask {}",
+                key.0, key.1, key.2
+            )
+            .into());
         }
     }
 
     for key in expected_by_key.keys() {
         if !run_by_key.contains_key(key) {
             return Err(format!(
-                "expected row has no run result for task {} subtask {}",
-                key.0, key.1
+                "expected row has no run result for task_type {} task {} subtask {}",
+                key.0, key.1, key.2
             )
             .into());
         }
@@ -253,9 +256,12 @@ fn score_subtasks(
 
     let mut scored = Vec::new();
     for (key, expected) in expected_by_key {
-        let run = run_by_key
-            .get(&key)
-            .ok_or_else(|| format!("missing run result for task {} subtask {}", key.0, key.1))?;
+        let run = run_by_key.get(&key).ok_or_else(|| {
+            format!(
+                "missing run result for task_type {} task {} subtask {}",
+                key.0, key.1, key.2
+            )
+        })?;
         let candidate_answers = run
             .ask_answer
             .as_deref()
@@ -297,8 +303,9 @@ fn score_subtasks(
     }
 
     scored.sort_by(|left, right| {
-        left.task_id
-            .cmp(&right.task_id)
+        left.task_type
+            .cmp(&right.task_type)
+            .then(left.task_id.cmp(&right.task_id))
             .then(left.subtask_index.cmp(&right.subtask_index))
     });
     Ok(scored)
@@ -320,10 +327,10 @@ fn ensure_non_empty_inputs(
 fn score_tasks(
     subtask_results: &[SubtaskScoreResult],
 ) -> Result<Vec<TaskScoreResult>, Box<dyn Error + Send + Sync>> {
-    let mut subtasks_by_task = BTreeMap::<String, Vec<&SubtaskScoreResult>>::new();
+    let mut subtasks_by_task = BTreeMap::<TaskKey, Vec<&SubtaskScoreResult>>::new();
     for subtask in subtask_results {
         subtasks_by_task
-            .entry(subtask.task_id.clone())
+            .entry(task_key(&subtask.task_type, &subtask.task_id))
             .or_default()
             .push(subtask);
     }
@@ -643,11 +650,11 @@ fn expected_by_ask_key(
 ) -> Result<ExpectedByAsk<'_>, Box<dyn Error + Send + Sync>> {
     let mut by_key = BTreeMap::new();
     for item in expected {
-        let key = (item.task_id.clone(), item.subtask_index);
+        let key = ask_key(&item.task_type, &item.task_id, item.subtask_index);
         if by_key.insert(key.clone(), item).is_some() {
             return Err(format!(
-                "duplicate expected row for task {} subtask {}",
-                key.0, key.1
+                "duplicate expected row for task_type {} task {} subtask {}",
+                key.0, key.1, key.2
             )
             .into());
         }
@@ -687,16 +694,16 @@ fn read_expected(
     path: &Path,
     limit_tasks: Option<usize>,
 ) -> Result<Vec<MemoryArenaExpected>, Box<dyn Error + Send + Sync>> {
-    let selected_task_ids = selected_task_ids(path, limit_tasks)?;
+    let selected_task_keys = selected_task_keys(path, limit_tasks)?;
     let expected = read_jsonl(path)?
         .into_iter()
         .map(serde_json::from_value)
         .collect::<Result<Vec<_>, _>>()?
         .into_iter()
         .filter(|expected: &MemoryArenaExpected| {
-            selected_task_ids
+            selected_task_keys
                 .as_ref()
-                .is_none_or(|ids| ids.contains(&expected.task_id))
+                .is_none_or(|keys| keys.contains(&task_key(&expected.task_type, &expected.task_id)))
         })
         .collect::<Vec<_>>();
     Ok(expected)
@@ -706,37 +713,46 @@ fn read_run_results(
     path: &Path,
     limit_tasks: Option<usize>,
 ) -> Result<Vec<RunAskResult>, Box<dyn Error + Send + Sync>> {
-    let selected_task_ids = selected_task_ids(path, limit_tasks)?;
+    let selected_task_keys = selected_task_keys(path, limit_tasks)?;
     let run_results = read_jsonl(path)?
         .into_iter()
         .map(serde_json::from_value)
         .collect::<Result<Vec<_>, _>>()?
         .into_iter()
         .filter(|result: &RunAskResult| {
-            selected_task_ids
+            selected_task_keys
                 .as_ref()
-                .is_none_or(|ids| ids.contains(&result.task_id))
+                .is_none_or(|keys| keys.contains(&task_key(&result.task_type, &result.task_id)))
         })
         .collect::<Vec<_>>();
     Ok(run_results)
 }
 
-fn selected_task_ids(
+fn selected_task_keys(
     path: &Path,
     limit_tasks: Option<usize>,
-) -> Result<Option<BTreeSet<String>>, Box<dyn Error + Send + Sync>> {
+) -> Result<Option<BTreeSet<TaskKey>>, Box<dyn Error + Send + Sync>> {
     let Some(limit) = limit_tasks else {
         return Ok(None);
     };
     let mut selected = BTreeSet::new();
     for value in read_jsonl(path)? {
+        let task_type = required_string(&value, "task_type")?;
         let task_id = required_string(&value, "task_id")?;
-        selected.insert(task_id);
+        selected.insert(task_key(&task_type, &task_id));
         if selected.len() >= limit {
             break;
         }
     }
     Ok(Some(selected))
+}
+
+fn task_key(task_type: &str, task_id: &str) -> TaskKey {
+    (task_type.to_string(), task_id.to_string())
+}
+
+fn ask_key(task_type: &str, task_id: &str, subtask_index: usize) -> TaskSubtaskKey {
+    (task_type.to_string(), task_id.to_string(), subtask_index)
 }
 
 fn read_optional_runner_summary(
@@ -914,6 +930,80 @@ mod tests {
         assert_eq!(progressive[0].process_score, 0.5);
         assert!(!shopping[0].task_success);
         assert_eq!(shopping[0].process_score, 0.5);
+    }
+
+    #[test]
+    fn scoring_keys_include_task_type() {
+        let expected = vec![
+            expected_fixture("progressive_search", "1", 1, "alpha"),
+            expected_fixture("formal_reasoning_phys", "1", 1, "beta"),
+        ];
+        let run_results = vec![
+            run_fixture("progressive_search", "1", 1, "alpha"),
+            run_fixture("formal_reasoning_phys", "1", 1, "beta"),
+        ];
+
+        let subtask_results =
+            score_subtasks(&expected, &run_results).expect("same task_id across configs is valid");
+        let task_results = score_tasks(&subtask_results).expect("tasks should score separately");
+
+        assert_eq!(subtask_results.len(), 2);
+        assert!(subtask_results.iter().all(|result| result.hard_success));
+        assert_eq!(task_results.len(), 2);
+    }
+
+    fn expected_fixture(
+        task_type: &str,
+        task_id: &str,
+        subtask_index: usize,
+        answer: &str,
+    ) -> MemoryArenaExpected {
+        MemoryArenaExpected {
+            task_id: task_id.to_string(),
+            task_type: task_type.to_string(),
+            category: None,
+            subtask_index,
+            question: format!("question {subtask_index}"),
+            answer: json!(answer),
+            about: format!("memoryarena:task_type:{task_type}:task:{task_id}"),
+            current_question_ref: format!(
+                "memoryarena:task_type:{task_type}:task:{task_id}:subtask:{subtask_index}:question"
+            ),
+            expected_answer_ref: format!(
+                "memoryarena:task_type:{task_type}:task:{task_id}:subtask:{subtask_index}:answer"
+            ),
+            available_ref_ids: vec![format!(
+                "memoryarena:task_type:{task_type}:task:{task_id}:subtask:{subtask_index}:question"
+            )],
+        }
+    }
+
+    fn run_fixture(
+        task_type: &str,
+        task_id: &str,
+        subtask_index: usize,
+        answer: &str,
+    ) -> RunAskResult {
+        RunAskResult {
+            task_id: task_id.to_string(),
+            task_type: task_type.to_string(),
+            category: None,
+            subtask_index,
+            question: format!("question {subtask_index}"),
+            allowed_known_at_refs: vec![format!(
+                "memoryarena:task_type:{task_type}:task:{task_id}:subtask:{subtask_index}:question"
+            )],
+            observed_allowed_refs: vec![format!(
+                "memoryarena:task_type:{task_type}:task:{task_id}:subtask:{subtask_index}:question"
+            )],
+            unexpected_refs: Vec::new(),
+            missing_allowed_refs: Vec::new(),
+            current_question_observed: true,
+            future_answer_leaked: false,
+            known_at_clean: true,
+            ask_answer: Some(answer.to_string()),
+            ask_elapsed_ms: 1,
+        }
     }
 
     fn subtask_fixture(

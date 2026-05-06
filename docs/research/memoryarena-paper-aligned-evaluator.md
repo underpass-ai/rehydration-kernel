@@ -84,6 +84,8 @@ Inputs:
 
 The evaluator is fail-fast for empty filtered inputs: an empty `expected.jsonl`
 or `results.jsonl` is treated as invalid input, not as a valid zero-task score.
+Rows are keyed by `(task_type, task_id, subtask_index)` so one evaluator run can
+combine multiple MemoryArena configs whose raw task ids overlap.
 
 Outputs:
 
@@ -116,6 +118,7 @@ Public input should support two layers:
 Release criteria before publication:
 
 - fixture coverage for all five MemoryArena configs;
+- multi-config fixture coverage with overlapping task ids;
 - deterministic CLI output with stable schema version;
 - paper-citation and non-official disclaimer in README;
 - CI running parser and scorer tests;

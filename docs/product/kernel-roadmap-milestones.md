@@ -127,6 +127,12 @@ Current proof:
   successes, 24/27 hard-correct subtasks, `PS=0.8796`, and 3/3
   candidate-answer hits, while preserving the distinction between kernel
   substrate retrieval and benchmark answer consumption.
+- a realistic MemoryArena 2x/domain slice across all five configs reached
+  221/221 successful KMP events, 73/73 known-at-clean asks, 73/73 full ref
+  recall, 0 future leaks, and 0 unexpected or missing refs against the deployed
+  kernel. The local task score was 3/10 task successes and 29/73 hard-correct
+  subtasks, which classifies the next gap as reader/agent task reasoning over
+  correct kernel evidence rather than kernel retrieval failure.
 - a fixture MemoryAgentBench Conflict Resolution row generates inject-once KMP
   artifacts with 1 ingest event, 2 ask events, 4 context refs, and complete
   known-at snapshots.

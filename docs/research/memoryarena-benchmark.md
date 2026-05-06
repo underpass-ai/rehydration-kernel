@@ -145,6 +145,10 @@ the paper's core aggregate shape:
 - `soft_process_score`: currently only a local proxy for domains with a partial
   scorer.
 
+The evaluator keys subtasks by `(task_type, task_id, subtask_index)`, not by
+`task_id` alone. This is required because MemoryArena task ids repeat across
+dataset configs.
+
 Task success follows the paper's domain distinction:
 
 - `progressive_search`, `formal_reasoning_math`, and
@@ -212,6 +216,7 @@ Implemented:
 - live stage-aware runner against a deployed kernel;
 - known-at correctness and future-answer leak diagnostics;
 - paper-aligned local scorecard over runner artifacts;
+- multi-config-safe runner and scorecard keys;
 - incremental ingest through gRPC/MCP with empty dimension declarations after
   dimensions already exist;
 - fixture tests and adapter smoke.
@@ -436,11 +441,92 @@ Observed consumer gap:
   an agent/reader that consumes the kernel refs and can choose traversal moves
   before producing the final answer.
 
+## Realistic Two-Per-Domain Slice
+
+Run date: 2026-05-06
+
+Dataset source:
+
+- `ZexueHe/memoryarena`
+- configs: all five MemoryArena configs
+- split: `test`
+- slice: first two valid tasks per config
+
+Slice shape:
+
+| Domain | Tasks | Subtasks |
+| --- | ---: | ---: |
+| `bundled_shopping` | 2 | 12 |
+| `progressive_search` | 2 | 21 |
+| `group_travel_planner` | 2 | 15 |
+| `formal_reasoning_math` | 2 | 10 |
+| `formal_reasoning_phys` | 2 | 15 |
+| Total | 10 | 73 |
+
+Live runner result against `http://rehydration-kernel.underpassai.com`:
+
+```text
+events: 221/221 successful
+asks: 73/73 known-at-clean
+full_ref_recall_asks: 73/73
+future_answer_leaks: 0
+unexpected_ref_asks: 0
+missing_allowed_ref_asks: 0
+```
+
+Combined scorecard result:
+
+```text
+tasks: 10
+subtasks: 73
+task_successes: 3
+task_success_rate: 0.3000
+passed_subtasks: 29
+process_score: 0.3622
+micro_process_score: 0.3973
+known_at_clean_asks: 73
+full_ref_recall_asks: 73
+current_question_observed_asks: 73
+future_answer_leaks: 0
+unexpected_ref_asks: 0
+missing_allowed_ref_asks: 0
+```
+
+By domain:
+
+| Domain | Task SR | Passed subtasks | PS | Micro PS | Soft PS |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `bundled_shopping` | 0.0000 | 0/12 | 0.0000 | 0.0000 | 0.0167 |
+| `progressive_search` | 1.0000 | 19/21 | 0.9028 | 0.9048 | n/a |
+| `group_travel_planner` | 0.0000 | 0/15 | 0.0000 | 0.0000 | 0.5837 |
+| `formal_reasoning_math` | 0.0000 | 2/10 | 0.2000 | 0.2000 | n/a |
+| `formal_reasoning_phys` | 0.5000 | 8/15 | 0.7083 | 0.5333 | n/a |
+
+Interpretation:
+
+- The kernel substrate passed the memory part of the slice: no temporal leaks,
+  no missing allowed refs, no unexpected refs, and every ask observed the
+  current question.
+- `progressive_search` is the cleanest current fit because later answers can
+  often be recovered directly from prior feedback.
+- `bundled_shopping` and `group_travel_planner` need an agent/environment or
+  domain reader. The kernel retrieves the staged evidence, but `kernel_ask`
+  currently replays prior feedback instead of choosing the current product or
+  composing the current itinerary.
+- The formal domains need a specialized exact-answer reader over recovered
+  evidence; otherwise long mathematical/physics context is surfaced correctly
+  but not reduced to the requested formula or statement.
+- This result should not be reported as an official MemoryArena score. It is a
+  kernel-backed local scorecard that separates memory recall from task
+  reasoning and answer construction.
+
 ## Next Cut
 
-1. Add an agentic retrieval loop that can choose `ask`, `near`, `trace`,
+1. Add benchmark reader/plugin layers for shopping, travel, and formal exact
+   answer extraction, outside the kernel core.
+2. Add an agentic retrieval loop that can choose `ask`, `near`, `trace`,
    `inspect`, and temporal moves before answering.
-2. Persist projection/traversal/proof metrics needed to classify benchmark
+3. Persist projection/traversal/proof metrics needed to classify benchmark
    failures without reading raw logs.
-3. Extract the paper-aligned evaluator into a standalone public repository once
+4. Extract the paper-aligned evaluator into a standalone public repository once
    the metric contract and fixture suite are stable.
