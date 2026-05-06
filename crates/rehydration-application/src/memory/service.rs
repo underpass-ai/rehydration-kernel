@@ -51,18 +51,8 @@ where
         &self,
         command: MemoryIngestCommand,
     ) -> Result<MemoryIngestOutcome, ApplicationError> {
-        let (update_context, mut outcome) =
-            match translate_memory_ingest(&command, &ExistingMemoryRefs::default()) {
-                Ok(translated) => translated,
-                Err(error)
-                    if is_unknown_memory_ref_validation(&error)
-                        || command.memory.dimensions.is_empty() =>
-                {
-                    let existing = self.existing_memory_refs(&command.about).await?;
-                    translate_memory_ingest(&command, &existing)?
-                }
-                Err(error) => return Err(error),
-            };
+        let existing = self.existing_memory_refs(&command.about).await?;
+        let (update_context, mut outcome) = translate_memory_ingest(&command, &existing)?;
         if command.dry_run {
             outcome
                 .warnings
@@ -661,14 +651,6 @@ fn resolve_dimension_scope_id(about: &str, scope_id: &str) -> Option<String> {
         return None;
     }
     namespaced_dimension_id(about, scope_id)
-}
-
-fn is_unknown_memory_ref_validation(error: &ApplicationError) -> bool {
-    matches!(
-        error,
-        ApplicationError::Validation(message)
-            if message.contains("unknown ref") || message.contains("unknown dimension scope")
-    )
 }
 
 #[cfg(test)]

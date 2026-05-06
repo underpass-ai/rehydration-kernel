@@ -1337,6 +1337,8 @@ Current `KernelMemoryService.Ingest` behavior:
   current memory read model;
 - reject entry coordinates that reference dimensions absent from the submitted
   memory or existing memory read model;
+- treat redeclaration of an already materialized dimension for the same `about`
+  as idempotent and skip re-emitting the dimension node;
 - reject replay of the same idempotency key with different memory content;
 - preserve provenance;
 - report `read_after_write_ready=true` only after the synchronous projection

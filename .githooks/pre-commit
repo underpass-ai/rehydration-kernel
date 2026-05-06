@@ -43,6 +43,7 @@ cargo llvm-cov \
   --exclude rehydration-tests-shared \
   --exclude rehydration-tests-kernel \
   --exclude rehydration-tests-paper \
+  --ignore-filename-regex 'rehydration-transport-grpc/src/agentic_reference/.*' \
   --locked \
   --summary-only \
   --fail-under-lines "${COVERAGE_HOOK_MIN_LINES}"

@@ -80,6 +80,8 @@ Dimension declarations are append-safe:
 - each episode dimension is declared only once;
 - later appends can use `memory.dimensions: []` through the gRPC/MCP boundary
   once prior dimensions exist;
+- redeclaring an existing namespaced dimension for the same `about` is
+  idempotent and does not emit a duplicate dimension node;
 - sequential `follows` links use `class="procedural"`, because `temporal` is a
   traversal concept, not a valid relation semantic class.
 
@@ -316,6 +318,8 @@ Implemented:
 - multi-config-safe runner and scorecard keys;
 - incremental ingest through gRPC/MCP with empty dimension declarations after
   dimensions already exist;
+- idempotent redeclaration of existing namespaced dimensions during incremental
+  ingest;
 - fixture tests and adapter smoke.
 
 Not implemented yet:
