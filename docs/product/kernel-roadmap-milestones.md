@@ -290,8 +290,8 @@ Priority: P1
 
 Current status:
 
-- first reusable testkit slice implemented in
-  `rehydration_testkit::interpretation_plugins`;
+- reusable plugin contract implemented in `rehydration_interpretation_contract`;
+- reusable plugin implementations live in `rehydration_interpretation`;
 - documented in `docs/product/reusable-interpretation-plugins.md`;
 - current scope treats currency and dates as domain plugins with their own
   extraction, normalization, deterministic operations, and fail-fast validation;

@@ -2183,6 +2183,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "rehydration-interpretation"
+version = "0.1.0"
+dependencies = [
+ "rehydration-interpretation-contract",
+ "serde",
+]
+
+[[package]]
+name = "rehydration-interpretation-contract"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "rehydration-mcp"
 version = "0.1.0"
 dependencies = [
@@ -2257,6 +2272,7 @@ dependencies = [
  "async-nats",
  "rehydration-application",
  "rehydration-domain",
+ "rehydration-interpretation",
  "rehydration-mcp",
  "rehydration-proto",
  "reqwest",

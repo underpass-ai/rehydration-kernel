@@ -53,14 +53,21 @@ The writer must not invent question-dependent operations. A dollar amount found
 in a memory is only a typed currency mention. It becomes a sum operand only when
 a reader, agent, or explicit upstream event marks it as such.
 
-## Implemented Slice
+## Crate Boundary
 
-The first implementation lives in
-`crates/rehydration-testkit/src/interpretation_plugins.rs` and is exported from
-`rehydration-testkit`.
+The boundary is split into contract and implementation crates:
+
+- `crates/rehydration-interpretation-contract`: kernel-owned public contract
+  for evidence fragments, spans, interpreted values, derivation requests, and
+  plugin traits.
+- `crates/rehydration-interpretation`: plugin implementations that import and
+  implement the contract.
+- `crates/rehydration-testkit`: benchmark and fixture consumers. It may
+  re-export the interpretation APIs temporarily for compatibility, but it is
+  not the owner of the plugin contract or implementations.
 
 Text normalization lives in
-`crates/rehydration-testkit/src/text_normalization.rs`. The first cut is only a
+`crates/rehydration-interpretation/src/text_normalization.rs`. The first cut is only a
 deterministic span segmenter:
 
 - normal text spans;
@@ -108,7 +115,7 @@ request that labels each candidate as `include`, `exclude`, or `context`.
 Example shape:
 
 ```rust
-use rehydration_testkit::{
+use rehydration_interpretation::{
     CurrencyDerivationPlugin, DerivationOperand, DerivationOperation,
     DerivationRequest, EvidenceFragment, EvidenceInterpretationInput,
 };

@@ -6,7 +6,7 @@ use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use rehydration_testkit::{
+use rehydration_interpretation::{
     CurrencyDerivationPlugin, DateDerivationPlugin, DerivationOperand, DerivationOperation,
     DerivationRequest, DerivationResult, EvidenceFragment, EvidenceInterpretationInput,
     InterpretedValue, InterpretedValueMention, OperandRole,
