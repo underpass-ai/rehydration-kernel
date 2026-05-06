@@ -50,6 +50,7 @@ cargo run -p rehydration-testkit --bin memoryagentbench_kmp_adapter --locked -- 
   --split Conflict_Resolution \
   --source factconsolidation_mh_32k \
   --limit 10 \
+  --limit-queries 10 \
   --force
 ```
 
@@ -146,6 +147,7 @@ Implemented:
 - inject-once/query-many artifact generation;
 - replay and known-at snapshots;
 - context truncation for smoke slices through `--max-context-entries`;
+- query truncation for smoke slices through `--limit-queries`;
 - live runner against a deployed kernel;
 - per-query known-at cleanliness, missing-ref, unexpected-ref, and lexical
   answer diagnostics;
@@ -194,3 +196,63 @@ lexical_answer_hits: 2
 unexpected_ref_asks: 0
 missing_allowed_ref_asks: 0
 ```
+
+Real Conflict Resolution smoke from the official dataset on 2026-05-06:
+
+```bash
+curl -s 'https://datasets-server.huggingface.co/rows?dataset=ai-hyz%2FMemoryAgentBench&config=default&split=Conflict_Resolution&offset=0&length=8' \
+  -o /tmp/memoryagentbench_conflict_rows.json
+jq -c '.rows[].row' /tmp/memoryagentbench_conflict_rows.json \
+  > /tmp/memoryagentbench_conflict_rows.jsonl
+
+cargo run -p rehydration-testkit --bin memoryagentbench_kmp_adapter --locked -- \
+  --input /tmp/memoryagentbench_conflict_rows.jsonl \
+  --output /tmp/memoryagentbench-kmp-real-conflict-mh6k-q3-f64 \
+  --split Conflict_Resolution \
+  --source factconsolidation_mh_6k \
+  --limit 1 \
+  --limit-queries 3 \
+  --max-context-entries 64 \
+  --run-id memoryagentbench-real-mh6k-q3-f64-20260506 \
+  --force
+
+cargo run -p rehydration-testkit --bin memoryagentbench_kmp_runner --locked -- \
+  --artifacts /tmp/memoryagentbench-kmp-real-conflict-mh6k-q3-f64 \
+  --output /tmp/memoryagentbench-kmp-real-conflict-mh6k-q3-f64-run \
+  --endpoint http://rehydration-kernel.underpassai.com \
+  --limit-items 1 \
+  --force
+```
+
+Observed summary:
+
+```text
+dataset_items: 8
+prepared_items: 1
+questions: 3
+context_entries: 64
+truncated_context_entries: 391
+total_events: 4
+successful_events: 4
+failed_events: 0
+known_at_clean_asks: 3
+lexical_answer_hits: 0
+unexpected_ref_asks: 0
+missing_allowed_ref_asks: 0
+elapsed_ms: 12610
+```
+
+Interpretation:
+
+- KMP substrate path is stable for a real official row: ingest and asks
+  complete, refs stay scoped to the current about, and no known-at leaks are
+  detected.
+- `kernel_ask` is not a MemoryAgentBench reader. For these questions it returns
+  a generic deterministic evidence summary from the beginning of the context,
+  not a question-directed answer.
+- Full `factconsolidation_mh_6k` has 455 facts and 100 questions in this row.
+  A 100-query live run over 256 facts was too slow for an interactive smoke
+  because the runner currently emits only a final summary.
+- Next benchmark work should add either a candidate reader/search layer or a
+  specialized FactConsolidation plugin above KMP. It should not be implemented
+  as benchmark-specific behavior in core.

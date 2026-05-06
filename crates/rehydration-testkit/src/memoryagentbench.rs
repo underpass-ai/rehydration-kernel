@@ -154,6 +154,7 @@ pub struct MemoryAgentBenchAdapterConfig {
     pub split: String,
     pub source: Option<String>,
     pub limit: Option<usize>,
+    pub limit_queries: Option<usize>,
     pub run_id: Option<String>,
     pub max_context_entries: Option<usize>,
 }
@@ -164,6 +165,7 @@ impl Default for MemoryAgentBenchAdapterConfig {
             split: DEFAULT_SPLIT.to_string(),
             source: None,
             limit: None,
+            limit_queries: None,
             run_id: None,
             max_context_entries: None,
         }
@@ -267,6 +269,11 @@ pub fn prepare_memoryagentbench_item(
     config: &MemoryAgentBenchAdapterConfig,
 ) -> Result<MemoryAgentBenchPreparedItem, MemoryAgentBenchAdapterError> {
     validate_item_shape(item, item_index)?;
+    if config.limit_queries == Some(0) {
+        return Err(MemoryAgentBenchAdapterError::new(
+            "MemoryAgentBench limit_queries must be greater than zero",
+        ));
+    }
 
     let split = sanitize_ref_segment(&config.split);
     if split.is_empty() {
@@ -371,8 +378,13 @@ pub fn prepare_memoryagentbench_item(
         });
     }
 
-    for (query_index_zero, (question, answer)) in
-        item.questions.iter().zip(item.answers.iter()).enumerate()
+    let query_limit = config.limit_queries.unwrap_or(item.questions.len());
+    for (query_index_zero, (question, answer)) in item
+        .questions
+        .iter()
+        .zip(item.answers.iter())
+        .take(query_limit)
+        .enumerate()
     {
         let query_index = query_index_zero + 1;
         let event_index = query_index + 1;
@@ -1113,6 +1125,43 @@ mod tests {
         assert_eq!(
             prepared.expected[0].available_ref_ids[1],
             "memoryagentbench:run:demo-run:split:conflict_resolution:source:factconsolidation_mh_32k:item:qa-timeout:context:fact:1"
+        );
+    }
+
+    #[test]
+    fn limit_queries_keeps_inject_once_context_and_bounds_asks() {
+        let item = MemoryAgentBenchItem {
+            context: "0. A first fact.\n1. A second fact.".to_string(),
+            questions: vec![
+                "Question 1?".to_string(),
+                "Question 2?".to_string(),
+                "Question 3?".to_string(),
+            ],
+            answers: vec![json!(["A1"]), json!(["A2"]), json!(["A3"])],
+            metadata: MemoryAgentBenchMetadata {
+                source: Some("factconsolidation_mh_6k".to_string()),
+                qa_pair_ids: vec!["qa-1".to_string(), "qa-2".to_string(), "qa-3".to_string()],
+                ..MemoryAgentBenchMetadata::default()
+            },
+            extra: BTreeMap::new(),
+        };
+
+        let prepared = prepare_memoryagentbench_item(
+            &item,
+            1,
+            &MemoryAgentBenchAdapterConfig {
+                limit_queries: Some(2),
+                ..MemoryAgentBenchAdapterConfig::default()
+            },
+        )
+        .expect("item should adapt");
+
+        assert_eq!(prepared.ingest_events.len(), 1);
+        assert_eq!(prepared.ask_events.len(), 2);
+        assert_eq!(prepared.expected.len(), 2);
+        assert_eq!(
+            prepared.replay.known_at_snapshots[1].available_ref_ids,
+            prepared.replay.final_context_refs
         );
     }
 

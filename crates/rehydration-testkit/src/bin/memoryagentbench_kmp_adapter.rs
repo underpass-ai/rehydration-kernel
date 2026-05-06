@@ -19,6 +19,7 @@ struct Args {
     split: String,
     source: Option<String>,
     limit: Option<usize>,
+    limit_queries: Option<usize>,
     run_id: Option<String>,
     max_context_entries: Option<usize>,
     force: bool,
@@ -34,6 +35,7 @@ struct Manifest {
     run_id: Option<String>,
     split: String,
     source: Option<String>,
+    limit_queries: Option<usize>,
     max_context_entries: Option<usize>,
     artifacts: ArtifactPaths,
     summary: MemoryAgentBenchAdapterSummary,
@@ -59,6 +61,7 @@ fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         split: args.split.clone(),
         source: args.source.clone(),
         limit: args.limit,
+        limit_queries: args.limit_queries,
         run_id: args.run_id.clone(),
         max_context_entries: args.max_context_entries,
     };
@@ -162,6 +165,7 @@ fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         run_id: args.run_id.clone(),
         split: args.split.clone(),
         source: args.source.clone(),
+        limit_queries: args.limit_queries,
         max_context_entries: args.max_context_entries,
         artifacts: ArtifactPaths {
             events_jsonl: "events.jsonl",
@@ -230,6 +234,7 @@ fn parse_args(
     let mut split = "Conflict_Resolution".to_string();
     let mut source = None;
     let mut limit = None;
+    let mut limit_queries = None;
     let mut run_id = None;
     let mut max_context_entries = None;
     let mut force = false;
@@ -247,6 +252,16 @@ fn parse_args(
                         .parse::<usize>()
                         .map_err(|error| format!("invalid --limit value `{value}`: {error}"))?,
                 );
+            }
+            "--limit-queries" => {
+                let value = required_flag_value(&mut args, &arg)?;
+                let parsed = value
+                    .parse::<usize>()
+                    .map_err(|error| format!("invalid --limit-queries value `{value}`: {error}"))?;
+                if parsed == 0 {
+                    return Err("--limit-queries must be greater than zero".into());
+                }
+                limit_queries = Some(parsed);
             }
             "--run-id" => run_id = Some(required_flag_value(&mut args, &arg)?),
             "--max-context-entries" => {
@@ -274,6 +289,7 @@ fn parse_args(
         split,
         source,
         limit,
+        limit_queries,
         run_id,
         max_context_entries,
         force,
@@ -290,6 +306,6 @@ fn required_flag_value(
 
 fn print_usage() {
     println!(
-        "Usage: memoryagentbench_kmp_adapter --input <data.jsonl> --output <out-dir> [--split Conflict_Resolution|Accurate_Retrieval|Test_Time_Learning|Long_Range_Understanding] [--source SOURCE] [--limit N] [--run-id RUN] [--max-context-entries N] [--force]"
+        "Usage: memoryagentbench_kmp_adapter --input <data.jsonl> --output <out-dir> [--split Conflict_Resolution|Accurate_Retrieval|Test_Time_Learning|Long_Range_Understanding] [--source SOURCE] [--limit N] [--limit-queries N] [--run-id RUN] [--max-context-entries N] [--force]"
     );
 }

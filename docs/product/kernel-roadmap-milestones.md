@@ -132,6 +132,11 @@ Current proof:
 - the MemoryAgentBench fixture live runner reached 3/3 successful events, 2/2
   known-at-clean asks, 2/2 lexical answer hits, 0 unexpected refs, and 0
   missing refs against `http://rehydration-kernel.underpassai.com`.
+- a real official MemoryAgentBench `Conflict_Resolution` /
+  `factconsolidation_mh_6k` smoke reached 4/4 successful KMP events, 3/3
+  known-at-clean asks, 0 unexpected refs, and 0 missing refs with a 64-fact /
+  3-query bounded slice. It also exposed that current `kernel_ask` is a generic
+  deterministic evidence summary, not a MemoryAgentBench-grade question reader.
 
 Non-goals:
 
