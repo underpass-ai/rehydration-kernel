@@ -112,6 +112,9 @@ Current proof:
   `http://rehydration-kernel.underpassai.com`;
 - the smoke run reached 7/7 successful events, 2/2 known-at-clean asks, 0 future
   answer leaks, and complete observed refs for the allowed known-at evidence.
+- a real `progressive_search` slice from `ZexueHe/memoryarena` reached 81/81
+  successful events, 27/27 known-at-clean asks, 0 future answer leaks, and 0
+  missing allowed refs against the deployed kernel.
 
 Non-goals:
 
@@ -361,22 +364,23 @@ Exit criteria:
 Recommended order:
 
 1. Finish Milestone 0 documentation baseline.
-2. Build Milestone 1 MemoryArena feasibility adapter.
-3. Add Milestone 5 observability gaps needed to debug the benchmark run.
-4. Implement Milestone 2 hybrid candidate retrieval behind ports.
-5. Tighten Milestone 3 known-at-time and supersession semantics.
-6. Add Milestone 4 process query helpers for the demo.
-7. Define Milestone 6 plugin contracts after retrieval/replay is stable.
-8. Start Milestone 7 infrastructure conformance once semantics stop moving.
-9. Package Milestone 9 public proof only after reproducible runs exist.
+2. Build Milestone 1 MemoryArena feasibility adapter and real-slice runner.
+3. Add MemoryArena task-success scoring and an agentic retrieval loop.
+4. Add Milestone 5 observability gaps needed to debug the benchmark run.
+5. Implement Milestone 2 hybrid candidate retrieval behind ports.
+6. Tighten Milestone 3 known-at-time and supersession semantics.
+7. Add Milestone 4 process query helpers for the demo.
+8. Define Milestone 6 plugin contracts after retrieval/replay is stable.
+9. Start Milestone 7 infrastructure conformance once semantics stop moving.
+10. Package Milestone 9 public proof only after reproducible runs exist.
 
 ## Current Next Slice
 
 The immediate next slice should be:
 
 ```text
-MemoryArena real dataset slice
-+ replay artifacts at task scale
+MemoryArena task-success scoring
++ agentic retrieval loop
 + minimum observability for projection/traversal/proof
 + LongMemEval left as secondary regression
 ```

@@ -209,11 +209,108 @@ The first ask correctly returns `UNKNOWN` because the answer feedback is not yet
 known. The second ask retrieves the first answer feedback and proves it through
 the staged memory path without leaking the second answer.
 
+## Real Progressive Search Slice
+
+Run date: 2026-05-06
+
+Dataset source:
+
+- `ZexueHe/memoryarena`
+- config: `progressive_search`
+- split: `test`
+- Dataset Viewer total rows: 221
+- slice: `offset=0`, `length=3`
+
+Dataset export:
+
+```bash
+curl -s -o /tmp/memoryarena-progressive-rows-3.json \
+  'https://datasets-server.huggingface.co/rows?dataset=ZexueHe/memoryarena&config=progressive_search&split=test&offset=0&length=3'
+
+jq -c '.rows[].row' /tmp/memoryarena-progressive-rows-3.json \
+  > /tmp/memoryarena-progressive-real-3.jsonl
+```
+
+Slice shape:
+
+```text
+task 0: 9 questions / 9 answers
+task 1: 12 questions / 12 answers
+task 2: 6 questions / 6 answers
+```
+
+Adapter command:
+
+```bash
+cargo run -p rehydration-testkit --bin memoryarena_kmp_adapter --locked -- \
+  --input /tmp/memoryarena-progressive-real-3.jsonl \
+  --output /tmp/memoryarena-progressive-real-3-artifacts \
+  --task-type progressive_search \
+  --run-id memoryarena-real-20260506-s3 \
+  --force
+```
+
+Adapter summary:
+
+```text
+dataset_items: 3
+prepared_tasks: 3
+subtasks: 27
+ingest_events: 54
+ask_events: 27
+replay_events: 81
+background_entries: 0
+```
+
+Runner command:
+
+```bash
+cargo run -p rehydration-testkit --bin memoryarena_kmp_runner --locked -- \
+  --artifacts /tmp/memoryarena-progressive-real-3-artifacts \
+  --output /tmp/memoryarena-progressive-real-3-run \
+  --endpoint http://rehydration-kernel.underpassai.com \
+  --force
+```
+
+Runner summary:
+
+```text
+total_events: 81
+successful_events: 81
+failed_events: 0
+known_at_clean_asks: 27
+future_answer_leaks: 0
+current_question_observed: 27
+unexpected_ref_asks: 0
+missing_allowed_ref_asks: 0
+elapsed_ms: 106581
+```
+
+Interpretation:
+
+- The deployed kernel accepted a real staged MemoryArena slice end to end.
+- Every ask observed the current question ref.
+- Every ask respected known-at-time boundaries.
+- No ask leaked its current answer feedback before that feedback was ingested.
+- Every ask returned all refs that were expected to be available at that point
+  in the staged process.
+- `lexical_answer_hits` is not meaningful for this staged run because
+  `expected.answer` represents environment feedback that intentionally becomes
+  memory only after the ask. Task-success scoring belongs in the next evaluator
+  layer.
+
+Observed consumer gap:
+
+- The deterministic `answer` field can grow as accumulated prior feedback grows.
+  This is acceptable for proof/evidence validation, but not sufficient as the
+  final agentic benchmark answer. The next layer should score task success from
+  an agent/reader that consumes the kernel refs and can choose traversal moves
+  before producing the final answer.
+
 ## Next Cut
 
-1. Run a real MemoryArena `progressive_search` slice, not only the fixture.
-2. Add task-success scoring and official evaluator integration.
-3. Add an agentic retrieval loop that can choose `ask`, `near`, `trace`,
+1. Add task-success scoring and official evaluator integration.
+2. Add an agentic retrieval loop that can choose `ask`, `near`, `trace`,
    `inspect`, and temporal moves before answering.
-4. Persist projection/traversal/proof metrics needed to classify benchmark
+3. Persist projection/traversal/proof metrics needed to classify benchmark
    failures without reading raw logs.
