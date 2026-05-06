@@ -645,7 +645,9 @@ P1:
 - return `prior_context_sources` per relation and prior-context coverage
   metrics;
 - add specialized helper aliases for common writer tasks;
-- add schema-constrained LLM writer prompts/templates outside core;
+- add schema-constrained LLM writer prompts/templates outside core
+  (`api/examples/inference-prompts/kernel-write-memory.txt` and
+  `kernel-write-memory.request.json`);
 - add broader read-before-write writer policies across dimensions and temporal
   windows;
 - add graph-quality metrics for process elongation and explanatory relation

@@ -74,6 +74,21 @@ has been materialized.
 api/examples/inference-prompts/kernel-context-consumption.txt
 ```
 
+### 7. Kernel write memory (writer-first KMP)
+
+Use case: an agent emits a safe `kernel_write_memory` argument object after
+using kernel read tools to build auditable `read_context`.
+
+```text
+api/examples/inference-prompts/kernel-write-memory.txt
+```
+
+OpenAI-compatible structured request example:
+
+```text
+api/examples/inference-prompts/kernel-write-memory.request.json
+```
+
 ## Tips
 
 - **Quote rationale**: instruct the LLM to cite `rationale` fields from
@@ -82,6 +97,9 @@ api/examples/inference-prompts/kernel-context-consumption.txt
   ~600 tokens. Feed only those tiers when the full context is too large.
 - **Structured JSON output**: ask for JSON responses when you need to
   parse the LLM output programmatically.
+- **Write through KMP**: for new memory, prefer `kernel_write_memory` over
+  low-level `kernel_ingest` unless the caller already has canonical entries,
+  relations, evidence, provenance, and idempotency.
 - **Semantic class hints**: mention that relationships have `semantic_class`
   (causal, motivational, evidential, etc.) so the LLM knows which
   relationships carry explanatory weight.
