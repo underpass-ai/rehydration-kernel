@@ -133,6 +133,10 @@ Current proof:
   kernel. The local task score was 3/10 task successes and 29/73 hard-correct
   subtasks, which classifies the next gap as reader/agent task reasoning over
   correct kernel evidence rather than kernel retrieval failure.
+- the MemoryArena scorecard now emits local failure classes. In the same
+  2x/domain slice the distribution was 29 `passed`, 6
+  `no_prior_answer_evidence`, 23 `domain_agent_solution_gap`, and 15
+  `formal_reader_reasoning_gap`, with no kernel evidence failure class.
 - a fixture MemoryAgentBench Conflict Resolution row generates inject-once KMP
   artifacts with 1 ingest event, 2 ask events, 4 context refs, and complete
   known-at snapshots.

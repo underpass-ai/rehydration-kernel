@@ -144,6 +144,8 @@ the paper's core aggregate shape:
   subtask-depth decay analysis;
 - `soft_process_score`: currently only a local proxy for domains with a partial
   scorer.
+- `failure_class`: a diagnostic label on subtask and final task rows that
+  separates kernel evidence gaps from reader/agent gaps.
 
 The evaluator keys subtasks by `(task_type, task_id, subtask_index)`, not by
 `task_id` alone. This is required because MemoryArena task ids repeat across
@@ -167,6 +169,20 @@ Domain scoring:
   proxy. This is intentionally labelled as a proxy because the paper's true
   `sPS` is constraint-satisfaction based and the official environment evaluator
   has not been published.
+
+Failure classes:
+
+| Class | Meaning |
+| --- | --- |
+| `passed` | The local scorer accepted the produced answer. |
+| `kernel_temporal_leak` | The answer path used future answer feedback. |
+| `kernel_known_at_gap` | The answer path used refs outside the known-at set. |
+| `kernel_current_question_gap` | The current question was not observed in the returned context. |
+| `kernel_ref_recall_gap` | Known-at refs expected by the adapter were missing from returned evidence. |
+| `no_prior_answer_evidence` | The answer was `UNKNOWN` or empty while the current answer feedback was not yet in memory. |
+| `domain_agent_solution_gap` | Evidence was clean, but shopping/travel requires an agent or domain reader to choose the current product/plan. |
+| `formal_reader_reasoning_gap` | Evidence was clean, but formal reasoning requires reducing evidence to the requested formula/statement. |
+| `reader_reasoning_or_extraction_gap` | Evidence was clean, but the generic reader did not emit the expected answer. |
 
 See [memoryarena-paper-aligned-evaluator.md](memoryarena-paper-aligned-evaluator.md)
 for the evaluator contract and extraction plan for a standalone public repo.
@@ -490,6 +506,11 @@ current_question_observed_asks: 73
 future_answer_leaks: 0
 unexpected_ref_asks: 0
 missing_allowed_ref_asks: 0
+failure_classes:
+  passed: 29
+  no_prior_answer_evidence: 6
+  domain_agent_solution_gap: 23
+  formal_reader_reasoning_gap: 15
 ```
 
 By domain:
@@ -516,6 +537,7 @@ Interpretation:
 - The formal domains need a specialized exact-answer reader over recovered
   evidence; otherwise long mathematical/physics context is surfaced correctly
   but not reduced to the requested formula or statement.
+- No failure in this slice is classified as a kernel evidence gap.
 - This result should not be reported as an official MemoryArena score. It is a
   kernel-backed local scorecard that separates memory recall from task
   reasoning and answer construction.

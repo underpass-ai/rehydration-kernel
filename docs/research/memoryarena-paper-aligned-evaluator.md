@@ -38,6 +38,9 @@ For this local v1:
 - `micro_process_score` is hard-correct subtasks divided by all subtasks;
 - `sr_at_depth` is keyed by numeric subtask index;
 - `soft_process_score` is explicitly a local proxy, not official `sPS`.
+- `failure_classes` is a local diagnostic summary, not an official metric. It
+  is included to separate kernel recall/proof failures from answer-reader or
+  task-agent failures.
 
 Task success rules:
 
@@ -93,6 +96,11 @@ Outputs:
 - `task_results.jsonl`;
 - `hypotheses.jsonl`;
 - `score_summary.json`.
+
+Each subtask row includes `failure_class`. `score_summary.json` aggregates the
+same labels under `failure_classes`; this lets benchmark reports say whether a
+failed answer came from missing/invalid evidence or from the layer that consumes
+correct evidence.
 
 ## Public Repo Extraction
 

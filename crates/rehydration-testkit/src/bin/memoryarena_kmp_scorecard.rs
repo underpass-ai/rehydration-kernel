@@ -63,6 +63,18 @@ struct RunnerSummaryInput {
     elapsed_ms: Option<u128>,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct FailureClassificationInput<'a> {
+    task_type: &'a str,
+    hard_success: bool,
+    known_at_clean: bool,
+    full_ref_recall: bool,
+    current_question_observed: bool,
+    future_answer_leaked: bool,
+    unexpected_refs: &'a [String],
+    ask_answer: Option<&'a str>,
+}
+
 #[derive(Debug, Serialize)]
 struct SubtaskScoreResult {
     task_id: String,
@@ -77,6 +89,7 @@ struct SubtaskScoreResult {
     chosen_answer: Option<String>,
     hard_success: bool,
     candidate_answer_hit: bool,
+    failure_class: &'static str,
     soft_score: Option<f64>,
     soft_score_basis: Option<&'static str>,
     known_at_clean: bool,
@@ -109,6 +122,7 @@ struct TaskScoreResult {
     final_subtask_success: bool,
     task_success: bool,
     candidate_answer_hit: bool,
+    final_failure_class: &'static str,
     known_at_clean_subtasks: usize,
     known_at_clean_all_subtasks: bool,
     full_ref_recall_subtasks: usize,
@@ -163,6 +177,7 @@ struct ScoreSummary {
     soft_process_score: Option<f64>,
     candidate_answer_hits: usize,
     candidate_answer_hit_rate: f64,
+    failure_classes: BTreeMap<String, usize>,
     known_at_clean_asks: usize,
     full_ref_recall_asks: usize,
     current_question_observed_asks: usize,
@@ -273,6 +288,17 @@ fn score_subtasks(
             &expected.answer,
             run.ask_answer.as_deref(),
         );
+        let full_ref_recall = run.missing_allowed_refs.is_empty();
+        let failure_class = classify_subtask_failure(FailureClassificationInput {
+            task_type: &run.task_type,
+            hard_success: answer_score.hard_success,
+            known_at_clean: run.known_at_clean,
+            full_ref_recall,
+            current_question_observed: run.current_question_observed,
+            future_answer_leaked: run.future_answer_leaked,
+            unexpected_refs: &run.unexpected_refs,
+            ask_answer: run.ask_answer.as_deref(),
+        });
 
         scored.push(SubtaskScoreResult {
             task_id: run.task_id.clone(),
@@ -287,10 +313,11 @@ fn score_subtasks(
             chosen_answer,
             hard_success: answer_score.hard_success,
             candidate_answer_hit: answer_score.candidate_answer_hit,
+            failure_class,
             soft_score: answer_score.soft_score,
             soft_score_basis: answer_score.soft_score_basis,
             known_at_clean: run.known_at_clean,
-            full_ref_recall: run.missing_allowed_refs.is_empty(),
+            full_ref_recall,
             current_question_observed: run.current_question_observed,
             future_answer_leaked: run.future_answer_leaked,
             unexpected_refs: run.unexpected_refs.clone(),
@@ -405,6 +432,7 @@ fn score_tasks(
             final_subtask_success,
             task_success,
             candidate_answer_hit: final_subtask.candidate_answer_hit,
+            final_failure_class: final_subtask.failure_class,
             known_at_clean_subtasks,
             known_at_clean_all_subtasks: known_at_clean_subtasks == subtasks,
             full_ref_recall_subtasks,
@@ -484,6 +512,7 @@ fn summarize_scorecard(
         soft_process_score,
         candidate_answer_hits,
         candidate_answer_hit_rate: ratio(candidate_answer_hits, tasks),
+        failure_classes: summarize_failure_classes(subtask_results),
         known_at_clean_asks: run_results
             .iter()
             .filter(|result| result.known_at_clean)
@@ -535,6 +564,16 @@ fn mean_optional_task_process_score(task_results: &[TaskScoreResult]) -> Option<
     } else {
         Some(scores.iter().sum::<f64>() / scores.len() as f64)
     }
+}
+
+fn summarize_failure_classes(subtask_results: &[SubtaskScoreResult]) -> BTreeMap<String, usize> {
+    let mut summary = BTreeMap::new();
+    for result in subtask_results {
+        *summary
+            .entry(result.failure_class.to_string())
+            .or_insert(0usize) += 1;
+    }
+    summary
 }
 
 fn summarize_by_task_type(
@@ -660,6 +699,40 @@ fn expected_by_ask_key(
         }
     }
     Ok(by_key)
+}
+
+fn classify_subtask_failure(input: FailureClassificationInput<'_>) -> &'static str {
+    if input.hard_success {
+        return "passed";
+    }
+    if input.future_answer_leaked {
+        return "kernel_temporal_leak";
+    }
+    if !input.known_at_clean || !input.unexpected_refs.is_empty() {
+        return "kernel_known_at_gap";
+    }
+    if !input.current_question_observed {
+        return "kernel_current_question_gap";
+    }
+    if !input.full_ref_recall {
+        return "kernel_ref_recall_gap";
+    }
+    if answer_is_unknown(input.ask_answer) {
+        return "no_prior_answer_evidence";
+    }
+    match input.task_type {
+        "bundled_shopping" | "group_travel_planner" => "domain_agent_solution_gap",
+        "formal_reasoning_math" | "formal_reasoning_phys" => "formal_reader_reasoning_gap",
+        _ => "reader_reasoning_or_extraction_gap",
+    }
+}
+
+fn answer_is_unknown(answer: Option<&str>) -> bool {
+    let Some(answer) = answer else {
+        return true;
+    };
+    let normalized = answer.trim();
+    normalized.is_empty() || normalized.eq_ignore_ascii_case("UNKNOWN")
 }
 
 fn validate_matching_item(
@@ -952,6 +1025,73 @@ mod tests {
         assert_eq!(task_results.len(), 2);
     }
 
+    #[test]
+    fn failure_classification_separates_kernel_and_reader_gaps() {
+        assert_eq!(
+            classify_subtask_failure(failure_input(
+                "progressive_search",
+                true,
+                true,
+                Some("answer")
+            )),
+            "passed"
+        );
+        assert_eq!(
+            classify_subtask_failure(failure_input(
+                "progressive_search",
+                false,
+                false,
+                Some("answer")
+            )),
+            "kernel_ref_recall_gap"
+        );
+        assert_eq!(
+            classify_subtask_failure(failure_input(
+                "bundled_shopping",
+                false,
+                true,
+                Some("UNKNOWN")
+            )),
+            "no_prior_answer_evidence"
+        );
+        assert_eq!(
+            classify_subtask_failure(failure_input(
+                "group_travel_planner",
+                false,
+                true,
+                Some(r#"[{"days":1}]"#)
+            )),
+            "domain_agent_solution_gap"
+        );
+        assert_eq!(
+            classify_subtask_failure(failure_input(
+                "formal_reasoning_phys",
+                false,
+                true,
+                Some("long evidence context")
+            )),
+            "formal_reader_reasoning_gap"
+        );
+    }
+
+    fn failure_input<'a>(
+        task_type: &'a str,
+        hard_success: bool,
+        full_ref_recall: bool,
+        ask_answer: Option<&'a str>,
+    ) -> FailureClassificationInput<'a> {
+        FailureClassificationInput {
+            task_type,
+            hard_success,
+            known_at_clean: true,
+            full_ref_recall,
+            current_question_observed: true,
+            future_answer_leaked: false,
+            unexpected_refs: &[],
+            ask_answer,
+        }
+    }
+
     fn expected_fixture(
         task_type: &str,
         task_id: &str,
@@ -1025,6 +1165,11 @@ mod tests {
             chosen_answer: Some("answer".to_string()),
             hard_success,
             candidate_answer_hit: hard_success,
+            failure_class: if hard_success {
+                "passed"
+            } else {
+                "reader_reasoning_or_extraction_gap"
+            },
             soft_score: None,
             soft_score_basis: None,
             known_at_clean: true,
