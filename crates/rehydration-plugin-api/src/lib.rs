@@ -123,6 +123,10 @@ pub enum InterpretedValue {
         #[serde(skip_serializing_if = "Option::is_none")]
         unit: Option<String>,
     },
+    MathExpression {
+        notation: MathExpressionNotation,
+        expression: String,
+    },
     SourceCode {
         #[serde(skip_serializing_if = "Option::is_none")]
         language: Option<String>,
@@ -137,6 +141,16 @@ pub enum InterpretedValue {
 impl InterpretedValue {
     pub fn number(value: f64, unit: Option<String>) -> Self {
         Self::Number { value, unit }
+    }
+
+    pub fn math_expression(
+        notation: MathExpressionNotation,
+        expression: impl Into<String>,
+    ) -> Self {
+        Self::MathExpression {
+            notation,
+            expression: expression.into(),
+        }
     }
 
     pub fn source_code(
@@ -154,6 +168,15 @@ impl InterpretedValue {
     pub fn url(url: impl Into<String>) -> Self {
         Self::Url { url: url.into() }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MathExpressionNotation {
+    InlineDollar,
+    DisplayDollar,
+    InlineParen,
+    DisplayBracket,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -390,7 +413,7 @@ fn days_from_civil(year: i32, month: u8, day: u8) -> i64 {
 mod tests {
     use super::{
         CalendarDate, CurrencyCode, DerivationOperand, EvidenceSegmentKind, InterpretedValue,
-        OperandLabel, OperandRole, SourceCodeSegmentKind,
+        MathExpressionNotation, OperandLabel, OperandRole, SourceCodeSegmentKind,
     };
 
     #[test]
@@ -448,6 +471,20 @@ mod tests {
     }
 
     #[test]
+    fn math_expression_value_preserves_notation_and_expression() {
+        let value =
+            InterpretedValue::math_expression(MathExpressionNotation::InlineDollar, "2n + 1");
+
+        assert_eq!(
+            value,
+            InterpretedValue::MathExpression {
+                notation: MathExpressionNotation::InlineDollar,
+                expression: "2n + 1".to_string(),
+            }
+        );
+    }
+
+    #[test]
     fn url_value_preserves_url_text() {
         let value = InterpretedValue::url("https://example.test/path");
 
@@ -462,8 +499,9 @@ mod tests {
     #[test]
     fn evidence_segment_kind_models_deterministic_precedence() {
         assert!(
-            EvidenceSegmentKind::SourceCode.precedence() < EvidenceSegmentKind::Url.precedence()
+            EvidenceSegmentKind::SourceCode.precedence() < EvidenceSegmentKind::Math.precedence()
         );
+        assert!(EvidenceSegmentKind::Math.precedence() < EvidenceSegmentKind::Url.precedence());
         assert!(EvidenceSegmentKind::Url.precedence() < EvidenceSegmentKind::Text.precedence());
         assert!(EvidenceSegmentKind::SourceCode.is_protected());
         assert!(EvidenceSegmentKind::Text.is_interpretable_text());

@@ -411,6 +411,7 @@ domain operators.
 
 - `MoneyValuePlugin`;
 - `DateValuePlugin`;
+- `MathExpressionValuePlugin`;
 - `SourceCodeValuePlugin`;
 - `UrlValuePlugin`;
 - `CurrencyDerivationPlugin`;
@@ -422,6 +423,12 @@ These are intentionally outside kernel core. They demonstrate how to implement
 the public API while keeping arithmetic, date math, and text segmentation above
 the memory substrate.
 
+`MathExpressionValuePlugin` detects math spans and emits
+`InterpretedValue::MathExpression` with delimiter notation and the clean
+expression body. It is intentionally not an evaluator: arithmetic, symbolic
+solving, or operand selection must be explicit derivations above the extracted
+value.
+
 `SourceCodeValuePlugin` is deliberately simple: it detects code spans, preserves
 the original `TextSpan`, and emits `InterpretedValue::SourceCode` with
 `language`, `segment_kind`, and the clean code `text`. The `raw` mention still
@@ -431,8 +438,9 @@ programming-language semantics.
 
 The segment-precedence model lives in `EvidenceSegmentKind`: `source_code`,
 `math`, `url`, then `text`. Plugin application order must not change what a
-reader sees. Source-code plugins consume source-code spans, URL plugins consume
-URL spans, and money/date plugins consume text spans only.
+reader sees. Source-code plugins consume source-code spans, math plugins consume
+math spans, URL plugins consume URL spans, and money/date plugins consume text
+spans only.
 
 `UrlValuePlugin` follows the same pattern for links: it preserves the original
 span/ref and emits `InterpretedValue::Url { url }`, so readers can treat links

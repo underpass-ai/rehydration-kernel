@@ -4,8 +4,8 @@ pub use rehydration_plugin_api::{
     CalendarDate, CurrencyCode, DerivationOperand, DerivationOperation, DerivationRequest,
     DerivationResult, EvidenceDerivationPlugin, EvidenceFragment, EvidenceInterpretationInput,
     EvidenceInterpretationOutput, EvidenceSegmentKind, EvidenceValuePlugin, InterpretationError,
-    InterpretedValue, InterpretedValueMention, OperandLabel, OperandRole, SourceCodeSegmentKind,
-    TextSpan,
+    InterpretedValue, InterpretedValueMention, MathExpressionNotation, OperandLabel, OperandRole,
+    SourceCodeSegmentKind, TextSpan,
 };
 
 use crate::text_normalization::{DetectedTextKind, TextNormalizationPipeline};
@@ -572,6 +572,10 @@ fn numeric_operand<'a>(
             },
             kind: NumericKind::Number(unit.clone()),
         }),
+        InterpretedValue::MathExpression { .. } => Err(InterpretationError::new(format!(
+            "{context} operand {} is a math expression, not a numeric value",
+            operand.ref_id
+        ))),
         InterpretedValue::SourceCode { .. } => Err(InterpretationError::new(format!(
             "{context} operand {} is source code, not a numeric value",
             operand.ref_id
@@ -717,6 +721,15 @@ fn format_interpreted_value(value: &InterpretedValue) -> String {
             .as_deref()
             .map(|unit| format!("{} {unit}", format_decimal(*value)))
             .unwrap_or_else(|| format_decimal(*value)),
+        InterpretedValue::MathExpression {
+            notation,
+            expression,
+        } => match notation {
+            MathExpressionNotation::InlineDollar => format!("${expression}$"),
+            MathExpressionNotation::DisplayDollar => format!("$${expression}$$"),
+            MathExpressionNotation::InlineParen => format!("\\({expression}\\)"),
+            MathExpressionNotation::DisplayBracket => format!("\\[{expression}\\]"),
+        },
         InterpretedValue::SourceCode {
             language,
             segment_kind,

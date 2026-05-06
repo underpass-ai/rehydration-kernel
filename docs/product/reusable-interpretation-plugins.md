@@ -87,8 +87,9 @@ deterministic span segmenter:
 The segment classes are modeled in the plugin API as `EvidenceSegmentKind`.
 Precedence is deterministic and independent from plugin execution order:
 `source_code -> math -> url -> text`. Value plugins consume the segment classes
-they own. For example, source-code plugins read source-code spans, URL plugins
-read URL spans, and money/date plugins read text spans only.
+they own. For example, source-code plugins read source-code spans, math plugins
+read math spans, URL plugins read URL spans, and money/date plugins read text
+spans only.
 
 Money, date, and scalar-value extraction remain separate plugins. They consume
 the shared segmentation instead of each plugin inventing its own protected-text
@@ -102,6 +103,10 @@ Implemented domain plugins:
 - `DateDerivationPlugin`: owns date extraction plus temporal operations. It
   normalizes values into `InterpretedValue::Date` and supports temporal
   difference, latest/max-by, list, and explicit abstention.
+- `MathExpressionValuePlugin`: detects LaTeX-style math segments and returns
+  `InterpretedValue::MathExpression` with the original span, delimiter notation,
+  and clean expression body. It does not evaluate the expression or decide
+  operands.
 - `SourceCodeValuePlugin`: detects Markdown code segments and returns
   `InterpretedValue::SourceCode` with the original span, segment kind, and
   language when declared or conservatively inferred. The value also carries the
@@ -118,6 +123,8 @@ Lower-level primitives:
   `30 dollars`, and normalizes them into `InterpretedValue::Money`.
 - `DateValuePlugin`: extracts ISO-like dates and simple named dates such as
   `2026-05-06`, `05/06/2026`, and `May 6, 2026`.
+- `MathExpressionValuePlugin`: extracts protected math expressions from
+  normalized math spans.
 - `UrlValuePlugin`: extracts URL mentions from normalized URL spans.
 - `ValueOperationPlugin`: shared deterministic primitive used by domain
   plugins. It is not the product-facing plugin boundary.

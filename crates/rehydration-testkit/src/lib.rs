@@ -36,8 +36,8 @@ pub use interpretation_plugins::{
     DerivationOperand, DerivationOperation, DerivationRequest, DerivationResult, EvidenceFragment,
     EvidenceInterpretationInput, EvidenceInterpretationOutput, EvidenceSegmentKind,
     EvidenceValuePlugin, InterpretationError, InterpretedValue, InterpretedValueMention,
-    MoneyValuePlugin, OperandLabel, OperandRole, SourceCodeSegmentKind, SourceCodeValuePlugin,
-    TextSpan, UrlValuePlugin, ValueOperationPlugin,
+    MathExpressionNotation, MathExpressionValuePlugin, MoneyValuePlugin, OperandLabel, OperandRole,
+    SourceCodeSegmentKind, SourceCodeValuePlugin, TextSpan, UrlValuePlugin, ValueOperationPlugin,
 };
 pub use llm_evaluator::{
     CalibrationCase, EvaluationGroundTruth, LlmEvaluationResult, LlmEvaluatorConfig, LlmProvider,
