@@ -1,7 +1,7 @@
 # MemoryArena Benchmark Adapter
 
 Date: 2026-05-06
-Status: feasibility adapter v1 and stage-aware runner v1 available
+Status: feasibility adapter v1, stage-aware runner v1, and deterministic scorecard available
 
 ## Positioning
 
@@ -19,6 +19,23 @@ Sources:
 LongMemEval remains the secondary conversational-memory regression. MemoryArena
 is the first benchmark track intended to validate replayable, temporal,
 multidimensional process memory.
+
+## Official Source Check
+
+Checked on 2026-05-06:
+
+| Source | Observed status | Impact |
+| --- | --- | --- |
+| Project site | Describes MemoryArena as a multi-session Memory-Agent-Environment benchmark and links paper, data, and code. | Confirms this benchmark matches the kernel's agentic-memory direction. |
+| Project `Code` link | Points to `https://github.com/`, not to a concrete repository. | There is no official evaluator repository available from the site in this cut. |
+| Hugging Face dataset | Publishes five configs: `bundled_shopping`, `progressive_search`, `group_travel_planner`, `formal_reasoning_math`, and `formal_reasoning_phys`, each with `test` split. | The adapter should treat HF as the source of benchmark records. |
+| Hugging Face files | Contains README plus JSONL files under the five config directories. | No official scoring script is published in the dataset repo. |
+| Paper | Frames MemoryArena as multi-session Memory-Agent-Environment loops where agents learn from earlier feedback and reuse memory in later subtasks. | Our scorecard must remain clearly labelled as a local baseline until official code is published. |
+
+Conclusion: official evaluator integration is currently blocked by missing
+published evaluator code. The next implementable step is a paper-aligned
+agentic reader/evaluator over KMP artifacts, while keeping the hook open to
+swap in the official evaluator if the authors publish it.
 
 ## Adapter
 
@@ -169,7 +186,8 @@ Implemented:
 
 Not implemented yet:
 
-- MemoryArena official evaluator integration;
+- MemoryArena official evaluator integration, blocked until official code is
+  published or discoverable;
 - agentic retrieval loop that lets an LLM choose multiple KMP moves before
   answering;
 - benchmark dashboard or graph visualization.
@@ -377,7 +395,8 @@ Observed consumer gap:
 
 ## Next Cut
 
-1. Add official evaluator integration.
+1. Add a paper-aligned MemoryArena reader/evaluator over KMP artifacts, with
+   explicit SR/PS fields and no claim of official scoring.
 2. Add an agentic retrieval loop that can choose `ask`, `near`, `trace`,
    `inspect`, and temporal moves before answering.
 3. Persist projection/traversal/proof metrics needed to classify benchmark
