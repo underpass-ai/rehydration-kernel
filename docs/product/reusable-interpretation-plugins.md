@@ -1,6 +1,9 @@
 # Reusable Interpretation Plugins
 
-Status: first reusable testkit slice.
+Status: first reusable plugin slice.
+
+For the implementation architecture and external plugin authoring guide, see
+[`kernel-plugin-architecture.md`](kernel-plugin-architecture.md).
 
 The kernel retrieves deterministic evidence. Interpretation plugins consume that
 evidence and produce typed, auditable derivations. This keeps benchmark,
@@ -53,15 +56,20 @@ The writer must not invent question-dependent operations. A dollar amount found
 in a memory is only a typed currency mention. It becomes a sum operand only when
 a reader, agent, or explicit upstream event marks it as such.
 
-## Crate Boundary
+## Kernel Plugin Boundary
 
-The boundary is split into contract and implementation crates:
+The boundary is split into a lightweight API crate, a domain re-export, and
+implementation crates:
 
-- `crates/rehydration-interpretation-contract`: kernel-owned public contract
-  for evidence fragments, spans, interpreted values, derivation requests, and
-  plugin traits.
+- `crates/rehydration-plugin-api`: kernel-owned public crate for plugin
+  authors. It defines evidence fragments, spans, interpreted values, derivation
+  requests/results, plugin traits, and plugin errors. External plugins should
+  depend on this crate, not on the whole kernel.
+- `crates/rehydration-domain/src/plugins`: internal domain-facing re-export as
+  `rehydration_domain::plugins`. Use this path only when a kernel crate already
+  depends on `rehydration-domain`.
 - `crates/rehydration-interpretation`: plugin implementations that import and
-  implement the contract.
+  implement `rehydration-plugin-api`.
 - `crates/rehydration-testkit`: benchmark and fixture consumers. It may
   re-export the interpretation APIs temporarily for compatibility, but it is
   not the owner of the plugin contract or implementations.

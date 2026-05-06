@@ -30,6 +30,7 @@ Current integration stance:
 | [kernel-context-api-design.md](product/kernel-context-api-design.md) | Kernel Memory Protocol design: ingest, wake, ask, temporal movement, trace, inspect, and MCP/gRPC/NATS bindings |
 | [queryable-agentic-memory-layer.md](product/queryable-agentic-memory-layer.md) | Product direction for temporal, multidimensional memory as a queryable persistence layer for humans and LLMs |
 | [kernel-memory-service-grpc-plan.md](product/kernel-memory-service-grpc-plan.md) | API-first plan for the typed `KernelMemoryService` gRPC boundary and MCP live-mode migration |
+| [kernel-plugin-architecture.md](product/kernel-plugin-architecture.md) | Exportable plugin API architecture and implementation guide for external plugin crates |
 
 ## Operations
 

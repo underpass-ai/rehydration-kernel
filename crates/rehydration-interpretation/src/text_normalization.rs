@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use rehydration_interpretation_contract::TextSpan;
+use rehydration_plugin_api::TextSpan;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

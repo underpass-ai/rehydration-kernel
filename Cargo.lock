@@ -2179,6 +2179,7 @@ version = "0.1.0"
 name = "rehydration-domain"
 version = "0.1.0"
 dependencies = [
+ "rehydration-plugin-api",
  "serde",
 ]
 
@@ -2186,14 +2187,7 @@ dependencies = [
 name = "rehydration-interpretation"
 version = "0.1.0"
 dependencies = [
- "rehydration-interpretation-contract",
- "serde",
-]
-
-[[package]]
-name = "rehydration-interpretation-contract"
-version = "0.1.0"
-dependencies = [
+ "rehydration-plugin-api",
  "serde",
 ]
 
@@ -2226,6 +2220,13 @@ dependencies = [
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "rehydration-plugin-api"
+version = "0.1.0"
+dependencies = [
+ "serde",
 ]
 
 [[package]]

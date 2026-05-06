@@ -290,9 +290,12 @@ Priority: P1
 
 Current status:
 
-- reusable plugin contract implemented in `rehydration_interpretation_contract`;
+- reusable plugin contract implemented in the exportable lightweight crate
+  `rehydration-plugin-api`, with a kernel-domain re-export at
+  `rehydration_domain::plugins`;
 - reusable plugin implementations live in `rehydration_interpretation`;
-- documented in `docs/product/reusable-interpretation-plugins.md`;
+- documented in `docs/product/kernel-plugin-architecture.md` and
+  `docs/product/reusable-interpretation-plugins.md`;
 - current scope treats currency and dates as domain plugins with their own
   extraction, normalization, deterministic operations, and fail-fast validation;
 - MemoryArena interpretation probe validates those plugins against real runner

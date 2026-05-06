@@ -5,7 +5,7 @@ pub use interpretation_plugins::{
     CurrencyDerivationPlugin, DateDerivationPlugin, DateValuePlugin, MoneyValuePlugin,
     ValueOperationPlugin,
 };
-pub use rehydration_interpretation_contract::{
+pub use rehydration_plugin_api::{
     CalendarDate, CurrencyCode, DerivationOperand, DerivationOperation, DerivationRequest,
     DerivationResult, EvidenceDerivationPlugin, EvidenceFragment, EvidenceInterpretationInput,
     EvidenceInterpretationOutput, EvidenceValuePlugin, InterpretationError, InterpretedValue,

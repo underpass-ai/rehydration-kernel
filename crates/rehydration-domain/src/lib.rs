@@ -1,5 +1,6 @@
 pub mod error;
 pub mod model;
+pub mod plugins;
 pub mod projection;
 pub mod repositories;
 pub mod value_objects;

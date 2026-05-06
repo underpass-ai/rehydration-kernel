@@ -479,12 +479,13 @@ LLM should select refs and typed operands; plugins should own normalization,
 date math, currency handling, entity canonicalization, and operation-specific
 validation.
 
-The reusable boundary is split between `rehydration_interpretation_contract`
-for request/result traits and `rehydration_interpretation` for money/date
-extractors plus deterministic value-operation plugins. The existing LongMemEval
-derivation reader still performs its own prompt-time operand extraction; the
-next cleanup is to emit the shared `DerivationRequest` contract and let the
-reusable plugin compute the final result.
+The reusable boundary is split between `rehydration-plugin-api` for
+request/result traits, `rehydration_domain::plugins` as the kernel-domain
+re-export, and `rehydration_interpretation` for money/date extractors plus
+deterministic value-operation plugins. The existing LongMemEval derivation
+reader still performs its own prompt-time operand extraction; the next cleanup
+is to emit the shared `DerivationRequest` contract and let the reusable plugin
+compute the final result.
 
 ## Generate Artifacts
 

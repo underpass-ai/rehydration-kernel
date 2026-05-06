@@ -1,3 +1,27 @@
+//! Public plugin API for the Rehydration Kernel.
+//!
+//! This crate is intentionally small. A plugin implementation can depend on it
+//! without depending on kernel domain aggregates, ports, adapters, storage
+//! clients, gRPC, MCP, or runtime infrastructure.
+//!
+//! The kernel owns this contract. Runtime crates may re-export it through
+//! `rehydration_domain::plugins`, but external plugin crates should prefer
+//! depending on `rehydration-plugin-api` directly.
+//!
+//! Current plugin contracts are compile-time Rust traits. They are reusable
+//! crate boundaries, not a dynamic ABI or runtime plugin registry.
+//!
+//! Architecture:
+//!
+//! - value plugins implement [`EvidenceValuePlugin`] and convert retrieved
+//!   evidence fragments into typed mentions;
+//! - derivation plugins implement [`EvidenceDerivationPlugin`] and compute
+//!   deterministic results from explicit operands;
+//! - readers or agents decide which mentions are included, excluded, or kept as
+//!   context for the current question;
+//! - the kernel remains responsible for storage, traversal, refs, provenance,
+//!   trace, and inspect, not for domain arithmetic or preference semantics.
+
 use std::error::Error;
 use std::fmt;
 
@@ -143,7 +167,7 @@ impl fmt::Display for CalendarDate {
     }
 }
 
-pub trait EvidenceValuePlugin {
+pub trait EvidenceValuePlugin: Send + Sync {
     fn id(&self) -> &'static str;
 
     fn interpret(
@@ -152,7 +176,7 @@ pub trait EvidenceValuePlugin {
     ) -> Result<EvidenceInterpretationOutput, InterpretationError>;
 }
 
-pub trait EvidenceDerivationPlugin {
+pub trait EvidenceDerivationPlugin: Send + Sync {
     fn id(&self) -> &'static str;
 
     fn derive(&self, request: &DerivationRequest) -> Result<DerivationResult, InterpretationError>;
@@ -300,4 +324,47 @@ fn days_from_civil(year: i32, month: u8, day: u8) -> i64 {
         (153 * (month_i32 + if month_i32 > 2 { -3 } else { 9 }) + 2) / 5 + day_i32 - 1;
     let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
     i64::from(era * 146_097 + day_of_era)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        CalendarDate, CurrencyCode, DerivationOperand, InterpretedValue, OperandLabel, OperandRole,
+    };
+
+    #[test]
+    fn currency_code_normalizes_to_uppercase_iso_like_code() {
+        let code = CurrencyCode::new(" usd ").expect("currency code should be valid");
+
+        assert_eq!(code.as_str(), "USD");
+    }
+
+    #[test]
+    fn currency_code_rejects_non_iso_like_values() {
+        let error = CurrencyCode::new("US").expect_err("currency code should be invalid");
+
+        assert_eq!(error.to_string(), "invalid currency code `US`");
+    }
+
+    #[test]
+    fn calendar_date_rejects_invalid_day_for_month() {
+        let error = CalendarDate::new(2026, 2, 29).expect_err("date should be invalid");
+
+        assert_eq!(error.to_string(), "invalid calendar day `29` for 2026-02");
+    }
+
+    #[test]
+    fn derivation_operand_builder_preserves_explicit_role_and_entity() {
+        let operand = DerivationOperand::included(
+            "turn:42",
+            InterpretedValue::number(3.0, Some("items".to_string())),
+        )
+        .with_role(OperandRole::CountedItem)
+        .with_entity("payment-service");
+
+        assert_eq!(operand.ref_id, "turn:42");
+        assert_eq!(operand.label, OperandLabel::Include);
+        assert_eq!(operand.role, Some(OperandRole::CountedItem));
+        assert_eq!(operand.entity.as_deref(), Some("payment-service"));
+    }
 }

@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-pub use rehydration_interpretation_contract::{
+pub use rehydration_plugin_api::{
     CalendarDate, CurrencyCode, DerivationOperand, DerivationOperation, DerivationRequest,
     DerivationResult, EvidenceDerivationPlugin, EvidenceFragment, EvidenceInterpretationInput,
     EvidenceInterpretationOutput, EvidenceValuePlugin, InterpretationError, InterpretedValue,
