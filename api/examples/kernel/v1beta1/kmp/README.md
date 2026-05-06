@@ -12,6 +12,7 @@ Required moves:
 | Move | Request fixture | Response fixture |
 |:-----|:----------------|:-----------------|
 | `ingest` | `ingest.request.json` | `ingest.response.json` |
+| `write-memory` | `write-memory.request.json` | `write-memory.response.json` |
 | `wake` | `wake.request.json` | `wake.response.json` |
 | `ask` | `ask.request.json` | `ask.response.json` |
 | `goto` | `goto.request.json` | `goto.response.json` |
@@ -28,17 +29,24 @@ Schema:
 The protocol contract is intentionally framed as memory moves:
 
 ```text
-ingest -> wake -> ask -> goto/near/rewind/forward -> trace -> inspect
+write-memory -> ingest -> wake -> ask -> goto/near/rewind/forward -> trace -> inspect
 ```
 
 Transport bindings:
 
-- MCP tools expose `kernel_ingest`, `kernel_wake`, `kernel_ask`,
-  `kernel_goto`, `kernel_near`, `kernel_rewind`, `kernel_forward`,
-  `kernel_trace`, and `kernel_inspect`.
-- gRPC exposes the same moves through the typed
+- MCP tools expose `kernel_ingest`, `kernel_write_memory`, `kernel_wake`,
+  `kernel_ask`, `kernel_goto`, `kernel_near`, `kernel_rewind`,
+  `kernel_forward`, `kernel_trace`, and `kernel_inspect`.
+- `kernel_write_memory` is a writer helper, not a parallel memory model. It
+  validates writer intent and relation quality, then compiles to the canonical
+  `kernel_ingest` payload. With `dry_run=true` it returns that payload as
+  `ingest_preview`; with `dry_run=false` it forwards the same payload through
+  the configured `kernel_ingest` backend.
+- gRPC exposes the canonical memory moves through the typed
   [`KernelMemoryService`](../../../../proto/underpass/rehydration/kernel/v1beta1/memory.proto).
-  The gRPC contract is the executable binding for this cut.
+  `write-memory` is bound to gRPC by compiling to `KernelMemoryService.Ingest`;
+  it does not introduce a second write path. The gRPC contract is the
+  executable binding for this cut.
 - NATS KMP subjects such as `kernel.memory.ingest`,
   `kernel.memory.ingested`, and `kernel.memory.rejected` remain design
   guidance; they are not implemented in this cut.

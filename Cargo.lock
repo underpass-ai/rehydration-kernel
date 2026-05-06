@@ -2198,6 +2198,7 @@ dependencies = [
  "prost-types",
  "rehydration-proto",
  "serde_json",
+ "sha2",
  "tempfile",
  "tokio",
  "tokio-rustls",

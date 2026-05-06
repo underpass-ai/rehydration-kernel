@@ -126,6 +126,7 @@ async fn tools_list_exposes_read_only_kmp_tools() {
         tool_names,
         vec![
             "kernel_ingest",
+            "kernel_write_memory",
             "kernel_wake",
             "kernel_ask",
             "kernel_goto",
@@ -278,6 +279,106 @@ async fn ingest_aliases_return_fixture_backed_structured_content() {
             2
         );
     }
+}
+
+#[tokio::test]
+async fn kernel_write_memory_dry_run_returns_canonical_ingest_preview() {
+    let response = handle(json!({
+        "jsonrpc": "2.0",
+        "id": 33,
+        "method": "tools/call",
+        "params": {
+            "name": "kernel_write_memory",
+            "arguments": sample_write_arguments(true)
+        }
+    }))
+    .await;
+
+    let structured = &response["result"]["structuredContent"];
+    let fixture_response = serde_json::from_str::<Value>(include_str!(
+        "../../../api/examples/kernel/v1beta1/kmp/write-memory.response.json"
+    ))
+    .expect("write fixture response should be valid JSON");
+
+    assert_eq!(response["result"]["isError"], false);
+    assert_eq!(structured, &fixture_response);
+    assert_eq!(structured["accepted"], false);
+    assert_eq!(structured["dry_run"], true);
+    assert_eq!(
+        structured["relation_quality_metrics"]["relation_rich_count"],
+        3
+    );
+    assert_eq!(
+        structured["ingest_preview"]["about"],
+        "incident:mobile-login"
+    );
+    assert_eq!(
+        structured["ingest_preview"]["memory"]["relations"][0]["rel"],
+        "chosen_because"
+    );
+    assert_eq!(
+        structured["next_suggested_reads"][0]["tool"],
+        "kernel_trace"
+    );
+}
+
+#[tokio::test]
+async fn kernel_write_memory_commit_uses_canonical_ingest_backend_path() {
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let server = KernelMcpServer::with_backend(StubBackend {
+        calls: Arc::clone(&calls),
+        backend_name: "stub",
+        grpc_tls_mode_name: "disabled",
+        response: Ok(json!({
+            "content": [],
+            "structuredContent": {
+                "summary": "Ingested via stub",
+                "memory": {
+                    "about": "incident:mobile-login",
+                    "memory_id": "memory:incident:mobile-login:1",
+                    "accepted": {
+                        "entries": 2,
+                        "relations": 3,
+                        "evidence": 3
+                    },
+                    "read_after_write_ready": true
+                },
+                "warnings": []
+            },
+            "isError": false
+        })),
+    });
+
+    let response = handle_with(
+        &server,
+        json!({
+            "jsonrpc": "2.0",
+            "id": 34,
+            "method": "tools/call",
+            "params": {
+                "name": "kernel_write_memory",
+                "arguments": sample_write_arguments(false)
+            }
+        }),
+    )
+    .await;
+
+    assert_eq!(response["result"]["isError"], false);
+    assert_eq!(response["result"]["structuredContent"]["accepted"], true);
+    assert_eq!(
+        response["result"]["structuredContent"]["ingest_result"]["memory"]["accepted"]["relations"],
+        3
+    );
+
+    let calls = calls.lock().expect("stub calls should be available");
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].0, "kernel_ingest");
+    assert_eq!(calls[0].1["about"], "incident:mobile-login");
+    assert_eq!(calls[0].1["dry_run"], false);
+    assert_eq!(
+        calls[0].1["memory"]["relations"][0]["rel"],
+        "chosen_because"
+    );
 }
 
 #[tokio::test]
@@ -608,6 +709,15 @@ fn sample_ingest_arguments() -> Value {
         "../../../api/examples/kernel/v1beta1/kmp/ingest.request.json"
     ))
     .expect("ingest fixture request should be valid JSON")
+}
+
+fn sample_write_arguments(dry_run: bool) -> Value {
+    let mut request = serde_json::from_str::<Value>(include_str!(
+        "../../../api/examples/kernel/v1beta1/kmp/write-memory.request.json"
+    ))
+    .expect("write fixture request should be valid JSON");
+    request["options"]["dry_run"] = json!(dry_run);
+    request
 }
 
 struct StubBackend {

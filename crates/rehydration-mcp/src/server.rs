@@ -9,8 +9,10 @@ use crate::backend::{
 use crate::fixture::FixtureKernelMcpBackend;
 use crate::grpc::GrpcKernelMcpBackend;
 use crate::protocol::{
-    initialize_result, jsonrpc_error, jsonrpc_result, tool_error_result, tools_list_result,
+    initialize_result, jsonrpc_error, jsonrpc_result, tool_error_result, tool_success_result,
+    tools_list_result,
 };
+use crate::write::{build_write_plan, write_commit_result, write_dry_run_result};
 
 pub struct KernelMcpServer {
     backend: Arc<dyn KernelMcpToolBackend>,
@@ -148,8 +150,38 @@ impl KernelMcpServer {
         };
         let arguments = params.get("arguments").unwrap_or(&Value::Null);
 
+        if name == "kernel_write_memory" {
+            return self.handle_kernel_write_memory(id, arguments).await;
+        }
+
         match self.backend.call_tool(name, arguments).await {
             Ok(result) => jsonrpc_result(id, result),
+            Err(message) => jsonrpc_result(id, tool_error_result(&message)),
+        }
+    }
+
+    async fn handle_kernel_write_memory(&self, id: Value, arguments: &Value) -> String {
+        let plan = match build_write_plan(arguments) {
+            Ok(plan) => plan,
+            Err(message) => return jsonrpc_result(id, tool_error_result(&message)),
+        };
+
+        if plan.dry_run {
+            return jsonrpc_result(id, tool_success_result(write_dry_run_result(&plan)));
+        }
+
+        match self
+            .backend
+            .call_tool("kernel_ingest", &plan.ingest_arguments)
+            .await
+        {
+            Ok(result) => {
+                let ingest_result = result.get("structuredContent").cloned().unwrap_or(result);
+                jsonrpc_result(
+                    id,
+                    tool_success_result(write_commit_result(&plan, ingest_result)),
+                )
+            }
             Err(message) => jsonrpc_result(id, tool_error_result(&message)),
         }
     }
