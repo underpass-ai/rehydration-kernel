@@ -1,15 +1,8 @@
 use serde::{Deserialize, Serialize};
 
-use rehydration_plugin_api::TextSpan;
+use rehydration_plugin_api::{EvidenceSegmentKind, TextSpan};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum DetectedTextKind {
-    Text,
-    Code,
-    Math,
-    Url,
-}
+pub type DetectedTextKind = EvidenceSegmentKind;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DetectedTextSpan {
@@ -33,7 +26,7 @@ impl DetectedTextSpan {
     }
 
     pub fn is_interpretable_text(&self) -> bool {
-        self.kind == DetectedTextKind::Text
+        self.kind.is_interpretable_text()
     }
 }
 
@@ -119,7 +112,7 @@ fn collect_fenced_code(text: &str, candidates: &mut Vec<ProtectedCandidate>) {
             .find("```")
             .map(|relative_end| body_start + relative_end + 3)
             .unwrap_or(text.len());
-        candidates.push(protected(DetectedTextKind::Code, start, end));
+        candidates.push(protected(DetectedTextKind::SourceCode, start, end));
         search = end;
     }
 }
@@ -137,7 +130,7 @@ fn collect_inline_code(text: &str, candidates: &mut Vec<ProtectedCandidate>) {
             break;
         };
         let end = body_start + relative_end + 1;
-        candidates.push(protected(DetectedTextKind::Code, start, end));
+        candidates.push(protected(DetectedTextKind::SourceCode, start, end));
         search = end;
     }
 }
@@ -259,12 +252,7 @@ fn protected(kind: DetectedTextKind, start: usize, end: usize) -> ProtectedCandi
         kind,
         start,
         end,
-        priority: match kind {
-            DetectedTextKind::Code => 0,
-            DetectedTextKind::Math => 1,
-            DetectedTextKind::Url => 2,
-            DetectedTextKind::Text => 3,
-        },
+        priority: kind.precedence(),
     }
 }
 
@@ -369,7 +357,7 @@ mod tests {
             normalized
                 .spans
                 .iter()
-                .any(|span| span.kind == DetectedTextKind::Code && span.raw == "`$90`")
+                .any(|span| span.kind == DetectedTextKind::SourceCode && span.raw == "`$90`")
         );
         assert!(
             normalized

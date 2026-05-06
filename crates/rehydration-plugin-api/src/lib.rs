@@ -79,6 +79,34 @@ pub struct TextSpan {
     pub end: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EvidenceSegmentKind {
+    SourceCode,
+    Math,
+    Url,
+    Text,
+}
+
+impl EvidenceSegmentKind {
+    pub fn precedence(self) -> u8 {
+        match self {
+            Self::SourceCode => 0,
+            Self::Math => 1,
+            Self::Url => 2,
+            Self::Text => 3,
+        }
+    }
+
+    pub fn is_interpretable_text(self) -> bool {
+        self == Self::Text
+    }
+
+    pub fn is_protected(self) -> bool {
+        !self.is_interpretable_text()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum InterpretedValue {
@@ -95,12 +123,44 @@ pub enum InterpretedValue {
         #[serde(skip_serializing_if = "Option::is_none")]
         unit: Option<String>,
     },
+    SourceCode {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        language: Option<String>,
+        segment_kind: SourceCodeSegmentKind,
+        text: String,
+    },
+    Url {
+        url: String,
+    },
 }
 
 impl InterpretedValue {
     pub fn number(value: f64, unit: Option<String>) -> Self {
         Self::Number { value, unit }
     }
+
+    pub fn source_code(
+        language: Option<String>,
+        segment_kind: SourceCodeSegmentKind,
+        text: impl Into<String>,
+    ) -> Self {
+        Self::SourceCode {
+            language,
+            segment_kind,
+            text: text.into(),
+        }
+    }
+
+    pub fn url(url: impl Into<String>) -> Self {
+        Self::Url { url: url.into() }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SourceCodeSegmentKind {
+    FencedBlock,
+    Inline,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -329,7 +389,8 @@ fn days_from_civil(year: i32, month: u8, day: u8) -> i64 {
 #[cfg(test)]
 mod tests {
     use super::{
-        CalendarDate, CurrencyCode, DerivationOperand, InterpretedValue, OperandLabel, OperandRole,
+        CalendarDate, CurrencyCode, DerivationOperand, EvidenceSegmentKind, InterpretedValue,
+        OperandLabel, OperandRole, SourceCodeSegmentKind,
     };
 
     #[test]
@@ -366,5 +427,45 @@ mod tests {
         assert_eq!(operand.label, OperandLabel::Include);
         assert_eq!(operand.role, Some(OperandRole::CountedItem));
         assert_eq!(operand.entity.as_deref(), Some("payment-service"));
+    }
+
+    #[test]
+    fn source_code_value_preserves_language_and_segment_kind() {
+        let value = InterpretedValue::source_code(
+            Some("rust".to_string()),
+            SourceCodeSegmentKind::FencedBlock,
+            "fn main() {}",
+        );
+
+        assert_eq!(
+            value,
+            InterpretedValue::SourceCode {
+                language: Some("rust".to_string()),
+                segment_kind: SourceCodeSegmentKind::FencedBlock,
+                text: "fn main() {}".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn url_value_preserves_url_text() {
+        let value = InterpretedValue::url("https://example.test/path");
+
+        assert_eq!(
+            value,
+            InterpretedValue::Url {
+                url: "https://example.test/path".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn evidence_segment_kind_models_deterministic_precedence() {
+        assert!(
+            EvidenceSegmentKind::SourceCode.precedence() < EvidenceSegmentKind::Url.precedence()
+        );
+        assert!(EvidenceSegmentKind::Url.precedence() < EvidenceSegmentKind::Text.precedence());
+        assert!(EvidenceSegmentKind::SourceCode.is_protected());
+        assert!(EvidenceSegmentKind::Text.is_interpretable_text());
     }
 }

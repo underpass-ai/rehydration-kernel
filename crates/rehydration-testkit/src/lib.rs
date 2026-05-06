@@ -34,9 +34,10 @@ pub use in_memory_stores::{
 pub use interpretation_plugins::{
     CalendarDate, CurrencyCode, CurrencyDerivationPlugin, DateDerivationPlugin, DateValuePlugin,
     DerivationOperand, DerivationOperation, DerivationRequest, DerivationResult, EvidenceFragment,
-    EvidenceInterpretationInput, EvidenceInterpretationOutput, EvidenceValuePlugin,
-    InterpretationError, InterpretedValue, InterpretedValueMention, MoneyValuePlugin, OperandLabel,
-    OperandRole, TextSpan, ValueOperationPlugin,
+    EvidenceInterpretationInput, EvidenceInterpretationOutput, EvidenceSegmentKind,
+    EvidenceValuePlugin, InterpretationError, InterpretedValue, InterpretedValueMention,
+    MoneyValuePlugin, OperandLabel, OperandRole, SourceCodeSegmentKind, SourceCodeValuePlugin,
+    TextSpan, UrlValuePlugin, ValueOperationPlugin,
 };
 pub use llm_evaluator::{
     CalibrationCase, EvaluationGroundTruth, LlmEvaluationResult, LlmEvaluatorConfig, LlmProvider,

@@ -3,9 +3,12 @@ use std::collections::BTreeSet;
 pub use rehydration_plugin_api::{
     CalendarDate, CurrencyCode, DerivationOperand, DerivationOperation, DerivationRequest,
     DerivationResult, EvidenceDerivationPlugin, EvidenceFragment, EvidenceInterpretationInput,
-    EvidenceInterpretationOutput, EvidenceValuePlugin, InterpretationError, InterpretedValue,
-    InterpretedValueMention, OperandLabel, OperandRole, TextSpan,
+    EvidenceInterpretationOutput, EvidenceSegmentKind, EvidenceValuePlugin, InterpretationError,
+    InterpretedValue, InterpretedValueMention, OperandLabel, OperandRole, SourceCodeSegmentKind,
+    TextSpan,
 };
+
+use crate::text_normalization::{DetectedTextKind, TextNormalizationPipeline};
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct MoneyValuePlugin;
@@ -21,8 +24,16 @@ impl EvidenceValuePlugin for MoneyValuePlugin {
     ) -> Result<EvidenceInterpretationOutput, InterpretationError> {
         let mut values = Vec::new();
         for fragment in &input.fragments {
-            values.extend(extract_symbol_money(self.id(), fragment)?);
-            values.extend(extract_code_money(self.id(), fragment)?);
+            for text_slice in interpretable_text_slices(fragment) {
+                values.extend(offset_mentions(
+                    extract_symbol_money(self.id(), &text_slice.fragment)?,
+                    text_slice.offset,
+                ));
+                values.extend(offset_mentions(
+                    extract_code_money(self.id(), &text_slice.fragment)?,
+                    text_slice.offset,
+                ));
+            }
         }
 
         Ok(EvidenceInterpretationOutput {
@@ -47,8 +58,16 @@ impl EvidenceValuePlugin for DateValuePlugin {
     ) -> Result<EvidenceInterpretationOutput, InterpretationError> {
         let mut values = Vec::new();
         for fragment in &input.fragments {
-            values.extend(extract_iso_dates(self.id(), fragment)?);
-            values.extend(extract_named_dates(self.id(), fragment)?);
+            for text_slice in interpretable_text_slices(fragment) {
+                values.extend(offset_mentions(
+                    extract_iso_dates(self.id(), &text_slice.fragment)?,
+                    text_slice.offset,
+                ));
+                values.extend(offset_mentions(
+                    extract_named_dates(self.id(), &text_slice.fragment)?,
+                    text_slice.offset,
+                ));
+            }
         }
 
         Ok(EvidenceInterpretationOutput {
@@ -352,6 +371,12 @@ struct DerivedNumericValue {
     value: InterpretedValue,
 }
 
+#[derive(Debug, Clone)]
+struct TextEvidenceSlice {
+    fragment: EvidenceFragment,
+    offset: usize,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum NumericKind {
     Money(CurrencyCode),
@@ -421,6 +446,38 @@ fn value_is_money(value: &InterpretedValue) -> bool {
 
 fn value_is_date(value: &InterpretedValue) -> bool {
     matches!(value, InterpretedValue::Date { .. })
+}
+
+fn interpretable_text_slices(fragment: &EvidenceFragment) -> Vec<TextEvidenceSlice> {
+    let normalized = TextNormalizationPipeline.normalize(&fragment.text);
+    normalized
+        .spans
+        .into_iter()
+        .filter(|span| span.kind == DetectedTextKind::Text)
+        .filter(|span| !span.raw.trim().is_empty())
+        .map(|span| TextEvidenceSlice {
+            fragment: EvidenceFragment {
+                ref_id: fragment.ref_id.clone(),
+                text: span.raw,
+                source: fragment.source.clone(),
+            },
+            offset: span.span.start,
+        })
+        .collect()
+}
+
+fn offset_mentions(
+    mentions: Vec<InterpretedValueMention>,
+    offset: usize,
+) -> Vec<InterpretedValueMention> {
+    mentions
+        .into_iter()
+        .map(|mut mention| {
+            mention.span.start += offset;
+            mention.span.end += offset;
+            mention
+        })
+        .collect()
 }
 
 fn included_operands(operands: &[DerivationOperand]) -> Vec<&DerivationOperand> {
@@ -515,6 +572,14 @@ fn numeric_operand<'a>(
             },
             kind: NumericKind::Number(unit.clone()),
         }),
+        InterpretedValue::SourceCode { .. } => Err(InterpretationError::new(format!(
+            "{context} operand {} is source code, not a numeric value",
+            operand.ref_id
+        ))),
+        InterpretedValue::Url { .. } => Err(InterpretationError::new(format!(
+            "{context} operand {} is a URL, not a numeric value",
+            operand.ref_id
+        ))),
     }
 }
 
@@ -652,6 +717,15 @@ fn format_interpreted_value(value: &InterpretedValue) -> String {
             .as_deref()
             .map(|unit| format!("{} {unit}", format_decimal(*value)))
             .unwrap_or_else(|| format_decimal(*value)),
+        InterpretedValue::SourceCode {
+            language,
+            segment_kind,
+            text: _,
+        } => language
+            .as_deref()
+            .map(|language| format!("{language} {segment_kind:?} source code"))
+            .unwrap_or_else(|| format!("{segment_kind:?} source code")),
+        InterpretedValue::Url { url } => url.clone(),
     }
 }
 
@@ -786,7 +860,7 @@ fn extract_iso_dates(
 ) -> Result<Vec<InterpretedValueMention>, InterpretationError> {
     let mut values = Vec::new();
     for word in word_spans(&fragment.text) {
-        let cleaned = trim_token(word.text);
+        let cleaned = trim_date_token(word.text);
         if let Some(date) = parse_iso_date(cleaned)? {
             values.push(value_mention(
                 plugin,
@@ -1004,6 +1078,10 @@ fn trim_token(value: &str) -> &str {
     })
 }
 
+fn trim_date_token(value: &str) -> &str {
+    value.trim_matches(|char: char| char.is_ascii_punctuation() && char != '-' && char != '/')
+}
+
 fn trim_word_token(value: &str) -> &str {
     value.trim_matches(|char: char| char.is_ascii_punctuation())
 }
@@ -1129,6 +1207,27 @@ mod tests {
         assert!(dates.contains(&InterpretedValue::Date {
             date: CalendarDate::new(2026, 5, 6).expect("valid date")
         }));
+    }
+
+    #[test]
+    fn money_and_date_plugins_ignore_protected_code_and_url_segments() {
+        let input = EvidenceInterpretationInput::new(vec![EvidenceFragment::new(
+            "turn:protected",
+            "Ignore code `$90` and https://example.test/2026-05-06; use budget $70 on 2026-05-07.",
+        )]);
+
+        let money = MoneyValuePlugin
+            .interpret(&input)
+            .expect("money extraction should succeed");
+        let dates = DateValuePlugin
+            .interpret(&input)
+            .expect("date extraction should succeed");
+
+        assert_eq!(money.values.len(), 1);
+        assert_eq!(money.values[0].raw, "$70");
+        assert_eq!(money.values[0].span, TextSpan { start: 66, end: 69 });
+        assert_eq!(dates.values.len(), 1);
+        assert_eq!(dates.values[0].raw, "2026-05-07");
     }
 
     #[test]
