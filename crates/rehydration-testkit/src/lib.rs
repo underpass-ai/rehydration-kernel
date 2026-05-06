@@ -9,6 +9,7 @@ pub mod longmemeval;
 pub mod memoryagentbench;
 pub mod memoryarena;
 pub mod memoryarena_scorecard;
+pub mod memoryarena_smart_writer;
 pub mod raw_dump;
 pub mod seed_publisher;
 pub mod seed_to_bundle;
@@ -77,6 +78,11 @@ pub use memoryarena_scorecard::{
     MemoryArenaAnswerScore, memoryarena_answer_candidates_from_text,
     memoryarena_answer_candidates_from_value, memoryarena_answers_match,
     memoryarena_task_success_rule, score_memoryarena_answer,
+};
+pub use memoryarena_smart_writer::{
+    MemoryArenaSmartWriter, MemoryArenaSmartWriterConfig, MemoryArenaSmartWriterEvent,
+    MemoryArenaSmartWriterResult, MemoryArenaSmartWriterSummary, detect_provider_from_model,
+    parse_provider, summarize_smart_writer,
 };
 pub use seed_to_bundle::{seed_raw_equivalent_tokens, seed_to_bundle};
 pub use text_normalization::{

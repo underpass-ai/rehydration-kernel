@@ -215,6 +215,231 @@ Current probe result on the 2x/domain combined slice
   least two safe operands are available and the question asks for a supported
   operation.
 
+## LLM Evidence Reader
+
+`memoryarena_kmp_reader` is the first MemoryArena reader layer above the
+deterministic kernel run. It consumes the current subtask question plus recovered
+KMP evidence, calls an LLM, and writes a scorecard-compatible run where
+`ask_answer` is replaced by the reader hypothesis.
+
+Important boundaries:
+
+- the prompt does not include gold answers;
+- expected answers are loaded only to compute the reader summary;
+- the original deterministic kernel answer is preserved as `kernel_ask_answer`;
+- reader metadata is written under `memoryarena_reader`;
+- this is still a reader over one recovered KMP answer, not the future agentic
+  loop that can call `ask`, `near`, `trace`, `inspect`, and temporal moves
+  iteratively.
+- for `progressive_search`, an explicit `Exact Answer:` recovered from prior
+  MemoryArena feedback is treated as a deterministic final-answer candidate
+  before calling the LLM. This uses only kernel-recovered prior feedback and is
+  recorded as `answer_source=progressive_exact_answer_candidate`.
+
+Example:
+
+```bash
+cargo run -p rehydration-testkit --bin memoryarena_kmp_reader --locked -- \
+  --artifacts /tmp/memoryarena-post-64cd19e-20260506/combined-artifacts \
+  --run /tmp/memoryarena-post-64cd19e-20260506/combined-run \
+  --output /tmp/memoryarena-post-64cd19e-20260506/combined-llm-reader \
+  --endpoint "$LLM_ENDPOINT" \
+  --model "$LLM_MODEL" \
+  --provider openai-new \
+  --force
+
+cargo run -p rehydration-testkit --bin memoryarena_kmp_scorecard --locked -- \
+  --artifacts /tmp/memoryarena-post-64cd19e-20260506/combined-artifacts \
+  --run /tmp/memoryarena-post-64cd19e-20260506/combined-llm-reader \
+  --output /tmp/memoryarena-post-64cd19e-20260506/combined-llm-reader-scorecard \
+  --force
+```
+
+For a cheap smoke run:
+
+```bash
+cargo run -p rehydration-testkit --bin memoryarena_kmp_reader --locked -- \
+  --artifacts /tmp/memoryarena-post-64cd19e-20260506/combined-artifacts \
+  --run /tmp/memoryarena-post-64cd19e-20260506/combined-run \
+  --output /tmp/memoryarena-post-64cd19e-20260506/progressive-llm-reader-smoke \
+  --task-type progressive_search \
+  --limit 2 \
+  --endpoint "$LLM_ENDPOINT" \
+  --model "$LLM_MODEL" \
+  --provider openai-new \
+  --force
+```
+
+Validated progressive reader result:
+
+- run: `/tmp/memoryarena-post-64cd19e-20260506/progressive-llm-reader-v4`
+- scorecard:
+
+```text
+tasks: 2
+subtasks: 21
+task_successes: 2
+task_success_rate: 1.0000
+passed_subtasks: 19
+process_score: 0.9028
+micro_process_score: 0.9048
+failure_classes:
+  no_prior_answer_evidence: 2
+  passed: 19
+known_at_clean_asks: 21
+full_ref_recall_asks: 21
+future_answer_leaks: 0
+unexpected_ref_asks: 0
+missing_allowed_ref_asks: 0
+```
+
+Reader summary:
+
+```text
+total_asks: 21
+hard_successes: 19
+deterministic_answers: 19
+llm_answers: 2
+prompt_tokens: 367
+completion_tokens: 2
+```
+
+## MCP Smart Writer
+
+`memoryarena_kmp_runner --smart-writer` is the first MemoryArena writer layer
+that exercises the write protocol instead of replaying every ingest event
+through low-level `kernel_ingest`.
+
+For each staged memory entry, the runner:
+
+- builds one `kernel_write_memory` request;
+- derives candidate target refs from the adapter's deterministic relation plan;
+- reads prior context before writing by calling `kernel_near` and
+  `kernel_inspect` on candidate targets;
+- optionally calls an LLM to choose a canonical `connect_to` relation;
+- validates the LLM output before dry-run: target ref must be a candidate, the
+  relation/class pair must match the canonical writer vocabulary, and `why` plus
+  `evidence` must be present;
+- runs `kernel_write_memory` in strict dry-run mode, then commits the same
+  request with `dry_run=false`;
+- verifies the written node with `kernel_inspect`;
+- falls back explicitly to deterministic anemic or structural relations when no
+  richer relation is justified or the proposed relation is rejected.
+
+The writer is intentionally outside the kernel core. The kernel exposes the
+write protocol, strict validation, relation quality diagnostics, and retrieval
+surface. The benchmark harness acts as the LLM-powered writer client.
+
+Pass `--log-mcp-navigation` or set `MEMORYARENA_LOG_MCP_NAVIGATION=1` to emit
+JSONL diagnostics to stderr. The log stream records every writer pre-read
+(`kernel_near`/`kernel_inspect`), the LLM relation-selection call, the selected
+`connect_to` relation summary, strict dry-run, commit, and post-write inspect
+verification. This keeps the stdout run summary parseable while making it clear
+when the LLM is making a relation decision from MCP-read context.
+
+Large answer-feedback entries are compacted deterministically before
+`kernel_write_memory`: `current.summary`, `current.evidence`, and fallback
+relation evidence are bounded while preserving an `Exact Answer:` line when one
+is present. This keeps writer payloads focused on auditable memory rather than
+duplicating entire benchmark transcripts into every generated evidence record.
+
+Example:
+
+```bash
+cargo run -p rehydration-testkit --bin memoryarena_kmp_runner --locked -- \
+  --artifacts /tmp/memoryarena-smart-writer-llm-smoke-artifacts \
+  --output /tmp/memoryarena-smart-writer-llm-smoke-run \
+  --endpoint http://rehydration-kernel.underpassai.com \
+  --smart-writer \
+  --mcp-navigation-probe \
+  --log-mcp-navigation \
+  --writer-llm-endpoint https://api.openai.com/v1/chat/completions \
+  --writer-llm-model gpt-4o-2024-08-06 \
+  --writer-llm-provider openai \
+  --writer-api-key-env LLM_API_KEY \
+  --writer-max-tokens 384 \
+  --writer-temperature 0 \
+  --force
+```
+
+Validated public-kernel smoke on 2026-05-06:
+
+- run id: `smart-writer-llm-20260506-005`;
+- source fixture: `memoryarena_minimal.jsonl`, `progressive_search`;
+- events: 7/7 successful;
+- asks: 2/2 known-at-clean;
+- future answer leaks: 0;
+- MCP navigation calls: 2 `near`, 2 `inspect`, 2 `trace`;
+- writer entry writes: 5;
+- writer pre-read calls: 6;
+- LLM calls: 3;
+- LLM valid outputs: 3;
+- deterministic fallbacks: 2 structural first-node writes;
+- relation total: 5;
+- rich relations: 3;
+- anemic relations: 0;
+- structural relations: 2;
+- suspect relations: 0.
+
+The LLM writer promoted the useful benchmark edges to causal `depends_on`
+relations:
+
+- answer 1 depends on question 1;
+- question 2 depends on answer 1;
+- answer 2 depends on question 2.
+
+Each rich relation had inspected or temporal prior context in
+`relation_quality[].prior_context_sources`, so strict dry-run accepted it as
+auditable rather than speculative. Per-entry diagnostics are written to
+`writer_results.jsonl`.
+
+Validated real progressive task slice on 2026-05-06:
+
+- artifacts: `/tmp/memoryarena-smart-writer-real-progressive-artifacts`;
+- primary run: `/tmp/memoryarena-smart-writer-real-progressive-task1-run`;
+- retry run for the final write:
+  `/tmp/memoryarena-smart-writer-real-progressive-final-retry-portforward-run`;
+- task: `progressive_search`, task id `0`, 9 subtasks;
+- asks: 9/9 known-at-clean;
+- full ref recall: 9/9;
+- future answer leaks: 0;
+- current question observed: 9/9;
+- unexpected refs: 0;
+- missing allowed refs: 0;
+- scorecard: task success rate `1.0000`, process score `0.8889`,
+  passed subtasks `8/9`.
+
+Combined writer relation quality for the completed task:
+
+```text
+entry_writes: 18
+llm_calls: 17
+llm_valid_outputs: 17
+llm_invalid_outputs: 0
+relation_total: 18
+relation_rich_count: 10
+relation_anemic_count: 7
+relation_structural_count: 1
+relation_suspect_count: 0
+relations:
+  depends_on: 10
+  answers: 7
+  scoped_to: 1
+```
+
+Operational finding:
+
+- the first public-ingress run completed 26/27 events and failed only the final
+  answer-feedback commit with a `504 Gateway Timeout` after 60s;
+- the failed node was not present after the timeout, so the write did not commit
+  behind the client's back;
+- the same final write succeeded over direct cluster gRPC and took 67s;
+- therefore `kernel_write_memory` dry-run is a semantic/protocol check, not a
+  performance or `read_after_write_ready` guarantee;
+- the runtime Helm profile now sets NGINX gRPC ingress read/send timeouts to
+  300s; direct LoadBalancer exposure or an async accepted-write contract remain
+  valid future hardening options for very slow projection/indexing paths.
+
 The current scorecard is `memoryarena-kmp-scorecard-paper-aligned-v1`. It is a
 paper-aligned local evaluator, not the official MemoryArena evaluator. It emits
 the paper's core aggregate shape:
@@ -281,6 +506,26 @@ for the evaluator contract and extraction plan for a standalone public repo.
 | `replay.jsonl` | Timeline, known-at-time snapshots, and final path refs per task. |
 | `summary.json` | Aggregate counts for tasks, subtasks, events, and backgrounds. |
 | `manifest.json` | Run metadata and artifact paths. |
+| `writer_results.jsonl` | Runner output when `--smart-writer` is enabled: one row per `kernel_write_memory` entry, including pre-read calls, dry-run/commit/verify content, LLM metadata, and relation quality diagnostics. |
+
+When `memoryarena_kmp_runner` is executed with `--mcp-navigation-probe`, each
+`results.jsonl` ask row also includes `mcp_navigation`. This records the exact
+MCP tool calls made after the deterministic ask:
+
+- `kernel_near` around the current question ref, with `after_entries=0` so the
+  probe cannot intentionally move into future feedback;
+- `kernel_inspect` on the current question ref, with raw expansion disabled;
+- `kernel_trace` from the current question to the latest prior known entry when
+  such a target exists.
+
+This probe is not the future LLM-driven reader/writer loop. It is a fail-fast
+contract check that proves the benchmark can exercise MCP as a navigation
+surface, not only as an `ingest`/`ask` transport.
+
+With `--log-mcp-navigation`, these probe calls are also logged to stderr as
+`memoryarena_mcp_navigation_probe.read.start` and
+`memoryarena_mcp_navigation_probe.read.done` events with request ids, elapsed
+time, and observed refs.
 
 ## Memory Mapping
 
@@ -313,9 +558,16 @@ Implemented:
 - replay artifact generation;
 - run-id isolation;
 - live stage-aware runner against a deployed kernel;
+- optional MCP navigation probe over `kernel_near`, `kernel_inspect`, and
+  `kernel_trace`;
+- optional MCP smart writer harness over `kernel_write_memory`, with
+  read-before-write, LLM relation selection, strict dry-run, commit, verify, and
+  relation quality aggregation;
 - known-at correctness and future-answer leak diagnostics;
 - paper-aligned local scorecard over runner artifacts;
 - multi-config-safe runner and scorecard keys;
+- LLM evidence reader over recovered KMP memory, producing scorecard-compatible
+  run artifacts;
 - incremental ingest through gRPC/MCP with empty dimension declarations after
   dimensions already exist;
 - idempotent redeclaration of existing namespaced dimensions during incremental
@@ -328,6 +580,11 @@ Not implemented yet:
   published or discoverable;
 - agentic retrieval loop that lets an LLM choose multiple KMP moves before
   answering;
+- production-grade agentic writer policy loop beyond the current benchmark
+  harness, including broader graph search and multi-candidate relation planning;
+- write-path operational contract for slow commits: dry-run currently validates
+  semantics, but does not guarantee commit latency or public-ingress
+  `read_after_write_ready` completion;
 - benchmark dashboard or graph visualization.
 
 ## Verification
@@ -363,15 +620,16 @@ Live runner smoke against the public kernel endpoint:
 ```bash
 cargo run -p rehydration-testkit --bin memoryarena_kmp_adapter --locked -- \
   --input crates/rehydration-testkit/tests/fixtures/memoryarena_minimal.jsonl \
-  --output /tmp/memoryarena-kmp-adapter-smoke \
+  --output /tmp/memoryarena-mcp-nav-smoke-artifacts \
   --task-type progressive_search \
-  --run-id codex-roadmap-20260506d \
+  --run-id mcp-nav-20260506-001 \
   --force
 
 cargo run -p rehydration-testkit --bin memoryarena_kmp_runner --locked -- \
-  --artifacts /tmp/memoryarena-kmp-adapter-smoke \
-  --output /tmp/memoryarena-kmp-run-smoke \
+  --artifacts /tmp/memoryarena-mcp-nav-smoke-artifacts \
+  --output /tmp/memoryarena-mcp-nav-smoke-run \
   --endpoint http://rehydration-kernel.underpassai.com \
+  --mcp-navigation-probe \
   --force
 ```
 
@@ -386,11 +644,26 @@ future_answer_leaks: 0
 current_question_observed: 2
 unexpected_ref_asks: 0
 missing_allowed_ref_asks: 0
+mcp_navigation_probe: true
+mcp_navigation_asks: 2
+mcp_navigation_near_calls: 2
+mcp_navigation_inspect_calls: 2
+mcp_navigation_trace_calls: 2
+mcp_navigation_known_at_clean_asks: 2
+mcp_navigation_future_answer_leaks: 0
+mcp_navigation_current_question_observed: 2
+mcp_navigation_unexpected_ref_asks: 0
 ```
 
 The first ask correctly returns `UNKNOWN` because the answer feedback is not yet
 known. The second ask retrieves the first answer feedback and proves it through
-the staged memory path without leaking the second answer.
+the staged memory path without leaking the second answer. With the navigation
+probe enabled, the runner also records a temporal neighborhood around each
+question, node details for each current question, and a trace to the latest
+prior known entry. In the second subtask, `kernel_trace` returns the procedural
+`follows` relation from the current question to the previous answer feedback and
+the evidential `answers` relation from that answer feedback to the previous
+question.
 
 ## Real Progressive Search Slice
 
@@ -627,6 +900,30 @@ Interpretation:
   kernel-backed local scorecard that separates memory recall from task
   reasoning and answer construction.
 
+Post-P0 validation:
+
+- Re-run after `64cd19e` (`Fix idempotent memory dimension appends`) against the
+  redeployed public kernel kept the same scorecard values and the same clean
+  evidence guarantees.
+- Artifacts: `/tmp/memoryarena-post-64cd19e-20260506`
+- Runner aggregate:
+
+```text
+events: 221/221 successful
+asks: 73/73 known-at-clean
+full_ref_recall_asks: 73/73
+future_answer_leaks: 0
+unexpected_ref_asks: 0
+missing_allowed_ref_asks: 0
+```
+
+- Scorecard stayed unchanged: `task_success_rate=0.3000`,
+  `process_score=0.3622`, `micro_process_score=0.3973`, `passed_subtasks=29/73`.
+- Interpretation: the P0 idempotent-dimension fix stabilized repeated
+  namespaced dimension writes without changing reader capability. Remaining
+  MemoryArena failures are still reader/agent solution gaps, not kernel evidence
+  gaps.
+
 ## Next Cut
 
 1. Add benchmark reader/plugin layers for shopping, travel, and formal exact
@@ -635,5 +932,8 @@ Interpretation:
    `inspect`, and temporal moves before answering.
 3. Persist projection/traversal/proof metrics needed to classify benchmark
    failures without reading raw logs.
-4. Extract the paper-aligned evaluator into a standalone public repository once
+4. Fix production write exposure for slow `kernel_write_memory` commits:
+   configure ingress timeout, expose direct gRPC, or introduce async accepted
+   writes with explicit completion polling.
+5. Extract the paper-aligned evaluator into a standalone public repository once
    the metric contract and fixture suite are stable.

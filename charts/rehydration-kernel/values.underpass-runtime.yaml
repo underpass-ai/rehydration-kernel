@@ -9,6 +9,10 @@ ingress:
   className: nginx
   annotations:
     nginx.ingress.kubernetes.io/backend-protocol: GRPC
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "30"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-body-size: 10m
   hosts:
     - host: rehydration-kernel.underpassai.com
       paths:

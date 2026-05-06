@@ -206,6 +206,10 @@ ingress:
   className: nginx
   annotations:
     nginx.ingress.kubernetes.io/backend-protocol: GRPC
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "30"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-body-size: 10m
   hosts:
     - host: rehydration-kernel.example.com
       paths:
@@ -225,6 +229,9 @@ The sibling runtime profile now enables this directly with:
 - host: `rehydration-kernel.underpassai.com`
 - class: `nginx`
 - annotation: `nginx.ingress.kubernetes.io/backend-protocol: GRPC`
+- NGINX gRPC timeouts: 30s connect and 300s read/send, so synchronous
+  `kernel_write_memory` commits with `read_after_write_ready` are not cut at the
+  controller default 60s timeout.
 
 ## Outbound NATS TLS
 
