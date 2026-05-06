@@ -70,7 +70,9 @@ Priority: P0
 Status: started. The first MemoryArena-to-KMP artifact adapter, live
 stage-aware runner, and deterministic scorecard are available in
 `rehydration-testkit` as `memoryarena_kmp_adapter`,
-`memoryarena_kmp_runner`, and `memoryarena_kmp_scorecard`.
+`memoryarena_kmp_runner`, and `memoryarena_kmp_scorecard`. The first
+MemoryAgentBench-to-KMP adapter and live runner are available as
+`memoryagentbench_kmp_adapter` and `memoryagentbench_kmp_runner`.
 
 Goal:
 
@@ -80,17 +82,22 @@ memory better than chat QA.
 Primary target:
 
 - MemoryArena.
+- MemoryAgentBench.
 
 First slices:
 
 - `progressive_search` for process/search memory;
 - `group_travel_planner` for multidimensional people, constraints, and
   preferences.
+- MemoryAgentBench `Conflict_Resolution` / `factconsolidation_mh_32k` for
+  inject-once/query-many conflict and stale-fact memory.
 
 Deliverables:
 
 - MemoryArena dataset loader in `rehydration-testkit`;
 - adapter from MemoryArena tasks to KMP memory artifacts;
+- MemoryAgentBench dataset loader in `rehydration-testkit`;
+- adapter from MemoryAgentBench rows to KMP inject-once/query-many artifacts;
 - baseline runner without kernel;
 - kernel-backed stage-aware runner;
 - replay artifacts: timeline, dimensions, evidence refs, failed path, final
@@ -119,6 +126,12 @@ Current proof:
 - the deterministic exact-answer scorecard over that slice reached 3/3 task
   successes and 3/3 candidate-answer hits, while preserving the distinction
   between kernel substrate retrieval and benchmark answer consumption.
+- a fixture MemoryAgentBench Conflict Resolution row generates inject-once KMP
+  artifacts with 1 ingest event, 2 ask events, 4 context refs, and complete
+  known-at snapshots.
+- the MemoryAgentBench fixture live runner reached 3/3 successful events, 2/2
+  known-at-clean asks, 2/2 lexical answer hits, 0 unexpected refs, and 0
+  missing refs against `http://rehydration-kernel.underpassai.com`.
 
 Non-goals:
 
