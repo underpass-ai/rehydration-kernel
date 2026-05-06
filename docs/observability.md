@@ -7,6 +7,66 @@ produces metrics that flow through both OTel (Prometheus/Grafana) and structured
 
 Architecture reference: [ADR-007](adr/ADR-007-quality-metrics-observability.md)
 
+Product direction reference:
+[Queryable Agentic Memory Layer](product/queryable-agentic-memory-layer.md).
+
+## Current Status And Gap
+
+Current observability is useful but incomplete for the agentic-memory product
+direction.
+
+Implemented:
+
+- bundle quality metrics through a hexagonal observer port;
+- OTel histograms/counters for render RPCs;
+- structured JSON quality logs;
+- structured KMP gRPC request, response, and error logs;
+- OTel mTLS configuration support.
+
+Still important:
+
+- projection lag is defined but not recorded by the projection runtime;
+- traces are disabled by default in the in-chart collector;
+- there is no full end-to-end trace from KMP request through event append,
+  projection, traversal, render, LLM consumption, and optional write-back;
+- agentic process metrics are not yet complete: proof quality, known-at-time
+  correctness, replay completeness, failed/successful path coverage, and
+  decision traceability;
+- dashboards should focus on agent outcomes, not only infrastructure health.
+
+Observability is part of the kernel product. A temporal, multidimensional memory
+layer must show not only that storage is healthy, but whether agents received
+the right memory, at the right time, with enough proof.
+
+The product target is observable, auditable, and secure. Logs, metrics, and
+traces must support audit without leaking unnecessary raw memory or secrets.
+
+## Agentic Metrics Backlog
+
+These metric families should be treated as product metrics for agentic memory.
+
+| Metric family | Status | Purpose |
+|:--------------|:-------|:--------|
+| KMP request count, latency, and errors by move | partial via RPC metrics and logs | Prove agents can reliably call memory moves. |
+| Ingest accepted/rejected counts | partial via KMP logs | Track entries, relations, evidence, dimensions, and validation failures. |
+| Projection lag | defined, not recorded | Show when accepted memory becomes queryable. |
+| Idempotency outcomes | partial logs | Detect duplicate writes, replay behavior, unsafe retries, and conflicts. |
+| Traversal scope | partial logs | Observe selected abouts, dimensions, temporal windows, path length, and hop count. |
+| Proof quality | planned | Track evidence count, missing count, warning count, conflict count, and weak-proof count. |
+| Known-at-time correctness | planned | Detect whether a response respected requested temporal bounds. |
+| Replay completeness | planned | Measure failed attempts, successful terminal states, and final path coverage. |
+| Context quality | implemented for render paths | Track compression ratio, causal density, noise ratio, token pressure, and detail coverage. |
+| Consumer outcome | planned | Track unknown rate, missing-evidence rate, answer-with-proof rate, and trace-used rate. |
+| Security and audit | planned | Track auth mode, rejected requests, denied scopes, redaction counts, inspect/raw access counts, and audit-event emission. |
+
+Cardinality rule: labels must not include raw `about`, user ids, full refs, or
+free-form questions. High-cardinality values belong in structured logs or trace
+attributes with sampling, not metric labels.
+
+Privacy rule: structured logs and trace attributes must not include secrets,
+credentials, API keys, full raw prompts, or unrestricted raw memory details.
+Use stable refs, counts, hashes, and authorized inspect handles instead.
+
 ## BundleQualityMetrics
 
 A domain value object computed on every render. Invariant-validated at construction.

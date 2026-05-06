@@ -2257,6 +2257,7 @@ dependencies = [
  "async-nats",
  "rehydration-application",
  "rehydration-domain",
+ "rehydration-mcp",
  "rehydration-proto",
  "reqwest",
  "serde",

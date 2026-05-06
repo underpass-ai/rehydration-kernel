@@ -16,6 +16,9 @@ rehydration kernel research track.
 - [small-open-models-semantic-class-agent-2026.md](small-open-models-semantic-class-agent-2026.md) — Small open-model shortlist for the semantic-class agent (curated April 10, 2026)
 - [vllm-graph-extraction-strategy.md](vllm-graph-extraction-strategy.md) — Research note on schema-constrained graph extraction with vLLM
 - [benchmark-paper-use-cases.md](benchmark-paper-use-cases.md) — E2E evaluation matrix
+- [agentic-memory-benchmark-strategy-2026-05-06.md](agentic-memory-benchmark-strategy-2026-05-06.md) — Benchmark positioning: LongMemEval as secondary conversational-memory regression, MemoryArena/MemoryAgentBench as primary agentic-memory candidates
+- [memoryarena-benchmark.md](memoryarena-benchmark.md) — MemoryArena-to-KMP feasibility adapter and artifact contract
+- [longmemeval-benchmark.md](longmemeval-benchmark.md) — LongMemEval-to-KMP benchmark adapter, live runner, and commands
 - [anexo-procedimiento-cientifico-analisis-datos.md](anexo-procedimiento-cientifico-analisis-datos.md) — Scientific analysis methodology
 - [PLAN_GRAPH_EXPLORER.md](PLAN_GRAPH_EXPLORER.md) — Graph explorer plan (completed)
 - [REQUIREMENTS_GRAPH_EXPLORER.md](REQUIREMENTS_GRAPH_EXPLORER.md) — Graph explorer requirements (fulfilled)

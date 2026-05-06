@@ -4,6 +4,8 @@ mod graph_batch_llm;
 mod in_memory_stores;
 pub mod llm_evaluator;
 mod llm_graph;
+pub mod longmemeval;
+pub mod memoryarena;
 pub mod raw_dump;
 pub mod seed_publisher;
 pub mod seed_to_bundle;
@@ -35,6 +37,21 @@ pub use llm_graph::{
     LlmGraphError, LlmGraphNode, LlmGraphRelation, LlmNodeDetail, ProjectionMessage,
     graph_batch_to_projection_events, llm_graph_to_projection_events, namespace_graph_batch,
     parse_graph_batch, parse_llm_graph_batch,
+};
+pub use longmemeval::{
+    LongMemEvalAdapterConfig, LongMemEvalAdapterError, LongMemEvalAdapterSummary,
+    LongMemEvalCandidateTurn, LongMemEvalEvidenceLabels, LongMemEvalEvidenceTurnLabel,
+    LongMemEvalExpected, LongMemEvalItem, LongMemEvalPreparedItem, LongMemEvalTurn,
+    longmemeval_answer_turn_refs, longmemeval_candidate_turns, longmemeval_ref_scope,
+    longmemeval_turn_ref, normalize_longmemeval_date, parse_longmemeval_dataset,
+    prepare_longmemeval_item, prepare_longmemeval_items,
+};
+pub use memoryarena::{
+    MemoryArenaAdapterConfig, MemoryArenaAdapterError, MemoryArenaAdapterSummary,
+    MemoryArenaAskArtifact, MemoryArenaExpected, MemoryArenaIngestArtifact, MemoryArenaItem,
+    MemoryArenaKnownAtSnapshot, MemoryArenaPreparedTask, MemoryArenaReplay, MemoryArenaReplayEvent,
+    memoryarena_answer_ref, memoryarena_question_ref, memoryarena_ref_scope,
+    parse_memoryarena_dataset, prepare_memoryarena_item, prepare_memoryarena_items,
 };
 pub use seed_to_bundle::{seed_raw_equivalent_tokens, seed_to_bundle};
 

@@ -1,0 +1,390 @@
+# Kernel Roadmap Milestones
+
+Date: 2026-05-06
+Status: active planning document
+
+## Product Direction
+
+Underpass Kernel is a queryable, temporal, multidimensional memory layer for
+agentic processes.
+
+The kernel should let humans and LLMs search memory, inspect what was known at
+a point in time, understand why decisions were made, trace failed and successful
+paths, and audit the evidence behind a final outcome.
+
+Non-negotiables:
+
+| Requirement | Meaning |
+| --- | --- |
+| Easy to use | Small KMP API, simple request shapes, safe defaults, fail-fast errors, usable summaries, inspectable proof. |
+| Observable | Operators can see request flow, event flow, projection lag, traversal scope, proof quality, and agent outcomes. |
+| Auditable | A decision can be reconstructed from refs, evidence, relations, temporal state, and provenance. |
+| Secure | Transport, scopes, raw inspect, secrets, logs, traces, and sensitive memory are protected explicitly. |
+| Infrastructure-independent | Neo4j, NATS, Valkey, Kubernetes, MCP, and gRPC are implementations or bindings, not the product itself. |
+
+## Strategy Decisions
+
+- LongMemEval stays as a secondary conversational-memory regression.
+- The primary benchmark direction moves to agentic memory, starting with
+  MemoryArena.
+- Aggregate QA operators do not belong in core.
+- Derivation logic such as `sum`, `count`, money, date math, `max_by`, and
+  dedupe belongs in plugins above the kernel.
+- The core owns memory ingestion, dimensions, temporal coordinates, relations,
+  evidence, deterministic traversal, proof, trace, inspect, and known-at-time
+  semantics.
+- SOTA work is adopted only when it improves queryable process memory without
+  contaminating the core with infrastructure or domain logic.
+
+## Milestone 0: Roadmap And Product Baseline
+
+Priority: P0
+
+Status: in progress
+
+Goal:
+
+Establish the product direction and stop optimizing the core around the wrong
+benchmark shape.
+
+Deliverables:
+
+- queryable agentic memory product direction;
+- benchmark strategy that makes LongMemEval secondary;
+- explicit operator/plugin boundary;
+- observable, auditable, secure product requirement;
+- SOTA technique shortlist filtered by what rents.
+
+Exit criteria:
+
+- `docs/product/queryable-agentic-memory-layer.md` documents the product thesis;
+- `docs/research/agentic-memory-benchmark-strategy-2026-05-06.md` documents the
+  benchmark pivot;
+- `docs/research/longmemeval-benchmark.md` documents LongMemEval as secondary;
+- roadmap is linked from the documentation index.
+
+## Milestone 1: Agentic Benchmark Feasibility
+
+Priority: P0
+
+Status: started. The first MemoryArena-to-KMP artifact adapter and live
+stage-aware runner are available in `rehydration-testkit` as
+`memoryarena_kmp_adapter` and `memoryarena_kmp_runner`.
+
+Goal:
+
+Prove the kernel against an external benchmark that matches agentic process
+memory better than chat QA.
+
+Primary target:
+
+- MemoryArena.
+
+First slices:
+
+- `progressive_search` for process/search memory;
+- `group_travel_planner` for multidimensional people, constraints, and
+  preferences.
+
+Deliverables:
+
+- MemoryArena dataset loader in `rehydration-testkit`;
+- adapter from MemoryArena tasks to KMP memory artifacts;
+- baseline runner without kernel;
+- kernel-backed stage-aware runner;
+- replay artifacts: timeline, dimensions, evidence refs, failed path, final
+  path, known-at-time snapshots;
+- scorecard with task success, evidence recall, known-at-time correctness,
+  replay completeness, auditability, latency, and cost.
+
+Exit criteria:
+
+- at least one MemoryArena slice runs end to end;
+- artifacts can be inspected by a human without reading raw transcripts;
+- an LLM can use KMP moves to answer/replay without knowing backend topology;
+- failures are classified as ingestion, projection, retrieval, proof, model
+  consumption, or task reasoning.
+
+Current proof:
+
+- a fixture MemoryArena task generates staged KMP artifacts;
+- the live runner replays the artifact stream against
+  `http://rehydration-kernel.underpassai.com`;
+- the smoke run reached 7/7 successful events, 2/2 known-at-clean asks, 0 future
+  answer leaks, and complete observed refs for the allowed known-at evidence.
+
+Non-goals:
+
+- do not claim SOTA benchmark performance from the first feasibility slice;
+- do not add benchmark-specific behavior to core;
+- do not remove the LongMemEval regression.
+
+## Milestone 2: Hybrid Candidate Retrieval
+
+Priority: P0
+
+Goal:
+
+Improve recall for process memory queries using SOTA retrieval composition while
+keeping KMP independent of vector database semantics.
+
+Technique:
+
+- lexical search for exact ids, names, dates, amounts, and tool outputs;
+- embedding search for semantic candidates;
+- graph traversal for related entries and paths;
+- temporal expansion around candidate refs;
+- reranker or cross-encoder for final candidate ordering.
+
+Deliverables:
+
+- search/candidate port with stable ref output;
+- paid embedding adapter for experiments;
+- local embedding sidecar plan or adapter;
+- reranker experiment behind a port;
+- metrics: recall@K, selected dimensions, temporal expansion count, rerank
+  latency, missing evidence count;
+- no public KMP vector-search API.
+
+Exit criteria:
+
+- candidate retrieval can be evaluated independently from answer generation;
+- retrieval output is a stable list of memory refs with scores and evidence
+  handles;
+- MemoryArena and LongMemEval can both use the same candidate pipeline;
+- KMP remains a memory navigation API, not a vector DB API.
+
+## Milestone 3: Temporal Validity, Supersession, And Known-At-Time
+
+Priority: P0
+
+Goal:
+
+Make temporal memory more than ordered entries. The kernel must represent which
+facts, decisions, and evidence were active at a point in time.
+
+Deliverables:
+
+- validated semantics for `valid_from` and `valid_until`;
+- explicit supersedes/superseded-by relation guidance;
+- stale fact and contradicted fact warnings;
+- known-at-time query helper over current KMP primitives;
+- tests for current fact, stale fact, superseded decision, and conflict paths;
+- demo artifact showing a decision that was reasonable at time `t` and stale
+  later.
+
+Exit criteria:
+
+- callers can ask what was known at time/ref/sequence and receive bounded
+  evidence;
+- a trace can explain why a later decision superseded an earlier one;
+- missing or conflicting temporal proof is reported explicitly.
+
+## Milestone 4: Process Query Helpers
+
+Priority: P1
+
+Goal:
+
+Expose common process questions as composed helpers above KMP without bloating
+the core API.
+
+Target helpers:
+
+- `search_memory(scope, query)`;
+- `known_at(time/ref, scope)`;
+- `decision_at(time/ref, scope)`;
+- `why(decision_ref)`;
+- `evidence_for(ref)`;
+- `failed_paths(scope)`;
+- `successful_paths(scope)`;
+- `final_path(scope)`;
+- `compare_paths(criteria)`;
+- `best_path(criteria)`.
+
+Deliverables:
+
+- helper contract document;
+- proof shape for each helper;
+- implementation for a minimal incident/demo slice;
+- policy/plugin boundary for `compare_paths` and `best_path`.
+
+Exit criteria:
+
+- helpers are implemented as composition over `ask`, `goto`, `near`, `forward`,
+  `rewind`, `trace`, and `inspect`;
+- no helper requires storage-specific knowledge;
+- every helper returns a usable layer and proof layer.
+
+## Milestone 5: Observability, Audit, And Security Upgrade
+
+Priority: P0/P1
+
+Goal:
+
+Make the memory layer operationally trustworthy for agents and humans.
+
+Deliverables:
+
+- projection lag metric recorded by the projection runtime;
+- KMP request/response/error metrics by move;
+- proof quality metrics: evidence count, missing count, warning count, conflict
+  count, weak-proof count;
+- traversal scope metrics/logs: selected abouts, dimensions, time window, path
+  length, hop count;
+- end-to-end OTel trace shape for KMP through event append/read, projection,
+  traversal, proof, LLM/tool consumer, and optional write-back;
+- audit log events for ingest, read, trace, inspect, and rejected access;
+- privacy rules for logs/traces: no secrets, API keys, raw prompts, or
+  unrestricted raw memory;
+- security backlog for caller identity, RBAC, raw inspect permission, redaction
+  policy, and data-at-rest strategy.
+
+Exit criteria:
+
+- an operator can tell whether a memory write became queryable;
+- a failed agent answer can be classified by failure stage;
+- trace and inspect access is visible in audit logs;
+- metrics do not use high-cardinality user data as labels;
+- sensitive raw memory does not leak through normal logs or traces.
+
+## Milestone 6: Derivation Plugin Contracts
+
+Priority: P1
+
+Goal:
+
+Keep domain and benchmark operators outside core while still supporting
+structured derivations when applications need them.
+
+Initial plugin families:
+
+- money/currency;
+- date/duration;
+- count/dedupe;
+- max/min comparison;
+- latest/current value;
+- domain-specific best-path policy.
+
+Deliverables:
+
+- plugin contract: input evidence refs, typed operands, normalized values,
+  included/excluded/context labels, computation proof, output memory write-back;
+- example plugin using LongMemEval aggregate cases;
+- raw evidence and derived memory provenance via `derived_from`;
+- no core dependency on benchmark operators.
+
+Exit criteria:
+
+- a plugin can compute a derivation from kernel evidence and write an auditable
+  derived result back into memory;
+- core remains unaware of money/date/count semantics;
+- LongMemEval aggregate QA improvements can happen without changing KMP core.
+
+## Milestone 7: Infrastructure Independence
+
+Priority: P1/P2
+
+Goal:
+
+Demonstrate that the kernel is the memory model and protocol, not a specific
+storage distribution.
+
+Deliverables:
+
+- in-memory adapter for conformance tests;
+- KMP conformance suite for ingest, wake, ask, temporal movement, trace,
+  inspect, known-at-time, and proof;
+- conformance run against in-memory and production adapters;
+- port boundary review for domain/application crates;
+- backend-specific behavior documented as adapter behavior, not protocol
+  semantics.
+
+Exit criteria:
+
+- the same semantic tests pass against at least two backends;
+- applications can reason about KMP without knowing Neo4j/NATS/Valkey topology;
+- new storage adapters can be evaluated by conformance, not manual judgment.
+
+## Milestone 8: Human And LLM API Ergonomics
+
+Priority: P1
+
+Goal:
+
+Make KMP easy for both LLM tools and human API users.
+
+Deliverables:
+
+- concise examples for each memory move;
+- canonical JSON examples for MCP and future HTTP/SDKs;
+- fail-fast error examples;
+- stable ref conventions;
+- response shape guide: usable layer plus proof layer;
+- minimal SDK or CLI helper for demos and benchmark harnesses;
+- graph/replay visualization artifact for incident and benchmark runs.
+
+Exit criteria:
+
+- a human can replay a process from docs and artifacts;
+- an LLM can call the API without storage-specific instructions;
+- every response is compact enough for an agent and inspectable enough for an
+  auditor.
+
+## Milestone 9: Public Proof And Comparisons
+
+Priority: P2
+
+Goal:
+
+Turn the architecture into a defensible public claim.
+
+Deliverables:
+
+- article/demo based on an agentic process, not flat chat QA;
+- MemoryArena feasibility report;
+- LongMemEval secondary regression report;
+- comparison framing against Zep/Graphiti, LangGraph, Temporal, Letta, Mem0,
+  Hindsight, Mastra OM, LangSmith/Phoenix/OTel;
+- limitations section that states what is not solved;
+- reproducible artifacts and commands.
+
+Exit criteria:
+
+- public claim is narrow, measured, and reproducible;
+- the demo is visually inspectable with low cognitive load;
+- the report shows where the kernel helps and where plugins or consumers still
+  own reasoning.
+
+## Execution Order
+
+Recommended order:
+
+1. Finish Milestone 0 documentation baseline.
+2. Build Milestone 1 MemoryArena feasibility adapter.
+3. Add Milestone 5 observability gaps needed to debug the benchmark run.
+4. Implement Milestone 2 hybrid candidate retrieval behind ports.
+5. Tighten Milestone 3 known-at-time and supersession semantics.
+6. Add Milestone 4 process query helpers for the demo.
+7. Define Milestone 6 plugin contracts after retrieval/replay is stable.
+8. Start Milestone 7 infrastructure conformance once semantics stop moving.
+9. Package Milestone 9 public proof only after reproducible runs exist.
+
+## Current Next Slice
+
+The immediate next slice should be:
+
+```text
+MemoryArena real dataset slice
++ replay artifacts at task scale
++ minimum observability for projection/traversal/proof
++ LongMemEval left as secondary regression
+```
+
+This slice validates the strongest product claim:
+
+```text
+Underpass Kernel is an observable, auditable, secure memory substrate for
+agentic processes. It preserves enough temporal and multidimensional structure
+to replay what happened, why it happened, what failed, and what finally worked.
+```

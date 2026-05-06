@@ -1,0 +1,25 @@
+[
+  {
+    "question_id": "830ce83f",
+    "question_type": "knowledge-update",
+    "question": "Where did Rachel move?",
+    "answer": "Austin",
+    "question_date": "2023/05/21 (Sun) 12:00",
+    "haystack_session_ids": ["session-a"],
+    "haystack_dates": ["2023/05/20 (Sat) 00:04"],
+    "haystack_sessions": [
+      [
+        {
+          "role": "user",
+          "content": "Rachel said she was moving to Denver."
+        },
+        {
+          "role": "assistant",
+          "content": "Rachel corrected the destination to Austin.",
+          "has_answer": true
+        }
+      ]
+    ],
+    "answer_session_ids": ["session-a"]
+  }
+]
