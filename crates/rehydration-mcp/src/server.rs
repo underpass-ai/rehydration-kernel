@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Instant;
 
 use serde_json::Value;
 
@@ -8,6 +9,7 @@ use crate::backend::{
 };
 use crate::fixture::FixtureKernelMcpBackend;
 use crate::grpc::GrpcKernelMcpBackend;
+use crate::observability::{ToolErrorKind, record_tool_error, record_tool_success};
 use crate::protocol::{
     initialize_result, jsonrpc_error, jsonrpc_result, tool_error_result, tool_success_result,
     tools_list_result,
@@ -149,25 +151,72 @@ impl KernelMcpServer {
             return jsonrpc_error(id, -32602, "tools/call requires params.name");
         };
         let arguments = params.get("arguments").unwrap_or(&Value::Null);
+        let start = Instant::now();
 
         if name == "kernel_write_memory" {
-            return self.handle_kernel_write_memory(id, arguments).await;
+            return self.handle_kernel_write_memory(id, arguments, start).await;
         }
 
         match self.backend.call_tool(name, arguments).await {
-            Ok(result) => jsonrpc_result(id, result),
-            Err(message) => jsonrpc_result(id, tool_error_result(&message)),
+            Ok(result) => {
+                record_tool_success(
+                    self.backend_name(),
+                    self.grpc_tls_mode_name(),
+                    name,
+                    arguments,
+                    &result,
+                    start.elapsed(),
+                );
+                jsonrpc_result(id, result)
+            }
+            Err(message) => {
+                record_tool_error(
+                    self.backend_name(),
+                    self.grpc_tls_mode_name(),
+                    name,
+                    arguments,
+                    ToolErrorKind::Backend,
+                    &message,
+                    start.elapsed(),
+                );
+                jsonrpc_result(id, tool_error_result(&message))
+            }
         }
     }
 
-    async fn handle_kernel_write_memory(&self, id: Value, arguments: &Value) -> String {
+    async fn handle_kernel_write_memory(
+        &self,
+        id: Value,
+        arguments: &Value,
+        start: Instant,
+    ) -> String {
         let plan = match build_write_plan(arguments) {
             Ok(plan) => plan,
-            Err(message) => return jsonrpc_result(id, tool_error_result(&message)),
+            Err(message) => {
+                record_tool_error(
+                    self.backend_name(),
+                    self.grpc_tls_mode_name(),
+                    "kernel_write_memory",
+                    arguments,
+                    ToolErrorKind::Validation,
+                    &message,
+                    start.elapsed(),
+                );
+                return jsonrpc_result(id, tool_error_result(&message));
+            }
         };
 
         if plan.dry_run {
-            return jsonrpc_result(id, tool_success_result(write_dry_run_result(&plan)));
+            let result = tool_success_result(write_dry_run_result(&plan));
+            record_tool_success(
+                self.backend_name(),
+                self.grpc_tls_mode_name(),
+                "kernel_write_memory",
+                arguments,
+                &result,
+                start.elapsed(),
+            );
+            return jsonrpc_result(id, result);
         }
 
         match self
@@ -177,12 +226,29 @@ impl KernelMcpServer {
         {
             Ok(result) => {
                 let ingest_result = result.get("structuredContent").cloned().unwrap_or(result);
-                jsonrpc_result(
-                    id,
-                    tool_success_result(write_commit_result(&plan, ingest_result)),
-                )
+                let result = tool_success_result(write_commit_result(&plan, ingest_result));
+                record_tool_success(
+                    self.backend_name(),
+                    self.grpc_tls_mode_name(),
+                    "kernel_write_memory",
+                    arguments,
+                    &result,
+                    start.elapsed(),
+                );
+                jsonrpc_result(id, result)
             }
-            Err(message) => jsonrpc_result(id, tool_error_result(&message)),
+            Err(message) => {
+                record_tool_error(
+                    self.backend_name(),
+                    self.grpc_tls_mode_name(),
+                    "kernel_write_memory",
+                    arguments,
+                    ToolErrorKind::Backend,
+                    &message,
+                    start.elapsed(),
+                );
+                jsonrpc_result(id, tool_error_result(&message))
+            }
         }
     }
 }

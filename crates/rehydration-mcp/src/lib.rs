@@ -4,6 +4,7 @@ mod fixture;
 mod grpc;
 mod ingest;
 mod kmp;
+mod observability;
 mod protocol;
 mod server;
 mod write;

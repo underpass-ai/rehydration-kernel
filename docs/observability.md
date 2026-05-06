@@ -21,6 +21,13 @@ Implemented:
 - OTel histograms/counters for render RPCs;
 - structured JSON quality logs;
 - structured KMP gRPC request, response, and error logs;
+- structured MCP tool logs for every KMP move, including safe request/result
+  counts and writer relation quality;
+- OTel MCP counters and histograms for tool calls, duration, request counts,
+  result warnings, path length, writer relation quality, and writer
+  read-context coverage;
+- OTel `KernelMemoryService` counters and histograms for gRPC calls, duration,
+  success/error status, and tonic status code;
 - OTel mTLS configuration support.
 
 Still important:
@@ -47,12 +54,12 @@ These metric families should be treated as product metrics for agentic memory.
 
 | Metric family | Status | Purpose |
 |:--------------|:-------|:--------|
-| KMP request count, latency, and errors by move | partial via RPC metrics and logs | Prove agents can reliably call memory moves. |
-| Ingest accepted/rejected counts | partial via KMP logs | Track entries, relations, evidence, dimensions, and validation failures. |
+| KMP request count, latency, and errors by move | implemented for MCP tools and `KernelMemoryService` gRPC RPCs | Prove agents can reliably call memory moves. |
+| Ingest accepted/rejected counts | partial via KMP logs; MCP records canonical request/result counts | Track entries, relations, evidence, dimensions, and validation failures. |
 | Projection lag | defined, not recorded | Show when accepted memory becomes queryable. |
 | Idempotency outcomes | partial logs | Detect duplicate writes, replay behavior, unsafe retries, and conflicts. |
-| Traversal scope | partial logs | Observe selected abouts, dimensions, temporal windows, path length, and hop count. |
-| Proof quality | planned | Track evidence count, missing count, warning count, conflict count, and weak-proof count. |
+| Traversal scope | partial logs; MCP records dimension scope/mode counts and path length | Observe selected abouts, dimensions, temporal windows, path length, and hop count. |
+| Proof quality | partial via MCP result evidence/path/warning counts | Track evidence count, missing count, warning count, conflict count, and weak-proof count. |
 | Known-at-time correctness | planned | Detect whether a response respected requested temporal bounds. |
 | Replay completeness | planned | Measure failed attempts, successful terminal states, and final path coverage. |
 | Context quality | implemented for render paths | Track compression ratio, causal density, noise ratio, token pressure, and detail coverage. |
@@ -66,6 +73,65 @@ attributes with sampling, not metric labels.
 Privacy rule: structured logs and trace attributes must not include secrets,
 credentials, API keys, full raw prompts, or unrestricted raw memory details.
 Use stable refs, counts, hashes, and authorized inspect handles instead.
+
+## MCP Tool Observability
+
+The MCP adapter emits one structured log event per completed or rejected
+`tools/call` request:
+
+```text
+event=kernel_mcp_tool
+kmp_move=kernel_write_memory|kernel_ingest|kernel_wake|...
+backend=fixture|grpc
+grpc_tls=disabled|server|mutual
+status=success|error
+error_kind=none|validation|backend
+duration_ms=<milliseconds>
+```
+
+The event records only safe shapes:
+
+- request counts: dimensions, entries, relations, evidence, `connect_to`, and
+  `read_context` refs;
+- selection shape: dimension mode, scope, explicit about count, dimension
+  filter count, and scope id count;
+- result counts: warnings, entries, relations, evidence, path length, and raw
+  ref count;
+- writer quality: rich/anemic/structural/suspect relation counts and
+  read-context required/observed counts.
+
+It does not log raw entry text, evidence text, natural-language questions, raw
+memory bodies, API keys, or backend error strings. Backend error messages are
+represented by a stable short hash plus low-cardinality `error_kind`.
+
+The MCP adapter also emits OTel metrics:
+
+| Metric | Type | Labels | Description |
+|:-------|:-----|:-------|:------------|
+| `rehydration.kmp.tool.calls` | counter | `move`, `backend`, `grpc_tls`, `status`, `error_kind` | Tool call volume and failure classification. |
+| `rehydration.kmp.tool.duration` | histogram | `move`, `backend`, `grpc_tls`, `status`, `error_kind` | End-to-end MCP tool latency. |
+| `rehydration.kmp.request.entries` | histogram | `move`, `backend` | Canonical write entry counts. |
+| `rehydration.kmp.request.relations` | histogram | `move`, `backend` | Canonical write relation counts. |
+| `rehydration.kmp.request.evidence` | histogram | `move`, `backend` | Canonical write evidence counts. |
+| `rehydration.kmp.result.warnings` | histogram | `move`, `backend` | Warnings returned by the move. |
+| `rehydration.kmp.result.path_length` | histogram | `move`, `backend` | Trace/proof path length when present. |
+| `rehydration.kmp.writer.relations` | counter | `quality` | Writer relation quality volume. |
+| `rehydration.kmp.writer.read_context.required` | histogram | `move`, `backend` | Rich external relations requiring prior read context. |
+| `rehydration.kmp.writer.read_context.observed` | histogram | `move`, `backend` | Rich external relations backed by prior read context. |
+
+## KernelMemoryService gRPC Metrics
+
+The typed Kernel Memory gRPC facade emits service-level OTel metrics for every
+RPC in `KernelMemoryService`:
+
+| Metric | Type | Labels | Description |
+|:-------|:-----|:-------|:------------|
+| `rehydration.kmp.grpc.calls` | counter | `rpc`, `status`, `code` | gRPC request volume and success/error classification. |
+| `rehydration.kmp.grpc.duration` | histogram | `rpc`, `status`, `code` | End-to-end handler latency including validation and application execution. |
+
+`status` is `success` or `error`. `code` is `none` for success and the low
+cardinality tonic status label for failures, for example `invalid_argument`,
+`not_found`, `internal`, or `unavailable`.
 
 ## BundleQualityMetrics
 

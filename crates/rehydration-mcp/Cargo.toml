@@ -8,6 +8,7 @@ description = "Stdio MCP adapter for Kernel Memory Protocol"
 repository.workspace = true
 
 [dependencies]
+opentelemetry.workspace = true
 prost-types.workspace = true
 rehydration-proto.workspace = true
 serde_json.workspace = true
@@ -15,6 +16,7 @@ sha2.workspace = true
 tokio.workspace = true
 tokio-rustls = "0.26.4"
 tonic.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
 tempfile = "3.26.0"
