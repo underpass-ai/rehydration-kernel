@@ -136,9 +136,9 @@ Generated scorecard artifacts:
 
 `memoryarena_kmp_interpretation_probe` tests reusable domain plugins against
 real MemoryArena runner evidence. It is not an official MemoryArena score and it
-does not use gold answers. The probe reads `results.jsonl`, runs the shared
-currency and date plugins over the current question plus recovered evidence
-refs, and writes typed mentions and any safe derivation attempts.
+does not use gold answers. The probe reads `results.jsonl`, runs reusable value
+plugins over the current question plus recovered evidence refs, and writes typed
+mentions and any safe derivation attempts.
 
 ```bash
 cargo run -p rehydration-testkit --bin memoryarena_kmp_interpretation_probe -- \
@@ -150,12 +150,63 @@ cargo run -p rehydration-testkit --bin memoryarena_kmp_interpretation_probe -- \
 Use this to validate plugin behavior on benchmark artifacts before wiring the
 same domain plugins into readers or writer-side enrichment.
 
+## Composed Plugin Reader
+
+`memoryarena_kmp_plugin_reader` is the benchmark adapter for the generic kernel
+reader. It consumes `ComposedEvidenceReader::kernel_default()` from
+`rehydration-interpretation`, applies all registered value plugins to the same
+retrieved evidence, and writes the aggregated reader output into every result
+row under `plugin_reader`.
+
+The row output includes both configured order and actual execution order:
+`plugin_reader.plugin_configuration.plugin_order` records the reader
+configuration, while `plugin_reader.execution_order` records what ran for that
+specific ask. This matters because plugin order is an explicit reader policy,
+not an implementation detail.
+
+The adapter does not add benchmark heuristics. It only replaces `ask_answer`
+when an explicit deterministic derivation step returns an answer. If a run has
+no derivation steps, the scorecard should remain unchanged while the artifacts
+gain typed, auditable value mentions.
+
+```bash
+cargo run -p rehydration-testkit --bin memoryarena_kmp_plugin_reader -- \
+  --run /tmp/memoryarena-benchmark-20260506-plugins/combined-run \
+  --output /tmp/memoryarena-benchmark-20260506-plugins/combined-plugin-reader-v3 \
+  --force
+
+cargo run -p rehydration-testkit --bin memoryarena_kmp_scorecard -- \
+  --artifacts /tmp/memoryarena-benchmark-20260506-plugins/combined-artifacts \
+  --run /tmp/memoryarena-benchmark-20260506-plugins/combined-plugin-reader-v3 \
+  --output /tmp/memoryarena-benchmark-20260506-plugins/combined-plugin-reader-v3-scorecard \
+  --force
+```
+
+Current composed-reader result on the 2x/domain combined slice
+`/tmp/memoryarena-benchmark-20260506-plugins/combined-run`:
+
+- asks: 73;
+- changed answers: 0;
+- value plugins: `source-code-value-v1`, `math-expression-value-v1`,
+  `url-value-v1`, `money-value-v1`, `date-value-v1`;
+- derivation plugins registered: `value-operation-v1`,
+  `currency-derivation-v1`, `date-derivation-v1`;
+- configured order is serialized in the summary and every row;
+- per-row execution order currently contains the five value plugins, because
+  this run has no explicit derivation steps;
+- typed value mentions: 4,567;
+- derivation results: 0;
+- scorecard unchanged: SR 0.3000, PS 0.3622, micro-PS 0.3973.
+
 Current probe result on the 2x/domain combined slice
-`/tmp/memoryarena-realistic-short-20260506152937/combined-run`:
+`/tmp/memoryarena-benchmark-20260506-plugins/combined-run`:
 
 - asks: 73;
 - currency mentions: 35 across 20 asks;
 - date mentions: 292 across 19 asks;
+- math mentions: 4,226 across 25 asks;
+- source-code mentions: 14 across 8 asks;
+- URL mentions: 0;
 - currency mentions in `formal_reasoning_math` and `formal_reasoning_phys`: 0
   after hardening against LaTeX `$...$` math delimiters;
 - derivation attempts: 0, intentionally, because the probe only derives when at

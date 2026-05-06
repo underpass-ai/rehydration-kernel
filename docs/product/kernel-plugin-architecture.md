@@ -321,6 +321,47 @@ pub struct PluginSet {
 }
 ```
 
+For the common in-process path, `rehydration-interpretation` provides
+`ComposedEvidenceReader` plus `EvidenceReaderPluginConfigurator`. This is the
+kernel-owned reference reader for this slice: the configurator owns which
+plugins are enabled and in which order, then the reader applies value plugins,
+aggregates typed mentions and diagnostics, and routes explicit derivation
+requests to the named derivation plugin.
+
+```rust
+use rehydration_interpretation::{
+    ComposedEvidenceReader, EvidenceFragment, EvidenceInterpretationInput, EvidenceReaderRequest,
+    UrlValuePlugin, MoneyValuePlugin,
+};
+
+let reader = ComposedEvidenceReader::configure()
+    .with_value_plugin(UrlValuePlugin)
+    .with_value_plugin(MoneyValuePlugin)
+    .build()?;
+
+let evidence = EvidenceInterpretationInput::new(vec![EvidenceFragment::new(
+    "turn:42",
+    "Paid $120 on 2026-05-01. See https://example.test/runbook.",
+)]);
+
+let output = reader.read(&EvidenceReaderRequest::new(evidence))?;
+assert_eq!(
+    output.execution_order.iter().map(|step| step.plugin_id).collect::<Vec<_>>(),
+    vec!["url-value-v1", "money-value-v1"]
+);
+```
+
+Plugin order is part of the reader contract. It is serialized in
+`plugin_configuration.plugin_order` and in per-read `execution_order`. Value
+plugin order controls execution and output ordering. Derivation plugin
+registration order controls the configured allow-list; derivation execution
+order follows the explicit derivation steps in the reader request.
+
+The composed reader intentionally does not infer that every extracted value is
+an operand. Derivations must be requested explicitly with a plugin id and an
+already labeled `DerivationRequest`. This keeps operand selection auditable and
+prevents benchmark-specific heuristics from becoming kernel behavior.
+
 If a later application needs discovery, sandboxing, version negotiation, or
 remote execution, that belongs in a host/adapter layer above this contract.
 
@@ -409,6 +450,7 @@ domain operators.
 
 `rehydration-interpretation` currently provides the reference implementations:
 
+- `ComposedEvidenceReader`;
 - `MoneyValuePlugin`;
 - `DateValuePlugin`;
 - `MathExpressionValuePlugin`;

@@ -7,9 +7,11 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rehydration_interpretation::{
-    CurrencyDerivationPlugin, DateDerivationPlugin, DerivationOperand, DerivationOperation,
-    DerivationRequest, DerivationResult, EvidenceFragment, EvidenceInterpretationInput,
-    InterpretedValue, InterpretedValueMention, OperandRole,
+    CurrencyDerivationPlugin, DateDerivationPlugin, DateValuePlugin, DerivationOperand,
+    DerivationOperation, DerivationRequest, DerivationResult, EvidenceFragment,
+    EvidenceInterpretationInput, EvidenceValuePlugin, InterpretedValue, InterpretedValueMention,
+    MathExpressionValuePlugin, MoneyValuePlugin, OperandRole, SourceCodeValuePlugin,
+    UrlValuePlugin,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -46,6 +48,9 @@ struct InterpretationProbeResult {
     fragments: usize,
     currency_mentions: Vec<InterpretedValueMention>,
     date_mentions: Vec<InterpretedValueMention>,
+    math_mentions: Vec<InterpretedValueMention>,
+    source_code_mentions: Vec<InterpretedValueMention>,
+    url_mentions: Vec<InterpretedValueMention>,
     currency_derivation: Option<DerivationResult>,
     date_derivation: Option<DerivationResult>,
     diagnostics: Vec<String>,
@@ -56,8 +61,14 @@ struct TaskTypeProbeSummary {
     asks: usize,
     asks_with_currency_mentions: usize,
     asks_with_date_mentions: usize,
+    asks_with_math_mentions: usize,
+    asks_with_source_code_mentions: usize,
+    asks_with_url_mentions: usize,
     currency_mentions: usize,
     date_mentions: usize,
+    math_mentions: usize,
+    source_code_mentions: usize,
+    url_mentions: usize,
     currency_derivation_attempts: usize,
     date_derivation_attempts: usize,
     derivation_errors: usize,
@@ -71,10 +82,17 @@ struct ProbeSummary {
     generated_at_unix_seconds: u64,
     run: String,
     asks: usize,
+    applied_value_plugins: Vec<&'static str>,
     asks_with_currency_mentions: usize,
     asks_with_date_mentions: usize,
+    asks_with_math_mentions: usize,
+    asks_with_source_code_mentions: usize,
+    asks_with_url_mentions: usize,
     currency_mentions: usize,
     date_mentions: usize,
+    math_mentions: usize,
+    source_code_mentions: usize,
+    url_mentions: usize,
     currency_derivation_attempts: usize,
     date_derivation_attempts: usize,
     derivation_errors: usize,
@@ -108,13 +126,21 @@ fn probe_results(
 ) -> Result<Vec<InterpretationProbeResult>, Box<dyn Error + Send + Sync>> {
     let currency = CurrencyDerivationPlugin;
     let dates = DateDerivationPlugin;
+    let money = MoneyValuePlugin;
+    let date_values = DateValuePlugin;
+    let math = MathExpressionValuePlugin;
+    let source_code = SourceCodeValuePlugin;
+    let url = UrlValuePlugin;
     let mut results = Vec::new();
 
     for run in run_results {
         let fragments = evidence_fragments(run);
         let input = EvidenceInterpretationInput::new(fragments.clone());
-        let currency_output = currency.interpret(&input)?;
-        let date_output = dates.interpret(&input)?;
+        let currency_output = money.interpret(&input)?;
+        let date_output = date_values.interpret(&input)?;
+        let math_output = math.interpret(&input)?;
+        let source_code_output = source_code.interpret(&input)?;
+        let url_output = url.interpret(&input)?;
         let mut diagnostics = Vec::new();
 
         let currency_derivation =
@@ -143,6 +169,9 @@ fn probe_results(
             fragments: fragments.len(),
             currency_mentions: currency_output.values,
             date_mentions: date_output.values,
+            math_mentions: math_output.values,
+            source_code_mentions: source_code_output.values,
+            url_mentions: url_output.values,
             currency_derivation,
             date_derivation,
             diagnostics,
@@ -369,8 +398,20 @@ fn summarize(
         if !result.date_mentions.is_empty() {
             entry.asks_with_date_mentions += 1;
         }
+        if !result.math_mentions.is_empty() {
+            entry.asks_with_math_mentions += 1;
+        }
+        if !result.source_code_mentions.is_empty() {
+            entry.asks_with_source_code_mentions += 1;
+        }
+        if !result.url_mentions.is_empty() {
+            entry.asks_with_url_mentions += 1;
+        }
         entry.currency_mentions += result.currency_mentions.len();
         entry.date_mentions += result.date_mentions.len();
+        entry.math_mentions += result.math_mentions.len();
+        entry.source_code_mentions += result.source_code_mentions.len();
+        entry.url_mentions += result.url_mentions.len();
         if result.currency_derivation.is_some() {
             entry.currency_derivation_attempts += 1;
         }
@@ -387,6 +428,13 @@ fn summarize(
         generated_at_unix_seconds: SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs(),
         run: args.run.display().to_string(),
         asks: results.len(),
+        applied_value_plugins: vec![
+            "money-value-v1",
+            "date-value-v1",
+            "math-expression-value-v1",
+            "source-code-value-v1",
+            "url-value-v1",
+        ],
         asks_with_currency_mentions: results
             .iter()
             .filter(|result| !result.currency_mentions.is_empty())
@@ -394,6 +442,18 @@ fn summarize(
         asks_with_date_mentions: results
             .iter()
             .filter(|result| !result.date_mentions.is_empty())
+            .count(),
+        asks_with_math_mentions: results
+            .iter()
+            .filter(|result| !result.math_mentions.is_empty())
+            .count(),
+        asks_with_source_code_mentions: results
+            .iter()
+            .filter(|result| !result.source_code_mentions.is_empty())
+            .count(),
+        asks_with_url_mentions: results
+            .iter()
+            .filter(|result| !result.url_mentions.is_empty())
             .count(),
         currency_mentions: results
             .iter()
@@ -403,6 +463,15 @@ fn summarize(
             .iter()
             .map(|result| result.date_mentions.len())
             .sum(),
+        math_mentions: results
+            .iter()
+            .map(|result| result.math_mentions.len())
+            .sum(),
+        source_code_mentions: results
+            .iter()
+            .map(|result| result.source_code_mentions.len())
+            .sum(),
+        url_mentions: results.iter().map(|result| result.url_mentions.len()).sum(),
         currency_derivation_attempts: results
             .iter()
             .filter(|result| result.currency_derivation.is_some())
@@ -421,8 +490,14 @@ fn empty_task_type_summary() -> TaskTypeProbeSummary {
         asks: 0,
         asks_with_currency_mentions: 0,
         asks_with_date_mentions: 0,
+        asks_with_math_mentions: 0,
+        asks_with_source_code_mentions: 0,
+        asks_with_url_mentions: 0,
         currency_mentions: 0,
         date_mentions: 0,
+        math_mentions: 0,
+        source_code_mentions: 0,
+        url_mentions: 0,
         currency_derivation_attempts: 0,
         date_derivation_attempts: 0,
         derivation_errors: 0,

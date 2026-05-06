@@ -133,6 +133,47 @@ The operation input is deliberately separate from extraction. A money mention is
 not automatically a sum operand. The reader or agent must create a derivation
 request that labels each candidate as `include`, `exclude`, or `context`.
 
+## Composed Reader
+
+`rehydration-interpretation` exposes `ComposedEvidenceReader` as the generic
+reader base for in-process kernel consumers. It composes plugin lists instead
+of hard-coding a benchmark or domain flow:
+
+- `EvidenceReaderPluginConfigurator` is the only intended construction path
+  for custom reader composition;
+- value plugins are executed in configured order over the same evidence input;
+- typed mentions, per-plugin outputs, and diagnostics are aggregated;
+- derivation plugins are invoked only when the request names a registered
+  `plugin_id`;
+- duplicate plugin ids fail fast during reader construction;
+- configured order is emitted through `plugin_configuration.plugin_order`;
+- actual per-read execution order is emitted through `execution_order`.
+
+Order matters. A host must choose it deliberately instead of relying on
+incidental `Vec` construction. The default order is stable and auditable, but a
+host can construct another order when a domain needs a different read policy.
+Span-class precedence remains deterministic and independent from reader order:
+source-code spans, math spans, URL spans, and text spans are segmented before
+value plugins interpret their owned spans.
+
+The default kernel reader currently wires all reusable base value plugins:
+
+- `SourceCodeValuePlugin`;
+- `MathExpressionValuePlugin`;
+- `UrlValuePlugin`.
+- `MoneyValuePlugin`;
+- `DateValuePlugin`.
+
+It also registers deterministic derivation plugins:
+
+- `ValueOperationPlugin`;
+- `CurrencyDerivationPlugin`;
+- `DateDerivationPlugin`.
+
+This is the path benchmark adapters should consume. A benchmark may still build
+domain-specific operand-selection logic above the reader, but that logic must
+remain outside the kernel plugin base.
+
 ## Minimal Flow
 
 1. Ask the kernel for context and keep the refs.

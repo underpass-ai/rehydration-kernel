@@ -1,5 +1,6 @@
 pub mod interpretation_plugins;
 pub mod math_plugin;
+pub mod plugin_reader;
 pub mod source_code_plugin;
 pub mod text_normalization;
 pub mod url_plugin;
@@ -9,6 +10,11 @@ pub use interpretation_plugins::{
     ValueOperationPlugin,
 };
 pub use math_plugin::MathExpressionValuePlugin;
+pub use plugin_reader::{
+    ComposedEvidenceReader, EvidenceReaderDerivation, EvidenceReaderOutput,
+    EvidenceReaderPluginConfiguration, EvidenceReaderPluginConfigurator,
+    EvidenceReaderPluginExecution, EvidenceReaderPluginPhase, EvidenceReaderRequest,
+};
 pub use rehydration_plugin_api::{
     CalendarDate, CurrencyCode, DerivationOperand, DerivationOperation, DerivationRequest,
     DerivationResult, EvidenceDerivationPlugin, EvidenceFragment, EvidenceInterpretationInput,
