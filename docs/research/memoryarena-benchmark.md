@@ -1,7 +1,7 @@
 # MemoryArena Benchmark Adapter
 
 Date: 2026-05-06
-Status: feasibility adapter v1, stage-aware runner v1, and deterministic scorecard available
+Status: feasibility adapter v1, stage-aware runner v1, and paper-aligned local scorecard v1 available
 
 ## Positioning
 
@@ -127,16 +127,45 @@ Generated scorecard artifacts:
 
 | File | Purpose |
 | --- | --- |
-| `task_results.jsonl` | Per-task final-subtask score, extracted answers, known-at diagnostics, and ref recall. |
+| `subtask_results.jsonl` | Per-subtask hard correctness, domain-specific expected-answer parsing, optional soft score, known-at diagnostics, and ref recall. |
+| `task_results.jsonl` | Per-task SR decision, PS, final-subtask score, extracted answers, known-at diagnostics, and ref recall. |
 | `hypotheses.jsonl` | Compact chosen answer stream for evaluator or dashboard ingestion. |
-| `score_summary.json` | Aggregate task success, candidate hit, known-at, leak, and runner metrics. |
+| `score_summary.json` | Aggregate SR, PS, micro-PS, SR@depth, task-type summaries, candidate hit, known-at, leak, and runner metrics. |
 
-The current scorecard is `memoryarena-kmp-scorecard-exact-answer-v1`. It is a
-baseline reader, not the official MemoryArena evaluator. It extracts labelled
-`Exact Answer:` candidates from the final subtask answer, handles explicit alias
-phrases such as `also written as`, and scores whether the final chosen answer
-matches the expected final answer. It also reports candidate-answer hits so
-consumer failures can be separated from substrate retrieval failures.
+The current scorecard is `memoryarena-kmp-scorecard-paper-aligned-v1`. It is a
+paper-aligned local evaluator, not the official MemoryArena evaluator. It emits
+the paper's core aggregate shape:
+
+- `SR`: task success rate;
+- `PS`: mean task progress score, computed as the fraction of hard-correct
+  subtasks per task and then averaged across tasks;
+- `micro_process_score`: hard-correct subtasks over all subtasks;
+- `sr_at_depth`: subtask-depth success rate, aligned with the paper's
+  subtask-depth decay analysis;
+- `soft_process_score`: currently only a local proxy for domains with a partial
+  scorer.
+
+Task success follows the paper's domain distinction:
+
+- `progressive_search`, `formal_reasoning_math`, and
+  `formal_reasoning_phys`: final subtask correctness determines task success;
+- `bundled_shopping` and `group_travel_planner`: all subtasks must be
+  hard-correct because the final bundle or group plan must satisfy the whole
+  accumulated task state.
+
+Domain scoring:
+
+- string answers use labelled `Exact Answer:` extraction, fallback normalized
+  matching, and explicit alias handling such as `also written as`;
+- shopping answers use `target_asin` as the hard success key and report
+  attribute text coverage as a diagnostic soft score;
+- group-travel answers use expected plan-slot text coverage as a local soft
+  proxy. This is intentionally labelled as a proxy because the paper's true
+  `sPS` is constraint-satisfaction based and the official environment evaluator
+  has not been published.
+
+See [memoryarena-paper-aligned-evaluator.md](memoryarena-paper-aligned-evaluator.md)
+for the evaluator contract and extraction plan for a standalone public repo.
 
 ## Generated Artifacts
 
@@ -159,6 +188,9 @@ For each task:
 - `benchmark_task` dimension scopes the whole task;
 - `agentic_process` dimension scopes the ordered process;
 - `agentic_episode` dimension scopes each subtask;
+- `group_travel_planner` maps `base_person` into the initial global background
+  because the paper initializes travel planning from a finalized base traveler
+  state;
 - background entries are available before the relevant subtask;
 - question entries are written before the corresponding ask;
 - answer-feedback entries are written after the corresponding ask;
@@ -179,7 +211,7 @@ Implemented:
 - run-id isolation;
 - live stage-aware runner against a deployed kernel;
 - known-at correctness and future-answer leak diagnostics;
-- deterministic exact-answer scorecard over runner artifacts;
+- paper-aligned local scorecard over runner artifacts;
 - incremental ingest through gRPC/MCP with empty dimension declarations after
   dimensions already exist;
 - fixture tests and adapter smoke.
@@ -357,10 +389,16 @@ cargo run -p rehydration-testkit --bin memoryarena_kmp_scorecard --locked -- \
 Scorecard summary:
 
 ```text
+scorecard: memoryarena-kmp-scorecard-paper-aligned-v1
+schema_version: memoryarena-score-summary-v1
 tasks: 3
+subtasks: 27
 ask_count: 27
 task_successes: 3
 task_success_rate: 1.0
+passed_subtasks: 24
+process_score: 0.8796296296296297
+micro_process_score: 0.8888888888888888
 candidate_answer_hits: 3
 candidate_answer_hit_rate: 1.0
 known_at_clean_asks: 27
@@ -377,8 +415,13 @@ runner_elapsed_ms: 106581
 
 Interpretation:
 
-- The deterministic scorecard recovered the final exact answer for all three
-  tasks in this first `progressive_search` slice.
+- The paper-aligned local scorecard recovered the final exact answer for all
+  three tasks in this first `progressive_search` slice, so paper-style `SR`
+  is `1.0` for this slice.
+- `PS` is lower than `SR` because early progressive subtasks can be correct
+  process memory without the current answer text being emitted by
+  `kernel_ask.answer`. This is useful signal for separating memory substrate
+  behavior from reader/agent answer formatting.
 - One task required alias-aware matching: the expected answer used `Daniel Delos
   Santos`, while the retrieved candidate used `John Daniel delos Santos` with an
   explicit alias.
@@ -395,9 +438,9 @@ Observed consumer gap:
 
 ## Next Cut
 
-1. Add a paper-aligned MemoryArena reader/evaluator over KMP artifacts, with
-   explicit SR/PS fields and no claim of official scoring.
-2. Add an agentic retrieval loop that can choose `ask`, `near`, `trace`,
+1. Add an agentic retrieval loop that can choose `ask`, `near`, `trace`,
    `inspect`, and temporal moves before answering.
-3. Persist projection/traversal/proof metrics needed to classify benchmark
+2. Persist projection/traversal/proof metrics needed to classify benchmark
    failures without reading raw logs.
+3. Extract the paper-aligned evaluator into a standalone public repository once
+   the metric contract and fixture suite are stable.

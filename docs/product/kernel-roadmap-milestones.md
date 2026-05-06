@@ -68,7 +68,7 @@ Exit criteria:
 Priority: P0
 
 Status: started. The first MemoryArena-to-KMP artifact adapter, live
-stage-aware runner, and deterministic scorecard are available in
+stage-aware runner, and paper-aligned local scorecard are available in
 `rehydration-testkit` as `memoryarena_kmp_adapter`,
 `memoryarena_kmp_runner`, and `memoryarena_kmp_scorecard`. The first
 MemoryAgentBench-to-KMP adapter and live runner are available as
@@ -123,9 +123,10 @@ Current proof:
 - a real `progressive_search` slice from `ZexueHe/memoryarena` reached 81/81
   successful events, 27/27 known-at-clean asks, 0 future answer leaks, and 0
   missing allowed refs against the deployed kernel.
-- the deterministic exact-answer scorecard over that slice reached 3/3 task
-  successes and 3/3 candidate-answer hits, while preserving the distinction
-  between kernel substrate retrieval and benchmark answer consumption.
+- the paper-aligned local scorecard over that slice reached 3/3 task
+  successes, 24/27 hard-correct subtasks, `PS=0.8796`, and 3/3
+  candidate-answer hits, while preserving the distinction between kernel
+  substrate retrieval and benchmark answer consumption.
 - a fixture MemoryAgentBench Conflict Resolution row generates inject-once KMP
   artifacts with 1 ingest event, 2 ask events, 4 context refs, and complete
   known-at snapshots.

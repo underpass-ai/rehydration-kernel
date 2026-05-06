@@ -18,6 +18,7 @@ rehydration kernel research track.
 - [benchmark-paper-use-cases.md](benchmark-paper-use-cases.md) — E2E evaluation matrix
 - [agentic-memory-benchmark-strategy-2026-05-06.md](agentic-memory-benchmark-strategy-2026-05-06.md) — Benchmark positioning: LongMemEval as secondary conversational-memory regression, MemoryArena/MemoryAgentBench as primary agentic-memory candidates
 - [memoryarena-benchmark.md](memoryarena-benchmark.md) — MemoryArena-to-KMP feasibility adapter and artifact contract
+- [memoryarena-paper-aligned-evaluator.md](memoryarena-paper-aligned-evaluator.md) — MemoryArena paper-aligned local evaluator contract and public extraction plan
 - [memoryagentbench-benchmark.md](memoryagentbench-benchmark.md) — MemoryAgentBench-to-KMP feasibility adapter and inject-once/query-many artifact contract
 - [longmemeval-benchmark.md](longmemeval-benchmark.md) — LongMemEval-to-KMP benchmark adapter, live runner, and commands
 - [anexo-procedimiento-cientifico-analisis-datos.md](anexo-procedimiento-cientifico-analisis-datos.md) — Scientific analysis methodology

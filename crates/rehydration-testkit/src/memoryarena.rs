@@ -258,7 +258,7 @@ pub fn prepare_memoryarena_item(
         .unwrap_or_else(|| format!("memoryarena:task_type:{task_type}:task:{task_ref}"));
     let category = item.category.clone();
     let fingerprint = memoryarena_item_fingerprint(item)?;
-    let background = background_plan(&item.backgrounds);
+    let background = background_plan_for_item(item);
     let task_scope = format!("memoryarena:task:{ref_scope}");
     let process_scope = format!("memoryarena:process:{ref_scope}");
     let ingest_context = IngestContext {
@@ -795,6 +795,24 @@ fn background_plan(value: &Value) -> BackgroundPlan {
     }
 }
 
+fn background_plan_for_item(item: &MemoryArenaItem) -> BackgroundPlan {
+    let mut plan = background_plan(&item.backgrounds);
+    if let Some(base_person) = item.extra.get("base_person") {
+        let base_person_text = value_to_text(base_person).trim().to_string();
+        if !base_person_text.is_empty() && base_person_text != "null" {
+            let base_person_background =
+                format!("MemoryArena group travel base traveler state: {base_person_text}");
+            plan.global = match plan.global.take() {
+                Some(existing) if !existing.trim().is_empty() => {
+                    Some(format!("{existing}\n\n{base_person_background}"))
+                }
+                _ => Some(base_person_background),
+            };
+        }
+    }
+    plan
+}
+
 struct IngestContext<'a> {
     about: &'a str,
     ref_scope: &'a str,
@@ -1160,5 +1178,48 @@ mod tests {
                 .expect("idempotency key")
                 .contains("run:demo-run")
         );
+    }
+
+    #[test]
+    fn group_travel_base_person_becomes_initial_background() {
+        let mut extra = BTreeMap::new();
+        extra.insert(
+            "base_person".to_string(),
+            json!({
+                "name": "Jennifer",
+                "query": "I am Jennifer.",
+                "daily_plans": [
+                    {"days": 1, "current_city": "Rockford", "dinner": "Coco Bambu"}
+                ]
+            }),
+        );
+        let item = MemoryArenaItem {
+            id: json!(1),
+            questions: vec!["I am Eric. I am joining Jennifer.".to_string()],
+            answers: vec![json!([
+                {"days": 1, "current_city": "Rockford", "dinner": "Coco Bambu"}
+            ])],
+            backgrounds: Value::Null,
+            category: None,
+            paper_name: None,
+            extra,
+        };
+
+        let prepared = prepare_memoryarena_item(
+            &item,
+            &MemoryArenaAdapterConfig {
+                task_type: "group_travel_planner".to_string(),
+                ..MemoryArenaAdapterConfig::default()
+            },
+        )
+        .expect("task should adapt");
+
+        assert_eq!(prepared.ingest_events[0].phase, "initial");
+        assert_eq!(
+            prepared.replay.timeline[0].kind, "background",
+            "base traveler state must be visible before the first traveler turn"
+        );
+        assert!(prepared.replay.timeline[0].text.contains("Jennifer"));
+        assert!(prepared.expected[0].available_ref_ids[0].contains("background:global"));
     }
 }
