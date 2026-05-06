@@ -12,6 +12,7 @@ pub mod memoryarena_scorecard;
 pub mod raw_dump;
 pub mod seed_publisher;
 pub mod seed_to_bundle;
+pub mod text_normalization;
 
 pub use container_runtime::ensure_testcontainers_runtime;
 pub use dataset_generator::{
@@ -77,6 +78,9 @@ pub use memoryarena_scorecard::{
     memoryarena_task_success_rule, score_memoryarena_answer,
 };
 pub use seed_to_bundle::{seed_raw_equivalent_tokens, seed_to_bundle};
+pub use text_normalization::{
+    DetectedTextKind, DetectedTextSpan, NormalizedText, TextNormalizationPipeline,
+};
 
 #[cfg(test)]
 fn seed_bundle(

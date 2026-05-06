@@ -59,6 +59,20 @@ The first implementation lives in
 `crates/rehydration-testkit/src/interpretation_plugins.rs` and is exported from
 `rehydration-testkit`.
 
+Text normalization lives in
+`crates/rehydration-testkit/src/text_normalization.rs`. The first cut is only a
+deterministic span segmenter:
+
+- normal text spans;
+- protected code spans, including fenced and inline Markdown code;
+- protected math spans, including LaTeX-style inline/block delimiters;
+- protected URL spans;
+- normalized text for comparison while preserving original byte offsets.
+
+Money, date, and scalar-value extraction remain separate plugins. They should
+consume this segmentation in a later cut instead of each plugin inventing its
+own protected-text rules.
+
 Implemented domain plugins:
 
 - `CurrencyDerivationPlugin`: owns currency extraction plus monetary
