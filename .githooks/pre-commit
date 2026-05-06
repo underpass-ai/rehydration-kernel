@@ -36,5 +36,13 @@ fi
 
 COVERAGE_HOOK_MIN_LINES="${COVERAGE_HOOK_MIN_LINES:-80}"
 
-echo "pre-commit: running MCP local coverage with minimum ${COVERAGE_HOOK_MIN_LINES}% line coverage"
-cargo llvm-cov -p rehydration-mcp --locked --summary-only --fail-under-lines "${COVERAGE_HOOK_MIN_LINES}"
+echo "pre-commit: running production kernel coverage with minimum ${COVERAGE_HOOK_MIN_LINES}% line coverage"
+cargo llvm-cov \
+  --workspace \
+  --exclude rehydration-testkit \
+  --exclude rehydration-tests-shared \
+  --exclude rehydration-tests-kernel \
+  --exclude rehydration-tests-paper \
+  --locked \
+  --summary-only \
+  --fail-under-lines "${COVERAGE_HOOK_MIN_LINES}"
