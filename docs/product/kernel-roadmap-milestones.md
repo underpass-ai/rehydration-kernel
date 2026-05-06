@@ -293,8 +293,10 @@ Current status:
 - first reusable testkit slice implemented in
   `rehydration_testkit::interpretation_plugins`;
 - documented in `docs/product/reusable-interpretation-plugins.md`;
-- current scope covers money extraction, date extraction, and deterministic
-  value operations over typed operands.
+- current scope treats currency and dates as domain plugins with their own
+  extraction, normalization, deterministic operations, and fail-fast validation;
+- MemoryArena interpretation probe validates those plugins against real runner
+  evidence without using gold answers.
 
 Goal:
 

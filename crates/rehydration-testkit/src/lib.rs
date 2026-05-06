@@ -31,11 +31,11 @@ pub use in_memory_stores::{
     NoopSnapshotStore,
 };
 pub use interpretation_plugins::{
-    CalendarDate, CurrencyCode, DateValuePlugin, DerivationOperand, DerivationOperation,
-    DerivationRequest, DerivationResult, EvidenceFragment, EvidenceInterpretationInput,
-    EvidenceInterpretationOutput, EvidenceValuePlugin, InterpretationError, InterpretedValue,
-    InterpretedValueMention, MoneyValuePlugin, OperandLabel, OperandRole, TextSpan,
-    ValueOperationPlugin,
+    CalendarDate, CurrencyCode, CurrencyDerivationPlugin, DateDerivationPlugin, DateValuePlugin,
+    DerivationOperand, DerivationOperation, DerivationRequest, DerivationResult, EvidenceFragment,
+    EvidenceInterpretationInput, EvidenceInterpretationOutput, EvidenceValuePlugin,
+    InterpretationError, InterpretedValue, InterpretedValueMention, MoneyValuePlugin, OperandLabel,
+    OperandRole, TextSpan, ValueOperationPlugin,
 };
 pub use llm_evaluator::{
     CalibrationCase, EvaluationGroundTruth, LlmEvaluationResult, LlmEvaluatorConfig, LlmProvider,

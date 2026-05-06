@@ -132,6 +132,36 @@ Generated scorecard artifacts:
 | `hypotheses.jsonl` | Compact chosen answer stream for evaluator or dashboard ingestion. |
 | `score_summary.json` | Aggregate SR, PS, micro-PS, SR@depth, task-type summaries, candidate hit, known-at, leak, and runner metrics. |
 
+## Interpretation Probe
+
+`memoryarena_kmp_interpretation_probe` tests reusable domain plugins against
+real MemoryArena runner evidence. It is not an official MemoryArena score and it
+does not use gold answers. The probe reads `results.jsonl`, runs the shared
+currency and date plugins over the current question plus recovered evidence
+refs, and writes typed mentions and any safe derivation attempts.
+
+```bash
+cargo run -p rehydration-testkit --bin memoryarena_kmp_interpretation_probe -- \
+  --run /tmp/memoryarena-realistic-short-20260506152937/combined-run \
+  --output /tmp/memoryarena-realistic-short-20260506152937/combined-interpretation-probe \
+  --force
+```
+
+Use this to validate plugin behavior on benchmark artifacts before wiring the
+same domain plugins into readers or writer-side enrichment.
+
+Current probe result on the 2x/domain combined slice
+`/tmp/memoryarena-realistic-short-20260506152937/combined-run`:
+
+- asks: 73;
+- currency mentions: 35 across 20 asks;
+- date mentions: 292 across 19 asks;
+- currency mentions in `formal_reasoning_math` and `formal_reasoning_phys`: 0
+  after hardening against LaTeX `$...$` math delimiters;
+- derivation attempts: 0, intentionally, because the probe only derives when at
+  least two safe operands are available and the question asks for a supported
+  operation.
+
 The current scorecard is `memoryarena-kmp-scorecard-paper-aligned-v1`. It is a
 paper-aligned local evaluator, not the official MemoryArena evaluator. It emits
 the paper's core aggregate shape:

@@ -438,6 +438,90 @@ impl ValueOperationPlugin {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct CurrencyDerivationPlugin;
+
+impl CurrencyDerivationPlugin {
+    pub fn id(&self) -> &'static str {
+        "currency-derivation-v1"
+    }
+
+    pub fn interpret(
+        &self,
+        input: &EvidenceInterpretationInput,
+    ) -> Result<EvidenceInterpretationOutput, InterpretationError> {
+        let mut output = MoneyValuePlugin.interpret(input)?;
+        output.plugin = self.id().to_string();
+        for mention in &mut output.values {
+            mention.plugin = self.id().to_string();
+        }
+        Ok(output)
+    }
+
+    pub fn derive(
+        &self,
+        request: &DerivationRequest,
+    ) -> Result<DerivationResult, InterpretationError> {
+        ensure_supported_operation(
+            request.operation,
+            &[
+                DerivationOperation::Sum,
+                DerivationOperation::Average,
+                DerivationOperation::Difference,
+                DerivationOperation::MaxBy,
+                DerivationOperation::List,
+                DerivationOperation::Unknown,
+            ],
+            self.id(),
+        )?;
+        ensure_operand_family(request, self.id(), value_is_money)?;
+        let mut result = ValueOperationPlugin.derive(request)?;
+        result.plugin = self.id().to_string();
+        Ok(result)
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct DateDerivationPlugin;
+
+impl DateDerivationPlugin {
+    pub fn id(&self) -> &'static str {
+        "date-derivation-v1"
+    }
+
+    pub fn interpret(
+        &self,
+        input: &EvidenceInterpretationInput,
+    ) -> Result<EvidenceInterpretationOutput, InterpretationError> {
+        let mut output = DateValuePlugin.interpret(input)?;
+        output.plugin = self.id().to_string();
+        for mention in &mut output.values {
+            mention.plugin = self.id().to_string();
+        }
+        Ok(output)
+    }
+
+    pub fn derive(
+        &self,
+        request: &DerivationRequest,
+    ) -> Result<DerivationResult, InterpretationError> {
+        ensure_supported_operation(
+            request.operation,
+            &[
+                DerivationOperation::Difference,
+                DerivationOperation::MaxBy,
+                DerivationOperation::List,
+                DerivationOperation::Unknown,
+            ],
+            self.id(),
+        )?;
+        ensure_operand_family(request, self.id(), value_is_date)?;
+        let mut result = ValueOperationPlugin.derive(request)?;
+        result.plugin = self.id().to_string();
+        Ok(result)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InterpretationError {
     message: String,
@@ -497,6 +581,50 @@ fn result(
         excluded_refs,
         diagnostics,
     }
+}
+
+fn ensure_supported_operation(
+    operation: DerivationOperation,
+    supported: &[DerivationOperation],
+    plugin: &str,
+) -> Result<(), InterpretationError> {
+    if supported.contains(&operation) {
+        return Ok(());
+    }
+    Err(InterpretationError::new(format!(
+        "{plugin} does not support operation {operation:?}"
+    )))
+}
+
+fn ensure_operand_family(
+    request: &DerivationRequest,
+    plugin: &str,
+    expected: fn(&InterpretedValue) -> bool,
+) -> Result<(), InterpretationError> {
+    for operand in request
+        .operands
+        .iter()
+        .filter(|operand| operand.label == OperandLabel::Include)
+    {
+        let Some(value) = operand.value.as_ref() else {
+            continue;
+        };
+        if !expected(value) {
+            return Err(InterpretationError::new(format!(
+                "{plugin} received incompatible operand {}",
+                operand.ref_id
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn value_is_money(value: &InterpretedValue) -> bool {
+    matches!(value, InterpretedValue::Money { .. })
+}
+
+fn value_is_date(value: &InterpretedValue) -> bool {
+    matches!(value, InterpretedValue::Date { .. })
 }
 
 fn included_operands(operands: &[DerivationOperand]) -> Vec<&DerivationOperand> {
@@ -775,6 +903,9 @@ fn extract_symbol_money(
             continue;
         }
         let amount_end = read_amount_end(&fragment.text, amount_start);
+        if !symbol_money_context_allowed(&fragment.text, start, amount_end) {
+            continue;
+        }
         let raw = fragment.text[start..amount_end].to_string();
         let amount_text = &fragment.text[amount_start..amount_end];
         if let Some((amount, amount_minor)) = parse_amount(amount_text) {
@@ -791,6 +922,23 @@ fn extract_symbol_money(
         }
     }
     Ok(values)
+}
+
+fn symbol_money_context_allowed(text: &str, start: usize, amount_end: usize) -> bool {
+    let previous = previous_non_whitespace(text, start);
+    let next = next_non_whitespace(text, amount_end);
+    let immediate_next = text[amount_end..].chars().next();
+
+    if matches!(previous, Some('\\' | '_' | '^')) {
+        return false;
+    }
+    if immediate_next.is_some_and(|char| char.is_ascii_alphabetic()) {
+        return false;
+    }
+    if matches!(next, Some('$' | '\\' | '_' | '^' | '}')) {
+        return false;
+    }
+    true
 }
 
 fn extract_code_money(
@@ -958,13 +1106,29 @@ fn currency_from_word(value: &str) -> Option<&'static str> {
 fn read_amount_end(text: &str, start: usize) -> usize {
     let mut end = start;
     for (index, char) in text[start..].char_indices() {
-        if char.is_ascii_digit() || char == '.' || char == ',' {
+        let decimal_separator = char == '.'
+            && text[start + index + char.len_utf8()..]
+                .chars()
+                .next()
+                .is_some_and(|next| next.is_ascii_digit());
+        if char.is_ascii_digit() || char == ',' || decimal_separator {
             end = start + index + char.len_utf8();
         } else {
             break;
         }
     }
     end
+}
+
+fn previous_non_whitespace(text: &str, boundary: usize) -> Option<char> {
+    text[..boundary]
+        .chars()
+        .rev()
+        .find(|char| !char.is_whitespace())
+}
+
+fn next_non_whitespace(text: &str, boundary: usize) -> Option<char> {
+    text[boundary..].chars().find(|char| !char.is_whitespace())
 }
 
 fn parse_amount(value: &str) -> Option<(f64, i64)> {
@@ -1157,6 +1321,26 @@ mod tests {
     }
 
     #[test]
+    fn money_plugin_rejects_latex_math_delimiters() {
+        let plugin = MoneyValuePlugin;
+        let input = EvidenceInterpretationInput::new(vec![EvidenceFragment::new(
+            "turn:latex",
+            "The formula $2$ and the term $2\\pi$ and $2n$ are not money, but budget is $70.",
+        )]);
+
+        let output = plugin
+            .interpret(&input)
+            .expect("money extraction should succeed");
+
+        assert_eq!(output.values.len(), 1);
+        assert_eq!(output.values[0].raw, "$70");
+        assert_eq!(
+            output.values[0].value,
+            money_value("USD", 70.0, 7_000).expect("valid USD value")
+        );
+    }
+
+    #[test]
     fn date_plugin_extracts_iso_and_named_dates() {
         let plugin = DateValuePlugin;
         let input = EvidenceInterpretationInput::new(vec![EvidenceFragment::new(
@@ -1314,5 +1498,112 @@ mod tests {
 
         assert_eq!(result.answer.as_deref(), Some("large kit: USD 90"));
         assert_eq!(result.included_refs, vec!["large"]);
+    }
+
+    #[test]
+    fn currency_derivation_plugin_owns_currency_operations() {
+        let plugin = CurrencyDerivationPlugin;
+        let request = DerivationRequest {
+            question: "How much was spent?".to_string(),
+            operation: DerivationOperation::Sum,
+            unit: None,
+            operands: vec![
+                DerivationOperand::included(
+                    "a",
+                    money_value("USD", 12.25, 1_225).expect("valid USD"),
+                ),
+                DerivationOperand::included("b", money_value("USD", 2.75, 275).expect("valid USD")),
+            ],
+        };
+
+        let result = plugin
+            .derive(&request)
+            .expect("currency plugin should derive money sums");
+
+        assert_eq!(result.plugin, "currency-derivation-v1");
+        assert_eq!(result.answer.as_deref(), Some("USD 15"));
+    }
+
+    #[test]
+    fn currency_derivation_plugin_rejects_non_currency_operands() {
+        let plugin = CurrencyDerivationPlugin;
+        let request = DerivationRequest {
+            question: "How much was spent?".to_string(),
+            operation: DerivationOperation::Sum,
+            unit: None,
+            operands: vec![DerivationOperand::included(
+                "date",
+                InterpretedValue::Date {
+                    date: CalendarDate::new(2026, 5, 6).expect("valid date"),
+                },
+            )],
+        };
+
+        let error = plugin
+            .derive(&request)
+            .expect_err("currency plugin must reject date operands");
+
+        assert!(error.to_string().contains("incompatible operand"));
+    }
+
+    #[test]
+    fn date_derivation_plugin_owns_temporal_operations() {
+        let plugin = DateDerivationPlugin;
+        let request = DerivationRequest {
+            question: "How many days elapsed?".to_string(),
+            operation: DerivationOperation::Difference,
+            unit: Some("days".to_string()),
+            operands: vec![
+                DerivationOperand::included(
+                    "closed",
+                    InterpretedValue::Date {
+                        date: CalendarDate::new(2026, 5, 6).expect("valid date"),
+                    },
+                )
+                .with_role(OperandRole::Minuend),
+                DerivationOperand::included(
+                    "started",
+                    InterpretedValue::Date {
+                        date: CalendarDate::new(2026, 5, 1).expect("valid date"),
+                    },
+                )
+                .with_role(OperandRole::Subtrahend),
+            ],
+        };
+
+        let result = plugin
+            .derive(&request)
+            .expect("date plugin should derive date differences");
+
+        assert_eq!(result.plugin, "date-derivation-v1");
+        assert_eq!(result.answer.as_deref(), Some("5 days"));
+    }
+
+    #[test]
+    fn date_derivation_plugin_rejects_money_operands() {
+        let plugin = DateDerivationPlugin;
+        let request = DerivationRequest {
+            question: "How many days elapsed?".to_string(),
+            operation: DerivationOperation::Difference,
+            unit: Some("days".to_string()),
+            operands: vec![
+                DerivationOperand::included(
+                    "money",
+                    money_value("USD", 5.0, 500).expect("valid USD"),
+                )
+                .with_role(OperandRole::Minuend),
+                DerivationOperand::included(
+                    "other",
+                    money_value("USD", 3.0, 300).expect("valid USD"),
+                )
+                .with_role(OperandRole::Subtrahend),
+            ],
+        };
+
+        let error = plugin
+            .derive(&request)
+            .expect_err("date plugin must reject currency operands");
+
+        assert!(error.to_string().contains("incompatible operand"));
     }
 }
