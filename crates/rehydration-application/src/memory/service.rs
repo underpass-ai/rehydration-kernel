@@ -278,10 +278,16 @@ where
             return context_roots(current_about, selection);
         }
 
-        let roots = prioritize_current_about(
-            normalize_about_roots(self.query_application.list_memory_abouts().await?),
-            current_about,
-        );
+        let roots = if should_filter_all_abouts_by_dimensions(selection) {
+            let dimension_ids = selection.dimensions().iter().cloned().collect::<Vec<_>>();
+            self.query_application
+                .list_memory_abouts_by_dimensions(&dimension_ids)
+                .await?
+        } else {
+            self.query_application.list_memory_abouts().await?
+        };
+
+        let roots = prioritize_current_about(normalize_about_roots(roots), current_about);
         if roots.is_empty() {
             return Err(ApplicationError::NotFound(
                 "no memory abouts found for ALL_ABOUTS scope".to_string(),
@@ -289,6 +295,12 @@ where
         }
         Ok(roots)
     }
+}
+
+fn should_filter_all_abouts_by_dimensions(selection: &DimensionSelection) -> bool {
+    selection.scope_mode() == DimensionScopeMode::AllAbouts
+        && selection.mode() == DimensionSelectionMode::Only
+        && !selection.dimensions().is_empty()
 }
 
 fn inspect_raw_coordinates(

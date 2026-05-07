@@ -11,4 +11,14 @@ where
     pub async fn list_memory_abouts(&self) -> Result<Vec<String>, ApplicationError> {
         Ok(self.graph_reader.list_memory_abouts().await?)
     }
+
+    pub async fn list_memory_abouts_by_dimensions(
+        &self,
+        dimension_ids: &[String],
+    ) -> Result<Vec<String>, ApplicationError> {
+        Ok(self
+            .graph_reader
+            .list_memory_abouts_by_dimensions(dimension_ids)
+            .await?)
+    }
 }

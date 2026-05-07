@@ -18,6 +18,10 @@ ingress:
       paths:
         - path: /
           pathType: Prefix
+  tls:
+    - hosts:
+        - rehydration-kernel.underpassai.com
+      secretName: rehydration-kernel-tls-prod
 
 development:
   allowMutableImageTags: true
