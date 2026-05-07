@@ -494,6 +494,20 @@ Real `progressive_search` smart-writer runs:
   SR: 1.0
   PS: 0.8579
   micro_PS: 0.8701
+
+25 tasks:
+  run: /tmp/memoryarena-smart-writer-paged-25tasks-20260507-1825-run
+  scorecard: /tmp/memoryarena-smart-writer-paged-25tasks-20260507-1825-scorecard
+  events: 576/576 successful
+  asks: 192/192 known-at-clean
+  full_ref_recall: 192/192
+  future_answer_leaks: 0
+  writes: 384
+  max_commit: 1648 ms
+  slow_commits_gt_10s: 0
+  SR: 0.96
+  PS: 0.8188
+  micro_PS: 0.8333
 ```
 
 10-task relation quality:
@@ -510,15 +524,48 @@ relations:
   scoped_to: 10
 ```
 
+25-task relation quality:
+
+```text
+relation_total: 384
+relation_rich_count: 202
+relation_anemic_count: 157
+relation_structural_count: 25
+relation_suspect_count: 0
+relations:
+  depends_on: 202
+  answers: 156
+  follows: 1
+  scoped_to: 25
+```
+
 Performance interpretation:
 
 - the pre-fix 1-task run reached `max_commit=35331ms` after only 14 commits;
 - the fixed 10-task run reached `max_commit=1468ms` across 154 commits;
+- the fixed 25-task run reached `max_commit=1648ms` across 384 commits;
 - `context_nodes_per_relation` remained bounded at `max_context_nodes=3`;
-- `trace` stayed stable, typically around 75-100 ms with two observed refs;
+- `trace` stayed stable, typically around 75-110 ms with two observed refs;
 - `near` remained result-bounded but still grew with subtask depth, reaching
-  about 1100 ms at subtask 12. That is the remaining performance target for
-  temporal window indexing/pagination.
+  about 1100 ms at subtask 12 and about 1400 ms at subtask 14. That is the
+  remaining performance target for temporal window indexing/pagination.
+
+The 25-task run produced one final-task miss, task id `11`. Kernel behavior was
+clean for that task (`known_at_clean`, full ref recall, no future leak, no
+unexpected refs), but the deterministic answer reader selected the wrong title
+from recovered evidence:
+
+```text
+expected: Psychedelics
+selected: Psilocybin produces substantial and sustained decreases in depression
+  and anxiety in patients with life-threatening cancer: A randomized
+  double-blind trial
+failure_class: reader_reasoning_or_extraction_gap
+```
+
+This reinforces the benchmark boundary: the kernel is surfacing the staged
+memory without temporal contamination, while answer selection over multiple
+plausible exact-answer strings remains a reader/agent task.
 
 The scorecard was also corrected on 2026-05-07 to score exact answers against
 the extracted `Exact Answer:` candidates before falling back to full-text
