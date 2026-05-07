@@ -118,7 +118,7 @@ messages:
 | `TemporalWindow` | Entry window controls for `Near`: `before_entries`, `after_entries`. |
 | `TemporalInclude` | `evidence`, `relations`, and typed `raw_refs` include flags. |
 | `Proof` | `path`, `evidence`, `conflicts`, `missing`, `confidence`. |
-| `TraceRequest` | `from`, `to`, `goal`, `budget`. |
+| `TraceRequest` | `from`, `to`, `goal`, `budget`, `page`. |
 | `InspectRequest` | `ref`, include flags for links, details, and raw state. |
 
 Response families:
@@ -129,7 +129,7 @@ Response families:
 | `WakeResponse` | Summary, wake payload, proof, warnings. |
 | `AskResponse` | Summary, optional answer, evidence reasons, proof, warnings. |
 | `GotoResponse`, `NearResponse`, `RewindResponse`, `ForwardResponse` | Method-specific temporal responses with summary, resolved cursor, coverage, temporal entries, proof, warnings. |
-| `TraceResponse` | Summary, relationship trace, warnings. |
+| `TraceResponse` | Summary, paged relationship trace, warnings, page info. |
 | `InspectResponse` | Summary, inspected object, incoming/outgoing links, evidence, warnings. |
 
 Critical enums to define in `memory.proto`:
@@ -274,7 +274,13 @@ Temporal traversal rules:
 ## Trace And Inspect Path
 
 `Trace` reads a path between two refs through the existing path query behavior
-and returns KMP relationship proof.
+and returns KMP relationship proof. The KMP `Trace` path must not expand the
+target subtree by default: it is a path proof, not a neighborhood read.
+Responses are paged with `page.entries` and `page.cursor`; clients must follow
+`page.next_cursor` when `page.has_more=true` instead of asking the kernel to
+materialize a whole growing path every time. `page.entries=0` uses the service
+default; the current kernel default is 64 trace relations and the fail-fast max
+is 256.
 
 `Inspect` reads node detail for one ref. It honors `details=false`.
 Incoming/outgoing expansion is backed by the typed node relationship reader and

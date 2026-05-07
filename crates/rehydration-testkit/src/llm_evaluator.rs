@@ -315,7 +315,7 @@ async fn call_openai(
     // LLM_ENABLE_THINKING env var:
     //   "false"/"0" → explicitly disables thinking (sends enable_thinking: false)
     //   any other value or unset → Qwen3 thinks by default (no override sent)
-    if provider == LlmProvider::OpenAI {
+    if provider == LlmProvider::OpenAI && !is_official_openai_endpoint(endpoint) {
         let disable_thinking = std::env::var("LLM_ENABLE_THINKING")
             .map(|v| v == "false" || v == "0")
             .unwrap_or(false);
@@ -373,6 +373,10 @@ async fn call_openai(
         completion_tokens: 0,
     });
     Ok((content, usage.prompt_tokens, usage.completion_tokens))
+}
+
+fn is_official_openai_endpoint(endpoint: &str) -> bool {
+    endpoint.starts_with("https://api.openai.com/")
 }
 
 #[derive(Deserialize)]

@@ -132,6 +132,11 @@ pub(crate) fn trace_from_response(response: TraceResponse) -> Value {
     json!({
         "summary": response.summary,
         "trace": response.trace.iter().map(memory_relation_json).collect::<Vec<_>>(),
+        "page": response
+            .page
+            .as_ref()
+            .map(page_info_json)
+            .unwrap_or_else(empty_page_info_json),
         "warnings": response.warnings
     })
 }
@@ -205,6 +210,28 @@ fn empty_proof_json() -> Value {
         "conflicts": [],
         "missing": ["proof"],
         "confidence": "unknown"
+    })
+}
+
+fn page_info_json(page: &rehydration_proto::v1beta1::PageInfo) -> Value {
+    json!({
+        "returned": page.returned,
+        "total": page.total,
+        "has_more": page.has_more,
+        "next_cursor": if page.next_cursor.trim().is_empty() {
+            Value::Null
+        } else {
+            Value::String(page.next_cursor.clone())
+        }
+    })
+}
+
+fn empty_page_info_json() -> Value {
+    json!({
+        "returned": 0,
+        "total": 0,
+        "has_more": false,
+        "next_cursor": Value::Null
     })
 }
 

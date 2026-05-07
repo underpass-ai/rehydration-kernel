@@ -6,8 +6,10 @@ members = [
     "crates/rehydration-application",
     "crates/rehydration-config",
     "crates/rehydration-domain",
+    "crates/rehydration-interpretation",
     "crates/rehydration-observability",
     "crates/rehydration-mcp",
+    "crates/rehydration-plugin-api",
     "crates/rehydration-ports",
     "crates/rehydration-proto",
     "crates/rehydration-server",
@@ -35,8 +37,10 @@ rehydration-adapter-valkey = { path = "crates/rehydration-adapter-valkey" }
 rehydration-application = { path = "crates/rehydration-application" }
 rehydration-config = { path = "crates/rehydration-config" }
 rehydration-domain = { path = "crates/rehydration-domain" }
+rehydration-interpretation = { path = "crates/rehydration-interpretation" }
 rehydration-mcp = { path = "crates/rehydration-mcp" }
 rehydration-observability = { path = "crates/rehydration-observability" }
+rehydration-plugin-api = { path = "crates/rehydration-plugin-api" }
 rehydration-ports = { path = "crates/rehydration-ports" }
 rehydration-proto = { path = "crates/rehydration-proto" }
 rehydration-testkit = { path = "crates/rehydration-testkit" }

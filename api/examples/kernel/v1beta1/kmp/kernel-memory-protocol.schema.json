@@ -2,13 +2,19 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://underpass.ai/schemas/rehydration-kernel/v1beta1/kernel-memory-protocol.schema.json",
   "title": "KernelMemoryProtocol",
-  "description": "Transport-neutral Kernel Memory Protocol contract fixtures for ingest, wake, ask, goto, near, rewind, forward, trace, and inspect moves.",
+  "description": "Transport-neutral Kernel Memory Protocol contract fixtures for ingest, write-memory, wake, ask, goto, near, rewind, forward, trace, and inspect moves.",
   "oneOf": [
     {
       "$ref": "#/$defs/ingest_request"
     },
     {
       "$ref": "#/$defs/ingest_response"
+    },
+    {
+      "$ref": "#/$defs/write_memory_request"
+    },
+    {
+      "$ref": "#/$defs/write_memory_response"
     },
     {
       "$ref": "#/$defs/wake_request"
@@ -912,6 +918,525 @@
         },
         "confidence": {
           "$ref": "#/$defs/confidence"
+        }
+      }
+    },
+    "writer_intent": {
+      "type": "string",
+      "enum": [
+        "record_turn",
+        "record_observation",
+        "record_decision",
+        "record_feedback",
+        "record_delta"
+      ]
+    },
+    "writer_node_kind": {
+      "type": "string",
+      "enum": [
+        "turn",
+        "observation",
+        "decision",
+        "feedback",
+        "semantic_delta",
+        "constraint",
+        "preference",
+        "derived_value",
+        "error_path",
+        "success_path"
+      ]
+    },
+    "writer_relation_name": {
+      "type": "string",
+      "enum": [
+        "follows",
+        "answers",
+        "uses_background",
+        "depends_on",
+        "chosen_because",
+        "semantic_delta_from",
+        "updates_state",
+        "supports",
+        "supersedes",
+        "contradicts",
+        "satisfies_constraint",
+        "violates_constraint",
+        "contributes_to",
+        "excluded_from",
+        "checked_against",
+        "derived_from",
+        "confirms_selection",
+        "contains",
+        "member_of",
+        "scoped_to"
+      ]
+    },
+    "write_scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "process"
+      ],
+      "properties": {
+        "task": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "process": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "episode": {
+          "$ref": "#/$defs/non_empty_string"
+        }
+      }
+    },
+    "current_write_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "summary"
+      ],
+      "properties": {
+        "ref": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "kind": {
+          "$ref": "#/$defs/writer_node_kind"
+        },
+        "summary": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "evidence": {
+          "$ref": "#/$defs/non_empty_string"
+        }
+      }
+    },
+    "semantic_delta_write": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "from",
+        "to",
+        "why",
+        "evidence"
+      ],
+      "properties": {
+        "ref": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "from": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "to": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "why": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "evidence": {
+          "$ref": "#/$defs/non_empty_string"
+        }
+      }
+    },
+    "write_link": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ref",
+        "rel",
+        "class"
+      ],
+      "properties": {
+        "ref": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "rel": {
+          "$ref": "#/$defs/writer_relation_name"
+        },
+        "class": {
+          "$ref": "#/$defs/semantic_class"
+        },
+        "why": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "evidence": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        }
+      }
+    },
+    "write_options": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "dry_run": {
+          "type": "boolean"
+        },
+        "strict": {
+          "type": "boolean"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "trace_path_read_context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "from",
+        "to"
+      ],
+      "properties": {
+        "from": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "to": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/non_empty_string"
+          }
+        }
+      }
+    },
+    "write_read_context": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "inspected_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/non_empty_string"
+          }
+        },
+        "temporal_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/non_empty_string"
+          }
+        },
+        "wake_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/non_empty_string"
+          }
+        },
+        "ask_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/non_empty_string"
+          }
+        },
+        "trace_paths": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/trace_path_read_context"
+          }
+        }
+      }
+    },
+    "relation_quality": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "from",
+        "to",
+        "rel",
+        "class",
+        "confidence",
+        "quality",
+        "quality_reason",
+        "fallback",
+        "requires_prior_context",
+        "prior_context_observed",
+        "prior_context_sources",
+        "proof_complete",
+        "target_present"
+      ],
+      "properties": {
+        "from": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "to": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "rel": {
+          "$ref": "#/$defs/writer_relation_name"
+        },
+        "class": {
+          "$ref": "#/$defs/semantic_class"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "quality": {
+          "type": "string",
+          "enum": [
+            "rich",
+            "anemic",
+            "structural",
+            "invalid",
+            "suspect"
+          ]
+        },
+        "quality_reason": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "fallback": {
+          "type": "boolean"
+        },
+        "requires_prior_context": {
+          "type": "boolean"
+        },
+        "prior_context_observed": {
+          "type": "boolean"
+        },
+        "prior_context_sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/non_empty_string"
+          }
+        },
+        "proof_complete": {
+          "type": "boolean"
+        },
+        "target_present": {
+          "type": "boolean"
+        }
+      }
+    },
+    "relation_quality_metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "relation_total",
+        "relation_rich_count",
+        "relation_anemic_count",
+        "relation_structural_count",
+        "relation_invalid_rejected_count",
+        "relation_suspect_count",
+        "relation_rich_ratio",
+        "relation_anemic_ratio",
+        "relation_explanatory_ratio",
+        "relation_proof_coverage",
+        "relation_target_coverage",
+        "relation_prior_context_required_count",
+        "relation_prior_context_observed_count",
+        "relation_prior_context_coverage"
+      ],
+      "properties": {
+        "relation_total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "relation_rich_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "relation_anemic_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "relation_structural_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "relation_invalid_rejected_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "relation_suspect_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "relation_rich_ratio": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "relation_anemic_ratio": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "relation_explanatory_ratio": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "relation_proof_coverage": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "relation_target_coverage": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "relation_prior_context_required_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "relation_prior_context_observed_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "relation_prior_context_coverage": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "suggested_read": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "tool"
+      ],
+      "properties": {
+        "tool": {
+          "type": "string",
+          "enum": [
+            "kernel_wake",
+            "kernel_ask",
+            "kernel_goto",
+            "kernel_near",
+            "kernel_rewind",
+            "kernel_forward",
+            "kernel_trace",
+            "kernel_inspect"
+          ]
+        }
+      }
+    },
+    "write_memory_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "about",
+        "intent",
+        "actor",
+        "observed_at",
+        "scope",
+        "current",
+        "connect_to"
+      ],
+      "properties": {
+        "about": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "intent": {
+          "$ref": "#/$defs/writer_intent"
+        },
+        "actor": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "observed_at": {
+          "$ref": "#/$defs/date_time"
+        },
+        "source_kind": {
+          "type": "string",
+          "enum": [
+            "human",
+            "agent",
+            "projection",
+            "derived"
+          ]
+        },
+        "scope": {
+          "$ref": "#/$defs/write_scope"
+        },
+        "current": {
+          "$ref": "#/$defs/current_write_entry"
+        },
+        "semantic_delta": {
+          "$ref": "#/$defs/semantic_delta_write"
+        },
+        "connect_to": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/write_link"
+          }
+        },
+        "read_context": {
+          "$ref": "#/$defs/write_read_context"
+        },
+        "idempotency_key": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "options": {
+          "$ref": "#/$defs/write_options"
+        }
+      }
+    },
+    "write_memory_response": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "accepted",
+        "dry_run",
+        "summary",
+        "generated_refs",
+        "relations",
+        "relation_quality",
+        "relation_quality_metrics",
+        "diagnostics",
+        "next_suggested_reads"
+      ],
+      "properties": {
+        "accepted": {
+          "type": "boolean"
+        },
+        "dry_run": {
+          "type": "boolean"
+        },
+        "summary": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "generated_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/non_empty_string"
+          }
+        },
+        "relations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/writer_relation_name"
+          }
+        },
+        "relation_quality": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/relation_quality"
+          }
+        },
+        "relation_quality_metrics": {
+          "$ref": "#/$defs/relation_quality_metrics"
+        },
+        "ingest_preview": {
+          "$ref": "#/$defs/ingest_request"
+        },
+        "ingest_result": {
+          "$ref": "#/$defs/ingest_response"
+        },
+        "diagnostics": {
+          "$ref": "#/$defs/warning_list"
+        },
+        "next_suggested_reads": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/suggested_read"
+          }
         }
       }
     },

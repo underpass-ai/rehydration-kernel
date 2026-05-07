@@ -46,9 +46,9 @@ async fn grpc_ingest(
     tls: &KernelMcpGrpcTlsConfig,
     arguments: &Value,
 ) -> Result<Value, String> {
-    let plan = build_ingest_plan(arguments)?;
     let request = ingest_request_from_arguments(arguments)?;
     if request.dry_run {
+        let plan = build_ingest_plan(arguments)?;
         return Ok(tool_success_result(dry_run_ingest_from_plan(&plan)));
     }
 

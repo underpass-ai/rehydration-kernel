@@ -36,7 +36,8 @@ pub use graph_relationships::{
 };
 pub use graph_traversal_depth::{
     DEFAULT_NATIVE_GRAPH_TRAVERSAL_DEPTH, MAX_NATIVE_GRAPH_TRAVERSAL_DEPTH,
-    MIN_NATIVE_GRAPH_TRAVERSAL_DEPTH, clamp_native_graph_traversal_depth,
+    MIN_NATIVE_GRAPH_TRAVERSAL_DEPTH, clamp_native_graph_subtree_depth,
+    clamp_native_graph_traversal_depth,
 };
 pub use node_centric_projection_reader::NodeCentricProjectionReader;
 pub use query_application_service::QueryApplicationService;

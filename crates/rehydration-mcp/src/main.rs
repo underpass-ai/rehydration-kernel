@@ -3,9 +3,12 @@ use rehydration_mcp::{
     GRPC_TLS_KEY_PATH_ENV, GRPC_TLS_MODE_ENV, KernelMcpServer, MCP_BACKEND_ENV,
 };
 use std::io::{self, BufRead, Write};
+use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    init_tracing();
+
     let server = match KernelMcpServer::try_from_env() {
         Ok(server) => server,
         Err(message) => {
@@ -46,4 +49,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+fn init_tracing() {
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new("rehydration_mcp=info"));
+    tracing_subscriber::fmt()
+        .json()
+        .with_writer(io::stderr)
+        .with_env_filter(filter)
+        .init();
 }

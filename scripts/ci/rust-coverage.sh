@@ -8,6 +8,19 @@ cd "${ROOT_DIR}"
 
 mkdir -p target/llvm-cov
 
+COVERAGE_MIN_LINES="${COVERAGE_MIN_LINES:-80}"
+COVERAGE_IGNORE_FILENAME_REGEX="${COVERAGE_IGNORE_FILENAME_REGEX:-rehydration-testkit/.*|rehydration-tests-shared/.*|rehydration-tests-kernel/.*|rehydration-tests-paper/.*|rehydration-transport-grpc/src/agentic_reference/.*}"
+
+if [[ -z "${LLVM_COV:-}" ]] && command -v llvm-cov >/dev/null 2>&1; then
+  export LLVM_COV
+  LLVM_COV="$(command -v llvm-cov)"
+fi
+
+if [[ -z "${LLVM_PROFDATA:-}" ]] && command -v llvm-profdata >/dev/null 2>&1; then
+  export LLVM_PROFDATA
+  LLVM_PROFDATA="$(command -v llvm-profdata)"
+fi
+
 # Merge coverage from the fast workspace suite plus container-backed adapter
 # tests so Sonar sees the real exercised read/write paths.
 cargo llvm-cov clean --workspace
@@ -42,4 +55,13 @@ run_container_coverage_test rehydration-tests-kernel agentic_event_integration
 run_container_coverage_test rehydration-tests-kernel kernel_full_journey_integration
 run_container_coverage_test rehydration-tests-kernel kernel_full_journey_tls_integration
 
-cargo llvm-cov report --locked --lcov --output-path target/llvm-cov/lcov.info
+cargo llvm-cov report \
+  --locked \
+  --ignore-filename-regex "${COVERAGE_IGNORE_FILENAME_REGEX}" \
+  --lcov \
+  --output-path target/llvm-cov/lcov.info
+cargo llvm-cov report \
+  --locked \
+  --ignore-filename-regex "${COVERAGE_IGNORE_FILENAME_REGEX}" \
+  --summary-only \
+  --fail-under-lines "${COVERAGE_MIN_LINES}"

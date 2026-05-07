@@ -86,14 +86,28 @@ fn namespaced_memory(
     }
 
     let mut known_refs = existing.refs.clone();
+    known_refs.extend(existing.dimensions.iter().cloned());
     let mut dimension_ids = existing.dimensions.clone();
     let mut dimension_aliases = existing_dimension_aliases(about, existing);
+    let mut declared_dimension_refs = BTreeSet::new();
     let mut dimensions = Vec::new();
     for dimension in &memory.dimensions {
         require_non_empty(&dimension.id, "memory.dimensions[].id")?;
         require_non_empty(&dimension.kind, "memory.dimensions[].kind")?;
         let dimension_identity = dimension_identity(about, &dimension.id)?;
         let dimension_ref = dimension_identity.node_id();
+        insert_unique(
+            &mut declared_dimension_refs,
+            &dimension_ref,
+            "memory dimension",
+        )?;
+        if existing.dimensions.contains(&dimension_ref) {
+            dimension_aliases
+                .entry(dimension.id.clone())
+                .or_insert_with(|| dimension_ref.clone());
+            known_refs.insert(dimension_ref);
+            continue;
+        }
         insert_unique(&mut dimension_ids, &dimension_ref, "memory dimension")?;
         if dimension_aliases
             .insert(dimension.id.clone(), dimension_ref.clone())
@@ -396,6 +410,8 @@ fn memory_id_from_idempotency_key(idempotency_key: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use crate::ApplicationError;
     use crate::memory::{
         ExistingMemoryRefs, MemoryCoordinateData, MemoryData, MemoryDimensionData, MemoryEntryData,
@@ -510,6 +526,54 @@ mod tests {
 
         assert_eq!(outcome.accepted.entries, 1);
         assert_eq!(update.changes.len(), 3);
+    }
+
+    #[test]
+    fn translate_memory_ingest_treats_existing_namespaced_dimension_as_idempotent() {
+        let command = sample_command();
+        let dimension_ref =
+            "about:question:830ce83f:dimension:conversation:rachel-2026-04-12".to_string();
+        let existing = ExistingMemoryRefs {
+            refs: [dimension_ref.clone()].into_iter().collect(),
+            dimensions: [dimension_ref.clone()].into_iter().collect(),
+        };
+
+        let (update, outcome) = translate_memory_ingest(&command, &existing)
+            .expect("existing dimension declaration should be idempotent");
+
+        assert_eq!(outcome.accepted.entries, 1);
+        assert_eq!(
+            update
+                .changes
+                .iter()
+                .map(|change| change.entity_kind.as_str())
+                .collect::<Vec<_>>(),
+            vec!["memory_entry", "memory_relation", "memory_evidence"]
+        );
+        assert_eq!(
+            update.changes[0].scopes,
+            std::slice::from_ref(&dimension_ref)
+        );
+        assert_eq!(
+            update.changes[1].entity_id,
+            "relation:about:question:830ce83f:dimension:conversation:rachel-2026-04-12:contains_entry:claim:rachel-denver"
+        );
+    }
+
+    #[test]
+    fn translate_memory_ingest_keeps_existing_dimensions_as_known_relation_refs() {
+        let mut command = sample_command();
+        command.memory.dimensions.clear();
+        let dimension_ref =
+            "about:question:830ce83f:dimension:conversation:rachel-2026-04-12".to_string();
+        command.memory.relations[0].source_ref = dimension_ref.clone();
+        let existing = ExistingMemoryRefs {
+            refs: BTreeSet::new(),
+            dimensions: [dimension_ref].into_iter().collect(),
+        };
+
+        translate_memory_ingest(&command, &existing)
+            .expect("existing dimensions should also be valid relation refs");
     }
 
     #[test]

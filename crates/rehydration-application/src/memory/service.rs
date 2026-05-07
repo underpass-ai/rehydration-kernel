@@ -18,9 +18,11 @@ use crate::memory::{
 };
 use crate::queries::{
     ContextRenderOptions, EndpointHint, GetContextPathQuery, GetContextPathResult, GetContextQuery,
-    GetContextResult, GetNodeDetailQuery, GetNodeRelationshipsQuery,
-    MAX_NATIVE_GRAPH_TRAVERSAL_DEPTH, QueryApplicationService, render_graph_bundle_with_options,
+    GetContextResult, GetNodeDetailQuery, GetNodeRelationshipsQuery, QueryApplicationService,
+    render_graph_bundle_with_options,
 };
+
+const MEMORY_EXISTING_REFS_LOOKUP_DEPTH: u32 = 1;
 
 pub struct KernelMemoryApplicationService<G, D, S, E, W> {
     query_application: Arc<QueryApplicationService<G, D, S>>,
@@ -51,18 +53,8 @@ where
         &self,
         command: MemoryIngestCommand,
     ) -> Result<MemoryIngestOutcome, ApplicationError> {
-        let (update_context, mut outcome) =
-            match translate_memory_ingest(&command, &ExistingMemoryRefs::default()) {
-                Ok(translated) => translated,
-                Err(error)
-                    if is_unknown_memory_ref_validation(&error)
-                        || command.memory.dimensions.is_empty() =>
-                {
-                    let existing = self.existing_memory_refs(&command.about).await?;
-                    translate_memory_ingest(&command, &existing)?
-                }
-                Err(error) => return Err(error),
-            };
+        let existing = self.existing_memory_refs(&command.about).await?;
+        let (update_context, mut outcome) = translate_memory_ingest(&command, &existing)?;
         if command.dry_run {
             outcome
                 .warnings
@@ -169,6 +161,7 @@ where
                 root_node_id: query.from,
                 target_node_id: query.to,
                 role: query.role,
+                subtree_depth: Some(0),
                 render_options: ContextRenderOptions {
                     focus_node_id: None,
                     token_budget: (query.token_budget > 0).then_some(query.token_budget),
@@ -238,7 +231,11 @@ where
             .get_context(GetContextQuery {
                 root_node_id: about.to_string(),
                 role: "memory".to_string(),
-                depth: MAX_NATIVE_GRAPH_TRAVERSAL_DEPTH,
+                // Existing-ref validation only needs direct structural memory edges:
+                // anchor -> dimensions, anchor -> entries, and anchor -> evidence.
+                // Full semantic traversal here grows with every writer relation and
+                // makes repeated ingest progressively slower.
+                depth: MEMORY_EXISTING_REFS_LOOKUP_DEPTH,
                 requested_scopes: Vec::new(),
                 render_options: ContextRenderOptions::default(),
             })
@@ -287,10 +284,16 @@ where
             return context_roots(current_about, selection);
         }
 
-        let roots = prioritize_current_about(
-            normalize_about_roots(self.query_application.list_memory_abouts().await?),
-            current_about,
-        );
+        let roots = if should_filter_all_abouts_by_dimensions(selection) {
+            let dimension_ids = selection.dimensions().iter().cloned().collect::<Vec<_>>();
+            self.query_application
+                .list_memory_abouts_by_dimensions(&dimension_ids)
+                .await?
+        } else {
+            self.query_application.list_memory_abouts().await?
+        };
+
+        let roots = prioritize_current_about(normalize_about_roots(roots), current_about);
         if roots.is_empty() {
             return Err(ApplicationError::NotFound(
                 "no memory abouts found for ALL_ABOUTS scope".to_string(),
@@ -298,6 +301,12 @@ where
         }
         Ok(roots)
     }
+}
+
+fn should_filter_all_abouts_by_dimensions(selection: &DimensionSelection) -> bool {
+    selection.scope_mode() == DimensionScopeMode::AllAbouts
+        && selection.mode() == DimensionSelectionMode::Only
+        && !selection.dimensions().is_empty()
 }
 
 fn inspect_raw_coordinates(
@@ -661,14 +670,6 @@ fn resolve_dimension_scope_id(about: &str, scope_id: &str) -> Option<String> {
         return None;
     }
     namespaced_dimension_id(about, scope_id)
-}
-
-fn is_unknown_memory_ref_validation(error: &ApplicationError) -> bool {
-    matches!(
-        error,
-        ApplicationError::Validation(message)
-            if message.contains("unknown ref") || message.contains("unknown dimension scope")
-    )
 }
 
 #[cfg(test)]

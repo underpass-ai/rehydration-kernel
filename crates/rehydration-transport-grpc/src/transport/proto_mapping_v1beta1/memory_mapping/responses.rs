@@ -2,12 +2,12 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use rehydration_application::{
     GetContextPathResult, GetContextResult, GraphRelationshipView, InspectMemoryResult,
-    MemoryAnswerPolicy, TemporalMemoryResult,
+    MemoryAnswerPolicy, TemporalMemoryResult, TracePageRequest,
 };
 use rehydration_domain::{BundleNodeDetail, RehydrationBundle, TemporalDirection};
 use rehydration_proto::v1beta1::{
     AnswerReason, AskResponse, InspectResponse, InspectedLinks, InspectedObject, MemoryConfidence,
-    MemoryEvidence, MemoryRelation, RawMemoryRef, TemporalEntry as ProtoTemporalEntry,
+    MemoryEvidence, MemoryRelation, PageInfo, RawMemoryRef, TemporalEntry as ProtoTemporalEntry,
     TemporalMoveResponse, TemporalState, TraceResponse, WakeClaim, WakePacket, WakeResponse,
 };
 
@@ -211,12 +211,45 @@ pub(crate) fn temporal_response_from_result(
     }
 }
 
-pub(crate) fn trace_response_from_result(result: GetContextPathResult) -> TraceResponse {
+pub(crate) fn trace_response_from_result(
+    result: GetContextPathResult,
+    page: TracePageRequest,
+) -> TraceResponse {
+    let trace = memory_relations_from_bundle(&result.path_bundle);
+    let total = trace.len();
+    let offset = page.offset().min(total);
+    let entries = page.entries_or_default();
+    let end = offset.saturating_add(entries).min(total);
+    let has_more = end < total;
+    let mut warnings = Vec::new();
+    if offset >= total && total > 0 {
+        warnings.push(format!(
+            "trace page cursor {offset} is at or beyond total trace length {total}"
+        ));
+    }
+    if has_more {
+        warnings.push("trace response paginated; use page.next_cursor to continue".to_string());
+    }
+
     TraceResponse {
         summary: rendered_summary(&result.rendered),
-        trace: memory_relations_from_bundle(&result.path_bundle),
-        warnings: Vec::new(),
+        trace: trace[offset..end].to_vec(),
+        warnings,
+        page: Some(PageInfo {
+            returned: u32_saturating(end.saturating_sub(offset)),
+            total: u32_saturating(total),
+            has_more,
+            next_cursor: if has_more {
+                end.to_string()
+            } else {
+                String::new()
+            },
+        }),
     }
+}
+
+fn u32_saturating(value: usize) -> u32 {
+    value.min(u32::MAX as usize) as u32
 }
 
 pub(crate) fn inspect_response_from_result(result: InspectMemoryResult) -> InspectResponse {

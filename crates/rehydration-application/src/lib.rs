@@ -11,11 +11,12 @@ pub use commands::{
     UpdateContextCommand, UpdateContextOutcome, UpdateContextUseCase,
 };
 pub use memory::{
-    AskMemoryQuery, ExistingMemoryRefs, InspectMemoryQuery, InspectMemoryResult,
-    KernelMemoryApplicationService, MemoryAcceptedCounts, MemoryAnswerPolicy, MemoryCoordinateData,
-    MemoryData, MemoryDimensionData, MemoryEntryData, MemoryEvidenceData, MemoryIngestCommand,
+    AskMemoryQuery, DEFAULT_TRACE_PAGE_ENTRIES, ExistingMemoryRefs, InspectMemoryQuery,
+    InspectMemoryResult, KernelMemoryApplicationService, MAX_TRACE_PAGE_ENTRIES,
+    MemoryAcceptedCounts, MemoryAnswerPolicy, MemoryCoordinateData, MemoryData,
+    MemoryDimensionData, MemoryEntryData, MemoryEvidenceData, MemoryIngestCommand,
     MemoryIngestOutcome, MemoryProvenanceData, MemoryRelationData, TemporalIncludeOptions,
-    TemporalMemoryQuery, TemporalMemoryResult, TraceMemoryQuery, WakeMemoryQuery,
+    TemporalMemoryQuery, TemporalMemoryResult, TraceMemoryQuery, TracePageRequest, WakeMemoryQuery,
     translate_memory_ingest,
 };
 pub use projection::{

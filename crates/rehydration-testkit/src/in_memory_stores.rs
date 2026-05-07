@@ -3,10 +3,10 @@ use std::sync::Arc;
 
 use rehydration_domain::{
     ContextEventStore, ContextPathNeighborhood, ContextUpdatedEvent, GraphNeighborhoodReader,
-    IdempotentOutcome, MemoryAboutIndexReader, NodeDetailProjection, NodeDetailReader,
-    NodeNeighborhood, NodeRelationshipReader, NodeRelationships, PortError, ProcessedEventStore,
-    ProjectionCheckpoint, ProjectionCheckpointStore, ProjectionMutation, ProjectionWriter,
-    RehydrationBundle, SnapshotSaveOptions, SnapshotStore,
+    IdempotentOutcome, MemoryAboutIndexReader, MemoryDimensionIdentity, NodeDetailProjection,
+    NodeDetailReader, NodeNeighborhood, NodeRelationshipReader, NodeRelationships, PortError,
+    ProcessedEventStore, ProjectionCheckpoint, ProjectionCheckpointStore, ProjectionMutation,
+    ProjectionWriter, RehydrationBundle, SnapshotSaveOptions, SnapshotStore,
 };
 use tokio::sync::Mutex;
 
@@ -48,6 +48,36 @@ impl MemoryAboutIndexReader for InMemoryGraphNeighborhoodReader {
         abouts.sort();
         Ok(abouts)
     }
+
+    async fn list_memory_abouts_by_dimensions(
+        &self,
+        dimension_ids: &[String],
+    ) -> Result<Vec<String>, PortError> {
+        let wanted = dimension_ids
+            .iter()
+            .map(String::as_str)
+            .collect::<HashSet<_>>();
+        let mut abouts = self
+            .neighborhoods
+            .iter()
+            .filter(|(_, neighborhood)| {
+                neighborhood.relations.iter().any(|relation| {
+                    relation.relation_type == "has_dimension"
+                        && dimension_matches(&relation.target_node_id, &wanted)
+                })
+            })
+            .map(|(about, _)| about.clone())
+            .collect::<Vec<_>>();
+        abouts.sort();
+        Ok(abouts)
+    }
+}
+
+fn dimension_matches(node_id: &str, wanted: &HashSet<&str>) -> bool {
+    wanted.contains(node_id)
+        || MemoryDimensionIdentity::parse(node_id)
+            .map(|identity| wanted.contains(identity.dimension_id()))
+            .unwrap_or(false)
 }
 
 impl NodeRelationshipReader for InMemoryGraphNeighborhoodReader {

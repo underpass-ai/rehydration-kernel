@@ -2179,6 +2179,15 @@ version = "0.1.0"
 name = "rehydration-domain"
 version = "0.1.0"
 dependencies = [
+ "rehydration-plugin-api",
+ "serde",
+]
+
+[[package]]
+name = "rehydration-interpretation"
+version = "0.1.0"
+dependencies = [
+ "rehydration-plugin-api",
  "serde",
 ]
 
@@ -2186,14 +2195,18 @@ dependencies = [
 name = "rehydration-mcp"
 version = "0.1.0"
 dependencies = [
+ "opentelemetry",
  "prost-types",
  "rehydration-proto",
  "serde_json",
+ "sha2",
  "tempfile",
  "tokio",
  "tokio-rustls",
  "tokio-stream",
  "tonic 0.12.3",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -2211,6 +2224,13 @@ dependencies = [
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "rehydration-plugin-api"
+version = "0.1.0"
+dependencies = [
+ "serde",
 ]
 
 [[package]]
@@ -2257,6 +2277,8 @@ dependencies = [
  "async-nats",
  "rehydration-application",
  "rehydration-domain",
+ "rehydration-interpretation",
+ "rehydration-mcp",
  "rehydration-proto",
  "reqwest",
  "serde",

@@ -398,6 +398,51 @@ async fn grpc_backend_maps_kernel_ingest_to_kernel_memory_service() {
 }
 
 #[tokio::test]
+async fn grpc_backend_forwards_incremental_ingest_with_empty_dimensions() {
+    let recorded = RecordedMemoryRequests::default();
+    let endpoint = spawn_fake_memory_server(recorded.clone()).await;
+    let server = KernelMcpServer::grpc(endpoint);
+
+    let ingest = call_tool(
+        &server,
+        6,
+        "kernel_ingest",
+        json!({
+            "about": "question:830ce83f",
+            "memory": {
+                "dimensions": [],
+                "entries": [
+                    {
+                        "id": "claim:rachel-denver",
+                        "kind": "claim",
+                        "text": "Rachel moved to Denver.",
+                        "coordinates": [
+                            {
+                                "dimension": "conversation",
+                                "scope_id": "conversation:rachel",
+                                "sequence": 2,
+                                "occurred_at": "2026-04-13T15:05:00Z"
+                            }
+                        ]
+                    }
+                ],
+                "relations": [],
+                "evidence": []
+            },
+            "idempotency_key": "ingest:830ce83f:2"
+        }),
+    )
+    .await;
+
+    assert_eq!(ingest["result"]["isError"], false);
+    let ingests = recorded.ingests().await;
+    assert_eq!(ingests.len(), 1);
+    let memory = ingests[0].memory.as_ref().expect("memory");
+    assert!(memory.dimensions.is_empty());
+    assert_eq!(memory.entries[0].id, "claim:rachel-denver");
+}
+
+#[tokio::test]
 async fn grpc_backend_dry_run_ingest_does_not_call_kernel_memory_service() {
     let recorded = RecordedMemoryRequests::default();
     let endpoint = spawn_fake_memory_server(recorded.clone()).await;
@@ -716,6 +761,7 @@ impl KernelMemoryService for FakeMemoryService {
             summary: format!("Trace from {} to {}.", request.from, request.to),
             trace: vec![relation(&request.from, &request.to, "supports")],
             warnings: Vec::new(),
+            page: None,
         }))
     }
 

@@ -26,8 +26,12 @@ Current integration stance:
 | Document | Content |
 |:---------|:--------|
 | [kernel-context-traversal-and-mcp-action-plan.md](product/kernel-context-traversal-and-mcp-action-plan.md) | Public Kernel 1.0 plan/status for Kernel Memory Protocol, typed gRPC, MCP adapter, and honest benchmark follow-up |
+| [kernel-roadmap-milestones.md](product/kernel-roadmap-milestones.md) | Milestone roadmap for queryable agentic memory, benchmarks, observability, plugins, and infrastructure independence |
 | [kernel-context-api-design.md](product/kernel-context-api-design.md) | Kernel Memory Protocol design: ingest, wake, ask, temporal movement, trace, inspect, and MCP/gRPC/NATS bindings |
+| [queryable-agentic-memory-layer.md](product/queryable-agentic-memory-layer.md) | Product direction for temporal, multidimensional memory as a queryable persistence layer for humans and LLMs |
 | [kernel-memory-service-grpc-plan.md](product/kernel-memory-service-grpc-plan.md) | API-first plan for the typed `KernelMemoryService` gRPC boundary and MCP live-mode migration |
+| [kernel-plugin-architecture.md](product/kernel-plugin-architecture.md) | Exportable plugin API architecture and implementation guide for external plugin crates |
+| [kernel-write-protocol-plan.md](product/kernel-write-protocol-plan.md) | Writer-first plan for LLM/human memory ingestion above canonical `kernel_ingest` |
 
 ## Operations
 

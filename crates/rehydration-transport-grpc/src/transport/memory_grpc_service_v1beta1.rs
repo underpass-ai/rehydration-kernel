@@ -1,6 +1,8 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
+use opentelemetry::KeyValue;
 use rehydration_application::{
     ApplicationError, KernelMemoryApplicationService, TemporalMemoryResult,
 };
@@ -56,8 +58,9 @@ where
         &self,
         request: Request<IngestRequest>,
     ) -> Result<Response<IngestResponse>, Status> {
+        let start = Instant::now();
         let command = ingest_command_from_proto(request.into_inner())
-            .map_err(|status| map_proto_error("KernelMemoryService.Ingest", *status))?;
+            .map_err(|status| map_proto_error("KernelMemoryService.Ingest", &start, *status))?;
         tracing::info!(
             rpc = "KernelMemoryService.Ingest",
             about = %command.about,
@@ -67,10 +70,9 @@ where
             evidence = command.memory.evidence.len(),
             "kernel memory grpc request"
         );
-        let outcome =
-            self.application.ingest(command).await.map_err(|error| {
-                map_application_error_with_log("KernelMemoryService.Ingest", error)
-            })?;
+        let outcome = self.application.ingest(command).await.map_err(|error| {
+            map_application_error_with_log("KernelMemoryService.Ingest", &start, error)
+        })?;
         tracing::info!(
             rpc = "KernelMemoryService.Ingest",
             about = %outcome.about,
@@ -80,21 +82,27 @@ where
             read_after_write_ready = outcome.read_after_write_ready,
             "kernel memory grpc response"
         );
+        record_kmp_grpc_rpc(
+            "KernelMemoryService.Ingest",
+            "success",
+            "none",
+            start.elapsed(),
+        );
 
         Ok(Response::new(ingest_response_from_outcome(outcome)))
     }
 
     #[tracing::instrument(skip(self, request), fields(rpc = "KernelMemory.Wake"))]
     async fn wake(&self, request: Request<WakeRequest>) -> Result<Response<WakeResponse>, Status> {
+        let start = Instant::now();
         let request = request.into_inner();
         let query = wake_query_from_proto(request.clone())
-            .map_err(|status| map_proto_error("KernelMemoryService.Wake", *status))?;
+            .map_err(|status| map_proto_error("KernelMemoryService.Wake", &start, *status))?;
         let intent = query.intent.clone();
         log_dimensioned_request("KernelMemoryService.Wake", &query.about, &query.dimensions);
-        let result =
-            self.application.wake(query).await.map_err(|error| {
-                map_application_error_with_log("KernelMemoryService.Wake", error)
-            })?;
+        let result = self.application.wake(query).await.map_err(|error| {
+            map_application_error_with_log("KernelMemoryService.Wake", &start, error)
+        })?;
         let selected_abouts = selected_abouts_from_bundle(&result.bundle);
         let response = wake_response_from_result(&intent, result);
         let proof_paths = response
@@ -109,22 +117,28 @@ where
             warnings = response.warnings.len(),
             "kernel memory grpc response"
         );
+        record_kmp_grpc_rpc(
+            "KernelMemoryService.Wake",
+            "success",
+            "none",
+            start.elapsed(),
+        );
 
         Ok(Response::new(response))
     }
 
     #[tracing::instrument(skip(self, request), fields(rpc = "KernelMemory.Ask"))]
     async fn ask(&self, request: Request<AskRequest>) -> Result<Response<AskResponse>, Status> {
+        let start = Instant::now();
         let request = request.into_inner();
         let question = request.question.clone();
         let query = ask_query_from_proto(request)
-            .map_err(|status| map_proto_error("KernelMemoryService.Ask", *status))?;
+            .map_err(|status| map_proto_error("KernelMemoryService.Ask", &start, *status))?;
         let answer_policy = query.answer_policy;
         log_dimensioned_request("KernelMemoryService.Ask", &query.about, &query.dimensions);
-        let result =
-            self.application.ask(query).await.map_err(|error| {
-                map_application_error_with_log("KernelMemoryService.Ask", error)
-            })?;
+        let result = self.application.ask(query).await.map_err(|error| {
+            map_application_error_with_log("KernelMemoryService.Ask", &start, error)
+        })?;
         let selected_abouts = selected_abouts_from_bundle(&result.bundle);
         let response = ask_response_from_result(&question, answer_policy, result);
         tracing::info!(
@@ -134,6 +148,12 @@ where
             answer = %answer_presence_label(&response.answer),
             warnings = response.warnings.len(),
             "kernel memory grpc response"
+        );
+        record_kmp_grpc_rpc(
+            "KernelMemoryService.Ask",
+            "success",
+            "none",
+            start.elapsed(),
         );
 
         Ok(Response::new(response))
@@ -151,15 +171,15 @@ where
 
     #[tracing::instrument(skip(self, request), fields(rpc = "KernelMemory.Near"))]
     async fn near(&self, request: Request<NearRequest>) -> Result<Response<NearResponse>, Status> {
+        let start = Instant::now();
         let request = temporal_near_request_from_near(request.into_inner());
         let requested_cursor = request.around.clone().unwrap_or_default();
         let query = temporal_query_from_near_proto(request)
-            .map_err(|status| map_proto_error("KernelMemoryService.Near", *status))?;
+            .map_err(|status| map_proto_error("KernelMemoryService.Near", &start, *status))?;
         log_temporal_request("KernelMemoryService.Near", &query.about, &query.dimensions);
-        let result =
-            self.application.temporal(query).await.map_err(|error| {
-                map_application_error_with_log("KernelMemoryService.Near", error)
-            })?;
+        let result = self.application.temporal(query).await.map_err(|error| {
+            map_application_error_with_log("KernelMemoryService.Near", &start, error)
+        })?;
         let selected_abouts = selected_abouts_from_temporal_result(&result);
         let response =
             temporal_response_from_result(requested_cursor, TemporalDirection::Near, result);
@@ -169,6 +189,12 @@ where
             entries = response.entries.len(),
             warnings = response.warnings.len(),
             "kernel memory grpc response"
+        );
+        record_kmp_grpc_rpc(
+            "KernelMemoryService.Near",
+            "success",
+            "none",
+            start.elapsed(),
         );
 
         Ok(Response::new(near_response_from_temporal(response)))
@@ -205,6 +231,7 @@ where
         &self,
         request: Request<TraceRequest>,
     ) -> Result<Response<TraceResponse>, Status> {
+        let start = Instant::now();
         let request = request.into_inner();
         tracing::info!(
             rpc = "KernelMemoryService.Trace",
@@ -212,17 +239,25 @@ where
             to = %request.to,
             "kernel memory grpc request"
         );
-        let query = trace_query_from_proto(request);
-        let result =
-            self.application.trace(query).await.map_err(|error| {
-                map_application_error_with_log("KernelMemoryService.Trace", error)
-            })?;
-        let response = trace_response_from_result(result);
+        let query = trace_query_from_proto(request)
+            .map_err(|status| map_proto_error("KernelMemoryService.Trace", &start, *status))?;
+        let page = query.page.clone();
+        let result = self.application.trace(query).await.map_err(|error| {
+            map_application_error_with_log("KernelMemoryService.Trace", &start, error)
+        })?;
+        let response = trace_response_from_result(result, page);
         tracing::info!(
             rpc = "KernelMemoryService.Trace",
             path = response.trace.len(),
+            has_more = response.page.as_ref().is_some_and(|page| page.has_more),
             warnings = response.warnings.len(),
             "kernel memory grpc response"
+        );
+        record_kmp_grpc_rpc(
+            "KernelMemoryService.Trace",
+            "success",
+            "none",
+            start.elapsed(),
         );
 
         Ok(Response::new(response))
@@ -233,8 +268,9 @@ where
         &self,
         request: Request<InspectRequest>,
     ) -> Result<Response<InspectResponse>, Status> {
+        let start = Instant::now();
         let query = inspect_query_from_proto(request.into_inner())
-            .map_err(|status| map_proto_error("KernelMemoryService.Inspect", *status))?;
+            .map_err(|status| map_proto_error("KernelMemoryService.Inspect", &start, *status))?;
         tracing::info!(
             rpc = "KernelMemoryService.Inspect",
             ref_id = %query.ref_id,
@@ -245,7 +281,7 @@ where
             "kernel memory grpc request"
         );
         let result = self.application.inspect(query).await.map_err(|error| {
-            map_application_error_with_log("KernelMemoryService.Inspect", error)
+            map_application_error_with_log("KernelMemoryService.Inspect", &start, error)
         })?;
         let response = inspect_response_from_result(result);
         tracing::info!(
@@ -270,6 +306,12 @@ where
             warnings = response.warnings.len(),
             "kernel memory grpc response"
         );
+        record_kmp_grpc_rpc(
+            "KernelMemoryService.Inspect",
+            "success",
+            "none",
+            start.elapsed(),
+        );
 
         Ok(Response::new(response))
     }
@@ -293,16 +335,17 @@ where
         request: TemporalMoveRequest,
         direction: TemporalDirection,
     ) -> Result<TemporalMoveResponse, Status> {
+        let start = Instant::now();
         let requested_cursor = request.cursor.clone().unwrap_or_default();
         let rpc = temporal_rpc_label(direction);
         let query = temporal_query_from_move_proto(request, direction)
-            .map_err(|status| map_proto_error(rpc, *status))?;
+            .map_err(|status| map_proto_error(rpc, &start, *status))?;
         log_temporal_request(rpc, &query.about, &query.dimensions);
         let result = self
             .application
             .temporal(query)
             .await
-            .map_err(|error| map_application_error_with_log(rpc, error))?;
+            .map_err(|error| map_application_error_with_log(rpc, &start, error))?;
         let selected_abouts = selected_abouts_from_temporal_result(&result);
         let response = temporal_response_from_result(requested_cursor, direction, result);
         tracing::info!(
@@ -312,6 +355,7 @@ where
             warnings = response.warnings.len(),
             "kernel memory grpc response"
         );
+        record_kmp_grpc_rpc(rpc, "success", "none", start.elapsed());
 
         Ok(response)
     }
@@ -476,14 +520,30 @@ fn selected_abouts_from_bundle_and_scope_ids<'a>(
     selected
 }
 
-fn map_proto_error(rpc: &'static str, status: Status) -> Status {
+fn map_proto_error(rpc: &'static str, start: &Instant, status: Status) -> Status {
     log_grpc_error(rpc, &status);
+    record_kmp_grpc_rpc(
+        rpc,
+        "error",
+        status_code_label(status.code()),
+        start.elapsed(),
+    );
     status
 }
 
-fn map_application_error_with_log(rpc: &'static str, error: ApplicationError) -> Status {
+fn map_application_error_with_log(
+    rpc: &'static str,
+    start: &Instant,
+    error: ApplicationError,
+) -> Status {
     let status = map_application_error(error);
     log_grpc_error(rpc, &status);
+    record_kmp_grpc_rpc(
+        rpc,
+        "error",
+        status_code_label(status.code()),
+        start.elapsed(),
+    );
     status
 }
 
@@ -494,6 +554,50 @@ fn log_grpc_error(rpc: &'static str, status: &Status) {
         message = %status.message(),
         "kernel memory grpc error"
     );
+}
+
+fn record_kmp_grpc_rpc(
+    rpc: &'static str,
+    status: &'static str,
+    code: &'static str,
+    duration: Duration,
+) {
+    let attrs = [
+        KeyValue::new("rpc", rpc),
+        KeyValue::new("status", status),
+        KeyValue::new("code", code),
+    ];
+    let meter = opentelemetry::global::meter("rehydration-kernel");
+    meter
+        .u64_counter("rehydration.kmp.grpc.calls")
+        .build()
+        .add(1, &attrs);
+    meter
+        .f64_histogram("rehydration.kmp.grpc.duration")
+        .build()
+        .record(duration.as_secs_f64(), &attrs);
+}
+
+fn status_code_label(code: tonic::Code) -> &'static str {
+    match code {
+        tonic::Code::Ok => "ok",
+        tonic::Code::Cancelled => "cancelled",
+        tonic::Code::Unknown => "unknown",
+        tonic::Code::InvalidArgument => "invalid_argument",
+        tonic::Code::DeadlineExceeded => "deadline_exceeded",
+        tonic::Code::NotFound => "not_found",
+        tonic::Code::AlreadyExists => "already_exists",
+        tonic::Code::PermissionDenied => "permission_denied",
+        tonic::Code::ResourceExhausted => "resource_exhausted",
+        tonic::Code::FailedPrecondition => "failed_precondition",
+        tonic::Code::Aborted => "aborted",
+        tonic::Code::OutOfRange => "out_of_range",
+        tonic::Code::Unimplemented => "unimplemented",
+        tonic::Code::Internal => "internal",
+        tonic::Code::Unavailable => "unavailable",
+        tonic::Code::DataLoss => "data_loss",
+        tonic::Code::Unauthenticated => "unauthenticated",
+    }
 }
 
 fn temporal_rpc_label(direction: TemporalDirection) -> &'static str {

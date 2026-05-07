@@ -1,0 +1,1 @@
+{"id":7,"category":"progressive_demo","backgrounds":"Use each previous answer as memory for the next subtask.","questions":["Find the first clue.","Use the clue to choose the final item."],"answers":["clue-a",{"target":"item-b","reason":"clue-a points to item-b"}]}

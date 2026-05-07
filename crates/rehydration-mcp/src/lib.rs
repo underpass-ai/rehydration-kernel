@@ -4,8 +4,10 @@ mod fixture;
 mod grpc;
 mod ingest;
 mod kmp;
+mod observability;
 mod protocol;
 mod server;
+mod write;
 
 pub use backend::{
     GRPC_ENDPOINT_ENV, GRPC_TLS_CA_PATH_ENV, GRPC_TLS_CERT_PATH_ENV, GRPC_TLS_DOMAIN_NAME_ENV,

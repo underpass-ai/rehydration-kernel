@@ -1,10 +1,10 @@
 use rehydration_application::{
-    AskMemoryQuery, InspectMemoryQuery, TemporalIncludeOptions, TemporalMemoryQuery,
-    TraceMemoryQuery, WakeMemoryQuery,
+    AskMemoryQuery, InspectMemoryQuery, MAX_TRACE_PAGE_ENTRIES, TemporalIncludeOptions,
+    TemporalMemoryQuery, TraceMemoryQuery, TracePageRequest, WakeMemoryQuery,
 };
 use rehydration_domain::{TemporalCursor, TemporalDirection};
 use rehydration_proto::v1beta1::{
-    AskRequest, InspectInclude, InspectRequest, TemporalInclude, TemporalLimit,
+    AskRequest, InspectInclude, InspectRequest, PageRequest, TemporalInclude, TemporalLimit,
     TemporalMoveRequest, TemporalNearRequest, TraceRequest, WakeRequest,
 };
 
@@ -80,9 +80,11 @@ pub(crate) fn temporal_query_from_near_proto(
     })
 }
 
-pub(crate) fn trace_query_from_proto(request: TraceRequest) -> TraceMemoryQuery {
+pub(crate) fn trace_query_from_proto(
+    request: TraceRequest,
+) -> ProtoMappingResult<TraceMemoryQuery> {
     let budget = request.budget.unwrap_or_default();
-    TraceMemoryQuery {
+    Ok(TraceMemoryQuery {
         from: request.from,
         to: request.to,
         role: non_empty(request.goal).unwrap_or_else(|| "tracer".to_string()),
@@ -91,7 +93,8 @@ pub(crate) fn trace_query_from_proto(request: TraceRequest) -> TraceMemoryQuery 
         } else {
             budget.tokens
         },
-    }
+        page: trace_page_from_proto(request.page)?,
+    })
 }
 
 pub(crate) fn inspect_query_from_proto(
@@ -177,6 +180,30 @@ fn temporal_include_from_proto(
         relations: value.relations,
         raw_refs: value.raw_refs,
     })
+}
+
+fn trace_page_from_proto(value: Option<PageRequest>) -> ProtoMappingResult<TracePageRequest> {
+    let Some(page) = value else {
+        return Ok(TracePageRequest::default());
+    };
+    let entries = if page.entries == 0 {
+        None
+    } else {
+        let entries = page.entries as usize;
+        if entries > MAX_TRACE_PAGE_ENTRIES {
+            return Err(invalid_argument(format!(
+                "trace page.entries must be <= {MAX_TRACE_PAGE_ENTRIES}"
+            )));
+        }
+        Some(entries)
+    };
+    let cursor = match non_empty(page.cursor) {
+        Some(cursor) => Some(cursor.parse::<usize>().map_err(|_| {
+            invalid_argument("trace page.cursor must be a next_cursor returned by Trace")
+        })?),
+        None => None,
+    };
+    Ok(TracePageRequest { entries, cursor })
 }
 
 fn domain_cursor_from_proto(

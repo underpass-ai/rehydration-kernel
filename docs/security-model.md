@@ -1,5 +1,34 @@
 # Security Model
 
+## Product Security Direction
+
+The queryable memory layer must be observable, auditable, and secure.
+
+Security for agentic memory is not only transport encryption. The kernel stores
+process memory that may include user context, agent decisions, tool outputs,
+evidence, and raw operational details. Callers should be able to inspect what
+they are authorized to inspect, and failures should be explicit rather than
+hidden behind fallback context.
+
+Security goals:
+
+- protect every transport boundary with TLS or mTLS where available;
+- keep credentials in secrets, not inline configuration;
+- fail closed on unauthorized or ambiguous access once application identity is
+  introduced;
+- separate compact usable responses from raw inspect access;
+- redact or withhold sensitive details when a caller lacks permission;
+- emit audit logs for memory writes, reads, trace, inspect, and rejected access;
+- avoid leaking secrets, raw prompts, or unrestricted memory in logs and traces.
+
+Medium-term gaps:
+
+- application-level caller identity is not extracted from mTLS certificates;
+- fine-grained RBAC and scope-based access control are not implemented;
+- raw inspect permission is not a separate authorization decision yet;
+- redaction policy is not a first-class KMP concept yet;
+- data-at-rest encryption is delegated to infrastructure.
+
 ## Transport Security Posture
 
 Every infrastructure boundary supports TLS. The gRPC transport supports

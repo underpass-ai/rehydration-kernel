@@ -17,7 +17,8 @@ cargo test -p rehydration-tests-kernel --features container-tests -- --nocapture
 bash scripts/ci/quality-gate.sh
 
 # Optional local pre-commit hook:
-# clippy with the same deny-warnings mode as CI, plus MCP coverage >= 80%
+# clippy with the same deny-warnings mode as CI, plus production kernel coverage >= 80%.
+# Reference clients are excluded from the production coverage denominator.
 git config core.hooksPath .githooks
 ```
 

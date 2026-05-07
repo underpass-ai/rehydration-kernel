@@ -34,7 +34,7 @@ pub(in crate::grpc) fn ingest_request_from_arguments(
 }
 
 fn memory_from_object(memory: &Map<String, Value>) -> Result<Memory, String> {
-    let dimensions = required_array_field(memory, "dimensions", "memory.dimensions")?;
+    let dimensions = required_array_field_allow_empty(memory, "dimensions", "memory.dimensions")?;
     let entries = required_array_field(memory, "entries", "memory.entries")?;
     let relations = optional_array_field(memory, "relations", "memory.relations")?;
     let evidence = optional_array_field(memory, "evidence", "memory.evidence")?;
@@ -57,6 +57,22 @@ fn memory_from_object(memory: &Map<String, Value>) -> Result<Memory, String> {
             .map(evidence_from_value)
             .collect::<Result<Vec<_>, _>>()?,
     })
+}
+
+fn required_array_field_allow_empty<'a>(
+    object: &'a Map<String, Value>,
+    key: &str,
+    path: &str,
+) -> Result<&'a [Value], String> {
+    object
+        .get(key)
+        .ok_or_else(|| format!("missing required array argument `{path}`"))
+        .and_then(|value| {
+            value
+                .as_array()
+                .map(Vec::as_slice)
+                .ok_or_else(|| format!("argument `{path}` must be an array"))
+        })
 }
 
 fn dimension_from_value(value: &Value) -> Result<MemoryDimension, String> {
@@ -269,5 +285,38 @@ mod tests {
             request.provenance.expect("provenance").source_kind,
             MemorySourceKind::Agent as i32
         );
+    }
+
+    #[test]
+    fn ingest_request_allows_empty_dimensions_for_incremental_append() {
+        let request = ingest_request_from_arguments(&json!({
+            "about": "question:830ce83f",
+            "memory": {
+                "dimensions": [],
+                "entries": [
+                    {
+                        "id": "claim:rachel-denver",
+                        "kind": "claim",
+                        "text": "Rachel moved to Denver.",
+                        "coordinates": [
+                            {
+                                "dimension": "conversation",
+                                "scope_id": "conversation:rachel",
+                                "sequence": 2,
+                                "occurred_at": "2026-04-13T15:05:00Z"
+                            }
+                        ]
+                    }
+                ],
+                "relations": [],
+                "evidence": []
+            },
+            "idempotency_key": "ingest:830ce83f:2"
+        }))
+        .expect("incremental append should map");
+
+        let memory = request.memory.expect("memory");
+        assert!(memory.dimensions.is_empty());
+        assert_eq!(memory.entries[0].id, "claim:rachel-denver");
     }
 }

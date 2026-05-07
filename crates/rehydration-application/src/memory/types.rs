@@ -5,6 +5,9 @@ use rehydration_domain::{
 
 use crate::queries::{GetNodeDetailResult, GraphRelationshipView};
 
+pub const DEFAULT_TRACE_PAGE_ENTRIES: usize = 64;
+pub const MAX_TRACE_PAGE_ENTRIES: usize = 256;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MemoryIngestCommand {
     pub about: String,
@@ -163,6 +166,23 @@ pub struct TraceMemoryQuery {
     pub to: String,
     pub role: String,
     pub token_budget: u32,
+    pub page: TracePageRequest,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct TracePageRequest {
+    pub entries: Option<usize>,
+    pub cursor: Option<usize>,
+}
+
+impl TracePageRequest {
+    pub fn offset(&self) -> usize {
+        self.cursor.unwrap_or_default()
+    }
+
+    pub fn entries_or_default(&self) -> usize {
+        self.entries.unwrap_or(DEFAULT_TRACE_PAGE_ENTRIES)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

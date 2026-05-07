@@ -1,0 +1,116 @@
+You are writing semantic memory through the Rehydration Kernel.
+
+Return JSON only. Do not wrap the answer in markdown fences.
+Do not emit gRPC, MCP, NATS, HTTP, or transport envelopes.
+Return exactly one `kernel_write_memory` argument object.
+
+The object must have this shape:
+
+{
+  "about": "string",
+  "intent": "record_turn|record_observation|record_decision|record_feedback|record_delta",
+  "actor": "string",
+  "observed_at": "ISO-8601 timestamp",
+  "scope": {
+    "task": "string",
+    "process": "string",
+    "episode": "string"
+  },
+  "current": {
+    "ref": "string",
+    "kind": "turn|observation|decision|feedback|semantic_delta|constraint|preference|derived_value|error_path|success_path",
+    "summary": "string",
+    "evidence": "string"
+  },
+  "semantic_delta": {
+    "ref": "string",
+    "from": "string",
+    "to": "string",
+    "why": "string",
+    "evidence": "string"
+  },
+  "connect_to": [
+    {
+      "ref": "string",
+      "rel": "follows|answers|uses_background|depends_on|chosen_because|semantic_delta_from|updates_state|supports|supersedes|contradicts|satisfies_constraint|violates_constraint|contributes_to|excluded_from|checked_against|derived_from|confirms_selection|contains|member_of|scoped_to",
+      "class": "structural|causal|motivational|procedural|evidential|constraint",
+      "why": "string",
+      "evidence": "string",
+      "confidence": "high|medium|low|unknown"
+    }
+  ],
+  "read_context": {
+    "inspected_refs": ["string"],
+    "trace_paths": [
+      {
+        "from": "string",
+        "to": "string",
+        "refs": ["string"]
+      }
+    ],
+    "temporal_refs": ["string"],
+    "wake_refs": ["string"],
+    "ask_refs": ["string"]
+  },
+  "idempotency_key": "string",
+  "options": {
+    "dry_run": true,
+    "strict": true,
+    "sequence": 1
+  }
+}
+
+Hard rules:
+- Emit a single memory event, not a batch.
+- Always include `about`, `intent`, `actor`, `observed_at`, `scope.process`, `current.kind`, `current.summary`, `current.evidence`, and at least one `connect_to` relation.
+- Every non-structural relation must include both `why` and `evidence`.
+- Do not use vague relations such as `related_to`.
+- Do not invent causal, motivational, evidential, or constraint links.
+- Do not point a relation from a ref to itself.
+- For a rich relation to an existing external ref, include that ref in `read_context`.
+- If the external ref was inspected, include it in `read_context.inspected_refs`.
+- If the external ref came from `kernel_trace`, include a `trace_paths` object.
+- If the external ref came from temporal traversal, include it in `read_context.temporal_refs`.
+- If the external ref came from `kernel_wake`, include it in `read_context.wake_refs`.
+- If the external ref came from deterministic `kernel_ask` proof/evidence, include it in `read_context.ask_refs`.
+- If you cannot justify a rich relation after reading context, use an explicit anemic fallback only when evidence supports it:
+  - `follows` with `class=procedural` for sequence.
+  - `answers` with `class=evidential` for feedback answering a prior turn.
+  - `uses_background` with `class=evidential` for scoped background usage.
+- Do not upgrade an anemic fallback into causal, motivational, or constraint language.
+- Keep summaries short. Put proof in `evidence`.
+- Use `options.dry_run=true` first unless the caller explicitly asks to commit.
+- Use `options.strict=true` by default.
+- Omit optional fields only when they do not apply. Never fill unknown values with placeholders.
+
+Relation selection:
+- `chosen_because`: a decision was selected because of prior evidence or tradeoff.
+- `depends_on`: current memory depends on a prior memory.
+- `updates_state`: current memory changes the process state.
+- `semantic_delta_from`: current memory expresses a state change from prior memory.
+- `supports`: an observation supports a prior or target memory.
+- `supersedes`: current memory replaces prior memory.
+- `contradicts`: current memory invalidates prior memory.
+- `satisfies_constraint`: current memory meets a rule.
+- `violates_constraint`: current memory breaks a rule.
+- `contributes_to`: a value is intentionally included in a derived result.
+- `excluded_from`: a value is intentionally excluded from a derived result.
+- `checked_against`: a value is checked against a rule, budget, or window.
+- `derived_from`: a result was computed from operands or evidence.
+- `confirms_selection`: feedback confirms a prior selected option.
+
+Inputs:
+
+Writer metadata:
+{writer_metadata}
+
+Current task or episode:
+{current_task}
+
+Relevant kernel read context:
+{kernel_read_context}
+
+New observation, turn, decision, feedback, or delta to write:
+{new_memory_event}
+
+Return the `kernel_write_memory` arguments JSON now.

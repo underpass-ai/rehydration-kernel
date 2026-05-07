@@ -206,6 +206,10 @@ ingress:
   className: nginx
   annotations:
     nginx.ingress.kubernetes.io/backend-protocol: GRPC
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "30"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-body-size: 10m
   hosts:
     - host: rehydration-kernel.example.com
       paths:
@@ -220,11 +224,54 @@ ingress:
 Controller-specific annotations stay with the operator because gRPC ingress
 behavior is controller-specific.
 
-The sibling runtime profile now enables this directly with:
+### Public TLS Termination With NGINX
+
+This is the current `underpass-runtime` exposure profile.
+
+Use this when the kernel pod listens with `tls.mode=disabled` and NGINX is the
+public TLS boundary:
+
+- external clients call `https://rehydration-kernel.underpassai.com`
+- NGINX terminates the public certificate from `ingress.tls`
+- NGINX forwards gRPC to the kernel service using plaintext upstream h2c
+- the required backend annotation is
+  `nginx.ingress.kubernetes.io/backend-protocol: GRPC`
+
+Do not use `backend-protocol: GRPCS` in this profile. `GRPCS` means NGINX must
+open a TLS connection to the kernel backend, which requires the kernel server
+itself to run with `tls.mode=server` or `tls.mode=mutual`.
+
+The sibling runtime profile enables this directly with:
 
 - host: `rehydration-kernel.underpassai.com`
 - class: `nginx`
 - annotation: `nginx.ingress.kubernetes.io/backend-protocol: GRPC`
+- TLS secret: `rehydration-kernel-tls-prod`
+- NGINX gRPC timeouts: 30s connect and 300s read/send, so synchronous
+  `kernel_write_memory` commits with `read_after_write_ready` are not cut at the
+  controller default 60s timeout.
+
+### GRPCS Upstream To Kernel
+
+Use `backend-protocol: GRPCS` only when NGINX should connect to a TLS-enabled
+kernel backend.
+
+For server-side TLS, configure:
+
+- `tls.mode=server`
+- `tls.existingSecret`
+- `nginx.ingress.kubernetes.io/backend-protocol: GRPCS`
+
+For upstream mTLS, configure the same backend TLS plus the NGINX client identity
+annotations:
+
+- `tls.mode=mutual`
+- `nginx.ingress.kubernetes.io/proxy-ssl-secret`
+- `nginx.ingress.kubernetes.io/proxy-ssl-name`
+- `nginx.ingress.kubernetes.io/proxy-ssl-verify`
+
+That is a transport-security profile, not the default public exposure profile.
+See [mtls-deployment.md](./mtls-deployment.md) for the full mTLS deployment.
 
 ## Outbound NATS TLS
 

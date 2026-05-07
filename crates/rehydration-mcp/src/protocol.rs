@@ -144,6 +144,11 @@ pub(crate) fn tools_list_result() -> Value {
                 })
             ),
             tool_definition(
+                "kernel_write_memory",
+                "Plan or commit a writer-friendly semantic memory event. The tool validates writer intent, relation quality, and compiles to canonical kernel_ingest.",
+                write_memory_schema()
+            ),
+            tool_definition(
                 "kernel_wake",
                 "Return a compact Kernel Memory Protocol wake packet for continuing work from memory.",
                 json!({
@@ -213,6 +218,7 @@ pub(crate) fn tools_list_result() -> Value {
                         "to": string_schema("Target memory ref. In live gRPC mode this must resolve to a kernel node id."),
                         "role": string_schema("Optional caller role."),
                         "goal": string_schema("Optional trace goal."),
+                        "page": page_schema(),
                         "budget": budget_schema()
                     }
                 })
@@ -243,6 +249,188 @@ pub(crate) fn tools_list_result() -> Value {
                 })
             )
         ]
+    })
+}
+
+fn write_memory_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["about", "intent", "actor", "observed_at", "scope", "current", "connect_to"],
+        "properties": {
+            "about": string_schema("Memory anchor or root ref this semantic memory event should attach to."),
+            "intent": {
+                "type": "string",
+                "enum": [
+                    "record_turn",
+                    "record_observation",
+                    "record_decision",
+                    "record_feedback",
+                    "record_delta"
+                ]
+            },
+            "actor": string_schema("Human, agent, or component producing the write."),
+            "observed_at": string_schema("RFC3339 timestamp for provenance and default coordinates."),
+            "source_kind": {
+                "type": "string",
+                "enum": ["human", "agent", "projection", "derived"]
+            },
+            "scope": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["process"],
+                "properties": {
+                    "task": string_schema("Optional task dimension scope id."),
+                    "process": string_schema("Required agentic process dimension scope id."),
+                    "episode": string_schema("Optional agentic episode dimension scope id.")
+                }
+            },
+            "current": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["kind", "summary"],
+                "properties": {
+                    "ref": string_schema("Optional stable memory entry ref. Omit to let the writer planner generate one deterministically."),
+                    "kind": {
+                        "type": "string",
+                        "enum": [
+                            "turn",
+                            "observation",
+                            "decision",
+                            "feedback",
+                            "semantic_delta",
+                            "constraint",
+                            "preference",
+                            "derived_value",
+                            "error_path",
+                            "success_path"
+                        ]
+                    },
+                    "summary": string_schema("Concise semantic memory text to store."),
+                    "evidence": string_schema("Direct evidence for the new memory entry. Required in strict mode.")
+                }
+            },
+            "semantic_delta": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["from", "to", "why", "evidence"],
+                "properties": {
+                    "ref": string_schema("Optional stable semantic delta entry ref."),
+                    "from": string_schema("Previous known state."),
+                    "to": string_schema("New state."),
+                    "why": string_schema("Why this state change is valid."),
+                    "evidence": string_schema("Evidence proving the state change.")
+                }
+            },
+            "connect_to": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["ref", "rel", "class"],
+                    "properties": {
+                        "ref": string_schema("Existing memory ref this new memory connects to."),
+                        "rel": {
+                            "type": "string",
+                            "enum": [
+                                "follows",
+                                "answers",
+                                "uses_background",
+                                "depends_on",
+                                "chosen_because",
+                                "semantic_delta_from",
+                                "updates_state",
+                                "supports",
+                                "supersedes",
+                                "contradicts",
+                                "satisfies_constraint",
+                                "violates_constraint",
+                                "contributes_to",
+                                "excluded_from",
+                                "checked_against",
+                                "derived_from",
+                                "confirms_selection",
+                                "contains",
+                                "member_of",
+                                "scoped_to"
+                            ]
+                        },
+                        "class": {
+                            "type": "string",
+                            "enum": ["structural", "causal", "motivational", "procedural", "evidential", "constraint"]
+                        },
+                        "why": string_schema("Why this relation exists. Required for non-structural relations."),
+                        "evidence": string_schema("Evidence for this relation. Required for non-structural relations."),
+                        "confidence": {
+                            "type": "string",
+                            "enum": ["high", "medium", "low", "unknown"]
+                        }
+                    }
+                }
+            },
+            "read_context": read_context_schema(),
+            "idempotency_key": string_schema("Optional stable idempotency key. Omit to generate one from the write payload."),
+            "options": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "dry_run": {
+                        "type": "boolean",
+                        "description": "When true, only return the compiled canonical kernel_ingest preview."
+                    },
+                    "strict": {
+                        "type": "boolean",
+                        "description": "When true, fail fast on unsupported relations and missing proof. Defaults to true."
+                    },
+                    "sequence": {
+                        "type": "integer",
+                        "minimum": 1
+                    }
+                }
+            }
+        }
+    })
+}
+
+fn read_context_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+            "inspected_refs": {
+                "type": "array",
+                "items": string_schema("Memory ref inspected with kernel_inspect before writing.")
+            },
+            "temporal_refs": {
+                "type": "array",
+                "items": string_schema("Memory ref observed through kernel_goto, kernel_near, kernel_rewind, or kernel_forward before writing.")
+            },
+            "wake_refs": {
+                "type": "array",
+                "items": string_schema("Memory ref observed in a kernel_wake packet before writing.")
+            },
+            "ask_refs": {
+                "type": "array",
+                "items": string_schema("Memory ref observed in deterministic kernel_ask proof/evidence before writing.")
+            },
+            "trace_paths": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["from", "to"],
+                    "properties": {
+                        "from": string_schema("Trace source ref observed before writing."),
+                        "to": string_schema("Trace target ref observed before writing."),
+                        "refs": {
+                            "type": "array",
+                            "items": string_schema("Optional intermediate ref observed in the trace path.")
+                        }
+                    }
+                }
+            }
+        }
     })
 }
 
@@ -312,6 +500,21 @@ fn temporal_tool_definition(name: &str, description: &str, cursor_key: &str) -> 
     });
     input_schema["properties"][cursor_key] = cursor_schema;
     tool_definition(name, description, input_schema)
+}
+
+fn page_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+            "entries": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Maximum number of trace relations to return in this page."
+            },
+            "cursor": string_schema("Opaque cursor returned by page.next_cursor.")
+        }
+    })
 }
 
 fn dimensions_schema() -> Value {
@@ -496,20 +699,32 @@ mod tests {
             .as_array()
             .expect("tools should be an array");
 
-        assert_eq!(tools.len(), 9);
+        assert_eq!(tools.len(), 10);
         assert_eq!(tools[0]["name"], "kernel_ingest");
         assert_eq!(tools[0]["inputSchema"]["required"][1], "memory");
-        assert_eq!(tools[1]["name"], "kernel_wake");
-        assert_eq!(tools[1]["inputSchema"]["required"][0], "about");
-        assert_eq!(tools[2]["name"], "kernel_ask");
-        assert_eq!(tools[2]["inputSchema"]["required"][1], "question");
+        assert_eq!(tools[1]["name"], "kernel_write_memory");
+        assert_eq!(tools[1]["inputSchema"]["required"][1], "intent");
+        assert_eq!(
+            tools[1]["inputSchema"]["properties"]["connect_to"]["items"]["properties"]["rel"]["enum"]
+                [0],
+            "follows"
+        );
         assert!(
-            tools[2]["inputSchema"]["properties"]
+            tools[1]["inputSchema"]["properties"]
+                .get("read_context")
+                .is_some()
+        );
+        assert_eq!(tools[2]["name"], "kernel_wake");
+        assert_eq!(tools[2]["inputSchema"]["required"][0], "about");
+        assert_eq!(tools[3]["name"], "kernel_ask");
+        assert_eq!(tools[3]["inputSchema"]["required"][1], "question");
+        assert!(
+            tools[3]["inputSchema"]["properties"]
                 .get("prefer")
                 .is_none()
         );
-        assert_eq!(tools[3]["name"], "kernel_goto");
-        assert_eq!(tools[3]["inputSchema"]["required"][1], "at");
+        assert_eq!(tools[4]["name"], "kernel_goto");
+        assert_eq!(tools[4]["inputSchema"]["required"][1], "at");
     }
 
     #[test]

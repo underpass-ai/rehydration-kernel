@@ -10,6 +10,7 @@ use super::dimensions::dimension_selection_from_arguments;
 use super::temporal::{
     inspect_include_from_arguments, temporal_cursor_from_arguments,
     temporal_include_from_arguments, temporal_limit_from_arguments, temporal_window_from_arguments,
+    trace_page_from_arguments,
 };
 
 pub(in crate::grpc) fn wake_request_from_arguments(
@@ -90,6 +91,7 @@ pub(in crate::grpc) fn trace_request_from_arguments(
             .or_else(|| optional_string(arguments, "role"))
             .unwrap_or_default(),
         budget: Some(memory_budget_from_arguments(arguments, 1600, 1)?),
+        page: trace_page_from_arguments(arguments)?,
     })
 }
 
