@@ -18,9 +18,11 @@ use crate::memory::{
 };
 use crate::queries::{
     ContextRenderOptions, EndpointHint, GetContextPathQuery, GetContextPathResult, GetContextQuery,
-    GetContextResult, GetNodeDetailQuery, GetNodeRelationshipsQuery,
-    MAX_NATIVE_GRAPH_TRAVERSAL_DEPTH, QueryApplicationService, render_graph_bundle_with_options,
+    GetContextResult, GetNodeDetailQuery, GetNodeRelationshipsQuery, QueryApplicationService,
+    render_graph_bundle_with_options,
 };
+
+const MEMORY_EXISTING_REFS_LOOKUP_DEPTH: u32 = 1;
 
 pub struct KernelMemoryApplicationService<G, D, S, E, W> {
     query_application: Arc<QueryApplicationService<G, D, S>>,
@@ -229,7 +231,11 @@ where
             .get_context(GetContextQuery {
                 root_node_id: about.to_string(),
                 role: "memory".to_string(),
-                depth: MAX_NATIVE_GRAPH_TRAVERSAL_DEPTH,
+                // Existing-ref validation only needs direct structural memory edges:
+                // anchor -> dimensions, anchor -> entries, and anchor -> evidence.
+                // Full semantic traversal here grows with every writer relation and
+                // makes repeated ingest progressively slower.
+                depth: MEMORY_EXISTING_REFS_LOOKUP_DEPTH,
                 requested_scopes: Vec::new(),
                 render_options: ContextRenderOptions::default(),
             })

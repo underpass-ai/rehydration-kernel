@@ -1195,6 +1195,24 @@ async fn memory_service_ingest_dry_run_validates_without_writing() {
 }
 
 #[tokio::test]
+async fn memory_service_ingest_uses_shallow_existing_ref_lookup() {
+    let depths = Arc::new(Mutex::new(Vec::new()));
+    let service = memory_service(
+        RecordingGraphNeighborhoodReader {
+            depths: Arc::clone(&depths),
+        },
+        EmptyNodeDetailReader,
+    );
+
+    service
+        .ingest(Request::new(valid_memory_ingest_request(false)))
+        .await
+        .expect("memory ingest should succeed");
+
+    assert_eq!(&*depths.lock().await, &[1]);
+}
+
+#[tokio::test]
 async fn memory_service_wake_and_ask_read_live_context() {
     let service = memory_service(SeededGraphNeighborhoodReader, SeededNodeDetailReader);
 
