@@ -508,6 +508,21 @@ Real `progressive_search` smart-writer runs:
   SR: 0.96
   PS: 0.8188
   micro_PS: 0.8333
+
+50 tasks:
+  run: /tmp/memoryarena-smart-writer-paged-50tasks-20260508-0009-run
+  scorecard: /tmp/memoryarena-smart-writer-paged-50tasks-20260508-0009-scorecard
+  events: 1107/1107 successful
+  asks: 369/369 known-at-clean
+  full_ref_recall: 369/369
+  future_answer_leaks: 0
+  writes: 738
+  max_commit: 1725 ms
+  slow_commits_gt_10s: 0
+  elapsed: 1987792 ms
+  SR: 0.98
+  PS: 0.8261
+  micro_PS: 0.8374
 ```
 
 10-task relation quality:
@@ -539,21 +554,45 @@ relations:
   scoped_to: 25
 ```
 
+50-task relation quality:
+
+```text
+relation_total: 738
+relation_rich_count: 399
+relation_anemic_count: 289
+relation_structural_count: 50
+relation_suspect_count: 0
+relations:
+  depends_on: 399
+  answers: 287
+  follows: 2
+  scoped_to: 50
+```
+
 Performance interpretation:
 
 - the pre-fix 1-task run reached `max_commit=35331ms` after only 14 commits;
 - the fixed 10-task run reached `max_commit=1468ms` across 154 commits;
 - the fixed 25-task run reached `max_commit=1648ms` across 384 commits;
+- the fixed 50-task run reached `max_commit=1725ms` across 738 commits;
 - `context_nodes_per_relation` remained bounded at `max_context_nodes=3`;
 - `trace` stayed stable, typically around 75-110 ms with two observed refs;
 - `near` remained result-bounded but still grew with subtask depth, reaching
   about 1100 ms at subtask 12 and about 1400 ms at subtask 14. That is the
   remaining performance target for temporal window indexing/pagination.
 
-The 25-task run produced one final-task miss, task id `11`. Kernel behavior was
-clean for that task (`known_at_clean`, full ref recall, no future leak, no
-unexpected refs), but the deterministic answer reader selected the wrong title
-from recovered evidence:
+The 50-task digest confirmed the same scaling shape:
+`context_nodes_per_relation: 0=50, 1=50, 2=50, 3=588`, with
+`max_about_written_before=27`. Ask navigation stayed bounded by result count:
+`inspect` averaged about 50-60 ms across depths, and `trace` averaged about
+78-91 ms from subtask 2 through subtask 14. `near` remained the only visible
+depth-sensitive path, growing from about 95 ms at subtask 1 to about 1428 ms at
+subtask 14, while still observing only four refs at deep subtasks.
+
+The 25-task and 50-task runs both produced the same single final-task miss,
+task id `11`. Kernel behavior was clean for that task (`known_at_clean`, full
+ref recall, no future leak, no unexpected refs), but the deterministic answer
+reader selected the wrong title from recovered evidence:
 
 ```text
 expected: Psychedelics
