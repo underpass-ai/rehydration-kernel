@@ -24,26 +24,7 @@ if ! cargo llvm-cov --version >/dev/null 2>&1; then
   exit 1
 fi
 
-if [[ -z "${LLVM_COV:-}" ]] && command -v llvm-cov >/dev/null 2>&1; then
-  export LLVM_COV
-  LLVM_COV="$(command -v llvm-cov)"
-fi
-
-if [[ -z "${LLVM_PROFDATA:-}" ]] && command -v llvm-profdata >/dev/null 2>&1; then
-  export LLVM_PROFDATA
-  LLVM_PROFDATA="$(command -v llvm-profdata)"
-fi
-
 COVERAGE_HOOK_MIN_LINES="${COVERAGE_HOOK_MIN_LINES:-80}"
 
 echo "pre-commit: running production kernel coverage with minimum ${COVERAGE_HOOK_MIN_LINES}% line coverage"
-cargo llvm-cov \
-  --workspace \
-  --exclude rehydration-testkit \
-  --exclude rehydration-tests-shared \
-  --exclude rehydration-tests-kernel \
-  --exclude rehydration-tests-paper \
-  --ignore-filename-regex 'rehydration-transport-grpc/src/agentic_reference/.*' \
-  --locked \
-  --summary-only \
-  --fail-under-lines "${COVERAGE_HOOK_MIN_LINES}"
+COVERAGE_MIN_LINES="${COVERAGE_HOOK_MIN_LINES}" bash scripts/ci/rust-coverage.sh

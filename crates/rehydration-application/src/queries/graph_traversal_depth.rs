@@ -11,3 +11,7 @@ pub fn clamp_native_graph_traversal_depth(depth: u32) -> u32 {
         ),
     }
 }
+
+pub fn clamp_native_graph_subtree_depth(depth: u32) -> u32 {
+    depth.min(MAX_NATIVE_GRAPH_TRAVERSAL_DEPTH)
+}

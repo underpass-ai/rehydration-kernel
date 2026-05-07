@@ -306,12 +306,14 @@ message TraceRequest {
   string to = 2;
   string goal = 3;
   MemoryBudget budget = 4;
+  PageRequest page = 5;
 }
 
 message TraceResponse {
   string summary = 1;
   repeated MemoryRelation trace = 2;
   repeated string warnings = 3;
+  PageInfo page = 4;
 }
 
 message InspectRequest {
@@ -383,6 +385,20 @@ message TemporalWindow {
 message TemporalLimit {
   uint32 entries = 1;
   uint32 tokens = 2;
+}
+
+message PageRequest {
+  // Maximum number of items to return in this page. Zero means service default.
+  uint32 entries = 1;
+  // Opaque continuation cursor returned by PageInfo.next_cursor.
+  string cursor = 2;
+}
+
+message PageInfo {
+  uint32 returned = 1;
+  uint32 total = 2;
+  bool has_more = 3;
+  string next_cursor = 4;
 }
 
 message TemporalInclude {

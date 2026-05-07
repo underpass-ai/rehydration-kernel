@@ -337,6 +337,26 @@ JSONL diagnostics to stderr. The log stream records every writer pre-read
 verification. This keeps the stdout run summary parseable while making it clear
 when the LLM is making a relation decision from MCP-read context.
 
+The JSONL stream is intentionally for machines and forensic replay, not for
+direct human reading. Use the digest tool for a compact operational view:
+
+```bash
+cargo run -p rehydration-testkit --bin memoryarena_kmp_log_digest --locked -- \
+  --input /tmp/memoryarena-smart-writer-progressive3-20260507-003.stderr \
+  --output /tmp/memoryarena-smart-writer-progressive3-20260507-003-log-digest.txt
+```
+
+The digest reports:
+
+- relation decisions as one line per writer entry;
+- `context_nodes`, the unique refs read by writer `near`/`inspect` before the
+  LLM relation decision;
+- `about_written_before`, the number of entries already written in the same
+  MemoryArena about before that write;
+- relation quality counts (`rich`, `anemic`, `structural`, `suspect`);
+- commit latency and slow-commit count;
+- ask navigation growth by subtask for `near`, `trace`, and `inspect`.
+
 Large answer-feedback entries are compacted deterministically before
 `kernel_write_memory`: `current.summary`, `current.evidence`, and fallback
 relation evidence are bounded while preserving an `Exact Answer:` line when one
@@ -387,6 +407,56 @@ relations:
 - answer 1 depends on question 1;
 - question 2 depends on answer 1;
 - answer 2 depends on question 2.
+
+Validated public-kernel progressive slice on 2026-05-07:
+
+- run id: `smart-writer-progressive3-20260507-003`;
+- source fixture: 3 real `progressive_search` tasks;
+- events: 81/81 successful;
+- asks: 27/27 known-at-clean;
+- future answer leaks: 0;
+- unexpected refs: 0;
+- missing allowed refs: 0;
+- MCP navigation calls: 27 `near`, 27 `inspect`, 24 `trace`;
+- writer entry writes: 54;
+- writer LLM calls: 51;
+- writer deterministic fallbacks: 3 structural first-node writes;
+- relation total: 54;
+- rich relations: 27;
+- anemic relations: 24;
+- structural relations: 3;
+- suspect relations: 0;
+- audit inspected 198 projected refs, found 198, missing 0, errored 0, mixed
+  run ids false;
+- local paper-aligned scorecard: task SR 1.0, PS 0.8796, micro-PS 0.8889,
+  passed subtasks 24/27.
+
+The digest for this run showed that relation writing itself used a bounded
+context window: `context_nodes_per_relation: 0=3, 1=3, 2=3, 3=45`, with
+`max_context_nodes=3`. The expensive part was not LLM context growth. It was
+the synchronous write/read-after-write path as the about grew:
+`max_about_written_before=23`, `slow>10000ms=30`, and `max_commit=161047ms`.
+Ask navigation also showed linear path growth: `trace` observed refs increased
+from 3 at subtask 2 to 23 at subtask 12, while `near` stayed capped at 4 refs
+but grew from about 115 ms to about 1010 ms. This is a production exposure gap
+for the write path, not a relation-prompt size problem.
+
+P0 status after the trace pagination slice: `kernel_trace` now exposes
+`page.entries` and `page.cursor`, returns `page.next_cursor`/`page.has_more`,
+and calls the path query as a path proof rather than expanding the target
+subtree. Remaining P0 follow-up: add the same explicit bounded behavior to
+every other API surface that can traverse or materialize growing memory:
+
+- `kernel_near`, `goto`, `rewind`, and `forward` must make entry windows,
+  relation expansion, evidence expansion, and proof expansion independently
+  bounded.
+- `kernel_write_memory` read-after-write readiness must verify the written node
+  and relation targets without forcing unbounded traversal/proof projection.
+- MCP tools must expose the same pagination contract as the API, with explicit
+  `next_cursor`/`has_more` metadata.
+- The digest should remain the operational check: after pagination, the same
+  MemoryArena slice should show bounded commit latency even when
+  `about_written_before` grows.
 
 Each rich relation had inspected or temporal prior context in
 `relation_quality[].prior_context_sources`, so strict dry-run accepted it as

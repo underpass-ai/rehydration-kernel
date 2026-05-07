@@ -190,6 +190,47 @@ Exit criteria:
 - MemoryArena and LongMemEval can both use the same candidate pipeline;
 - KMP remains a memory navigation API, not a vector DB API.
 
+## Milestone 2B: Kernel Tool Operator Model
+
+Priority: P1 after KMP limits/pagination are stable
+
+Goal:
+
+Train or fine-tune a small specialist model that knows how to operate the
+kernel MCP/API, not a generalist model that owns memory reasoning. The model is
+a tool operator for `ask`, `near`, `trace`, `inspect`, `goto`, `rewind`,
+`forward`, and `kernel_write_memory`.
+
+Why this is plausible:
+
+- the task surface is narrow and tool-shaped;
+- the desired behavior is observable as trajectories: state, selected tool,
+  bounded arguments, result, next action, stop condition;
+- a small model can learn kernel-specific navigation discipline better than a
+  generic model if the MCP contract is stable;
+- it keeps the kernel infrastructure-independent because the model remains a
+  sidecar/client, not core logic.
+
+Non-negotiable prerequisites:
+
+- KMP and MCP must expose stable limits, pagination, scopes, and fail-fast
+  errors before training;
+- the training corpus must be generated from successful audited trajectories,
+  not raw prompts or broken traces;
+- the model must learn bounded navigation and pagination, so it does not
+  overuse `trace` or request whole histories by default;
+- evaluation must compare tool-use quality against a generalist LLM:
+  correct refs, missing future leaks, relation quality, number of tool calls,
+  latency, and stop accuracy.
+
+Boundary:
+
+- the operator model may choose tools and arguments;
+- it may propose writer relations only with cited MCP-read evidence;
+- it must not invent memory, bypass scopes, or become the public memory API;
+- kernel retrieval, traversal, proof, validation, and audit remain deterministic
+  kernel responsibilities.
+
 ## Milestone 3: Temporal Validity, Supersession, And Known-At-Time
 
 Priority: P0

@@ -1,5 +1,5 @@
 use rehydration_proto::v1beta1::{
-    InspectInclude, TemporalCursor, TemporalInclude, TemporalLimit, TemporalWindow,
+    InspectInclude, PageRequest, TemporalCursor, TemporalInclude, TemporalLimit, TemporalWindow,
 };
 use serde_json::Value;
 
@@ -92,6 +92,17 @@ pub(super) fn temporal_include_from_arguments(
         evidence: optional_bool_field(include, "evidence", "include.evidence")?.unwrap_or(false),
         relations: optional_bool_field(include, "relations", "include.relations")?.unwrap_or(false),
         raw_refs,
+    }))
+}
+
+pub(super) fn trace_page_from_arguments(arguments: &Value) -> Result<Option<PageRequest>, String> {
+    let Some(page) = optional_object_field(object(arguments, "tool arguments")?, "page", "page")?
+    else {
+        return Ok(None);
+    };
+    Ok(Some(PageRequest {
+        entries: optional_positive_u32_field(page, "entries", "page.entries")?.unwrap_or_default(),
+        cursor: optional_string_field(page, "cursor", "page.cursor")?.unwrap_or_default(),
     }))
 }
 

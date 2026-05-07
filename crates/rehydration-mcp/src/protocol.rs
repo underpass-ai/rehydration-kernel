@@ -218,6 +218,7 @@ pub(crate) fn tools_list_result() -> Value {
                         "to": string_schema("Target memory ref. In live gRPC mode this must resolve to a kernel node id."),
                         "role": string_schema("Optional caller role."),
                         "goal": string_schema("Optional trace goal."),
+                        "page": page_schema(),
                         "budget": budget_schema()
                     }
                 })
@@ -499,6 +500,21 @@ fn temporal_tool_definition(name: &str, description: &str, cursor_key: &str) -> 
     });
     input_schema["properties"][cursor_key] = cursor_schema;
     tool_definition(name, description, input_schema)
+}
+
+fn page_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+            "entries": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Maximum number of trace relations to return in this page."
+            },
+            "cursor": string_schema("Opaque cursor returned by page.next_cursor.")
+        }
+    })
 }
 
 fn dimensions_schema() -> Value {

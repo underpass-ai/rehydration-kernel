@@ -521,7 +521,7 @@ impl MemoryArenaSmartWriter {
                     "prompt_chars": prompt.len()
                 }),
             );
-            let (raw, prompt_tokens, completion_tokens) = call_llm(
+            let (raw, prompt_tokens, completion_tokens) = match call_llm(
                 &self.client,
                 endpoint,
                 model,
@@ -531,7 +531,30 @@ impl MemoryArenaSmartWriter {
                 self.config.max_tokens,
                 self.config.temperature,
             )
-            .await?;
+            .await
+            {
+                Ok(output) => output,
+                Err(error) => {
+                    log_writer_navigation(
+                        self.config.log_mcp_navigation,
+                        json!({
+                            "event": "memoryarena_smart_writer.llm.error",
+                            "entry_ref": input.entry_ref.as_str(),
+                            "entry_kind": input.entry_kind.as_str(),
+                            "model": model,
+                            "provider": format!("{provider:?}"),
+                            "candidate_refs": input.candidates.iter().map(|candidate| candidate.target_ref.as_str()).collect::<Vec<_>>(),
+                            "mcp_pre_read_calls": read_context.calls.len(),
+                            "error": error.to_string()
+                        }),
+                    );
+                    return Err(format!(
+                        "LLM relation proposal failed for {}: {error}",
+                        input.entry_ref
+                    )
+                    .into());
+                }
+            };
             if let Ok(connect_to) = parse_llm_connect_to(&raw, input) {
                 log_writer_navigation(
                     self.config.log_mcp_navigation,

@@ -18,6 +18,7 @@ pub struct GetContextPathQuery {
     pub root_node_id: String,
     pub target_node_id: String,
     pub role: String,
+    pub subtree_depth: Option<u32>,
     pub render_options: ContextRenderOptions,
 }
 
@@ -62,6 +63,7 @@ where
         root_node_id: &str,
         target_node_id: &str,
         role: &str,
+        subtree_depth: Option<u32>,
         render_options: &ContextRenderOptions,
     ) -> Result<GetContextPathResult, ApplicationError> {
         let root_node_id = trim_to_option(root_node_id).ok_or_else(|| {
@@ -83,7 +85,7 @@ where
                     &target_node_id,
                     role,
                     self.generator_version,
-                    MAX_NATIVE_GRAPH_TRAVERSAL_DEPTH,
+                    subtree_depth.unwrap_or(MAX_NATIVE_GRAPH_TRAVERSAL_DEPTH),
                 )
                 .await?;
             (b, Some(t))
@@ -133,6 +135,7 @@ where
             &query.root_node_id,
             &query.target_node_id,
             &query.role,
+            query.subtree_depth,
             &query.render_options,
         )
         .await
@@ -307,6 +310,7 @@ mod tests {
                 "root-node",
                 "target-node",
                 "developer",
+                None,
                 &ContextRenderOptions::default(),
             )
             .await
@@ -344,6 +348,7 @@ mod tests {
                 "root-node",
                 "target-node",
                 "developer",
+                None,
                 &ContextRenderOptions::default(),
             )
             .await
@@ -373,6 +378,7 @@ mod tests {
                 "root-node",
                 "   ",
                 "developer",
+                None,
                 &ContextRenderOptions::default(),
             )
             .await

@@ -181,6 +181,7 @@ where
                 root_node_id: request.root_node_id,
                 target_node_id: request.target_node_id,
                 role: request.role,
+                subtree_depth: None,
                 render_options: ContextRenderOptions {
                     focus_node_id: None,
                     token_budget: (request.token_budget > 0).then_some(request.token_budget),

@@ -5,8 +5,8 @@ use std::time::{Duration, SystemTime};
 use prost_types::Timestamp;
 use rehydration_application::{
     AcceptedVersion, ApplicationError, CommandApplicationService, GetContextQuery,
-    KernelMemoryApplicationService, NoopProjectionWriter, QueryApplicationService,
-    RehydrateSessionResult, UpdateContextUseCase,
+    KernelMemoryApplicationService, MAX_TRACE_PAGE_ENTRIES, NoopProjectionWriter,
+    QueryApplicationService, RehydrateSessionResult, UpdateContextUseCase,
 };
 use rehydration_domain::{
     BundleMetadata, BundleNode, BundleNodeDetail, BundleRelationship, CaseId, ContextEventStore,
@@ -24,7 +24,7 @@ use rehydration_proto::v1beta1::{
     GetContextRequest, GetNodeDetailRequest, GotoRequest, IngestRequest, InspectInclude,
     InspectRequest, Memory, MemoryBudget, MemoryConfidence, MemoryDetailLevel, MemoryDimension,
     MemoryEntry, MemoryEvidence, MemoryProvenance, MemoryRelation, MemorySemanticClass,
-    MemorySourceKind, NearRequest, ResolutionTier, RewindRequest,
+    MemorySourceKind, NearRequest, PageRequest, ResolutionTier, RewindRequest,
     TemporalCoordinate as ProtoTemporalCoordinate, TemporalCursor as ProtoTemporalCursor,
     TemporalDirection as ProtoTemporalDirection, TemporalInclude, TemporalLimit,
     TemporalMoveRequest, TemporalWindow as ProtoTemporalWindow, TraceRequest, UpdateContextRequest,
@@ -394,6 +394,51 @@ impl NodeRelationshipReader for SeededGraphNeighborhoodReader {
             "graph-only" => Some(NodeRelationships::default()),
             _ => None,
         })
+    }
+}
+
+struct RecordingSeededGraphNeighborhoodReader {
+    context_path_depths: Arc<Mutex<Vec<u32>>>,
+}
+
+impl GraphNeighborhoodReader for RecordingSeededGraphNeighborhoodReader {
+    async fn load_neighborhood(
+        &self,
+        root_node_id: &str,
+        depth: u32,
+    ) -> Result<Option<NodeNeighborhood>, PortError> {
+        let seeded = SeededGraphNeighborhoodReader;
+        seeded.load_neighborhood(root_node_id, depth).await
+    }
+
+    async fn load_context_path(
+        &self,
+        root_node_id: &str,
+        target_node_id: &str,
+        subtree_depth: u32,
+    ) -> Result<Option<ContextPathNeighborhood>, PortError> {
+        self.context_path_depths.lock().await.push(subtree_depth);
+        let seeded = SeededGraphNeighborhoodReader;
+        seeded
+            .load_context_path(root_node_id, target_node_id, subtree_depth)
+            .await
+    }
+}
+
+impl MemoryAboutIndexReader for RecordingSeededGraphNeighborhoodReader {
+    async fn list_memory_abouts(&self) -> Result<Vec<String>, PortError> {
+        let seeded = SeededGraphNeighborhoodReader;
+        seeded.list_memory_abouts().await
+    }
+}
+
+impl NodeRelationshipReader for RecordingSeededGraphNeighborhoodReader {
+    async fn load_node_relationships(
+        &self,
+        node_id: &str,
+    ) -> Result<Option<NodeRelationships>, PortError> {
+        let seeded = SeededGraphNeighborhoodReader;
+        seeded.load_node_relationships(node_id).await
     }
 }
 
@@ -1612,7 +1657,13 @@ async fn memory_service_temporal_requests_fail_fast_on_ambiguous_inputs() {
 
 #[tokio::test]
 async fn memory_service_trace_and_inspect_use_existing_query_ports() {
-    let service = memory_service(SeededGraphNeighborhoodReader, SeededNodeDetailReader);
+    let context_path_depths = Arc::new(Mutex::new(Vec::new()));
+    let service = memory_service(
+        RecordingSeededGraphNeighborhoodReader {
+            context_path_depths: Arc::clone(&context_path_depths),
+        },
+        SeededNodeDetailReader,
+    );
 
     let trace = service
         .trace(Request::new(TraceRequest {
@@ -1624,12 +1675,69 @@ async fn memory_service_trace_and_inspect_use_existing_query_ports() {
                 depth: 1,
                 ..Default::default()
             }),
+            page: None,
         }))
         .await
         .expect("trace should read context path")
         .into_inner();
     assert_eq!(trace.trace.len(), 2);
     assert_eq!(trace.trace[0].source_ref, "node-123");
+
+    let paged_trace = service
+        .trace(Request::new(TraceRequest {
+            from: "node-123".to_string(),
+            to: "node-789".to_string(),
+            goal: "prove path".to_string(),
+            budget: Some(MemoryBudget {
+                tokens: 1024,
+                depth: 1,
+                ..Default::default()
+            }),
+            page: Some(PageRequest {
+                entries: 1,
+                cursor: String::new(),
+            }),
+        }))
+        .await
+        .expect("paged trace should read context path")
+        .into_inner();
+    assert_eq!(paged_trace.trace.len(), 1);
+    let page = paged_trace.page.expect("page info should be returned");
+    assert_eq!(page.returned, 1);
+    assert_eq!(page.total, 2);
+    assert!(page.has_more);
+    assert_eq!(page.next_cursor, "1");
+    assert_eq!(&*context_path_depths.lock().await, &[0, 0]);
+
+    let invalid_cursor = service
+        .trace(Request::new(TraceRequest {
+            from: "node-123".to_string(),
+            to: "node-789".to_string(),
+            goal: "prove path".to_string(),
+            budget: None,
+            page: Some(PageRequest {
+                entries: 1,
+                cursor: "not-a-trace-cursor".to_string(),
+            }),
+        }))
+        .await
+        .expect_err("invalid trace page cursor should fail fast");
+    assert_eq!(invalid_cursor.code(), tonic::Code::InvalidArgument);
+
+    let oversized_page = service
+        .trace(Request::new(TraceRequest {
+            from: "node-123".to_string(),
+            to: "node-789".to_string(),
+            goal: "prove path".to_string(),
+            budget: None,
+            page: Some(PageRequest {
+                entries: MAX_TRACE_PAGE_ENTRIES as u32 + 1,
+                cursor: String::new(),
+            }),
+        }))
+        .await
+        .expect_err("oversized trace page should fail fast");
+    assert_eq!(oversized_page.code(), tonic::Code::InvalidArgument);
 
     let inspect = service
         .inspect(Request::new(InspectRequest {

@@ -761,6 +761,7 @@ impl KernelMemoryService for FakeMemoryService {
             summary: format!("Trace from {} to {}.", request.from, request.to),
             trace: vec![relation(&request.from, &request.to, "supports")],
             warnings: Vec::new(),
+            page: None,
         }))
     }
 

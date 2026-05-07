@@ -239,14 +239,17 @@ where
             to = %request.to,
             "kernel memory grpc request"
         );
-        let query = trace_query_from_proto(request);
+        let query = trace_query_from_proto(request)
+            .map_err(|status| map_proto_error("KernelMemoryService.Trace", &start, *status))?;
+        let page = query.page.clone();
         let result = self.application.trace(query).await.map_err(|error| {
             map_application_error_with_log("KernelMemoryService.Trace", &start, error)
         })?;
-        let response = trace_response_from_result(result);
+        let response = trace_response_from_result(result, page);
         tracing::info!(
             rpc = "KernelMemoryService.Trace",
             path = response.trace.len(),
+            has_more = response.page.as_ref().is_some_and(|page| page.has_more),
             warnings = response.warnings.len(),
             "kernel memory grpc response"
         );

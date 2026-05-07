@@ -213,6 +213,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                         event_started.elapsed().as_millis(),
                         error.to_string(),
                     ));
+                    break;
                 }
             }
             continue;
@@ -244,16 +245,25 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                                     )
                                 })?;
                             let mcp_navigation = if args.mcp_navigation_probe {
-                                Some(
-                                    run_mcp_navigation_probe(
-                                        &server,
-                                        &mut request_id,
-                                        event,
-                                        expected,
-                                        args.log_mcp_navigation,
-                                    )
-                                    .await?,
+                                match run_mcp_navigation_probe(
+                                    &server,
+                                    &mut request_id,
+                                    event,
+                                    expected,
+                                    args.log_mcp_navigation,
                                 )
+                                .await
+                                {
+                                    Ok(navigation) => Some(navigation),
+                                    Err(error) => {
+                                        event_results.push(failed_event_result(
+                                            event,
+                                            event_started.elapsed().as_millis(),
+                                            error.to_string(),
+                                        ));
+                                        break;
+                                    }
+                                }
                             } else {
                                 None
                             };
@@ -269,11 +279,13 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                     }
                     Err(error) => {
                         event_results.push(failed_event_result(event, elapsed_ms, error));
+                        break;
                     }
                 }
             }
             Err(error) => {
                 event_results.push(failed_event_result(event, elapsed_ms, error.to_string()));
+                break;
             }
         }
     }

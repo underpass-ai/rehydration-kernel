@@ -10,7 +10,10 @@ use rehydration_domain::{
 use crate::ApplicationError;
 use crate::queries::QueryTimingBreakdown;
 use crate::queries::ordered_neighborhood::ordered_neighborhood;
-use crate::queries::{DEFAULT_NATIVE_GRAPH_TRAVERSAL_DEPTH, clamp_native_graph_traversal_depth};
+use crate::queries::{
+    DEFAULT_NATIVE_GRAPH_TRAVERSAL_DEPTH, clamp_native_graph_subtree_depth,
+    clamp_native_graph_traversal_depth,
+};
 
 #[derive(Debug, Clone)]
 pub struct NodeCentricProjectionReader<G, D> {
@@ -160,7 +163,7 @@ where
             .load_context_path(
                 root_node_id,
                 target_node_id,
-                clamp_native_graph_traversal_depth(subtree_depth),
+                clamp_native_graph_subtree_depth(subtree_depth),
             )
             .await?
         else {
@@ -717,6 +720,25 @@ mod tests {
             &*depths.lock().await,
             &[DEFAULT_NATIVE_GRAPH_TRAVERSAL_DEPTH]
         );
+    }
+
+    #[tokio::test]
+    async fn load_context_path_bundle_allows_zero_subtree_depth() {
+        let depths = Arc::new(Mutex::new(Vec::new()));
+        let reader = NodeCentricProjectionReader::new(
+            RecordingGraphReader {
+                depths: Arc::clone(&depths),
+            },
+            StubDetailReader,
+        );
+
+        let (bundle, _timing) = reader
+            .load_context_path_bundle_with_depth("node-root", "node-1", "developer", "0.1.0", 0)
+            .await
+            .expect("path bundle load should not reject zero subtree depth");
+
+        assert!(bundle.is_none());
+        assert_eq!(&*depths.lock().await, &[0]);
     }
 
     #[tokio::test]
