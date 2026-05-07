@@ -441,22 +441,107 @@ from 3 at subtask 2 to 23 at subtask 12, while `near` stayed capped at 4 refs
 but grew from about 115 ms to about 1010 ms. This is a production exposure gap
 for the write path, not a relation-prompt size problem.
 
-P0 status after the trace pagination slice: `kernel_trace` now exposes
-`page.entries` and `page.cursor`, returns `page.next_cursor`/`page.has_more`,
-and calls the path query as a path proof rather than expanding the target
-subtree. Remaining P0 follow-up: add the same explicit bounded behavior to
-every other API surface that can traverse or materialize growing memory:
+P0 status after the 2026-05-07 trace and ingest scaling slices:
+`kernel_trace` now exposes `page.entries` and `page.cursor`, returns
+`page.next_cursor`/`page.has_more`, and calls the path query as a path proof
+rather than expanding the target subtree. `kernel_write_memory` commit latency
+was then fixed by making existing-ref validation use a shallow direct
+memory-edge lookup instead of a full semantic traversal of the about on every
+ingest.
+
+Validated public TLS scale slices on 2026-05-07:
+
+```text
+deployed kernel: ghcr.io/underpass-ai/rehydration-kernel:dev-17fa3ad
+endpoint: https://rehydration-kernel.underpassai.com
+helm revision: 125
+helm tests: passed
+```
+
+Real `progressive_search` smart-writer runs:
+
+```text
+1 task:
+  run: /tmp/memoryarena-smart-writer-paged-smoke-20260507-171850-run
+  scorecard: /tmp/memoryarena-smart-writer-paged-smoke-20260507-171850-scorecard
+  events: 27/27 successful
+  writes: 18
+  max_commit: 979 ms
+  slow_commits_gt_10s: 0
+  SR: 1.0
+  PS: 0.8889
+
+3 tasks:
+  run: /tmp/memoryarena-smart-writer-paged-3tasks-20260507-1728-run
+  scorecard: /tmp/memoryarena-smart-writer-paged-3tasks-20260507-1728-scorecard-v2
+  events: 81/81 successful
+  writes: 54
+  max_commit: 1313 ms
+  slow_commits_gt_10s: 0
+  SR: 1.0
+  PS: 0.8796
+
+10 tasks:
+  run: /tmp/memoryarena-smart-writer-paged-10tasks-20260507-1738-run
+  scorecard: /tmp/memoryarena-smart-writer-paged-10tasks-20260507-1738-scorecard-v2
+  events: 231/231 successful
+  asks: 77/77 known-at-clean
+  full_ref_recall: 77/77
+  future_answer_leaks: 0
+  writes: 154
+  max_commit: 1468 ms
+  slow_commits_gt_10s: 0
+  SR: 1.0
+  PS: 0.8579
+  micro_PS: 0.8701
+```
+
+10-task relation quality:
+
+```text
+relation_total: 154
+relation_rich_count: 80
+relation_anemic_count: 64
+relation_structural_count: 10
+relation_suspect_count: 0
+relations:
+  depends_on: 80
+  answers: 64
+  scoped_to: 10
+```
+
+Performance interpretation:
+
+- the pre-fix 1-task run reached `max_commit=35331ms` after only 14 commits;
+- the fixed 10-task run reached `max_commit=1468ms` across 154 commits;
+- `context_nodes_per_relation` remained bounded at `max_context_nodes=3`;
+- `trace` stayed stable, typically around 75-100 ms with two observed refs;
+- `near` remained result-bounded but still grew with subtask depth, reaching
+  about 1100 ms at subtask 12. That is the remaining performance target for
+  temporal window indexing/pagination.
+
+The scorecard was also corrected on 2026-05-07 to score exact answers against
+the extracted `Exact Answer:` candidates before falling back to full-text
+containment. This removed false negatives for one-token answers such as
+`Manuelita` and equivalent labeled composite answers such as
+`Poem: "Namaste" | Book: "Almost Human" by Thomas Centolella`. The scorecard is
+still a local, paper-aligned evaluator, not an official MemoryArena evaluator.
+
+Remaining follow-up: add the same explicit bounded behavior to every API
+surface that can traverse or materialize growing memory:
 
 - `kernel_near`, `goto`, `rewind`, and `forward` must make entry windows,
   relation expansion, evidence expansion, and proof expansion independently
   bounded.
-- `kernel_write_memory` read-after-write readiness must verify the written node
-  and relation targets without forcing unbounded traversal/proof projection.
 - MCP tools must expose the same pagination contract as the API, with explicit
   `next_cursor`/`has_more` metadata.
 - The digest should remain the operational check: after pagination, the same
   MemoryArena slice should show bounded commit latency even when
   `about_written_before` grows.
+- `memoryarena_kmp_runner --endpoint https://...` currently constructs a gRPC
+  client with TLS disabled; until that testkit bug is fixed, public TLS runs
+  should set `REHYDRATION_KERNEL_GRPC_ENDPOINT=https://...` and omit
+  `--endpoint`.
 
 Each rich relation had inspected or temporal prior context in
 `relation_quality[].prior_context_sources`, so strict dry-run accepted it as

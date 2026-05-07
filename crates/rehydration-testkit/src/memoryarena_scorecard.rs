@@ -154,9 +154,13 @@ fn score_travel_plan_answer(expected: &Value, candidate_text: &str) -> MemoryAre
 
 fn score_exact_answer(expected: &Value, candidate_text: &str) -> MemoryArenaAnswerScore {
     let expected_answers = memoryarena_answer_candidates_from_value(expected);
-    let hard_success = expected_answers
-        .iter()
-        .any(|expected| text_contains_answer(candidate_text, expected));
+    let candidate_answers = memoryarena_answer_candidates_from_text(candidate_text);
+    let hard_success = expected_answers.iter().any(|expected| {
+        candidate_answers
+            .iter()
+            .any(|candidate| memoryarena_answers_match(expected, candidate))
+            || text_contains_answer(candidate_text, expected)
+    });
 
     MemoryArenaAnswerScore {
         expected_answer_kind: expected_answer_kind(expected).to_string(),
@@ -367,9 +371,26 @@ fn normalized_answers_match(expected: &str, candidate: &str) -> bool {
     }
     let expected_tokens = expected.split_whitespace().count();
     let candidate_tokens = candidate.split_whitespace().count();
-    expected_tokens >= 2
+    if expected_tokens >= 2
         && candidate_tokens >= 2
         && (expected.contains(candidate) || candidate.contains(expected))
+    {
+        return true;
+    }
+
+    let loose_expected = remove_answer_glue_tokens(expected);
+    let loose_candidate = remove_answer_glue_tokens(candidate);
+    if loose_expected != expected || loose_candidate != candidate {
+        let loose_expected_tokens = loose_expected.split_whitespace().count();
+        let loose_candidate_tokens = loose_candidate.split_whitespace().count();
+        return loose_expected_tokens >= 2
+            && loose_candidate_tokens >= 2
+            && (loose_expected == loose_candidate
+                || loose_expected.contains(&loose_candidate)
+                || loose_candidate.contains(&loose_expected));
+    }
+
+    false
 }
 
 fn normalize_for_answer_match(value: &str) -> String {
@@ -385,6 +406,14 @@ fn normalize_for_answer_match(value: &str) -> String {
         }
     }
     normalized.trim().to_string()
+}
+
+fn remove_answer_glue_tokens(value: &str) -> String {
+    value
+        .split_whitespace()
+        .filter(|token| !matches!(*token, "a" | "an" | "and" | "are" | "is" | "the"))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 #[cfg(test)]
@@ -408,6 +437,32 @@ mod tests {
             "John Daniel delos Santos (also written as Daniel Delos Santos)",
             "Daniel Delos Santos",
         ));
+    }
+
+    #[test]
+    fn scores_single_token_exact_answer_from_long_response() {
+        let score = score_memoryarena_answer(
+            "progressive_search",
+            &json!("Manuelita"),
+            Some("Explanation: evidence\n\nExact Answer: Manuelita\n\nConfidence: 85%"),
+        );
+
+        assert!(score.hard_success);
+        assert!(score.candidate_answer_hit);
+    }
+
+    #[test]
+    fn scores_equivalent_labeled_composite_answer() {
+        let score = score_memoryarena_answer(
+            "progressive_search",
+            &json!("Poem: \"Namaste\" | Book: \"Almost Human\" by Thomas Centolella"),
+            Some(
+                "Explanation: evidence\n\nExact Answer: The poem is \"Namaste\" and the book is \"Almost Human\" by Thomas Centolella",
+            ),
+        );
+
+        assert!(score.hard_success);
+        assert!(score.candidate_answer_hit);
     }
 
     #[test]
