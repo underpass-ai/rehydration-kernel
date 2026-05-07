@@ -606,6 +606,21 @@ This reinforces the benchmark boundary: the kernel is surfacing the staged
 memory without temporal contamination, while answer selection over multiple
 plausible exact-answer strings remains a reader/agent task.
 
+A Cohere reranker smoke test on 2026-05-08 confirmed that reranking alone is not
+the right fix for this miss. The Cohere API key and `rerank-v4.0-fast` endpoint
+worked, but task `11` had `candidate_answer_hit=false`: the exact answer
+`Psychedelics` was not present in the current candidate set. Even in an oracle
+probe that manually added `Psychedelics` beside the two observed candidates,
+both `rerank-v4.0-fast` and `rerank-v4.0-pro` ranked the cancer-trial title
+above the exact common-citation title, because the query contains a strong
+surface cue for `cancer`. The reader follow-up is therefore not "drop in a
+reranker" as a final decision maker. It is:
+
+1. generate exact-answer candidates from evidence and prior stage feedback;
+2. apply task constraints to remove incompatible candidates;
+3. use a reranker only as a second-stage ordering signal over that constrained
+   candidate set.
+
 The scorecard was also corrected on 2026-05-07 to score exact answers against
 the extracted `Exact Answer:` candidates before falling back to full-text
 containment. This removed false negatives for one-token answers such as
