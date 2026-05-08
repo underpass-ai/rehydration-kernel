@@ -1310,6 +1310,14 @@ smart writer path. It intentionally duplicates the MemoryArena writer harness
 instead of sharing that module, because the two benchmarks have different graph
 shapes and should not silently change each other's behavior.
 
+This slice is a writer-quality benchmark, not evidence discovery. The
+smart-writer consumes `supports_answer` / `supports` candidate relations already
+present in the generated artifacts, reads the target/question through MCP, and
+rewrites those candidate edges through `kernel_write_memory` with richer,
+auditable relation semantics. A blind LongMemEval claim still requires an
+upstream candidate generator, such as the embedding candidate stage or the LLM
+evidence builder, before this writer step.
+
 Flow:
 
 1. `longmemeval_kmp_adapter` still creates the normal LongMemEval ingest and ask
