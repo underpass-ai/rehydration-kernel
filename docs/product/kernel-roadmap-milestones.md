@@ -148,6 +148,12 @@ Current proof:
   known-at-clean asks, 0 unexpected refs, and 0 missing refs with a 64-fact /
   3-query bounded slice. It also exposed that current `kernel_ask` is a generic
   deterministic evidence summary, not a MemoryAgentBench-grade question reader.
+- a real public-TLS MemoryArena `progressive_search` 100-task smart-writer run
+  reached 2259/2259 successful KMP events, 753/753 known-at-clean asks,
+  753/753 full-ref recall, 0 future answer leaks, 0 unexpected refs, and 0
+  missing refs. The local paper-aligned task score was 97/100, with all 3 final
+  misses classified as reader answer-selection failures over complete evidence,
+  not kernel retrieval or graph contamination failures.
 
 Non-goals:
 
@@ -193,6 +199,10 @@ Exit criteria:
 ## Milestone 2B: Kernel Tool Operator Model
 
 Priority: P1 after KMP limits/pagination are stable
+
+Execution plan:
+
+- [kernel-tool-operator-model-plan.md](kernel-tool-operator-model-plan.md)
 
 Goal:
 

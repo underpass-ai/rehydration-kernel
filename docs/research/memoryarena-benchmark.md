@@ -523,6 +523,26 @@ Real `progressive_search` smart-writer runs:
   SR: 0.98
   PS: 0.8261
   micro_PS: 0.8374
+
+100 tasks:
+  run: /tmp/memoryarena-smart-writer-paged-100tasks-20260508-1407-run
+  scorecard: /tmp/memoryarena-smart-writer-paged-100tasks-20260508-1407-scorecard
+  audit: /tmp/memoryarena-smart-writer-paged-100tasks-20260508-1407-audit.json
+  log_digest: /tmp/memoryarena-smart-writer-paged-100tasks-20260508-1407-log-digest.txt
+  events: 2259/2259 successful
+  asks: 753/753 known-at-clean
+  full_ref_recall: 753/753
+  future_answer_leaks: 0
+  unexpected_ref_asks: 0
+  missing_allowed_ref_asks: 0
+  writes: 1506
+  max_commit: 2028 ms
+  slow_commits_gt_10s: 0
+  elapsed: 4602832 ms
+  task_SR: 0.97
+  candidate_answer_hit_rate: 0.97
+  PS: 0.8357
+  micro_PS: 0.8446
 ```
 
 10-task relation quality:
@@ -567,6 +587,47 @@ relations:
   answers: 287
   follows: 2
   scoped_to: 50
+```
+
+100-task relation quality:
+
+```text
+relation_total: 1506
+relation_rich_count: 910
+relation_anemic_count: 496
+relation_structural_count: 100
+relation_suspect_count: 0
+context_nodes_per_relation:
+  0: 100
+  1: 100
+  2: 100
+  3: 1206
+max_context_nodes: 3
+max_about_written_before: 27
+relations:
+  depends_on: 910
+  answers: 490
+  follows: 6
+  scoped_to: 100
+llm_calls: 1406
+llm_valid_outputs: 1406
+llm_invalid_outputs: 0
+prompt_tokens: 1368133
+completion_tokens: 221801
+```
+
+The 100-task run confirms that the paged trace plus shallow ingest validation
+slice removed the previous graph traversal scaling failure: writer commits
+stayed below 2.1 seconds, trace proofs returned bounded paths, and the audit
+found only the expected run id across all projected refs. The remaining misses
+are reader/answer-selection failures, not kernel substrate failures:
+
+```text
+task 11: expected "Psychedelics"; reader chose the wrong 2016 citation title.
+task 53: expected "Insomnia"; reader chose "Batman Begins" from plausible
+         Nolan candidates.
+task 69: expected "March 5, 2021"; reader chose "February 26, 2021" from
+         plausible release-date evidence.
 ```
 
 Performance interpretation:
