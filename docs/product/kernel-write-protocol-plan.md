@@ -292,6 +292,11 @@ the first writer helper.
 
 ## Relation Vocabulary
 
+The canonical relation vocabulary is a core kernel contract implemented in
+`rehydration-domain` as relation type/value-object semantics. Adapters,
+benchmarks, MCP, and readers must consume that contract instead of carrying
+their own ad hoc relation lists.
+
 P0 canonical relation names:
 
 | Relation | Class | Meaning |
@@ -312,6 +317,14 @@ P0 canonical relation names:
 | `excluded_from` | `constraint` | A seen value is intentionally excluded. |
 | `checked_against` | `constraint` | A derived value is compared to a rule/budget/window. |
 | `derived_from` | `evidential` | A result was computed from operands/evidence. |
+| `restates` | `evidential` | A later node repeats the same fact/value and should not be double-counted. |
+| `corrects` | `evidential` | A later node corrects an earlier fact/value. |
+| `component_of` | `evidential` | A value is one component of a larger total or set. |
+| `total_of` | `evidential` | A value is an aggregate total for component values. |
+| `same_event_as` | `evidential` | Two refs describe the same event. |
+| `same_entity_as` | `evidential` | Two refs describe the same entity. |
+| `qualifies_as` | `evidential` | A ref qualifies as a specific semantic item. |
+| `matches_requirement` | `constraint` | A ref satisfies a query or requirement predicate. |
 
 Relations outside this vocabulary are rejected by `kernel_write_memory` in
 strict mode unless the caller explicitly opts into an extension namespace. The
@@ -496,6 +509,8 @@ Then a reader/plugin can select operands by graph relation:
 contributes_to -> derived_value
 excluded_from  -> ignored value with proof
 checked_against -> compare derived value with constraint
+restates / same_event_as -> duplicate evidence to count once
+corrects / supersedes -> choose the latest corrected value
 ```
 
 This keeps arithmetic outside core while making operand selection auditable.

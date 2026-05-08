@@ -2197,6 +2197,7 @@ version = "0.1.0"
 dependencies = [
  "opentelemetry",
  "prost-types",
+ "rehydration-domain",
  "rehydration-proto",
  "serde_json",
  "sha2",

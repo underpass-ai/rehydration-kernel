@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use rehydration_application::RenderedContext;
-use rehydration_domain::{RehydrationBundle, TemporalCoordinate};
+use rehydration_domain::{MemoryRelationType, RehydrationBundle, TemporalCoordinate};
 use rehydration_proto::v1beta1::{
     MemoryConfidence, MemoryEvidence, MemoryRelation, Proof,
     TemporalCoordinate as ProtoTemporalCoordinate,
@@ -170,17 +170,16 @@ fn conflicts_from_relations(path: &[MemoryRelation]) -> Vec<String> {
 }
 
 fn is_conflict_relation(value: &str) -> bool {
-    matches!(
-        normalize_relation_type(value).as_str(),
-        "contradicts" | "conflicts" | "conflicts_with" | "conflict_with"
-    )
+    MemoryRelationType::new(value).is_ok_and(|relation_type| relation_type.is_conflict())
 }
 
 fn conflict_summary(relation: &MemoryRelation) -> String {
     let mut summary = format!(
         "{} {} {}",
         relation.source_ref,
-        normalize_relation_type(&relation.rel),
+        MemoryRelationType::new(&relation.rel)
+            .map(|relation_type| relation_type.as_str().to_string())
+            .unwrap_or_else(|_| relation.rel.trim().to_string()),
         relation.target_ref
     );
     if !relation.why.trim().is_empty() {
@@ -191,20 +190,6 @@ fn conflict_summary(relation: &MemoryRelation) -> String {
         summary.push_str(relation.evidence.trim());
     }
     summary
-}
-
-fn normalize_relation_type(value: &str) -> String {
-    value
-        .trim()
-        .chars()
-        .map(|ch| {
-            if ch == '-' || ch == ' ' {
-                '_'
-            } else {
-                ch.to_ascii_lowercase()
-            }
-        })
-        .collect()
 }
 
 pub(super) fn rendered_summary(rendered: &RenderedContext) -> String {

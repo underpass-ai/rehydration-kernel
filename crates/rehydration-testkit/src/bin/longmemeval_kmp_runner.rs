@@ -6,7 +6,11 @@ use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-use rehydration_mcp::KernelMcpServer;
+use rehydration_interpretation::{
+    ComposedEvidenceReader, EvidenceFragment, EvidenceInterpretationInput, EvidenceReaderOutput,
+    EvidenceReaderPluginConfiguration, EvidenceReaderRequest,
+};
+use rehydration_mcp::{KernelMcpGrpcTlsConfig, KernelMcpServer};
 use rehydration_testkit::LongMemEvalExpected;
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -37,6 +41,12 @@ struct RunSummary {
     missing_evidence_hits: usize,
     lexical_answer_items: usize,
     lexical_answer_hits: usize,
+    value_plugins: Vec<&'static str>,
+    derivation_plugins: Vec<&'static str>,
+    plugin_configuration: EvidenceReaderPluginConfiguration,
+    plugin_value_mentions: usize,
+    plugin_derivation_results: usize,
+    plugin_diagnostics: usize,
     elapsed_ms: u128,
 }
 
@@ -53,6 +63,10 @@ struct ItemResult {
     evidence_hit: EvidenceHit,
     ask_answer: Option<String>,
     ask_content: Value,
+    plugin_reader: Value,
+    plugin_value_mentions: usize,
+    plugin_derivation_results: usize,
+    plugin_diagnostics: usize,
     lexical_answer_hit: bool,
     ask_summary: String,
     ingest_elapsed_ms: u128,
@@ -96,7 +110,10 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     }
 
     let server = match args.endpoint.as_deref() {
-        Some(endpoint) => KernelMcpServer::grpc(endpoint),
+        Some(endpoint) => KernelMcpServer::grpc_with_tls(
+            endpoint,
+            KernelMcpGrpcTlsConfig::from_env_for_endpoint(Some(endpoint)),
+        ),
         None => KernelMcpServer::try_from_env()
             .map_err(|error| format!("failed to configure MCP gRPC backend from env: {error}"))?,
     };
@@ -109,6 +126,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let started = Instant::now();
     let mut item_results = Vec::new();
     let mut request_id = 1u64;
+    let plugin_reader = ComposedEvidenceReader::kernel_default();
 
     for ((ingest, ask), expected) in ingests.iter().zip(asks.iter()).zip(expected.iter()) {
         validate_matching_artifacts(ingest, ask, expected)?;
@@ -144,6 +162,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             .and_then(Value::as_str)
             .unwrap_or_default()
             .to_string();
+        let plugin_output = read_plugins_for_item(&plugin_reader, expected, ask_content)?;
+        let plugin_reader_value = serde_json::to_value(&plugin_output)?;
 
         item_results.push(ItemResult {
             question_id: expected.question_id.clone(),
@@ -157,6 +177,10 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             evidence_hit,
             ask_answer,
             ask_content: ask_content.clone(),
+            plugin_reader: plugin_reader_value,
+            plugin_value_mentions: plugin_output.values.len(),
+            plugin_derivation_results: plugin_output.derivation_results.len(),
+            plugin_diagnostics: plugin_output.diagnostics.len(),
             lexical_answer_hit,
             ask_summary,
             ingest_elapsed_ms,
@@ -169,6 +193,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         endpoint_label,
         started.elapsed().as_millis(),
         &item_results,
+        &plugin_reader,
     )?;
     write_jsonl(
         &args.output.join("results.jsonl"),
@@ -241,6 +266,138 @@ fn collect_observed_evidence_refs(value: &Value) -> BTreeSet<String> {
     collect_support_relation_sources(value, &mut refs);
     collect_because_refs(value, &mut refs);
     refs
+}
+
+fn read_plugins_for_item(
+    reader: &ComposedEvidenceReader,
+    expected: &LongMemEvalExpected,
+    ask_content: &Value,
+) -> Result<EvidenceReaderOutput, Box<dyn Error + Send + Sync>> {
+    let fragments = plugin_evidence_fragments(expected, ask_content);
+    let request = EvidenceReaderRequest::new(EvidenceInterpretationInput::new(fragments));
+    reader.read(&request).map_err(Into::into)
+}
+
+fn plugin_evidence_fragments(
+    expected: &LongMemEvalExpected,
+    ask_content: &Value,
+) -> Vec<EvidenceFragment> {
+    let mut fragments = Vec::new();
+    fragments.push(EvidenceFragment::new(
+        format!("question:{}", expected.question_id),
+        expected.question.clone(),
+    ));
+
+    for item in ask_content
+        .get("proof")
+        .and_then(|proof| proof.get("evidence"))
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or(&[])
+    {
+        let Some(text) = item.get("text").and_then(Value::as_str) else {
+            continue;
+        };
+        let source = item
+            .get("source")
+            .and_then(Value::as_str)
+            .map(ToString::to_string);
+        let supports = item
+            .get("supports")
+            .and_then(Value::as_array)
+            .map(Vec::as_slice)
+            .unwrap_or(&[]);
+        let mut pushed = false;
+        for support in supports {
+            let Some(ref_id) = support.as_str() else {
+                continue;
+            };
+            if !looks_like_turn_ref(ref_id) {
+                continue;
+            }
+            push_plugin_fragment(&mut fragments, ref_id, text, source.clone());
+            pushed = true;
+        }
+        if !pushed {
+            let ref_id = item
+                .get("id")
+                .and_then(Value::as_str)
+                .or_else(|| item.get("source").and_then(Value::as_str))
+                .unwrap_or("proof:evidence");
+            push_plugin_fragment(&mut fragments, ref_id, text, source);
+        }
+    }
+
+    for relation in ask_content
+        .get("proof")
+        .and_then(|proof| proof.get("path"))
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or(&[])
+    {
+        let is_support = relation
+            .get("rel")
+            .and_then(Value::as_str)
+            .is_some_and(|rel| rel == "supports_answer" || rel == "supports");
+        if !is_support {
+            continue;
+        }
+        let Some(ref_id) = relation.get("from").and_then(Value::as_str) else {
+            continue;
+        };
+        if !looks_like_turn_ref(ref_id) {
+            continue;
+        }
+        let Some(text) = relation.get("evidence").and_then(Value::as_str) else {
+            continue;
+        };
+        push_plugin_fragment(&mut fragments, ref_id, text, None);
+    }
+
+    for reason in ask_content
+        .get("because")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or(&[])
+    {
+        let Some(ref_id) = reason.get("ref").and_then(Value::as_str) else {
+            continue;
+        };
+        if !looks_like_turn_ref(ref_id) {
+            continue;
+        }
+        let Some(text) = reason.get("evidence").and_then(Value::as_str) else {
+            continue;
+        };
+        push_plugin_fragment(&mut fragments, ref_id, text, None);
+    }
+
+    dedupe_plugin_fragments(fragments)
+}
+
+fn push_plugin_fragment(
+    fragments: &mut Vec<EvidenceFragment>,
+    ref_id: &str,
+    text: &str,
+    source: Option<String>,
+) {
+    if text.trim().is_empty() {
+        return;
+    }
+    let mut fragment = EvidenceFragment::new(ref_id.to_string(), text.trim().to_string());
+    fragment.source = source;
+    fragments.push(fragment);
+}
+
+fn dedupe_plugin_fragments(fragments: Vec<EvidenceFragment>) -> Vec<EvidenceFragment> {
+    let mut seen = BTreeSet::new();
+    let mut deduped = Vec::new();
+    for fragment in fragments {
+        if seen.insert((fragment.ref_id.clone(), fragment.text.clone())) {
+            deduped.push(fragment);
+        }
+    }
+    deduped
 }
 
 fn collect_supported_refs_from_proof_evidence(value: &Value, refs: &mut BTreeSet<String>) {
@@ -401,6 +558,7 @@ fn summarize_run(
     endpoint: String,
     elapsed_ms: u128,
     results: &[ItemResult],
+    plugin_reader: &ComposedEvidenceReader,
 ) -> Result<RunSummary, Box<dyn Error + Send + Sync>> {
     let mut counts = BTreeMap::new();
     for result in results {
@@ -433,6 +591,18 @@ fn summarize_run(
             .iter()
             .filter(|result| result.lexical_answer_hit)
             .count(),
+        value_plugins: plugin_reader.value_plugin_ids(),
+        derivation_plugins: plugin_reader.derivation_plugin_ids(),
+        plugin_configuration: plugin_reader.configuration(),
+        plugin_value_mentions: results
+            .iter()
+            .map(|result| result.plugin_value_mentions)
+            .sum(),
+        plugin_derivation_results: results
+            .iter()
+            .map(|result| result.plugin_derivation_results)
+            .sum(),
+        plugin_diagnostics: results.iter().map(|result| result.plugin_diagnostics).sum(),
         elapsed_ms,
     })
 }
@@ -653,5 +823,43 @@ mod tests {
                 "turn:q:s1:4".to_string()
             ])
         );
+    }
+
+    #[test]
+    fn plugin_reader_interprets_recovered_evidence() {
+        let expected = LongMemEvalExpected {
+            question_id: "q-money".to_string(),
+            question_type: "multi-session".to_string(),
+            answer: json!("12"),
+            question: "How much did I spend?".to_string(),
+            question_date: "2026-05-08".to_string(),
+            answer_session_ids: vec!["s1".to_string()],
+            answer_turn_refs: vec!["turn:q-money:s1:1".to_string()],
+            answer_session_refs: vec!["session:q-money:s1".to_string()],
+            abstention: false,
+        };
+        let ask_content = json!({
+            "proof": {
+                "evidence": [
+                    {
+                        "supports": ["turn:q-money:s1:1"],
+                        "text": "I paid $12 for lunch.",
+                        "source": "session:s1"
+                    }
+                ]
+            }
+        });
+        let reader = ComposedEvidenceReader::kernel_default();
+
+        let output = read_plugins_for_item(&reader, &expected, &ask_content)
+            .expect("plugin reader should parse recovered evidence");
+
+        assert!(
+            output
+                .values
+                .iter()
+                .any(|mention| mention.plugin == "money-value-v1")
+        );
+        assert_eq!(output.value_plugin_ids, reader.value_plugin_ids());
     }
 }

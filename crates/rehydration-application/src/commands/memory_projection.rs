@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
 use rehydration_domain::{
-    NodeDetailProjection, NodeProjection, NodeRelationProjection, PortError, ProjectionMutation,
-    Provenance, RelationExplanation, RelationSemanticClass, SourceKind,
+    MemoryRelationType, NodeDetailProjection, NodeProjection, NodeRelationProjection, PortError,
+    ProjectionMutation, Provenance, RelationExplanation, RelationSemanticClass, SourceKind,
 };
 use serde_json::Value;
 
@@ -185,7 +185,13 @@ fn memory_relation_mutation(change: &UpdateContextChange) -> Result<ProjectionMu
     let payload = payload(change)?;
     let source = required_payload_string(&payload, "from", change)?;
     let target = required_payload_string(&payload, "to", change)?;
-    let relation_type = required_payload_string(&payload, "rel", change)?;
+    let relation_type = MemoryRelationType::new(required_payload_string(&payload, "rel", change)?)
+        .map_err(|error| {
+            PortError::InvalidState(format!(
+                "memory change `{}` relation type is invalid: {error}",
+                change.entity_id
+            ))
+        })?;
     let semantic_class = payload_string(&payload, "class")
         .or_else(|| payload_string(&payload, "semantic_class"))
         .as_deref()
@@ -202,7 +208,7 @@ fn memory_relation_mutation(change: &UpdateContextChange) -> Result<ProjectionMu
         NodeRelationProjection {
             source_node_id: source,
             target_node_id: target,
-            relation_type,
+            relation_type: relation_type.as_str().to_string(),
             explanation,
         },
     )))
