@@ -1411,3 +1411,76 @@ renaming. The improvement is modest but real on this small slice. The remaining
 failures still point at aggregate reasoning and domain-specific operators:
 money totals, entity deduplication, and cases where the official evaluator is
 stricter than the short numeric hypothesis.
+
+### 30-Item Multi-Session Smart-Writer Comparison
+
+On May 9, 2026, the next scale step used the first 30 `multi-session` items in
+two isolated runs over the same logical slice:
+
+```text
+baseline:
+  artifacts: /tmp/lme-ms30-baseline-artifacts-20260509
+  run:       /tmp/lme-ms30-baseline-run-20260509
+  reader:    /tmp/lme-ms30-baseline-reader-20260509
+  run_id:    lme-ms30-baseline-20260509-a
+
+smart writer:
+  artifacts: /tmp/lme-ms30-smart-writer-artifacts-20260509
+  run:       /tmp/lme-ms30-smart-writer-run-20260509
+  reader:    /tmp/lme-ms30-smart-writer-reader-20260509
+  run_id:    lme-ms30-smart-writer-20260509-a
+```
+
+Both runs used the public TLS kernel endpoint
+`https://rehydration-kernel.underpassai.com`, `gpt-4o-2024-08-06` for the
+reader, and the official LongMemEval `gpt-4o` evaluator. This is still a
+writer-quality comparison over candidate relations already present in the
+artifacts, not a blind evidence-discovery score.
+
+| Metric | Baseline | Smart writer |
+| --- | ---: | ---: |
+| Items | 30 | 30 |
+| Expected evidence turns | 104 | 104 |
+| Full evidence hits | 30 / 30 | 30 / 30 |
+| Writer LLM calls | 0 | 104 |
+| Writer valid outputs | 0 | 104 |
+| Writer deterministic fallbacks | 0 | 0 |
+| Writer rich relations | 0 | 104 |
+| Reader graph rich relations | 0 | 98 |
+| Reader lexical hits | 19 / 30 | 19 / 30 |
+| Reader prompt tokens | 32,393 | 44,845 |
+| Official accuracy | 21 / 30, `0.7000` | 22 / 30, `0.7333` |
+
+Smart-writer relation distribution:
+
+```text
+91 component_of / evidential
+ 6 supports / evidential
+ 4 excluded_from / constraint
+ 2 contributes_to / evidential
+ 1 matches_requirement / constraint
+```
+
+Outcome deltas:
+
+```text
+baseline false -> smart true:
+  0a995998: clothing pickup/return count, 2 items -> 3 items
+  gpt4_a56e767c: movie festivals, 3 -> 4
+  7024f17c: jogging/yoga hours, 2.5 hours -> 0.5 hours
+  2ce6a0f2: art-related events, UNKNOWN -> 4
+
+baseline true -> smart false:
+  gpt4_59c863d7: model kits, 5 -> 6
+  gpt4_d84a3211: bike expenses, $185 -> $225
+  gpt4_15e38248: furniture pieces, 4 pieces -> 5 pieces
+```
+
+The 30-item slice confirms that rich writer relations are visible to the reader
+and can improve some aggregate answers, but they do not yet solve aggregate
+operator correctness. The remaining failures still concentrate around counting,
+deduplication, currency inclusion/exclusion, and average calculation. The
+official judge also appears to mark at least one compact correct numeric answer
+as false (`gpt4_2f8be40d`, answer says three weddings and the hypothesis is
+`3`), so failure analysis should use both official labels and artifact-level
+inspection.
