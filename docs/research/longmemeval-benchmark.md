@@ -1302,3 +1302,104 @@ Potential next cuts:
 
 The next benchmark work should therefore focus on exhaustive candidate
 construction and aggregate reasoning, not on merely renaming evidential edges.
+
+## LongMemEval Smart Writer Slice
+
+On May 8, 2026, the LongMemEval runner gained an optional benchmark-specific
+smart writer path. It intentionally duplicates the MemoryArena writer harness
+instead of sharing that module, because the two benchmarks have different graph
+shapes and should not silently change each other's behavior.
+
+Flow:
+
+1. `longmemeval_kmp_adapter` still creates the normal LongMemEval ingest and ask
+   artifacts.
+2. `longmemeval_kmp_runner --smart-writer` first ingests the item normally so all
+   turn/question refs exist.
+3. The LongMemEval smart writer then reads each candidate target with
+   `kernel_near` and `kernel_inspect`.
+4. The writer LLM emits one strict `kernel_write_memory.connect_to` relation per
+   evidence relation.
+5. The runner dry-runs, commits, verifies with `kernel_inspect`, and records
+   writer quality diagnostics in `writer_results.jsonl`.
+
+The first public TLS smoke used 3 `multi-session` items:
+
+```text
+artifacts: /tmp/lme-ms3-smart-writer-artifacts-20260508
+run:       /tmp/lme-ms3-smart-writer-run-20260508
+reader:    /tmp/lme-ms3-smart-writer-reader-20260508
+endpoint:  https://rehydration-kernel.underpassai.com
+model:     gpt-4o-2024-08-06
+```
+
+Observed smart-writer metrics:
+
+```text
+relation_writes: 12
+llm_calls: 12
+llm_valid_outputs: 12
+deterministic_fallbacks: 0
+relation_rich_count: 12
+relation_anemic_count: 0
+relation_structural_count: 0
+relation_suspect_count: 0
+```
+
+Relation distribution:
+
+```text
+10 component_of / evidential
+ 2 excluded_from / constraint
+```
+
+Reader and official evaluator:
+
+```text
+reader graph_relation_rich: 12
+reader lexical_answer_hits: 2/3
+official accuracy: 2/3, 0.6667
+```
+
+The 10-item `multi-session` slice then compared directly against the previous
+10-item slice without the smart writer:
+
+```text
+without smart writer:
+  artifacts: /tmp/lme-ms10-core-relation-vocab-artifacts-20260508
+  run:       /tmp/lme-ms10-core-relation-vocab-run-20260508
+  reader:    /tmp/lme-ms10-core-relation-vocab-reader-20260508
+  full evidence hits: 10/10
+  reader graph_relation_rich: 0
+  reader lexical_answer_hits: 4/10
+  official accuracy: 6/10, 0.6
+
+with LongMemEval smart writer:
+  artifacts: /tmp/lme-ms10-smart-writer-artifacts-20260508
+  run:       /tmp/lme-ms10-smart-writer-run-20260508
+  reader:    /tmp/lme-ms10-smart-writer-reader-20260508
+  full evidence hits: 10/10
+  writer relation_writes: 32
+  writer llm_valid_outputs: 32
+  writer deterministic_fallbacks: 0
+  writer relation_rich_count: 32
+  writer relation_anemic_count: 0
+  reader graph_relation_rich: 30
+  reader lexical_answer_hits: 5/10
+  official accuracy: 7/10, 0.7
+```
+
+Writer relation distribution on the 10-item slice:
+
+```text
+28 component_of / evidential
+ 2 excluded_from / constraint
+ 2 supports / evidential
+```
+
+This is the first LongMemEval run where the reader sees rich relation semantics
+created through the Kernel write protocol rather than through adapter-side
+renaming. The improvement is modest but real on this small slice. The remaining
+failures still point at aggregate reasoning and domain-specific operators:
+money totals, entity deduplication, and cases where the official evaluator is
+stricter than the short numeric hypothesis.

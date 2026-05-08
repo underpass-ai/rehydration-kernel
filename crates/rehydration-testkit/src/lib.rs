@@ -6,6 +6,7 @@ pub mod interpretation_plugins;
 pub mod llm_evaluator;
 mod llm_graph;
 pub mod longmemeval;
+pub mod longmemeval_smart_writer;
 pub mod memoryagentbench;
 pub mod memoryarena;
 pub mod memoryarena_scorecard;
@@ -58,6 +59,11 @@ pub use longmemeval::{
     longmemeval_answer_turn_refs, longmemeval_candidate_turns, longmemeval_ref_scope,
     longmemeval_turn_ref, normalize_longmemeval_date, parse_longmemeval_dataset,
     prepare_longmemeval_item, prepare_longmemeval_items,
+};
+pub use longmemeval_smart_writer::{
+    LongMemEvalSmartWriter, LongMemEvalSmartWriterConfig, LongMemEvalSmartWriterItem,
+    LongMemEvalSmartWriterResult, LongMemEvalSmartWriterSummary,
+    summarize_longmemeval_smart_writer,
 };
 pub use memoryagentbench::{
     MemoryAgentBenchAdapterConfig, MemoryAgentBenchAdapterError, MemoryAgentBenchAdapterSummary,

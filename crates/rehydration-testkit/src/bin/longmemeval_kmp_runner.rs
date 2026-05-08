@@ -11,16 +11,28 @@ use rehydration_interpretation::{
     EvidenceReaderPluginConfiguration, EvidenceReaderRequest,
 };
 use rehydration_mcp::{KernelMcpGrpcTlsConfig, KernelMcpServer};
-use rehydration_testkit::LongMemEvalExpected;
+use rehydration_testkit::{
+    LlmProvider, LongMemEvalExpected, LongMemEvalSmartWriter, LongMemEvalSmartWriterConfig,
+    LongMemEvalSmartWriterItem, LongMemEvalSmartWriterResult, LongMemEvalSmartWriterSummary,
+    summarize_longmemeval_smart_writer,
+};
 use serde::Serialize;
 use serde_json::{Value, json};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 struct Args {
     artifacts: PathBuf,
     endpoint: Option<String>,
     output: PathBuf,
     limit: Option<usize>,
+    smart_writer: bool,
+    log_mcp_navigation: bool,
+    writer_llm_endpoint: Option<String>,
+    writer_llm_model: Option<String>,
+    writer_llm_provider: Option<LlmProvider>,
+    writer_api_key_env: String,
+    writer_max_tokens: u32,
+    writer_temperature: f64,
     force: bool,
 }
 
@@ -47,6 +59,7 @@ struct RunSummary {
     plugin_value_mentions: usize,
     plugin_derivation_results: usize,
     plugin_diagnostics: usize,
+    smart_writer: LongMemEvalSmartWriterSummary,
     elapsed_ms: u128,
 }
 
@@ -122,13 +135,24 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .clone()
         .or_else(|| env::var("REHYDRATION_KERNEL_GRPC_ENDPOINT").ok())
         .unwrap_or_else(|| "env".to_string());
+    let smart_writer = if args.smart_writer {
+        Some(LongMemEvalSmartWriter::new(writer_config(&args)?)?)
+    } else {
+        None
+    };
 
     let started = Instant::now();
     let mut item_results = Vec::new();
+    let mut writer_results = Vec::<LongMemEvalSmartWriterResult>::new();
     let mut request_id = 1u64;
     let plugin_reader = ComposedEvidenceReader::kernel_default();
 
-    for ((ingest, ask), expected) in ingests.iter().zip(asks.iter()).zip(expected.iter()) {
+    for (item_index, ((ingest, ask), expected)) in ingests
+        .iter()
+        .zip(asks.iter())
+        .zip(expected.iter())
+        .enumerate()
+    {
         validate_matching_artifacts(ingest, ask, expected)?;
 
         let ingest_started = Instant::now();
@@ -137,6 +161,24 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         request_id = request_id.checked_add(1).ok_or("request id overflow")?;
         assert_tool_success(&ingest_response, "kernel_ingest", &ingest.question_id)?;
         let ingest_elapsed_ms = ingest_started.elapsed().as_millis();
+
+        if let Some(writer) = smart_writer.as_ref() {
+            writer_results.extend(
+                writer
+                    .write_ingest_item(
+                        &server,
+                        &mut request_id,
+                        LongMemEvalSmartWriterItem {
+                            item_index,
+                            question_id: &ingest.question_id,
+                            question_type: &ingest.question_type,
+                            about: &ingest.about,
+                            arguments: &ingest.arguments,
+                        },
+                    )
+                    .await?,
+            );
+        }
 
         let ask_started = Instant::now();
         let ask_response = call_mcp_tool(&server, request_id, "kernel_ask", &ask.arguments).await?;
@@ -194,6 +236,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         started.elapsed().as_millis(),
         &item_results,
         &plugin_reader,
+        &writer_results,
     )?;
     write_jsonl(
         &args.output.join("results.jsonl"),
@@ -207,6 +250,10 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                 "hypothesis": item.ask_answer.as_deref().unwrap_or_default()
             }))
         }),
+    )?;
+    write_jsonl(
+        &args.output.join("writer_results.jsonl"),
+        writer_results.iter().map(serde_json::to_value),
     )?;
     write_json_pretty(&args.output.join("summary.json"), &summary)?;
 
@@ -559,6 +606,7 @@ fn summarize_run(
     elapsed_ms: u128,
     results: &[ItemResult],
     plugin_reader: &ComposedEvidenceReader,
+    writer_results: &[LongMemEvalSmartWriterResult],
 ) -> Result<RunSummary, Box<dyn Error + Send + Sync>> {
     let mut counts = BTreeMap::new();
     for result in results {
@@ -603,6 +651,7 @@ fn summarize_run(
             .map(|result| result.plugin_derivation_results)
             .sum(),
         plugin_diagnostics: results.iter().map(|result| result.plugin_diagnostics).sum(),
+        smart_writer: summarize_longmemeval_smart_writer(args.smart_writer, writer_results),
         elapsed_ms,
     })
 }
@@ -726,6 +775,14 @@ fn parse_args(
     let mut endpoint = None;
     let mut output = None;
     let mut limit = None;
+    let mut smart_writer = false;
+    let mut log_mcp_navigation = env_flag("LONGMEMEVAL_LOG_MCP_NAVIGATION");
+    let mut writer_llm_endpoint = None;
+    let mut writer_llm_model = None;
+    let mut writer_llm_provider = None;
+    let mut writer_api_key_env = "LLM_API_KEY".to_string();
+    let mut writer_max_tokens = 384u32;
+    let mut writer_temperature = 0.0f64;
     let mut force = false;
 
     while let Some(arg) = args.next() {
@@ -741,6 +798,36 @@ fn parse_args(
                         .map_err(|error| format!("invalid --limit value `{value}`: {error}"))?,
                 );
             }
+            "--smart-writer" => smart_writer = true,
+            "--log-mcp-navigation" => log_mcp_navigation = true,
+            "--writer-llm-endpoint" => {
+                writer_llm_endpoint = Some(required_flag_value(&mut args, &arg)?)
+            }
+            "--writer-llm-model" => writer_llm_model = Some(required_flag_value(&mut args, &arg)?),
+            "--writer-llm-provider" => {
+                writer_llm_provider = Some(parse_writer_provider(&required_flag_value(
+                    &mut args, &arg,
+                )?)?)
+            }
+            "--writer-api-key-env" => writer_api_key_env = required_flag_value(&mut args, &arg)?,
+            "--writer-max-tokens" => {
+                let value = required_flag_value(&mut args, &arg)?;
+                writer_max_tokens = value.parse::<u32>().map_err(|error| {
+                    format!("invalid --writer-max-tokens value `{value}`: {error}")
+                })?;
+                if writer_max_tokens == 0 {
+                    return Err("--writer-max-tokens must be greater than zero".into());
+                }
+            }
+            "--writer-temperature" => {
+                let value = required_flag_value(&mut args, &arg)?;
+                writer_temperature = value.parse::<f64>().map_err(|error| {
+                    format!("invalid --writer-temperature value `{value}`: {error}")
+                })?;
+                if !writer_temperature.is_finite() || writer_temperature < 0.0 {
+                    return Err("--writer-temperature must be a finite non-negative value".into());
+                }
+            }
             "--force" => force = true,
             "--help" | "-h" => {
                 print_usage();
@@ -755,8 +842,92 @@ fn parse_args(
         endpoint,
         output: output.ok_or("--output is required")?,
         limit,
+        smart_writer,
+        log_mcp_navigation,
+        writer_llm_endpoint,
+        writer_llm_model,
+        writer_llm_provider,
+        writer_api_key_env,
+        writer_max_tokens,
+        writer_temperature,
         force,
     })
+}
+
+fn writer_config(
+    args: &Args,
+) -> Result<LongMemEvalSmartWriterConfig, Box<dyn Error + Send + Sync>> {
+    let llm_endpoint = args
+        .writer_llm_endpoint
+        .clone()
+        .or_else(|| non_empty_env("WRITER_LLM_ENDPOINT"))
+        .or_else(|| non_empty_env("LLM_ENDPOINT"));
+    let llm_model = args
+        .writer_llm_model
+        .clone()
+        .or_else(|| non_empty_env("WRITER_LLM_MODEL"))
+        .or_else(|| non_empty_env("LLM_MODEL"));
+    let llm_provider = args
+        .writer_llm_provider
+        .or_else(|| {
+            non_empty_env("WRITER_LLM_PROVIDER")
+                .or_else(|| non_empty_env("LLM_PROVIDER"))
+                .and_then(|value| parse_writer_provider(&value).ok())
+        })
+        .or_else(|| llm_model.as_deref().map(detect_writer_provider_from_model));
+    let api_key = env::var(&args.writer_api_key_env)
+        .ok()
+        .filter(|value| !value.trim().is_empty());
+
+    Ok(LongMemEvalSmartWriterConfig {
+        llm_endpoint,
+        llm_model,
+        llm_provider,
+        api_key,
+        max_tokens: args.writer_max_tokens,
+        temperature: args.writer_temperature,
+        log_mcp_navigation: args.log_mcp_navigation,
+    })
+}
+
+fn non_empty_env(key: &str) -> Option<String> {
+    env::var(key).ok().filter(|value| !value.trim().is_empty())
+}
+
+fn env_flag(key: &str) -> bool {
+    env::var(key)
+        .ok()
+        .map(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
+        .unwrap_or(false)
+}
+
+fn detect_writer_provider_from_model(model: &str) -> LlmProvider {
+    if model.starts_with("gpt-5")
+        || model.starts_with("o3")
+        || model.starts_with("o4")
+        || model.starts_with("gpt-4.1")
+    {
+        LlmProvider::OpenAINew
+    } else {
+        LlmProvider::OpenAI
+    }
+}
+
+fn parse_writer_provider(value: &str) -> Result<LlmProvider, Box<dyn Error + Send + Sync>> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "openai" => Ok(LlmProvider::OpenAI),
+        "openai-new" | "openai_new" => Ok(LlmProvider::OpenAINew),
+        "anthropic" => Ok(LlmProvider::Anthropic),
+        other => Err(format!(
+            "unsupported provider `{other}`; use openai, openai-new, or anthropic"
+        )
+        .into()),
+    }
 }
 
 fn required_flag_value(
@@ -769,7 +940,7 @@ fn required_flag_value(
 
 fn print_usage() {
     eprintln!(
-        "Usage: longmemeval_kmp_runner --artifacts <adapter-output-dir> --output <run-dir> [--endpoint http://host] [--limit N] [--force]"
+        "Usage: longmemeval_kmp_runner --artifacts <adapter-output-dir> --output <run-dir> [--endpoint http://host] [--limit N] [--smart-writer] [--log-mcp-navigation] [--writer-llm-endpoint URL] [--writer-llm-model MODEL] [--writer-llm-provider openai|openai-new|anthropic] [--writer-api-key-env LLM_API_KEY] [--writer-max-tokens N] [--writer-temperature F] [--force]"
     );
 }
 
