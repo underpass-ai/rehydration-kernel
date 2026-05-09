@@ -28,11 +28,12 @@ Implemented:
   read-context coverage;
 - OTel `KernelMemoryService` counters and histograms for gRPC calls, duration,
   success/error status, and tonic status code;
+- projection processing latency via `rehydration.projection.lag` for NATS
+  projection consumer loops;
 - OTel mTLS configuration support.
 
 Still important:
 
-- projection lag is defined but not recorded by the projection runtime;
 - traces are disabled by default in the in-chart collector;
 - there is no full end-to-end trace from KMP request through event append,
   projection, traversal, render, LLM consumption, and optional write-back;
@@ -56,7 +57,7 @@ These metric families should be treated as product metrics for agentic memory.
 |:--------------|:-------|:--------|
 | KMP request count, latency, and errors by move | implemented for MCP tools and `KernelMemoryService` gRPC RPCs | Prove agents can reliably call memory moves. |
 | Ingest accepted/rejected counts | partial via KMP logs; MCP records canonical request/result counts | Track entries, relations, evidence, dimensions, and validation failures. |
-| Projection lag | defined, not recorded | Show when accepted memory becomes queryable. |
+| Projection lag | implemented for NATS projection consumer processing time | Track projection handler latency; full publish-to-queryable lag remains a backlog metric. |
 | Idempotency outcomes | partial logs | Detect duplicate writes, replay behavior, unsafe retries, and conflicts. |
 | Traversal scope | partial logs; MCP records dimension scope/mode counts and path length | Observe selected abouts, dimensions, temporal windows, path length, and hop count. |
 | Proof quality | partial via MCP result evidence/path/warning counts | Track evidence count, missing count, warning count, conflict count, and weak-proof count. |
@@ -370,8 +371,10 @@ kubectl port-forward svc/<release>-grafana 3000:3000 -n <namespace>
 # Open http://localhost:3000 (admin/admin by default)
 ```
 
-> **Security**: Default Grafana deployment enables anonymous admin access for
-> development convenience. Disable for production — see [security-model.md](security-model.md).
+> **Security**: Embedded Grafana is disabled by default and
+> `grafana.anonymousAccess=false` in base values. Some development overlays
+> enable anonymous access for convenience; disable it for production. See
+> [security-model.md](security-model.md).
 
 ## Environment Variables
 
@@ -389,7 +392,8 @@ kubectl port-forward svc/<release>-grafana 3000:3000 -n <namespace>
 ## Limitations
 
 - OTLP export supports mTLS via `OTEL_EXPORTER_OTLP_{CA,CERT,KEY}_PATH` env vars. Plaintext by default when no env vars set.
-- `rehydration.projection.lag` is defined but not yet recorded by any handler.
+- `rehydration.projection.lag` currently records NATS projection consumer
+  processing time, not full end-to-end publish-to-queryable latency.
 - All three render RPCs (`GetContext`, `GetContextPath`, `RehydrateSession`)
   emit per-role quality metrics via the observer. `RehydrateSession` renders
   per-role bundles with quality, tiers, truncation, and resolved mode.

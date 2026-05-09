@@ -10,6 +10,19 @@ evidence and produce typed, auditable derivations. This keeps benchmark,
 business, and domain operators outside kernel core while still making them easy
 to reuse from readers, agents, and evaluation harnesses.
 
+Current integration status, 2026-05-09:
+
+- `rehydration-plugin-api` and `rehydration-interpretation` are implemented.
+- `ComposedEvidenceReader` is implemented for in-process readers and benchmark
+  adapters.
+- KMP/gRPC/MCP `kernel_ask` does not automatically run interpretation plugins.
+  It remains deterministic evidence retrieval. A reader, agent, benchmark
+  harness, SDK, or future helper must explicitly compose plugins over returned
+  evidence.
+- Operand selection is still caller-owned. Plugins can compute from typed
+  operands, but they do not decide by themselves which retrieved values answer a
+  question.
+
 ## Boundary
 
 Kernel responsibilities:
@@ -160,7 +173,7 @@ The default kernel reader currently wires all reusable base value plugins:
 
 - `SourceCodeValuePlugin`;
 - `MathExpressionValuePlugin`;
-- `UrlValuePlugin`.
+- `UrlValuePlugin`;
 - `MoneyValuePlugin`;
 - `DateValuePlugin`.
 

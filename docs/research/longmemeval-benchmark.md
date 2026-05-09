@@ -561,7 +561,9 @@ LongMemEval hypothesis. It does not put LongMemEval scoring logic in kernel
 core, and it does not include the gold answer in the prompt.
 
 The reader fails fast when `--endpoint`/`LLM_ENDPOINT` or `--model`/`LLM_MODEL`
-is missing.
+is missing. Public OpenAI-compatible endpoints protected by mTLS can be used with
+`--tls-cert-path`/`LLM_TLS_CERT_PATH` and `--tls-key-path`/`LLM_TLS_KEY_PATH`;
+providing only one side of the client identity is an error.
 
 ```bash
 cargo run -p rehydration-testkit --bin longmemeval_kmp_reader -- \
@@ -571,6 +573,24 @@ cargo run -p rehydration-testkit --bin longmemeval_kmp_reader -- \
   --endpoint http://localhost:8000/v1/chat/completions \
   --model Qwen/Qwen3-8B \
   --provider openai \
+  --max-tokens 256 \
+  --temperature 0 \
+  --force
+```
+
+Gemma 4 31B on the Underpass mTLS ingress:
+
+```bash
+LLM_ENABLE_THINKING=false \
+cargo run -p rehydration-testkit --bin longmemeval_kmp_reader -- \
+  --artifacts /tmp/lme-ms30-smart-writer-artifacts-20260509 \
+  --run /tmp/lme-ms30-smart-writer-run-20260509 \
+  --output /tmp/lme-ms30-smart-writer-reader-gemma4 \
+  --endpoint https://llm.underpassai.com/v1/chat/completions \
+  --model google/gemma-4-31B-it \
+  --provider openai \
+  --tls-cert-path /tmp/underpass-demo-client.crt \
+  --tls-key-path /tmp/underpass-demo-client.key \
   --max-tokens 256 \
   --temperature 0 \
   --force
@@ -1484,3 +1504,71 @@ official judge also appears to mark at least one compact correct numeric answer
 as false (`gpt4_2f8be40d`, answer says three weddings and the hypothesis is
 `3`), so failure analysis should use both official labels and artifact-level
 inspection.
+
+### 30-Item Multi-Session Gemma 4 31B Reader Check
+
+The same smart-writer artifacts were read again through the cluster-hosted
+Gemma 4 31B vLLM endpoint exposed at `https://llm.underpassai.com` with mTLS.
+The kernel run and recovered evidence were unchanged; only the external reader
+model changed.
+
+```text
+reader:   /tmp/lme-ms30-smart-writer-reader-gemma4-20260509
+model:    google/gemma-4-31B-it
+endpoint: https://llm.underpassai.com/v1/chat/completions
+judge:    official LongMemEval gpt-4o evaluator
+```
+
+| Metric | GPT-4o reader | Gemma 4 31B reader |
+| --- | ---: | ---: |
+| Items | 30 | 30 |
+| Full evidence hits | 30 / 30 | 30 / 30 |
+| Reader graph rich relations | 98 | 98 |
+| Reader lexical hits | 19 / 30 | 20 / 30 |
+| Reader prompt tokens | 44,845 | 53,932 |
+| Reader completion tokens | not recorded here | 96 |
+| Official accuracy | 22 / 30, `0.7333` | 25 / 30, `0.8333` |
+
+Gemma fixed five answers that `gpt-4o` missed:
+
+```text
+gpt4_59c863d7: model kits, 6 -> 5
+gpt4_d84a3211: bike expenses, $225 -> $185
+gpt4_f2262a51: doctor count, 4 -> 3
+gpt4_15e38248: furniture pieces, 5 pieces -> 4
+gpt4_5501fe77: follower platform, Twitter -> TikTok
+```
+
+Gemma regressed two answers that `gpt-4o` got right:
+
+```text
+0a995998: clothing pickup/return count, 3 items -> 2 items
+46a3abf7: aquarium tank count, 3 -> UNKNOWN
+```
+
+This is not yet a full official LongMemEval score; it is a model-swap check on
+the same 30-item oracle multi-session slice. It is still useful: the kernel
+evidence substrate is model-independent, and a local/open reader can outperform
+the previous hosted reader on aggregate interpretation when the same recovered
+context and rich relations are provided.
+
+### Next Serious Run Plan
+
+The next publishable LongMemEval run should be treated as an official-style
+secondary regression, not as the primary product benchmark:
+
+- dataset: `longmemeval_s_cleaned.json`;
+- sample: 500 questions;
+- context construction: real kernel retrieval over the available history;
+- forbidden fields: do not use `has_answer`, `answer_session_ids`, or gold
+  answer metadata to build reader context;
+- reader: document the exact hosted or GPU-backed model;
+- judge: document the exact judge model and evaluator command;
+- artifacts: preserve generated KMP artifacts, run output, reader output,
+  official evaluator output, and failure analysis.
+
+RunPod is the preferred external GPU path for the next long-context reader
+validation because local 4x RTX 3090 capacity is not enough for the target
+Gemma long-context configuration. The first cloud step should be a short smoke
+that validates model loading, context length, tokens/s, TLS/API plumbing, and
+cost before running the full 500-question pass.

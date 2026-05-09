@@ -24,6 +24,8 @@ struct Args {
     model: Option<String>,
     provider: Option<LlmProvider>,
     api_key_env: String,
+    tls_cert_path: Option<String>,
+    tls_key_path: Option<String>,
     max_tokens: u32,
     temperature: f64,
     limit: Option<usize>,
@@ -135,6 +137,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let api_key = env::var(&args.api_key_env)
         .ok()
         .filter(|value| !value.trim().is_empty());
+    let tls_cert_path = resolve_optional(args.tls_cert_path.as_deref(), "LLM_TLS_CERT_PATH");
+    let tls_key_path = resolve_optional(args.tls_key_path.as_deref(), "LLM_TLS_KEY_PATH");
     ensure_output_dir(&args.output, args.force)?;
 
     let expected = read_expected(&args.artifacts.join("expected.jsonl"), args.limit)?;
@@ -148,9 +152,11 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .into());
     }
 
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(180))
-        .build()?;
+    let client = build_llm_http_client(
+        Duration::from_secs(180),
+        tls_cert_path.as_deref(),
+        tls_key_path.as_deref(),
+    )?;
     let started = Instant::now();
     let mut reader_results = Vec::new();
     let plugin_reader = ComposedEvidenceReader::kernel_default();
@@ -1248,6 +1254,8 @@ fn parse_args(
     let mut model = None;
     let mut provider = None;
     let mut api_key_env = "LLM_API_KEY".to_string();
+    let mut tls_cert_path = None;
+    let mut tls_key_path = None;
     let mut max_tokens = 256u32;
     let mut temperature = 0.0f64;
     let mut limit = None;
@@ -1264,6 +1272,8 @@ fn parse_args(
                 provider = Some(parse_provider(&required_flag_value(&mut args, &arg)?)?)
             }
             "--api-key-env" => api_key_env = required_flag_value(&mut args, &arg)?,
+            "--tls-cert-path" => tls_cert_path = Some(required_flag_value(&mut args, &arg)?),
+            "--tls-key-path" => tls_key_path = Some(required_flag_value(&mut args, &arg)?),
             "--max-tokens" => {
                 let value = required_flag_value(&mut args, &arg)?;
                 max_tokens = value
@@ -1301,6 +1311,8 @@ fn parse_args(
         model,
         provider,
         api_key_env,
+        tls_cert_path,
+        tls_key_path,
         max_tokens,
         temperature,
         limit,
@@ -1316,9 +1328,41 @@ fn required_flag_value(
         .ok_or_else(|| format!("{flag} requires a value").into())
 }
 
+fn resolve_optional(cli_value: Option<&str>, env_name: &str) -> Option<String> {
+    cli_value
+        .map(str::to_string)
+        .or_else(|| env::var(env_name).ok())
+        .filter(|value| !value.trim().is_empty())
+}
+
+fn build_llm_http_client(
+    timeout: Duration,
+    tls_cert_path: Option<&str>,
+    tls_key_path: Option<&str>,
+) -> Result<reqwest::Client, Box<dyn Error + Send + Sync>> {
+    let mut builder = reqwest::Client::builder().timeout(timeout);
+    match (tls_cert_path, tls_key_path) {
+        (Some(cert_path), Some(key_path)) => {
+            let cert_pem = fs::read(cert_path)?;
+            let key_pem = fs::read(key_path)?;
+            let mut identity_pem = cert_pem;
+            identity_pem.extend_from_slice(&key_pem);
+            builder = builder.identity(reqwest::Identity::from_pem(&identity_pem)?);
+        }
+        (None, None) => {}
+        _ => {
+            return Err(
+                "mTLS client identity requires both --tls-cert-path/LLM_TLS_CERT_PATH and --tls-key-path/LLM_TLS_KEY_PATH"
+                    .into(),
+            );
+        }
+    }
+    Ok(builder.build()?)
+}
+
 fn print_usage() {
     eprintln!(
-        "Usage: longmemeval_kmp_reader --artifacts <adapter-output-dir> --run <runner-output-dir> --output <reader-output-dir> --endpoint <chat-completions-url> --model <model> [--provider openai|openai-new|anthropic] [--api-key-env LLM_API_KEY] [--max-tokens N] [--temperature F] [--limit N] [--force]"
+        "Usage: longmemeval_kmp_reader --artifacts <adapter-output-dir> --run <runner-output-dir> --output <reader-output-dir> --endpoint <chat-completions-url> --model <model> [--provider openai|openai-new|anthropic] [--api-key-env LLM_API_KEY] [--tls-cert-path PATH] [--tls-key-path PATH] [--max-tokens N] [--temperature F] [--limit N] [--force]"
     );
 }
 

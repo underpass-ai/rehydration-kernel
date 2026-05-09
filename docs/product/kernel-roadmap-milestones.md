@@ -473,16 +473,32 @@ Recommended order:
 
 ## Current Next Slice
 
-The immediate next slice should be:
+The immediate next slice is the benchmark/documentation hardening path that can
+support a public article without overstating the kernel:
 
 ```text
-MemoryArena official evaluator integration
-+ agentic retrieval loop
-+ minimum observability for projection/traversal/proof
-+ LongMemEval left as secondary regression
+LongMemEval official 500-question regression preparation
++ RunPod/GPU reader validation when local VRAM is insufficient
++ MemoryArena remains the primary agentic-memory proof line
++ P1 operator-model plan waits until KMP limits/pagination/tool trajectories
+  are stable
 ```
 
-This slice validates the strongest product claim:
+Execution order:
+
+1. Keep the 30-item LongMemEval smart-writer/Gemma reader result documented as
+   a model-swap check, not a full official score.
+2. Prepare a serious 500-question LongMemEval run with the official cleaned
+   split, no forbidden gold fields for context construction, real kernel
+   retrieval over history, and explicit reader/judge configuration.
+3. Use external GPU capacity only for the reader validation path that cannot
+   fit locally; document provider, model, context length, cost, and artifacts.
+4. Bring the result back into the roadmap as secondary regression evidence.
+5. Continue the primary product proof through MemoryArena/MemoryAgentBench,
+   where temporal replay, multidimensional process memory, and auditability are
+   the core claim.
+
+This roadmap validates the strongest product claim:
 
 ```text
 Underpass Kernel is an observable, auditable, secure memory substrate for

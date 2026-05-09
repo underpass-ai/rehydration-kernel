@@ -453,7 +453,7 @@ and architecture details.
 
 ### Full mTLS Deployment
 
-For a deployment with mutual TLS on all boundaries:
+For a deployment with mutual TLS on supported boundaries:
 
 ```bash
 helm upgrade --install rehydration-kernel charts/rehydration-kernel \
