@@ -6,17 +6,33 @@ use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-use rehydration_mcp::KernelMcpServer;
-use rehydration_testkit::LongMemEvalExpected;
+use rehydration_interpretation::{
+    ComposedEvidenceReader, EvidenceFragment, EvidenceInterpretationInput, EvidenceReaderOutput,
+    EvidenceReaderPluginConfiguration, EvidenceReaderRequest,
+};
+use rehydration_mcp::{KernelMcpGrpcTlsConfig, KernelMcpServer};
+use rehydration_testkit::{
+    LlmProvider, LongMemEvalExpected, LongMemEvalSmartWriter, LongMemEvalSmartWriterConfig,
+    LongMemEvalSmartWriterItem, LongMemEvalSmartWriterResult, LongMemEvalSmartWriterSummary,
+    summarize_longmemeval_smart_writer,
+};
 use serde::Serialize;
 use serde_json::{Value, json};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 struct Args {
     artifacts: PathBuf,
     endpoint: Option<String>,
     output: PathBuf,
     limit: Option<usize>,
+    smart_writer: bool,
+    log_mcp_navigation: bool,
+    writer_llm_endpoint: Option<String>,
+    writer_llm_model: Option<String>,
+    writer_llm_provider: Option<LlmProvider>,
+    writer_api_key_env: String,
+    writer_max_tokens: u32,
+    writer_temperature: f64,
     force: bool,
 }
 
@@ -37,6 +53,13 @@ struct RunSummary {
     missing_evidence_hits: usize,
     lexical_answer_items: usize,
     lexical_answer_hits: usize,
+    value_plugins: Vec<&'static str>,
+    derivation_plugins: Vec<&'static str>,
+    plugin_configuration: EvidenceReaderPluginConfiguration,
+    plugin_value_mentions: usize,
+    plugin_derivation_results: usize,
+    plugin_diagnostics: usize,
+    smart_writer: LongMemEvalSmartWriterSummary,
     elapsed_ms: u128,
 }
 
@@ -53,6 +76,10 @@ struct ItemResult {
     evidence_hit: EvidenceHit,
     ask_answer: Option<String>,
     ask_content: Value,
+    plugin_reader: Value,
+    plugin_value_mentions: usize,
+    plugin_derivation_results: usize,
+    plugin_diagnostics: usize,
     lexical_answer_hit: bool,
     ask_summary: String,
     ingest_elapsed_ms: u128,
@@ -96,7 +123,10 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     }
 
     let server = match args.endpoint.as_deref() {
-        Some(endpoint) => KernelMcpServer::grpc(endpoint),
+        Some(endpoint) => KernelMcpServer::grpc_with_tls(
+            endpoint,
+            KernelMcpGrpcTlsConfig::from_env_for_endpoint(Some(endpoint)),
+        ),
         None => KernelMcpServer::try_from_env()
             .map_err(|error| format!("failed to configure MCP gRPC backend from env: {error}"))?,
     };
@@ -105,12 +135,24 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .clone()
         .or_else(|| env::var("REHYDRATION_KERNEL_GRPC_ENDPOINT").ok())
         .unwrap_or_else(|| "env".to_string());
+    let smart_writer = if args.smart_writer {
+        Some(LongMemEvalSmartWriter::new(writer_config(&args)?)?)
+    } else {
+        None
+    };
 
     let started = Instant::now();
     let mut item_results = Vec::new();
+    let mut writer_results = Vec::<LongMemEvalSmartWriterResult>::new();
     let mut request_id = 1u64;
+    let plugin_reader = ComposedEvidenceReader::kernel_default();
 
-    for ((ingest, ask), expected) in ingests.iter().zip(asks.iter()).zip(expected.iter()) {
+    for (item_index, ((ingest, ask), expected)) in ingests
+        .iter()
+        .zip(asks.iter())
+        .zip(expected.iter())
+        .enumerate()
+    {
         validate_matching_artifacts(ingest, ask, expected)?;
 
         let ingest_started = Instant::now();
@@ -119,6 +161,24 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         request_id = request_id.checked_add(1).ok_or("request id overflow")?;
         assert_tool_success(&ingest_response, "kernel_ingest", &ingest.question_id)?;
         let ingest_elapsed_ms = ingest_started.elapsed().as_millis();
+
+        if let Some(writer) = smart_writer.as_ref() {
+            writer_results.extend(
+                writer
+                    .write_ingest_item(
+                        &server,
+                        &mut request_id,
+                        LongMemEvalSmartWriterItem {
+                            item_index,
+                            question_id: &ingest.question_id,
+                            question_type: &ingest.question_type,
+                            about: &ingest.about,
+                            arguments: &ingest.arguments,
+                        },
+                    )
+                    .await?,
+            );
+        }
 
         let ask_started = Instant::now();
         let ask_response = call_mcp_tool(&server, request_id, "kernel_ask", &ask.arguments).await?;
@@ -144,6 +204,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             .and_then(Value::as_str)
             .unwrap_or_default()
             .to_string();
+        let plugin_output = read_plugins_for_item(&plugin_reader, expected, ask_content)?;
+        let plugin_reader_value = serde_json::to_value(&plugin_output)?;
 
         item_results.push(ItemResult {
             question_id: expected.question_id.clone(),
@@ -157,6 +219,10 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             evidence_hit,
             ask_answer,
             ask_content: ask_content.clone(),
+            plugin_reader: plugin_reader_value,
+            plugin_value_mentions: plugin_output.values.len(),
+            plugin_derivation_results: plugin_output.derivation_results.len(),
+            plugin_diagnostics: plugin_output.diagnostics.len(),
             lexical_answer_hit,
             ask_summary,
             ingest_elapsed_ms,
@@ -169,6 +235,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         endpoint_label,
         started.elapsed().as_millis(),
         &item_results,
+        &plugin_reader,
+        &writer_results,
     )?;
     write_jsonl(
         &args.output.join("results.jsonl"),
@@ -182,6 +250,10 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                 "hypothesis": item.ask_answer.as_deref().unwrap_or_default()
             }))
         }),
+    )?;
+    write_jsonl(
+        &args.output.join("writer_results.jsonl"),
+        writer_results.iter().map(serde_json::to_value),
     )?;
     write_json_pretty(&args.output.join("summary.json"), &summary)?;
 
@@ -241,6 +313,138 @@ fn collect_observed_evidence_refs(value: &Value) -> BTreeSet<String> {
     collect_support_relation_sources(value, &mut refs);
     collect_because_refs(value, &mut refs);
     refs
+}
+
+fn read_plugins_for_item(
+    reader: &ComposedEvidenceReader,
+    expected: &LongMemEvalExpected,
+    ask_content: &Value,
+) -> Result<EvidenceReaderOutput, Box<dyn Error + Send + Sync>> {
+    let fragments = plugin_evidence_fragments(expected, ask_content);
+    let request = EvidenceReaderRequest::new(EvidenceInterpretationInput::new(fragments));
+    reader.read(&request).map_err(Into::into)
+}
+
+fn plugin_evidence_fragments(
+    expected: &LongMemEvalExpected,
+    ask_content: &Value,
+) -> Vec<EvidenceFragment> {
+    let mut fragments = Vec::new();
+    fragments.push(EvidenceFragment::new(
+        format!("question:{}", expected.question_id),
+        expected.question.clone(),
+    ));
+
+    for item in ask_content
+        .get("proof")
+        .and_then(|proof| proof.get("evidence"))
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or(&[])
+    {
+        let Some(text) = item.get("text").and_then(Value::as_str) else {
+            continue;
+        };
+        let source = item
+            .get("source")
+            .and_then(Value::as_str)
+            .map(ToString::to_string);
+        let supports = item
+            .get("supports")
+            .and_then(Value::as_array)
+            .map(Vec::as_slice)
+            .unwrap_or(&[]);
+        let mut pushed = false;
+        for support in supports {
+            let Some(ref_id) = support.as_str() else {
+                continue;
+            };
+            if !looks_like_turn_ref(ref_id) {
+                continue;
+            }
+            push_plugin_fragment(&mut fragments, ref_id, text, source.clone());
+            pushed = true;
+        }
+        if !pushed {
+            let ref_id = item
+                .get("id")
+                .and_then(Value::as_str)
+                .or_else(|| item.get("source").and_then(Value::as_str))
+                .unwrap_or("proof:evidence");
+            push_plugin_fragment(&mut fragments, ref_id, text, source);
+        }
+    }
+
+    for relation in ask_content
+        .get("proof")
+        .and_then(|proof| proof.get("path"))
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or(&[])
+    {
+        let is_support = relation
+            .get("rel")
+            .and_then(Value::as_str)
+            .is_some_and(|rel| rel == "supports_answer" || rel == "supports");
+        if !is_support {
+            continue;
+        }
+        let Some(ref_id) = relation.get("from").and_then(Value::as_str) else {
+            continue;
+        };
+        if !looks_like_turn_ref(ref_id) {
+            continue;
+        }
+        let Some(text) = relation.get("evidence").and_then(Value::as_str) else {
+            continue;
+        };
+        push_plugin_fragment(&mut fragments, ref_id, text, None);
+    }
+
+    for reason in ask_content
+        .get("because")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or(&[])
+    {
+        let Some(ref_id) = reason.get("ref").and_then(Value::as_str) else {
+            continue;
+        };
+        if !looks_like_turn_ref(ref_id) {
+            continue;
+        }
+        let Some(text) = reason.get("evidence").and_then(Value::as_str) else {
+            continue;
+        };
+        push_plugin_fragment(&mut fragments, ref_id, text, None);
+    }
+
+    dedupe_plugin_fragments(fragments)
+}
+
+fn push_plugin_fragment(
+    fragments: &mut Vec<EvidenceFragment>,
+    ref_id: &str,
+    text: &str,
+    source: Option<String>,
+) {
+    if text.trim().is_empty() {
+        return;
+    }
+    let mut fragment = EvidenceFragment::new(ref_id.to_string(), text.trim().to_string());
+    fragment.source = source;
+    fragments.push(fragment);
+}
+
+fn dedupe_plugin_fragments(fragments: Vec<EvidenceFragment>) -> Vec<EvidenceFragment> {
+    let mut seen = BTreeSet::new();
+    let mut deduped = Vec::new();
+    for fragment in fragments {
+        if seen.insert((fragment.ref_id.clone(), fragment.text.clone())) {
+            deduped.push(fragment);
+        }
+    }
+    deduped
 }
 
 fn collect_supported_refs_from_proof_evidence(value: &Value, refs: &mut BTreeSet<String>) {
@@ -401,6 +605,8 @@ fn summarize_run(
     endpoint: String,
     elapsed_ms: u128,
     results: &[ItemResult],
+    plugin_reader: &ComposedEvidenceReader,
+    writer_results: &[LongMemEvalSmartWriterResult],
 ) -> Result<RunSummary, Box<dyn Error + Send + Sync>> {
     let mut counts = BTreeMap::new();
     for result in results {
@@ -433,6 +639,19 @@ fn summarize_run(
             .iter()
             .filter(|result| result.lexical_answer_hit)
             .count(),
+        value_plugins: plugin_reader.value_plugin_ids(),
+        derivation_plugins: plugin_reader.derivation_plugin_ids(),
+        plugin_configuration: plugin_reader.configuration(),
+        plugin_value_mentions: results
+            .iter()
+            .map(|result| result.plugin_value_mentions)
+            .sum(),
+        plugin_derivation_results: results
+            .iter()
+            .map(|result| result.plugin_derivation_results)
+            .sum(),
+        plugin_diagnostics: results.iter().map(|result| result.plugin_diagnostics).sum(),
+        smart_writer: summarize_longmemeval_smart_writer(args.smart_writer, writer_results),
         elapsed_ms,
     })
 }
@@ -556,6 +775,14 @@ fn parse_args(
     let mut endpoint = None;
     let mut output = None;
     let mut limit = None;
+    let mut smart_writer = false;
+    let mut log_mcp_navigation = env_flag("LONGMEMEVAL_LOG_MCP_NAVIGATION");
+    let mut writer_llm_endpoint = None;
+    let mut writer_llm_model = None;
+    let mut writer_llm_provider = None;
+    let mut writer_api_key_env = "LLM_API_KEY".to_string();
+    let mut writer_max_tokens = 384u32;
+    let mut writer_temperature = 0.0f64;
     let mut force = false;
 
     while let Some(arg) = args.next() {
@@ -571,6 +798,36 @@ fn parse_args(
                         .map_err(|error| format!("invalid --limit value `{value}`: {error}"))?,
                 );
             }
+            "--smart-writer" => smart_writer = true,
+            "--log-mcp-navigation" => log_mcp_navigation = true,
+            "--writer-llm-endpoint" => {
+                writer_llm_endpoint = Some(required_flag_value(&mut args, &arg)?)
+            }
+            "--writer-llm-model" => writer_llm_model = Some(required_flag_value(&mut args, &arg)?),
+            "--writer-llm-provider" => {
+                writer_llm_provider = Some(parse_writer_provider(&required_flag_value(
+                    &mut args, &arg,
+                )?)?)
+            }
+            "--writer-api-key-env" => writer_api_key_env = required_flag_value(&mut args, &arg)?,
+            "--writer-max-tokens" => {
+                let value = required_flag_value(&mut args, &arg)?;
+                writer_max_tokens = value.parse::<u32>().map_err(|error| {
+                    format!("invalid --writer-max-tokens value `{value}`: {error}")
+                })?;
+                if writer_max_tokens == 0 {
+                    return Err("--writer-max-tokens must be greater than zero".into());
+                }
+            }
+            "--writer-temperature" => {
+                let value = required_flag_value(&mut args, &arg)?;
+                writer_temperature = value.parse::<f64>().map_err(|error| {
+                    format!("invalid --writer-temperature value `{value}`: {error}")
+                })?;
+                if !writer_temperature.is_finite() || writer_temperature < 0.0 {
+                    return Err("--writer-temperature must be a finite non-negative value".into());
+                }
+            }
             "--force" => force = true,
             "--help" | "-h" => {
                 print_usage();
@@ -585,8 +842,92 @@ fn parse_args(
         endpoint,
         output: output.ok_or("--output is required")?,
         limit,
+        smart_writer,
+        log_mcp_navigation,
+        writer_llm_endpoint,
+        writer_llm_model,
+        writer_llm_provider,
+        writer_api_key_env,
+        writer_max_tokens,
+        writer_temperature,
         force,
     })
+}
+
+fn writer_config(
+    args: &Args,
+) -> Result<LongMemEvalSmartWriterConfig, Box<dyn Error + Send + Sync>> {
+    let llm_endpoint = args
+        .writer_llm_endpoint
+        .clone()
+        .or_else(|| non_empty_env("WRITER_LLM_ENDPOINT"))
+        .or_else(|| non_empty_env("LLM_ENDPOINT"));
+    let llm_model = args
+        .writer_llm_model
+        .clone()
+        .or_else(|| non_empty_env("WRITER_LLM_MODEL"))
+        .or_else(|| non_empty_env("LLM_MODEL"));
+    let llm_provider = args
+        .writer_llm_provider
+        .or_else(|| {
+            non_empty_env("WRITER_LLM_PROVIDER")
+                .or_else(|| non_empty_env("LLM_PROVIDER"))
+                .and_then(|value| parse_writer_provider(&value).ok())
+        })
+        .or_else(|| llm_model.as_deref().map(detect_writer_provider_from_model));
+    let api_key = env::var(&args.writer_api_key_env)
+        .ok()
+        .filter(|value| !value.trim().is_empty());
+
+    Ok(LongMemEvalSmartWriterConfig {
+        llm_endpoint,
+        llm_model,
+        llm_provider,
+        api_key,
+        max_tokens: args.writer_max_tokens,
+        temperature: args.writer_temperature,
+        log_mcp_navigation: args.log_mcp_navigation,
+    })
+}
+
+fn non_empty_env(key: &str) -> Option<String> {
+    env::var(key).ok().filter(|value| !value.trim().is_empty())
+}
+
+fn env_flag(key: &str) -> bool {
+    env::var(key)
+        .ok()
+        .map(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
+        .unwrap_or(false)
+}
+
+fn detect_writer_provider_from_model(model: &str) -> LlmProvider {
+    if model.starts_with("gpt-5")
+        || model.starts_with("o3")
+        || model.starts_with("o4")
+        || model.starts_with("gpt-4.1")
+    {
+        LlmProvider::OpenAINew
+    } else {
+        LlmProvider::OpenAI
+    }
+}
+
+fn parse_writer_provider(value: &str) -> Result<LlmProvider, Box<dyn Error + Send + Sync>> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "openai" => Ok(LlmProvider::OpenAI),
+        "openai-new" | "openai_new" => Ok(LlmProvider::OpenAINew),
+        "anthropic" => Ok(LlmProvider::Anthropic),
+        other => Err(format!(
+            "unsupported provider `{other}`; use openai, openai-new, or anthropic"
+        )
+        .into()),
+    }
 }
 
 fn required_flag_value(
@@ -599,7 +940,7 @@ fn required_flag_value(
 
 fn print_usage() {
     eprintln!(
-        "Usage: longmemeval_kmp_runner --artifacts <adapter-output-dir> --output <run-dir> [--endpoint http://host] [--limit N] [--force]"
+        "Usage: longmemeval_kmp_runner --artifacts <adapter-output-dir> --output <run-dir> [--endpoint http://host] [--limit N] [--smart-writer] [--log-mcp-navigation] [--writer-llm-endpoint URL] [--writer-llm-model MODEL] [--writer-llm-provider openai|openai-new|anthropic] [--writer-api-key-env LLM_API_KEY] [--writer-max-tokens N] [--writer-temperature F] [--force]"
     );
 }
 
@@ -653,5 +994,43 @@ mod tests {
                 "turn:q:s1:4".to_string()
             ])
         );
+    }
+
+    #[test]
+    fn plugin_reader_interprets_recovered_evidence() {
+        let expected = LongMemEvalExpected {
+            question_id: "q-money".to_string(),
+            question_type: "multi-session".to_string(),
+            answer: json!("12"),
+            question: "How much did I spend?".to_string(),
+            question_date: "2026-05-08".to_string(),
+            answer_session_ids: vec!["s1".to_string()],
+            answer_turn_refs: vec!["turn:q-money:s1:1".to_string()],
+            answer_session_refs: vec!["session:q-money:s1".to_string()],
+            abstention: false,
+        };
+        let ask_content = json!({
+            "proof": {
+                "evidence": [
+                    {
+                        "supports": ["turn:q-money:s1:1"],
+                        "text": "I paid $12 for lunch.",
+                        "source": "session:s1"
+                    }
+                ]
+            }
+        });
+        let reader = ComposedEvidenceReader::kernel_default();
+
+        let output = read_plugins_for_item(&reader, &expected, &ask_content)
+            .expect("plugin reader should parse recovered evidence");
+
+        assert!(
+            output
+                .values
+                .iter()
+                .any(|mention| mention.plugin == "money-value-v1")
+        );
+        assert_eq!(output.value_plugin_ids, reader.value_plugin_ids());
     }
 }

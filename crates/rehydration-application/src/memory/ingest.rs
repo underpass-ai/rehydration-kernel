@@ -1,6 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use rehydration_domain::{MemoryDimensionIdentity, RelationSemanticClass, SourceKind};
+use rehydration_domain::{
+    MemoryDimensionIdentity, MemoryRelationType, RelationSemanticClass, SourceKind,
+};
 
 use crate::ApplicationError;
 use crate::commands::{UpdateContextChange, UpdateContextCommand};
@@ -189,6 +191,9 @@ fn namespaced_memory(
         require_non_empty(&relation.source_ref, "memory.relations[].source_ref")?;
         require_non_empty(&relation.target_ref, "memory.relations[].target_ref")?;
         require_non_empty(&relation.rel, "memory.relations[].rel")?;
+        let relation_type = MemoryRelationType::new(&relation.rel).map_err(|error| {
+            ApplicationError::Validation(format!("memory relation type is invalid: {error}"))
+        })?;
         let semantic_class =
             RelationSemanticClass::parse(&relation.semantic_class).map_err(|error| {
                 ApplicationError::Validation(format!("memory relation class is invalid: {error}"))
@@ -225,6 +230,7 @@ fn namespaced_memory(
         let mut relation = relation.clone();
         relation.source_ref = source_ref;
         relation.target_ref = target_ref;
+        relation.rel = relation_type.as_str().to_string();
         relations.push(relation);
     }
 
@@ -487,6 +493,20 @@ mod tests {
             .expect_err("unknown ref should fail");
 
         assert_validation_contains(error, "references unknown refs");
+    }
+
+    #[test]
+    fn translate_memory_ingest_canonicalizes_known_relation_types() {
+        let mut command = sample_command();
+        command.memory.relations[0].rel = " CONTAINS-ENTRY ".to_string();
+
+        let (update, _) = translate_memory_ingest(&command, &ExistingMemoryRefs::default())
+            .expect("known relation aliases should canonicalize");
+
+        assert_eq!(
+            update.changes[2].entity_id,
+            "relation:about:question:830ce83f:dimension:conversation:rachel-2026-04-12:contains_entry:claim:rachel-denver"
+        );
     }
 
     #[test]

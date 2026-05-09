@@ -1,11 +1,37 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use rehydration_domain::{
+    MemoryRelationQuality, MemoryRelationSpec, MemoryRelationType, RelationSemanticClass,
+};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 
 const DEFAULT_CONFIDENCE: &str = "high";
 const DEFAULT_SOURCE_KIND: &str = "agent";
-const STRUCTURAL_RELATIONS: &[&str] = &["contains", "member_of", "scoped_to"];
+const NON_STRUCTURAL_RELATION_CLASSES: &[RelationSemanticClass] = &[
+    RelationSemanticClass::Causal,
+    RelationSemanticClass::Motivational,
+    RelationSemanticClass::Procedural,
+    RelationSemanticClass::Evidential,
+    RelationSemanticClass::Constraint,
+];
+
+#[derive(Clone, Copy, Debug)]
+struct ResolvedRelationSpec {
+    quality: MemoryRelationQuality,
+    classes: &'static [RelationSemanticClass],
+    reason: &'static str,
+}
+
+impl From<MemoryRelationSpec> for ResolvedRelationSpec {
+    fn from(value: MemoryRelationSpec) -> Self {
+        Self {
+            quality: value.quality(),
+            classes: value.allowed_classes(),
+            reason: value.reason(),
+        }
+    }
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct KernelWritePlan {
@@ -18,32 +44,6 @@ pub(crate) struct KernelWritePlan {
     pub(crate) relation_quality_metrics: Value,
     pub(crate) diagnostics: Vec<String>,
     pub(crate) next_suggested_reads: Vec<Value>,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum RelationQuality {
-    Rich,
-    Anemic,
-    Structural,
-    Suspect,
-}
-
-impl RelationQuality {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Rich => "rich",
-            Self::Anemic => "anemic",
-            Self::Structural => "structural",
-            Self::Suspect => "suspect",
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-struct RelationSpec {
-    quality: RelationQuality,
-    classes: &'static [&'static str],
-    reason: &'static str,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -257,7 +257,10 @@ pub(crate) fn build_write_plan(arguments: &Value) -> Result<KernelWritePlan, Str
             .as_object()
             .ok_or_else(|| format!("connect_to[{index}] must be an object"))?;
         let target_ref = required_map_string(link, "ref", &format!("connect_to[{index}].ref"))?;
-        let rel = required_map_string(link, "rel", &format!("connect_to[{index}].rel"))?;
+        let rel_arg = required_map_string(link, "rel", &format!("connect_to[{index}].rel"))?;
+        let relation_type = MemoryRelationType::new(rel_arg)
+            .map_err(|error| format!("connect_to[{index}].rel is invalid: {error}"))?;
+        let rel = relation_type.as_str();
         let semantic_class =
             required_map_string(link, "class", &format!("connect_to[{index}].class"))?;
         validate_semantic_class(semantic_class)?;
@@ -557,12 +560,14 @@ struct RelationQualityInput<'a> {
 
 fn relation_quality_diagnostic(input: RelationQualityInput<'_>) -> Result<Value, String> {
     let spec = relation_spec(input.rel, input.strict)?;
-    if !spec.classes.contains(&input.semantic_class) {
+    let semantic_class = RelationSemanticClass::parse(input.semantic_class)
+        .map_err(|error| format!("kernel_write_memory relation class is invalid: {error}"))?;
+    if !spec.classes.contains(&semantic_class) {
         return Err(format!(
             "kernel_write_memory relation `{}` cannot use class `{}`; expected one of {}",
             input.rel,
             input.semantic_class,
-            spec.classes.join(", ")
+            class_names(spec.classes).join(", ")
         ));
     }
 
@@ -596,7 +601,7 @@ fn relation_quality_diagnostic(input: RelationQualityInput<'_>) -> Result<Value,
     };
     let prior_context_observed = !prior_context_sources.is_empty();
     if input.strict
-        && spec.quality == RelationQuality::Rich
+        && spec.quality == MemoryRelationQuality::Rich
         && !target_is_local
         && !prior_context_observed
     {
@@ -607,14 +612,14 @@ fn relation_quality_diagnostic(input: RelationQualityInput<'_>) -> Result<Value,
     }
 
     let quality = if !input.strict
-        && spec.quality == RelationQuality::Rich
+        && spec.quality == MemoryRelationQuality::Rich
         && (!prior_context_observed || matches!(input.confidence, "low" | "unknown"))
     {
-        RelationQuality::Suspect
+        MemoryRelationQuality::Suspect
     } else {
         spec.quality
     };
-    let requires_prior_context = spec.quality == RelationQuality::Rich && !target_is_local;
+    let requires_prior_context = spec.quality == MemoryRelationQuality::Rich && !target_is_local;
 
     Ok(json!({
         "from": input.from,
@@ -624,7 +629,7 @@ fn relation_quality_diagnostic(input: RelationQualityInput<'_>) -> Result<Value,
         "confidence": input.confidence,
         "quality": quality.as_str(),
         "quality_reason": relation_quality_reason(quality, spec.reason),
-        "fallback": quality == RelationQuality::Anemic,
+        "fallback": quality == MemoryRelationQuality::Anemic,
         "requires_prior_context": requires_prior_context,
         "prior_context_observed": prior_context_observed,
         "prior_context_sources": prior_context_sources,
@@ -633,128 +638,38 @@ fn relation_quality_diagnostic(input: RelationQualityInput<'_>) -> Result<Value,
     }))
 }
 
-fn relation_spec(rel: &str, strict: bool) -> Result<RelationSpec, String> {
-    let spec = match rel {
-        "follows" => RelationSpec {
-            quality: RelationQuality::Anemic,
-            classes: &["procedural"],
-            reason: "writer proved process succession but not a richer semantic dependency",
-        },
-        "answers" => RelationSpec {
-            quality: RelationQuality::Anemic,
-            classes: &["evidential"],
-            reason: "writer proved answerhood but not a richer semantic dependency",
-        },
-        "uses_background" => RelationSpec {
-            quality: RelationQuality::Anemic,
-            classes: &["evidential"],
-            reason: "writer scoped the node to background without claiming causal semantics",
-        },
-        "depends_on" => RelationSpec {
-            quality: RelationQuality::Rich,
-            classes: &["causal"],
-            reason: "explicit dependency relation with target ref, why, and evidence",
-        },
-        "chosen_because" => RelationSpec {
-            quality: RelationQuality::Rich,
-            classes: &["causal", "motivational"],
-            reason: "decision relation explains why a prior memory led to the current choice",
-        },
-        "semantic_delta_from" => RelationSpec {
-            quality: RelationQuality::Rich,
-            classes: &["causal"],
-            reason: "delta relation explains how current state changes from prior memory",
-        },
-        "updates_state" => RelationSpec {
-            quality: RelationQuality::Rich,
-            classes: &["causal"],
-            reason: "state transition relation identifies what memory is being changed",
-        },
-        "supersedes" => RelationSpec {
-            quality: RelationQuality::Rich,
-            classes: &["evidential"],
-            reason: "replacement relation identifies the superseded memory and evidence",
-        },
-        "contradicts" => RelationSpec {
-            quality: RelationQuality::Rich,
-            classes: &["evidential"],
-            reason: "conflict relation identifies the contradicted memory and evidence",
-        },
-        "satisfies_constraint" => RelationSpec {
-            quality: RelationQuality::Rich,
-            classes: &["constraint"],
-            reason: "constraint relation identifies the rule satisfied by the current memory",
-        },
-        "violates_constraint" => RelationSpec {
-            quality: RelationQuality::Rich,
-            classes: &["constraint"],
-            reason: "constraint relation identifies the rule violated by the current memory",
-        },
-        "contributes_to" => RelationSpec {
-            quality: RelationQuality::Rich,
-            classes: &["evidential"],
-            reason: "operand relation marks a value as intentionally included in a derived result",
-        },
-        "excluded_from" => RelationSpec {
-            quality: RelationQuality::Rich,
-            classes: &["constraint"],
-            reason: "operand relation marks a value as intentionally excluded",
-        },
-        "checked_against" => RelationSpec {
-            quality: RelationQuality::Rich,
-            classes: &["constraint"],
-            reason: "verification relation marks a value checked against a rule or window",
-        },
-        "derived_from" => RelationSpec {
-            quality: RelationQuality::Rich,
-            classes: &["evidential"],
-            reason: "derived value relation identifies source operands or evidence",
-        },
-        "supports" => RelationSpec {
-            quality: RelationQuality::Rich,
-            classes: &["evidential"],
-            reason: "evidence relation identifies the memory supported by the current observation",
-        },
-        "confirms_selection" => RelationSpec {
-            quality: RelationQuality::Rich,
-            classes: &["evidential", "motivational"],
-            reason: "feedback relation identifies the selection confirmed by later evidence",
-        },
-        rel if STRUCTURAL_RELATIONS.contains(&rel) => RelationSpec {
-            quality: RelationQuality::Structural,
-            classes: &["structural"],
-            reason: "structural relation is accepted but excluded from semantic writer quality",
-        },
-        _ if !strict => RelationSpec {
-            quality: RelationQuality::Suspect,
-            classes: &[
-                "causal",
-                "motivational",
-                "procedural",
-                "evidential",
-                "constraint",
-            ],
+fn relation_spec(rel: &str, strict: bool) -> Result<ResolvedRelationSpec, String> {
+    let relation_type = MemoryRelationType::new(rel)
+        .map_err(|error| format!("kernel_write_memory relation type is invalid: {error}"))?;
+    if let Some(spec) = relation_type.writer_spec() {
+        return Ok(spec.into());
+    }
+    if !strict {
+        return Ok(ResolvedRelationSpec {
+            quality: MemoryRelationQuality::Suspect,
+            classes: NON_STRUCTURAL_RELATION_CLASSES,
             reason: "non-strict relation is outside the canonical writer vocabulary",
-        },
-        other => {
-            return Err(format!(
-                "unsupported or vague kernel_write_memory relation `{other}`"
-            ));
-        }
-    };
-    Ok(spec)
+        });
+    }
+    Err(format!(
+        "unsupported or vague kernel_write_memory relation `{rel}`"
+    ))
 }
 
-fn relation_quality_reason(quality: RelationQuality, default_reason: &str) -> &str {
+fn relation_quality_reason(quality: MemoryRelationQuality, default_reason: &str) -> &str {
     match quality {
-        RelationQuality::Rich => {
+        MemoryRelationQuality::Rich => {
             "non-structural relation has target ref, why, evidence, and supported semantic class"
         }
-        RelationQuality::Anemic | RelationQuality::Structural => default_reason,
-        RelationQuality::Suspect => {
+        MemoryRelationQuality::Anemic | MemoryRelationQuality::Structural => default_reason,
+        MemoryRelationQuality::Suspect => {
             "relation was accepted only because strict mode is disabled and must be audited"
         }
     }
+}
+
+fn class_names(classes: &[RelationSemanticClass]) -> Vec<&'static str> {
+    classes.iter().map(RelationSemanticClass::as_str).collect()
 }
 
 fn relation_quality_metrics(relation_quality: &[Value]) -> Value {
@@ -1182,6 +1097,25 @@ mod tests {
         assert_eq!(
             plan.relation_quality_metrics["relation_anemic_count"],
             json!(1)
+        );
+    }
+
+    #[test]
+    fn accepts_core_operand_modeling_relations() {
+        let mut request = sample_write_request();
+        request["connect_to"][0]["rel"] = json!("matches_question_item");
+        request["connect_to"][0]["class"] = json!("constraint");
+        request["connect_to"][0]["why"] =
+            json!("The prior memory satisfies the current requirement predicate.");
+        request["connect_to"][0]["evidence"] =
+            json!("The writer observed the target ref before linking it.");
+
+        let plan = build_write_plan(&request).expect("operand relation should be accepted");
+
+        assert_eq!(plan.relation_quality[0]["quality"], "rich");
+        assert_eq!(
+            plan.ingest_arguments["memory"]["relations"][0]["rel"],
+            "matches_requirement"
         );
     }
 

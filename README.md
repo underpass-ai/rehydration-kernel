@@ -75,7 +75,9 @@ What is in place:
 - Typed `KernelMemoryService` for Kernel Memory Protocol moves: ingest, wake,
   ask, goto, near, rewind, forward, trace, and inspect
 - Installable stdio MCP adapter backed by the typed `KernelMemoryService`
-- TLS/mTLS on all infrastructure boundaries
+- TLS on infrastructure boundaries, with mTLS on gRPC, Valkey, NATS, and OTel
+  where configured. Neo4j server TLS is supported; Neo4j client-certificate
+  auth is still limited by the Rust driver stack
 - Workspace unit tests + container-backed integration tests +
   [LLM-as-judge E2E benchmark](./docs/testing.md#benchmark-tests-llm-as-judge)
   ([methodology](./docs/research/benchmark-methodology-v1.md))
@@ -152,7 +154,9 @@ graph LR
     end
 ```
 
-> All connections TLS. gRPC and Valkey support mTLS. OTLP is plaintext (mTLS in progress).
+> Infrastructure connections support TLS where the backend supports it. gRPC,
+> Valkey, NATS, and OTLP can run with mTLS through Helm/env configuration.
+> Neo4j server TLS is supported; Neo4j client-certificate auth remains partial.
 
 DDD, hexagonal boundaries, one concept per file, one use case per file.
 
@@ -194,7 +198,11 @@ Control via `max_tier` on the request or let the kernel decide with `rehydration
 
 ## Security
 
-All infrastructure boundaries support TLS. The gRPC transport supports mTLS.
+Infrastructure boundaries support TLS where the backend supports it. The gRPC
+transport supports mTLS; Valkey, NATS, and OTLP can also use client
+certificates through Helm/env configuration. Neo4j currently supports server
+TLS/CA trust in the kernel chart; Neo4j client-certificate auth is pending
+driver support.
 
 | Boundary | Transport | Authentication |
 |:---------|:----------|:---------------|

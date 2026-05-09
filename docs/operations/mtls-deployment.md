@@ -1,6 +1,8 @@
 # mTLS Deployment Guide
 
-How to deploy the rehydration kernel with mutual TLS on all boundaries.
+How to deploy the rehydration kernel with mutual TLS on supported boundaries.
+The self-contained Neo4j sidecar is the current exception: it remains plaintext
+in the full mTLS example until chart and driver support catch up.
 
 ## Prerequisites
 

@@ -10,6 +10,7 @@ repository.workspace = true
 [dependencies]
 opentelemetry.workspace = true
 prost-types.workspace = true
+rehydration-domain.workspace = true
 rehydration-proto.workspace = true
 serde_json.workspace = true
 sha2.workspace = true

@@ -1,14 +1,17 @@
 # Research Artifacts
 
-> **Status**: This index needs restructuring. See [ROADMAP_MASTER.md](ROADMAP_MASTER.md)
-> (section "Pending — Technical debt") for the planned revision.
+> **Status**: research and benchmark artifact index. The active product
+> roadmap is now
+> [product/kernel-roadmap-milestones.md](../product/kernel-roadmap-milestones.md).
+> [ROADMAP_MASTER.md](ROADMAP_MASTER.md) is a legacy research roadmap and should
+> not be treated as the current source of truth without revalidation.
 
 Paper drafts, methodology, roadmaps, and analysis artifacts for the
 rehydration kernel research track.
 
 ## Contents
 
-- [ROADMAP_MASTER.md](ROADMAP_MASTER.md) — Master roadmap (single source of truth)
+- [ROADMAP_MASTER.md](ROADMAP_MASTER.md) — Legacy master roadmap, retained for traceability
 - [ROADMAP_SOTA_CONTEXT_REHYDRATION.md](ROADMAP_SOTA_CONTEXT_REHYDRATION.md) — Why the kernel is useful for agents
 - [PAPER_SUBMISSION_DRAFT.md](PAPER_SUBMISSION_DRAFT.md) — ACL-format manuscript
 - [PAPER_AGENTIC_CONTEXT_REHYDRATION.md](PAPER_AGENTIC_CONTEXT_REHYDRATION.md) — Working paper notes

@@ -1,3 +1,4 @@
+use rehydration_domain::KnownMemoryRelationType;
 use serde_json::{Value, json};
 
 const PROTOCOL_VERSION: &str = "2024-11-05";
@@ -333,28 +334,7 @@ fn write_memory_schema() -> Value {
                         "ref": string_schema("Existing memory ref this new memory connects to."),
                         "rel": {
                             "type": "string",
-                            "enum": [
-                                "follows",
-                                "answers",
-                                "uses_background",
-                                "depends_on",
-                                "chosen_because",
-                                "semantic_delta_from",
-                                "updates_state",
-                                "supports",
-                                "supersedes",
-                                "contradicts",
-                                "satisfies_constraint",
-                                "violates_constraint",
-                                "contributes_to",
-                                "excluded_from",
-                                "checked_against",
-                                "derived_from",
-                                "confirms_selection",
-                                "contains",
-                                "member_of",
-                                "scoped_to"
-                            ]
+                            "enum": writer_relation_names()
                         },
                         "class": {
                             "type": "string",
@@ -607,6 +587,13 @@ fn integer_schema(description: &str) -> Value {
         "minimum": 1,
         "description": description
     })
+}
+
+fn writer_relation_names() -> Vec<&'static str> {
+    KnownMemoryRelationType::writer_relation_types()
+        .iter()
+        .map(|relation_type| relation_type.as_str())
+        .collect()
 }
 
 fn budget_schema() -> Value {

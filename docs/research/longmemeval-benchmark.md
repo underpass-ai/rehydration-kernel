@@ -561,7 +561,9 @@ LongMemEval hypothesis. It does not put LongMemEval scoring logic in kernel
 core, and it does not include the gold answer in the prompt.
 
 The reader fails fast when `--endpoint`/`LLM_ENDPOINT` or `--model`/`LLM_MODEL`
-is missing.
+is missing. Public OpenAI-compatible endpoints protected by mTLS can be used with
+`--tls-cert-path`/`LLM_TLS_CERT_PATH` and `--tls-key-path`/`LLM_TLS_KEY_PATH`;
+providing only one side of the client identity is an error.
 
 ```bash
 cargo run -p rehydration-testkit --bin longmemeval_kmp_reader -- \
@@ -571,6 +573,24 @@ cargo run -p rehydration-testkit --bin longmemeval_kmp_reader -- \
   --endpoint http://localhost:8000/v1/chat/completions \
   --model Qwen/Qwen3-8B \
   --provider openai \
+  --max-tokens 256 \
+  --temperature 0 \
+  --force
+```
+
+Gemma 4 31B on the Underpass mTLS ingress:
+
+```bash
+LLM_ENABLE_THINKING=false \
+cargo run -p rehydration-testkit --bin longmemeval_kmp_reader -- \
+  --artifacts /tmp/lme-ms30-smart-writer-artifacts-20260509 \
+  --run /tmp/lme-ms30-smart-writer-run-20260509 \
+  --output /tmp/lme-ms30-smart-writer-reader-gemma4 \
+  --endpoint https://llm.underpassai.com/v1/chat/completions \
+  --model google/gemma-4-31B-it \
+  --provider openai \
+  --tls-cert-path /tmp/underpass-demo-client.crt \
+  --tls-key-path /tmp/underpass-demo-client.key \
   --max-tokens 256 \
   --temperature 0 \
   --force
@@ -1302,3 +1322,253 @@ Potential next cuts:
 
 The next benchmark work should therefore focus on exhaustive candidate
 construction and aggregate reasoning, not on merely renaming evidential edges.
+
+## LongMemEval Smart Writer Slice
+
+On May 8, 2026, the LongMemEval runner gained an optional benchmark-specific
+smart writer path. It intentionally duplicates the MemoryArena writer harness
+instead of sharing that module, because the two benchmarks have different graph
+shapes and should not silently change each other's behavior.
+
+This slice is a writer-quality benchmark, not evidence discovery. The
+smart-writer consumes `supports_answer` / `supports` candidate relations already
+present in the generated artifacts, reads the target/question through MCP, and
+rewrites those candidate edges through `kernel_write_memory` with richer,
+auditable relation semantics. A blind LongMemEval claim still requires an
+upstream candidate generator, such as the embedding candidate stage or the LLM
+evidence builder, before this writer step.
+
+Flow:
+
+1. `longmemeval_kmp_adapter` still creates the normal LongMemEval ingest and ask
+   artifacts.
+2. `longmemeval_kmp_runner --smart-writer` first ingests the item normally so all
+   turn/question refs exist.
+3. The LongMemEval smart writer then reads each candidate target with
+   `kernel_near` and `kernel_inspect`.
+4. The writer LLM emits one strict `kernel_write_memory.connect_to` relation per
+   evidence relation.
+5. The runner dry-runs, commits, verifies with `kernel_inspect`, and records
+   writer quality diagnostics in `writer_results.jsonl`.
+
+The first public TLS smoke used 3 `multi-session` items:
+
+```text
+artifacts: /tmp/lme-ms3-smart-writer-artifacts-20260508
+run:       /tmp/lme-ms3-smart-writer-run-20260508
+reader:    /tmp/lme-ms3-smart-writer-reader-20260508
+endpoint:  https://rehydration-kernel.underpassai.com
+model:     gpt-4o-2024-08-06
+```
+
+Observed smart-writer metrics:
+
+```text
+relation_writes: 12
+llm_calls: 12
+llm_valid_outputs: 12
+deterministic_fallbacks: 0
+relation_rich_count: 12
+relation_anemic_count: 0
+relation_structural_count: 0
+relation_suspect_count: 0
+```
+
+Relation distribution:
+
+```text
+10 component_of / evidential
+ 2 excluded_from / constraint
+```
+
+Reader and official evaluator:
+
+```text
+reader graph_relation_rich: 12
+reader lexical_answer_hits: 2/3
+official accuracy: 2/3, 0.6667
+```
+
+The 10-item `multi-session` slice then compared directly against the previous
+10-item slice without the smart writer:
+
+```text
+without smart writer:
+  artifacts: /tmp/lme-ms10-core-relation-vocab-artifacts-20260508
+  run:       /tmp/lme-ms10-core-relation-vocab-run-20260508
+  reader:    /tmp/lme-ms10-core-relation-vocab-reader-20260508
+  full evidence hits: 10/10
+  reader graph_relation_rich: 0
+  reader lexical_answer_hits: 4/10
+  official accuracy: 6/10, 0.6
+
+with LongMemEval smart writer:
+  artifacts: /tmp/lme-ms10-smart-writer-artifacts-20260508
+  run:       /tmp/lme-ms10-smart-writer-run-20260508
+  reader:    /tmp/lme-ms10-smart-writer-reader-20260508
+  full evidence hits: 10/10
+  writer relation_writes: 32
+  writer llm_valid_outputs: 32
+  writer deterministic_fallbacks: 0
+  writer relation_rich_count: 32
+  writer relation_anemic_count: 0
+  reader graph_relation_rich: 30
+  reader lexical_answer_hits: 5/10
+  official accuracy: 7/10, 0.7
+```
+
+Writer relation distribution on the 10-item slice:
+
+```text
+28 component_of / evidential
+ 2 excluded_from / constraint
+ 2 supports / evidential
+```
+
+This is the first LongMemEval run where the reader sees rich relation semantics
+created through the Kernel write protocol rather than through adapter-side
+renaming. The improvement is modest but real on this small slice. The remaining
+failures still point at aggregate reasoning and domain-specific operators:
+money totals, entity deduplication, and cases where the official evaluator is
+stricter than the short numeric hypothesis.
+
+### 30-Item Multi-Session Smart-Writer Comparison
+
+On May 9, 2026, the next scale step used the first 30 `multi-session` items in
+two isolated runs over the same logical slice:
+
+```text
+baseline:
+  artifacts: /tmp/lme-ms30-baseline-artifacts-20260509
+  run:       /tmp/lme-ms30-baseline-run-20260509
+  reader:    /tmp/lme-ms30-baseline-reader-20260509
+  run_id:    lme-ms30-baseline-20260509-a
+
+smart writer:
+  artifacts: /tmp/lme-ms30-smart-writer-artifacts-20260509
+  run:       /tmp/lme-ms30-smart-writer-run-20260509
+  reader:    /tmp/lme-ms30-smart-writer-reader-20260509
+  run_id:    lme-ms30-smart-writer-20260509-a
+```
+
+Both runs used the public TLS kernel endpoint
+`https://rehydration-kernel.underpassai.com`, `gpt-4o-2024-08-06` for the
+reader, and the official LongMemEval `gpt-4o` evaluator. This is still a
+writer-quality comparison over candidate relations already present in the
+artifacts, not a blind evidence-discovery score.
+
+| Metric | Baseline | Smart writer |
+| --- | ---: | ---: |
+| Items | 30 | 30 |
+| Expected evidence turns | 104 | 104 |
+| Full evidence hits | 30 / 30 | 30 / 30 |
+| Writer LLM calls | 0 | 104 |
+| Writer valid outputs | 0 | 104 |
+| Writer deterministic fallbacks | 0 | 0 |
+| Writer rich relations | 0 | 104 |
+| Reader graph rich relations | 0 | 98 |
+| Reader lexical hits | 19 / 30 | 19 / 30 |
+| Reader prompt tokens | 32,393 | 44,845 |
+| Official accuracy | 21 / 30, `0.7000` | 22 / 30, `0.7333` |
+
+Smart-writer relation distribution:
+
+```text
+91 component_of / evidential
+ 6 supports / evidential
+ 4 excluded_from / constraint
+ 2 contributes_to / evidential
+ 1 matches_requirement / constraint
+```
+
+Outcome deltas:
+
+```text
+baseline false -> smart true:
+  0a995998: clothing pickup/return count, 2 items -> 3 items
+  gpt4_a56e767c: movie festivals, 3 -> 4
+  7024f17c: jogging/yoga hours, 2.5 hours -> 0.5 hours
+  2ce6a0f2: art-related events, UNKNOWN -> 4
+
+baseline true -> smart false:
+  gpt4_59c863d7: model kits, 5 -> 6
+  gpt4_d84a3211: bike expenses, $185 -> $225
+  gpt4_15e38248: furniture pieces, 4 pieces -> 5 pieces
+```
+
+The 30-item slice confirms that rich writer relations are visible to the reader
+and can improve some aggregate answers, but they do not yet solve aggregate
+operator correctness. The remaining failures still concentrate around counting,
+deduplication, currency inclusion/exclusion, and average calculation. The
+official judge also appears to mark at least one compact correct numeric answer
+as false (`gpt4_2f8be40d`, answer says three weddings and the hypothesis is
+`3`), so failure analysis should use both official labels and artifact-level
+inspection.
+
+### 30-Item Multi-Session Gemma 4 31B Reader Check
+
+The same smart-writer artifacts were read again through the cluster-hosted
+Gemma 4 31B vLLM endpoint exposed at `https://llm.underpassai.com` with mTLS.
+The kernel run and recovered evidence were unchanged; only the external reader
+model changed.
+
+```text
+reader:   /tmp/lme-ms30-smart-writer-reader-gemma4-20260509
+model:    google/gemma-4-31B-it
+endpoint: https://llm.underpassai.com/v1/chat/completions
+judge:    official LongMemEval gpt-4o evaluator
+```
+
+| Metric | GPT-4o reader | Gemma 4 31B reader |
+| --- | ---: | ---: |
+| Items | 30 | 30 |
+| Full evidence hits | 30 / 30 | 30 / 30 |
+| Reader graph rich relations | 98 | 98 |
+| Reader lexical hits | 19 / 30 | 20 / 30 |
+| Reader prompt tokens | 44,845 | 53,932 |
+| Reader completion tokens | not recorded here | 96 |
+| Official accuracy | 22 / 30, `0.7333` | 25 / 30, `0.8333` |
+
+Gemma fixed five answers that `gpt-4o` missed:
+
+```text
+gpt4_59c863d7: model kits, 6 -> 5
+gpt4_d84a3211: bike expenses, $225 -> $185
+gpt4_f2262a51: doctor count, 4 -> 3
+gpt4_15e38248: furniture pieces, 5 pieces -> 4
+gpt4_5501fe77: follower platform, Twitter -> TikTok
+```
+
+Gemma regressed two answers that `gpt-4o` got right:
+
+```text
+0a995998: clothing pickup/return count, 3 items -> 2 items
+46a3abf7: aquarium tank count, 3 -> UNKNOWN
+```
+
+This is not yet a full official LongMemEval score; it is a model-swap check on
+the same 30-item oracle multi-session slice. It is still useful: the kernel
+evidence substrate is model-independent, and a local/open reader can outperform
+the previous hosted reader on aggregate interpretation when the same recovered
+context and rich relations are provided.
+
+### Next Serious Run Plan
+
+The next publishable LongMemEval run should be treated as an official-style
+secondary regression, not as the primary product benchmark:
+
+- dataset: `longmemeval_s_cleaned.json`;
+- sample: 500 questions;
+- context construction: real kernel retrieval over the available history;
+- forbidden fields: do not use `has_answer`, `answer_session_ids`, or gold
+  answer metadata to build reader context;
+- reader: document the exact hosted or GPU-backed model;
+- judge: document the exact judge model and evaluator command;
+- artifacts: preserve generated KMP artifacts, run output, reader output,
+  official evaluator output, and failure analysis.
+
+RunPod is the preferred external GPU path for the next long-context reader
+validation because local 4x RTX 3090 capacity is not enough for the target
+Gemma long-context configuration. The first cloud step should be a short smoke
+that validates model loading, context length, tokens/s, TLS/API plumbing, and
+cost before running the full 500-question pass.

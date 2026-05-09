@@ -30,6 +30,9 @@ pub use value_objects::{
     DimensionSelectionMode, MemoryDimensionIdentity, Provenance, Role, SourceKind,
     TemporalCoordinate, TemporalCursor, TemporalDirection, TemporalWindow,
 };
+pub use value_objects::{
+    KnownMemoryRelationType, MemoryRelationQuality, MemoryRelationSpec, MemoryRelationType,
+};
 pub use value_objects::{RehydrationMode, ResolutionTier, TierBudget};
 pub use value_objects::{RelationExplanation, RelationSemanticClass};
 

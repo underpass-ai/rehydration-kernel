@@ -78,7 +78,13 @@ KMP exposes nine memory moves.
 | `trace` | `kernel_trace` | `Trace` | Not recommended for async MVP | Return the relationship path and evidence trail behind an answer. |
 | `inspect` | `kernel_inspect` | `Inspect` | Not recommended for async MVP | Show typed graph/detail/link/raw audit state for audits and debugging. |
 
-Only the ingest aliases are implemented in MCP live mode during migration:
+Current live MCP mode exposes the canonical KMP tools above and routes them to
+`KernelMemoryService`. MCP is a transport adapter over the typed API; it must
+fail clearly if the service is unavailable and must not fall back to
+`ContextQueryService` or `ContextCommandService` compatibility behavior.
+
+The ingest compatibility aliases remain available, but they are not separate
+product moves:
 
 | Alias | Canonical move |
 |:------|:---------------|

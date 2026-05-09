@@ -7,6 +7,7 @@ pub mod provenance;
 pub mod rehydration_mode;
 pub mod relation_explanation;
 pub mod relation_semantic_class;
+pub mod relation_type;
 pub mod resolution_tier;
 pub mod role;
 pub mod source_kind;
@@ -22,6 +23,9 @@ pub use provenance::Provenance;
 pub use rehydration_mode::RehydrationMode;
 pub use relation_explanation::RelationExplanation;
 pub use relation_semantic_class::RelationSemanticClass;
+pub use relation_type::{
+    KnownMemoryRelationType, MemoryRelationQuality, MemoryRelationSpec, MemoryRelationType,
+};
 pub use resolution_tier::{ResolutionTier, TierBudget};
 pub use role::Role;
 pub use source_kind::SourceKind;

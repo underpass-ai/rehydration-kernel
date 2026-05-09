@@ -2,7 +2,22 @@
 
 Date: 2026-05-06
 
-Status: P1 implementation document.
+Status: first MCP writer helper implemented; P1 hardening remains active.
+
+Implementation checkpoint, 2026-05-09:
+
+- `kernel_write_memory` is exposed by the stdio MCP server.
+- The helper plans writer-friendly memory, validates relation vocabulary and
+  relation quality, returns a canonical `kernel_ingest` preview in dry-run, and
+  commits by forwarding the generated ingest payload through the same backend
+  path as `kernel_ingest`.
+- Strict mode rejects vague relations, missing evidence/why, missing
+  `scope.process`, missing `current.evidence`, self-links, and rich external
+  relations without prior read context.
+- Relation quality diagnostics and metrics are returned in dry-run and commit
+  responses.
+- This is still an MCP/helper surface above KMP. The canonical write contract
+  remains `KernelMemoryService.Ingest` / `kernel_ingest`.
 
 ## Problem
 
@@ -292,6 +307,11 @@ the first writer helper.
 
 ## Relation Vocabulary
 
+The canonical relation vocabulary is a core kernel contract implemented in
+`rehydration-domain` as relation type/value-object semantics. Adapters,
+benchmarks, MCP, and readers must consume that contract instead of carrying
+their own ad hoc relation lists.
+
 P0 canonical relation names:
 
 | Relation | Class | Meaning |
@@ -312,6 +332,14 @@ P0 canonical relation names:
 | `excluded_from` | `constraint` | A seen value is intentionally excluded. |
 | `checked_against` | `constraint` | A derived value is compared to a rule/budget/window. |
 | `derived_from` | `evidential` | A result was computed from operands/evidence. |
+| `restates` | `evidential` | A later node repeats the same fact/value and should not be double-counted. |
+| `corrects` | `evidential` | A later node corrects an earlier fact/value. |
+| `component_of` | `evidential` | A value is one component of a larger total or set. |
+| `total_of` | `evidential` | A value is an aggregate total for component values. |
+| `same_event_as` | `evidential` | Two refs describe the same event. |
+| `same_entity_as` | `evidential` | Two refs describe the same entity. |
+| `qualifies_as` | `evidential` | A ref qualifies as a specific semantic item. |
+| `matches_requirement` | `constraint` | A ref satisfies a query or requirement predicate. |
 
 Relations outside this vocabulary are rejected by `kernel_write_memory` in
 strict mode unless the caller explicitly opts into an extension namespace. The
@@ -496,6 +524,8 @@ Then a reader/plugin can select operands by graph relation:
 contributes_to -> derived_value
 excluded_from  -> ignored value with proof
 checked_against -> compare derived value with constraint
+restates / same_event_as -> duplicate evidence to count once
+corrects / supersedes -> choose the latest corrected value
 ```
 
 This keeps arithmetic outside core while making operand selection auditable.
@@ -612,49 +642,49 @@ construct the full `kernel_ingest` payload.
 
 P0.1:
 
-- add this planning document;
-- link it from the documentation index;
-- document that `kernel_ingest` remains canonical.
+- [x] add this planning document;
+- [x] link it from the documentation index;
+- [x] document that `kernel_ingest` remains canonical.
 
 P0.2:
 
-- add `kernel_write_memory` to MCP `tools/list`;
-- implement a writer planner module in `rehydration-mcp`;
-- support `dry_run=true`;
-- reject vague or unsupported relation names in strict mode;
-- fail fast when the writer cannot justify at least one target relation for the
+- [x] add `kernel_write_memory` to MCP `tools/list`;
+- [x] implement a writer planner module in `rehydration-mcp`;
+- [x] support `dry_run=true`;
+- [x] reject vague or unsupported relation names in strict mode;
+- [x] fail fast when the writer cannot justify at least one target relation for the
   next node;
-- allow explicit anemic fallback relations (`follows`, `answers`,
+- [x] allow explicit anemic fallback relations (`follows`, `answers`,
   `uses_background`) when a rich relation is not justified;
-- classify every relation as `rich`, `anemic`, `structural`, `invalid`, or
+- [x] classify every relation as `rich`, `anemic`, `structural`, `invalid`, or
   `suspect` and return relation quality metrics in the write response;
-- generate the canonical `kernel_ingest` payload;
-- validate fail-fast before forwarding;
-- return generated refs, relations, preview, and suggested reads.
+- [x] generate the canonical `kernel_ingest` payload;
+- [x] validate fail-fast before forwarding;
+- [x] return generated refs, relations, preview, and suggested reads.
 
 P0.3:
 
-- when `dry_run=false`, call the same backend path as `kernel_ingest`;
-- preserve backend independence: fixture and gRPC both use the same planner;
-- add tests for dry-run, invalid relation, missing process scope, and stable
+- [x] when `dry_run=false`, call the same backend path as `kernel_ingest`;
+- [x] preserve backend independence: fixture and gRPC both use the same planner;
+- [x] add tests for dry-run, invalid relation, missing process scope, and stable
   idempotency.
 
 P1:
 
-- enforce `read_context` evidence for strict rich external relations;
-- return `prior_context_sources` per relation and prior-context coverage
+- [x] enforce `read_context` evidence for strict rich external relations;
+- [x] return `prior_context_sources` per relation and prior-context coverage
   metrics;
-- add specialized helper aliases for common writer tasks;
-- add schema-constrained LLM writer prompts/templates outside core
+- [ ] add specialized helper aliases for common writer tasks;
+- [x] add schema-constrained LLM writer prompts/templates outside core
   (`api/examples/inference-prompts/kernel-write-memory.txt` and
   `kernel-write-memory.request.json`);
-- add broader read-before-write writer policies across dimensions and temporal
+- [ ] add broader read-before-write writer policies across dimensions and temporal
   windows;
-- add graph-quality metrics for process elongation and explanatory relation
+- [ ] add graph-quality metrics for process elongation and explanatory relation
   density;
-- add optional relation-quality judge/plugin to audit whether relation evidence
+- [ ] add optional relation-quality judge/plugin to audit whether relation evidence
   really supports both endpoints;
-- run MemoryArena with writer-first ingestion and compare trace quality against
+- [x] run MemoryArena with writer-first ingestion and compare trace quality against
   the flat adapter.
 
 ## Success Criteria

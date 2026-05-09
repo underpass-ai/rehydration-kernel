@@ -40,6 +40,11 @@ an integrating product:
 Historical closeout and compatibility planning material belongs in
 [`docs/archived/`](../archived/README.md).
 
+For the current documentation authority map, see
+[`docs/documentation-catalog.md`](../documentation-catalog.md). If a migration
+note conflicts with `beta-status.md`, the product roadmap, or the KMP API docs,
+the migration note is stale until revalidated.
+
 Phase 0 status:
 
 - complete

@@ -2,6 +2,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::time::{Duration, Instant};
 
+use rehydration_domain::{
+    KnownMemoryRelationType, MemoryRelationQuality, MemoryRelationType, RelationSemanticClass,
+};
 use rehydration_mcp::KernelMcpServer;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -880,14 +883,18 @@ fn writer_prompt(input: &EntryWriteInput, read_context: &ReadContextPlan) -> Str
         .into_iter()
         .collect::<Vec<_>>()
         .join("\n- ");
+    let allowed_rich_relations = writer_relation_names_for_quality(MemoryRelationQuality::Rich);
+    let allowed_fallback_relations =
+        writer_relation_names_for_quality(MemoryRelationQuality::Anemic);
+    let class_requirements = writer_relation_class_requirements();
 
     format!(
         "You are an Underpass Kernel writer. Choose auditable connect_to relations for one new memory entry.\n\
          Return only JSON with this shape: {{\"connect_to\":[{{\"ref\":\"...\",\"rel\":\"...\",\"class\":\"...\",\"why\":\"...\",\"evidence\":\"...\",\"confidence\":\"high|medium|low|unknown\"}}]}}.\n\
          Use only refs from the candidate list. Never invent refs.\n\
-         Allowed rich relations: depends_on, chosen_because, semantic_delta_from, updates_state, supports, supersedes, contradicts, satisfies_constraint, violates_constraint, contributes_to, excluded_from, checked_against, derived_from, confirms_selection.\n\
-         Allowed fallback relations: follows, answers, uses_background.\n\
-         Required relation classes: depends_on=causal; follows=procedural; answers=evidential; uses_background=evidential; supports/supersedes/contradicts/contributes_to/derived_from=evidential; satisfies_constraint/violates_constraint/excluded_from/checked_against=constraint; chosen_because=causal or motivational; confirms_selection=evidential or motivational.\n\
+         Allowed rich relations: {allowed_rich_relations}.\n\
+         Allowed fallback relations: {allowed_fallback_relations}.\n\
+         Required relation classes: {class_requirements}.\n\
          Use a rich relation only when the read context makes the semantic dependency specific. If unsure, use the candidate's original fallback relation.\n\
          If the current entry explicitly uses a value, clue, decision, or feedback stored in a candidate target, prefer depends_on with class causal over follows.\n\
          Every non-structural relation must include a concrete why and evidence from the current text or observed target.\n\n\
@@ -896,6 +903,34 @@ fn writer_prompt(input: &EntryWriteInput, read_context: &ReadContextPlan) -> Str
          Refs observed before writing:\n- {}\n",
         input.entry_ref, input.entry_kind, input.text, candidates, observed_refs
     )
+}
+
+fn writer_relation_names_for_quality(quality: MemoryRelationQuality) -> String {
+    KnownMemoryRelationType::writer_relation_types()
+        .iter()
+        .filter_map(|relation_type| relation_type.writer_spec())
+        .filter(|spec| spec.quality() == quality)
+        .map(|spec| spec.relation_type().as_str())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn writer_relation_class_requirements() -> String {
+    KnownMemoryRelationType::writer_relation_types()
+        .iter()
+        .filter_map(|relation_type| relation_type.writer_spec())
+        .filter(|spec| spec.quality() != MemoryRelationQuality::Structural)
+        .map(|spec| {
+            let classes = spec
+                .allowed_classes()
+                .iter()
+                .map(RelationSemanticClass::as_str)
+                .collect::<Vec<_>>()
+                .join(" or ");
+            format!("{}={classes}", spec.relation_type().as_str())
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 fn parse_llm_connect_to(
@@ -922,12 +957,12 @@ fn parse_llm_connect_to(
             )
             .into());
         }
-        validate_writer_relation_shape(&relation)?;
+        let relation_type = validate_writer_relation_shape(&relation)?;
         let why = compact_memory_text(&relation.why, MAX_RELATION_WHY_CHARS);
         let evidence = compact_memory_text(&relation.evidence, MAX_RELATION_EVIDENCE_CHARS);
         connect_to.push(json!({
             "ref": relation.r#ref,
-            "rel": relation.rel,
+            "rel": relation_type.as_str(),
             "class": relation.class,
             "why": why,
             "evidence": evidence,
@@ -938,38 +973,15 @@ fn parse_llm_connect_to(
     Ok(connect_to)
 }
 
-fn validate_writer_relation_shape(relation: &LlmConnectTo) -> Result<(), String> {
-    let allowed_rel = matches!(
-        relation.rel.as_str(),
-        "follows"
-            | "answers"
-            | "uses_background"
-            | "depends_on"
-            | "chosen_because"
-            | "semantic_delta_from"
-            | "updates_state"
-            | "supports"
-            | "supersedes"
-            | "contradicts"
-            | "satisfies_constraint"
-            | "violates_constraint"
-            | "contributes_to"
-            | "excluded_from"
-            | "checked_against"
-            | "derived_from"
-            | "confirms_selection"
-    );
-    if !allowed_rel {
-        return Err(format!("unsupported writer relation `{}`", relation.rel));
-    }
-    let allowed_class = matches!(
-        relation.class.as_str(),
-        "causal" | "motivational" | "procedural" | "evidential" | "constraint"
-    );
-    if !allowed_class {
-        return Err(format!("unsupported writer class `{}`", relation.class));
-    }
-    if !relation_class_allowed(&relation.rel, &relation.class) {
+fn validate_writer_relation_shape(relation: &LlmConnectTo) -> Result<MemoryRelationType, String> {
+    let relation_type = MemoryRelationType::new(&relation.rel)
+        .map_err(|error| format!("unsupported writer relation `{}`: {error}", relation.rel))?;
+    let spec = relation_type
+        .writer_spec()
+        .ok_or_else(|| format!("unsupported writer relation `{}`", relation.rel))?;
+    let semantic_class = RelationSemanticClass::parse(&relation.class)
+        .map_err(|_| format!("unsupported writer class `{}`", relation.class))?;
+    if !spec.allows_class(&semantic_class) {
         return Err(format!(
             "writer relation `{}` cannot use class `{}`",
             relation.rel, relation.class
@@ -978,22 +990,7 @@ fn validate_writer_relation_shape(relation: &LlmConnectTo) -> Result<(), String>
     if relation.why.trim().is_empty() || relation.evidence.trim().is_empty() {
         return Err("writer relation requires why and evidence".to_string());
     }
-    Ok(())
-}
-
-fn relation_class_allowed(rel: &str, semantic_class: &str) -> bool {
-    match rel {
-        "follows" => semantic_class == "procedural",
-        "answers" | "uses_background" | "supports" | "supersedes" | "contradicts"
-        | "contributes_to" | "derived_from" => semantic_class == "evidential",
-        "depends_on" | "semantic_delta_from" | "updates_state" => semantic_class == "causal",
-        "chosen_because" => matches!(semantic_class, "causal" | "motivational"),
-        "confirms_selection" => matches!(semantic_class, "evidential" | "motivational"),
-        "satisfies_constraint" | "violates_constraint" | "excluded_from" | "checked_against" => {
-            semantic_class == "constraint"
-        }
-        _ => false,
-    }
+    Ok(relation_type)
 }
 
 fn fallback_after_rejected_llm_plan(

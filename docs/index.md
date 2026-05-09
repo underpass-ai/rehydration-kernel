@@ -8,6 +8,10 @@ Current integration stance:
 - The stable kernel boundary remains typed gRPC plus async projection subjects.
 - Kernel Memory Protocol is implemented API-first over domain/application/gRPC;
   MCP is an adapter over that API, not the owner of memory behavior.
+- The active product roadmap is
+  [`product/kernel-roadmap-milestones.md`](product/kernel-roadmap-milestones.md).
+- Documentation authority and historical/obsolete areas are cataloged in
+  [`documentation-catalog.md`](documentation-catalog.md).
 - The dedicated `repair-judge` is an experimental stabilization helper for model extraction. It is not part of the stable kernel contract.
 
 ## Guides
@@ -15,6 +19,7 @@ Current integration stance:
 | Document | Content |
 |:---------|:--------|
 | [usage-guide.md](usage-guide.md) | Getting started: 3 steps to graph-aware LLM context |
+| [documentation-catalog.md](documentation-catalog.md) | Authoritative docs, historical docs, active roadmap, and documentation hygiene rules |
 | [graph-batch-quickstart.md](graph-batch-quickstart.md) | Fastest path for model-driven graph ingestion |
 | [beta-status.md](beta-status.md) | v1beta1 maturity matrix, path to v1, known limitations |
 | [security-model.md](security-model.md) | Transport security, threat model, TLS configuration |
@@ -55,22 +60,20 @@ Six earlier decisions (command/query split, projection model, TLS, compatibility
 removal, multi-resolution tiers) are documented in PRs but not yet written as
 formal ADRs. See [adr/README.md](adr/README.md) for the source PRs.
 
-## Integration
+## Current Integration Contracts
 
 | Document | Content |
 |:---------|:--------|
 | [kernel-node-centric-integration-contract.md](migration/kernel-node-centric-integration-contract.md) | Public gRPC + async contract for consumers |
 | [kernel-runtime-integration-reference.md](migration/kernel-runtime-integration-reference.md) | Recommended consumer runtime shape |
-| [pir-kernel-real-integration-plan.md](migration/pir-kernel-real-integration-plan.md) | Execution plan and slice order before wiring the real PIR runtime |
-| [pir-kernel-live-context-consumption-evidence.md](migration/pir-kernel-live-context-consumption-evidence.md) | Live two-wave PIR evidence: publish, rehydrate, and answer from rendered context |
-| [pir-kernel-graph-inspection-smoke-reranker.md](migration/pir-kernel-graph-inspection-smoke-reranker.md) | Full kernel graph dump for one live PIR incident, with node details, diagram, and analysis |
-| [pir-kernel-graph-inspection-smoke-late-waves.md](migration/pir-kernel-graph-inspection-smoke-late-waves.md) | Full kernel graph dump for one live PIR incident after late operational waves and truthful post-stage root projection |
-| [pir-first-event-driven-agent-plan.md](migration/pir-first-event-driven-agent-plan.md) | Detailed next-session plan for the first event-driven PIR agent with runtime, local graph reads, bounded iterations, and escalation on unresolved tasks |
-| [pir-kernel-sequential-graph-shape-proposal.md](migration/pir-kernel-sequential-graph-shape-proposal.md) | Proposed shift from incident-star graphs to a finding→decision→task→verification semantic spine |
-| [pir-kernel-relation-materialized-rfc.md](migration/pir-kernel-relation-materialized-rfc.md) | Proposed additive async subject for relation-only materialization across PIR waves |
-| [pir-kernel-blind-structural-evidence.md](migration/pir-kernel-blind-structural-evidence.md) | Live blind-structure evidence: weaker fixture, scorecard before/after reranking |
-| [pir-kernel-blind-context-consumption-evidence.md](migration/pir-kernel-blind-context-consumption-evidence.md) | Live blind-consumption evidence: weaker graph, kernel rehydration, and correct downstream answer |
 | [graph-batch-ingestion-api.md](graph-batch-ingestion-api.md) | Experimental ingress API proposal over GraphBatch |
+
+## Historical Migration References
+
+PIR and fix-planning migration notes are retained for traceability but are not
+the current kernel contract. Use [migration/README.md](migration/README.md) and
+[documentation-catalog.md](documentation-catalog.md) to decide whether a note is
+still relevant before applying it to current work.
 
 ## Research
 
