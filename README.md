@@ -1,67 +1,79 @@
-# Rehydration Kernel
+# Underpass Kernel
 
-Node-centric context rehydration for agentic systems.
+Kernel Memory Protocol for navigable, temporal, multidimensional AI agent
+memory.
 
 **New here?** Start with the [Usage Guide](./docs/usage-guide.md) — 3 steps
 to give your AI agent graph-aware context with sequence diagrams and examples.
 
 ## What This Repo Is
 
-`rehydration-kernel` is a generic context engine that turns knowledge graphs
-into LLM-ready text. It is built around four concepts:
+Underpass Kernel implements Kernel Memory Protocol (KMP): an API-first memory
+layer for agents, tools, and humans that need to query, traverse, inspect, and
+audit process memory.
 
-- **Nodes** — entities in the graph (incidents, decisions, tasks, artifacts). Each
-  carries kind, status, summary, and optional provenance (who said it, when)
-- **Relationships** — the core signal. Each edge carries a **semantic class**
-  (causal, motivational, evidential, constraint, procedural, structural) plus
-  **rationale** (why it exists), **method** (how), **decision_id**, **caused_by_node_id**,
-  and **sequence** (step order). This explanatory metadata is what lets the LLM
-  reason about *why things happened*, not just *what is connected to what*
-- **Extended node detail** — rich per-node content (logs, configs, error traces)
-  persisted in Valkey, loaded in batch (MGET). Separated from the graph to keep
-  Neo4j lean and detail updates fast without graph writes
-- **Salience ordering** — relationships are ranked by explanatory weight
-  (causal > motivational > evidential > constraint > procedural > structural).
-  Under token pressure, the kernel preserves causal chains and drops structural noise
+The kernel models memory around six ideas:
+
+- **About scopes** — every memory belongs to the case, incident, task, user, or
+  process it is about.
+- **Dimensions** — one about can contain several dimensions: agent, session,
+  attempt, subsystem, phase, artifact, or any domain-specific axis.
+- **Temporal movement** — memory can be read as it was known at a moment, moved
+  forward or backward, or traversed around nearby evidence.
+- **Typed relations** — edges carry semantic class, relation type, rationale,
+  evidence, and provenance instead of being anonymous links.
+- **Inspectable evidence** — clients can ask for context, paths, nearby memory,
+  node detail, and relation proof without reading raw transcripts.
+- **Observable execution** — writes, projections, traces, scopes, relation
+  quality, and tool behavior are measurable and auditable.
+
+KMP is exposed through the typed `KernelMemoryService` gRPC API. MCP is an
+adapter over the same semantics so LLMs can operate memory tools without owning
+the memory model.
 
 **What the kernel is NOT:**
 
-- Not an LLM — it does not generate text, only structures and renders context
-- Not a RAG system — it does not do similarity search; it traverses a typed graph
-- Not a vector database — relationships have semantic classes and rationale, not embeddings
-- Not tied to any model — works with GPT, Claude, Llama, Qwen, or any LLM
+- Not an LLM — it validates, stores, traverses, and renders memory.
+- Not a benchmark solver — readers and plugins interpret recovered evidence.
+- Not hidden agent state — memory is queryable through stable APIs.
+- Not a vector database replacement — retrieval is graph/temporal/proof oriented.
+- Not tied to one model — GPT, Claude, Qwen, Gemma, local models, and humans can
+  all use the same protocol.
 
 ## Why This Matters
 
-**Structured context for small models.** A small model with causal chains and
-rationale metadata can perform bounded graph tasks that it fails without structure.
-The kernel provides the *why*, not just the *what*.
+Agents do not only need larger prompts. They need memory that can be navigated.
 
-**Auditable reasoning.** The kernel knows what rationale exists in the graph
-(`causal_density > 0`). Consumers can cross-reference the LLM's response against
-this ground truth to detect when reasoning is fabricated rather than preserved.
-Without chain-of-thought, 97% of structural responses are fabricated with high
-confidence. With CoT enabled, 0% — the kernel's ground truth makes fabrication
-deterministically detectable without a second model
-(see [Core Thesis](./docs/research/ROADMAP_MASTER.md#core-thesis-directional-evidence-2026-03-28)).
+For real agentic work, useful questions look like this:
+
+- What was known when this decision was made?
+- Which agent, session, or attempt introduced this assumption?
+- What changed later?
+- Which relation explains why one step followed another?
+- Which path failed, and which path became the final answer?
+- Can a human inspect the same evidence without reading the raw transcript?
 
 ```mermaid
 graph LR
-    A[Agent / LLM app] -- gRPC --> K[Rehydration Kernel]
-    K -. rendered context .-> A
+    A[Agent / LLM / Human tool] -- gRPC / MCP --> K[Underpass Kernel<br/>KMP]
+    K -. context / trace / inspect .-> A
 
-    K --> N4[(Neo4j)]
-    K --> VK[(Valkey)]
-    K --> NT[(NATS)]
+    K --> GP[(Graph persistence)]
+    K --> KV[(Key-value persistence)]
+    K --> ES[(Event persistence)]
 
-    K -. metrics .-> G[Grafana]
-    K -. logs .-> G
+    K -. metrics / logs / traces .-> O[Observability]
 ```
 
-The kernel does not own product-specific nouns. Integrating products are
-expected to map their own domain language to this graph model at the edge.
-The kernel also assumes its own infrastructure dependencies are present:
-Neo4j, Valkey, and NATS are required runtime components, not optional features.
+The current deployment adapters use Neo4j for graph persistence, Valkey for
+key-value persistence, and NATS JetStream for event persistence/streaming. The
+architecture keeps those choices behind ports so the protocol semantics can
+move toward backend-independent conformance over time.
+
+Current operator-model work is tracked in
+[`docs/product/kernel-tool-operator-model-plan.md`](./docs/product/kernel-tool-operator-model-plan.md).
+The Hugging Face publication gate and draft model/dataset cards are tracked in
+[`docs/product/kernel-tool-operator-publication-plan.md`](./docs/product/kernel-tool-operator-publication-plan.md).
 
 ## Current Status
 
