@@ -1,8 +1,15 @@
 # Kernel Tool Operator Model Plan
 
-Status: P1 prepared for the next execution slice.
+Status: P1.1 trajectory exporter, P1.2/P1.3 offline evaluator/deterministic
+baseline, P1.4 generalist LLM baseline CLI, and P1.5 SFT training are
+implemented. The row-split LoRA run remains only a smoke test. The preferred
+result is now the V5 candidate-detail run: grouped task split, synthetic
+model-facing refs, zero dropped non-visible target refs, structural writer
+candidate details, and evaluation against anonymized model trajectories. It
+reached 1.000 exact action accuracy, 1.000 primary-ref accuracy, and zero
+invalid or unbounded actions.
 
-Date: 2026-05-08.
+Date: 2026-05-11.
 
 ## Goal
 
@@ -219,6 +226,17 @@ Proposed binary:
 kernel_operator_trajectory_export
 ```
 
+Implemented binary:
+
+```text
+cargo run -p rehydration-testkit --bin kernel_operator_trajectory_export -- \
+  --run <memoryarena-run-dir> \
+  --output <output-dir> \
+  [--include-writer-reads] \
+  [--expected-run-id <id>] \
+  [--force]
+```
+
 Inputs:
 
 - MemoryArena runner output directory;
@@ -236,16 +254,84 @@ Outputs:
 
 Exit criteria:
 
-- exporter is deterministic;
-- exporter fails fast on mixed runs;
-- no secret-looking values are emitted;
-- every target tool call has bounded arguments;
-- failed and successful steps are labelled separately.
+- [x] exporter is deterministic;
+- [x] exporter fails fast on mixed runs;
+- [x] no secret-looking values are emitted;
+- [x] every target tool call has bounded arguments;
+- [x] failed and successful steps are labelled separately.
+
+Implemented outputs:
+
+- `trajectories.jsonl`
+- `summary.json`
+- `failures.jsonl`
+- `redaction_report.json`
+
+The model-facing trajectory intentionally excludes benchmark gold answers,
+`ask_answer`, raw `ask_content`, API keys, credentials, and raw prompt dumps.
+Each item is a single decision step:
+
+```text
+visible_state -> target_action
+```
+
+The first exported action space is read/navigation:
+
+- `kernel_near`
+- `kernel_inspect`
+- `kernel_trace`
+- `stop`
+
+`--include-writer-reads` additionally exports read-before-write tool calls from
+the smart writer as `write_context_read` mode, but it does not yet train the
+model to propose `kernel_write_memory` relations.
+
+Real export checks:
+
+| Source run | Mode | Trajectories | Tool calls | Stops | Failures | Redaction findings |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| MemoryArena 50-task smart-writer run | read | 1,426 | 1,057 | 369 | 0 | 0 |
+| MemoryArena 50-task smart-writer run | read + writer reads | 2,802 | 2,433 | 369 | 0 | 0 |
+| MemoryArena 100-task smart-writer run | read | 2,912 | 2,159 | 753 | 0 | 0 |
+| MemoryArena 100-task smart-writer run | read + writer reads with candidates | 5,724 | 4,971 | 753 | 0 | 0 |
+
+The first 100-task read-only export produced:
+
+```text
+kernel_near    753
+kernel_inspect 753
+kernel_trace   653
+stop           753
+```
+
+This gives enough clean data to implement P1.2 without touching kernel core.
 
 ### P1.2 Operator Evaluator
 
 Add an offline evaluator that scores a predicted tool action against the
 recorded target action and final trajectory quality.
+
+Implemented binary:
+
+```text
+cargo run -p rehydration-testkit --bin kernel_operator_policy_eval -- \
+  --trajectories <trajectories.jsonl> \
+  [--predictions <predictions.jsonl>] \
+  [--baseline deterministic|oracle] \
+  [--output <summary.json>]
+```
+
+Prediction rows may use either:
+
+```json
+{"step_id": "...", "action": {"type": "tool_call", "tool": "...", "arguments": {}}}
+```
+
+or:
+
+```json
+{"step_id": "...", "target_action": {"type": "stop", "reason": "..."}}
+```
 
 Metrics:
 
@@ -264,10 +350,35 @@ Metrics:
 
 Exit criteria:
 
-- a generalist LLM baseline and a deterministic baseline can be compared;
-- evaluation does not require access to expected benchmark answers;
-- MemoryArena task `11` is classified as a reader/candidate failure, not an
+- [x] a generalist LLM baseline and a deterministic baseline can be compared;
+- [x] evaluation does not require access to expected benchmark answers;
+- [ ] MemoryArena task `11` is classified as a reader/candidate failure, not an
   operator failure, when navigation/proof is clean.
+
+Current evaluator metrics:
+
+- missing predictions;
+- invalid predictions;
+- unbounded tool calls;
+- action type accuracy;
+- tool accuracy over target tool calls;
+- primary ref accuracy over target tool calls;
+- scope accuracy over target tool calls;
+- stop accuracy over target stop actions;
+- exact action accuracy.
+
+Real deterministic baseline checks:
+
+| Source trajectories | Tool accuracy | Ref accuracy | Scope accuracy | Stop accuracy | Invalid | Unbounded |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| MemoryArena 50-task read trajectories | 1.000 | 1.000 | 1.000 | 1.000 | 0 | 0 |
+| MemoryArena 100-task read trajectories | 1.000 | 1.000 | 1.000 | 1.000 | 0 | 0 |
+
+The exact JSON action score is lower, about `0.517`, because the deterministic
+baseline intentionally reconstructs equivalent bounded actions and stops rather
+than copying auxiliary `goal` text or exact `final_refs` from the recorded
+target. For model comparison, tool/ref/scope/stop validity is the primary P1
+signal.
 
 ### P1.3 Deterministic Baseline
 
@@ -280,6 +391,10 @@ Implement a simple rule baseline before training:
 
 This baseline is intentionally modest. It gives the operator model something
 concrete to beat.
+
+Implemented inside `kernel_operator_policy_eval` as `--baseline deterministic`.
+It is not a trained model. It exists to provide a stable floor for future
+generalist and small-model comparisons.
 
 ### P1.4 Generalist LLM Baseline
 
@@ -300,6 +415,65 @@ The prompt must include:
 This baseline measures whether a small operator can reduce tool calls, context
 usage, invalid calls, and latency while preserving ref quality.
 
+Implemented binary:
+
+```text
+cargo run -p rehydration-testkit --bin kernel_operator_llm_baseline -- \
+  --trajectories <trajectory-dir>/trajectories.jsonl \
+  --output <output-dir> \
+  --endpoint <openai-compatible-chat-completions-url> \
+  --model <model> \
+  [--provider openai|openai-new|anthropic] \
+  [--api-key-env LLM_API_KEY] \
+  [--limit n] \
+  [--offset n] \
+  [--max-refs n] \
+  [--force]
+```
+
+Outputs:
+
+- `predictions.jsonl`: clean evaluator input with only `step_id` and `action`;
+- `llm_results.jsonl`: raw model response, token counts, latency, and parsed
+  action for audit;
+- `failures.jsonl`: LLM call failures or rejected actions;
+- `summary.json`: selected trajectory count, prediction count, invalid count,
+  boundedness count, token usage, latency, and action distribution.
+
+Guardrails:
+
+- no `target_action`, `observed_outcome`, benchmark gold answer, or hidden raw
+  memory is included in the prompt;
+- visible refs are capped with `--max-refs`;
+- rejected actions do not enter `predictions.jsonl`;
+- tool calls must be bounded;
+- tool names must be present in the trajectory action space;
+- tool refs and stop refs must already be visible in `current_ref`,
+  `trace_target_ref`, `known_refs`, or `last_observed_refs`;
+- `kernel_inspect.include.raw` must be `false`.
+
+Evaluation command after a run:
+
+```text
+cargo run -p rehydration-testkit --bin kernel_operator_policy_eval -- \
+  --trajectories <trajectory-dir>/trajectories.jsonl \
+  --predictions <llm-baseline-dir>/predictions.jsonl \
+  --output <llm-baseline-dir>/policy-eval.json \
+  [--limit n] \
+  [--offset n]
+```
+
+Real OpenAI baseline smoke:
+
+| Model | Slice | Prompt | Predictions | Failures | Exact | Tool | Ref | Scope | Stop | Invalid | Unbounded |
+| --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `gpt-4o-mini` | first 30 trajectories | initial | 23 | 7 | 0.300 | 0.696 | 0.696 | 0.696 | 0.857 | 0 | 0 |
+| `gpt-4o-mini` | first 30 trajectories | explicit `about` rule | 30 | 0 | 0.533 | 1.000 | 1.000 | 1.000 | 1.000 | 0 | 0 |
+
+The initial failure mode was useful: the generalist model used `current_ref` as
+`kernel_near.arguments.about` instead of the top-level `about`. The prompt and
+training data now state explicitly that `about` must equal the top-level scope.
+
 ### P1.5 First Small-Model Experiment
 
 Only after P1.1-P1.4:
@@ -310,6 +484,584 @@ Only after P1.1-P1.4:
 - compare to deterministic and generalist baselines.
 
 No model should be added to kernel core. It runs as a sidecar/client.
+
+Implemented local training path:
+
+```text
+scripts/operator/prepare_operator_sft_dataset.py
+scripts/operator/train_operator_sft_lora.py
+scripts/operator/predict_operator_sft.py
+scripts/operator/README.md
+```
+
+The first SFT dataset has been prepared from the 100-task trajectory export:
+
+```text
+python scripts/operator/prepare_operator_sft_dataset.py \
+  --trajectories /tmp/kernel-operator-trajectories-100/trajectories.jsonl \
+  --output /tmp/kernel-operator-sft-100 \
+  --eval-ratio 0.1 \
+  --seed 42 \
+  --force
+```
+
+Result:
+
+| Source | Selected | Train | Eval | Near | Inspect | Trace | Stop |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| MemoryArena 100-task read trajectories | 2,912 | 2,621 | 291 | 753 | 753 | 653 | 753 |
+
+Leak check:
+
+```text
+rg -n 'target_action|observed_outcome|quality|gold|answer_session|has_answer' \
+  /tmp/kernel-operator-sft-100/train.jsonl \
+  /tmp/kernel-operator-sft-100/eval.jsonl
+```
+
+returned no matches. The target action exists only in the assistant message,
+not in the model-facing user prompt.
+
+Recommended first model:
+
+```text
+Qwen/Qwen2.5-0.5B-Instruct
+```
+
+It is small enough for fast iteration and good enough to validate whether the
+task is learnable before spending time on 1.5B/3B/7B variants.
+
+First local training command:
+
+```text
+python scripts/operator/train_operator_sft_lora.py \
+  --train-jsonl /tmp/kernel-operator-sft-100/train.jsonl \
+  --eval-jsonl /tmp/kernel-operator-sft-100/eval.jsonl \
+  --model-id Qwen/Qwen2.5-0.5B-Instruct \
+  --output-dir /tmp/kernel-operator-qwen05-lora \
+  --epochs 3 \
+  --batch-size 2 \
+  --grad-accum 8 \
+  --max-length 2048 \
+  --bf16
+```
+
+Use `--fp16` instead of `--bf16` if the active GPU does not support bfloat16.
+
+Current execution blocker in the Codex shell:
+
+- `nvidia-smi` cannot communicate with the NVIDIA driver;
+- Python training dependencies are not installed in this environment
+  (`torch`, `transformers`, `trl`, `peft`);
+- OpenAI accepted file upload, but fine-tuning is unavailable for the current
+  organization (`training_not_available`).
+
+These are environment issues, not dataset or code issues.
+
+First local Kubernetes training run:
+
+```text
+kubectl apply -f k8s/kernel-operator-qwen05-lora-job.yaml
+```
+
+Training environment:
+
+- model: `Qwen/Qwen2.5-0.5B-Instruct`;
+- method: LoRA SFT;
+- GPU: 1x RTX 3090 requested through `nvidia.com/gpu: 1`;
+- train rows: 2,621;
+- eval rows: 291;
+- epochs: 3;
+- wall time: 58 minutes.
+
+Final training metrics:
+
+| Metric | Value |
+| --- | ---: |
+| train_loss | 0.05115 |
+| eval_loss | 0.008344 |
+| eval_mean_token_accuracy | 0.9965 |
+| eval_samples_per_second | 6.479 |
+
+Prediction run:
+
+```text
+kubectl apply -f k8s/kernel-operator-qwen05-predict-job.yaml
+```
+
+Prediction output:
+
+```text
+/tmp/kernel-operator-qwen05-predictions
+```
+
+Policy evaluation:
+
+```text
+cargo run -p rehydration-testkit --bin kernel_operator_policy_eval -- \
+  --trajectories /tmp/kernel-operator-sft-100/eval_trajectories.jsonl \
+  --predictions /tmp/kernel-operator-qwen05-predictions/predictions.jsonl \
+  --output /tmp/kernel-operator-qwen05-policy-eval.json
+```
+
+Held-out eval result:
+
+| Predictor | Total | Exact | Tool | Ref | Scope | Stop | Invalid | Unbounded |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Qwen 0.5B LoRA operator | 291 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 0 | 0 |
+| Deterministic baseline | 291 | 0.515 | 1.000 | 1.000 | 1.000 | 1.000 | 0 | 0 |
+
+Interpretation:
+
+- the first operator model learned the current read-navigation policy exactly
+  on the held-out split;
+- the task is learnable by a very small model;
+- this does not yet prove generalization beyond the MemoryArena
+  progressive-search trajectory distribution;
+- next held-out cuts should split by task id/run family, not only random
+  trajectory rows.
+
+### P1.5 Ref-Safe Dataset Hardening
+
+The first LoRA result was useful, but the row split was too easy and the raw
+refs were not acceptable for a serious training claim.
+
+The grouped V2 training attempt was stopped intentionally after this was found.
+V2 should not be used as a reported result.
+
+Raw MemoryArena refs encode more than identity:
+
+```text
+...:task:82:subtask:5:question
+...:task:82:subtask:5:answer
+```
+
+That naming can leak role, temporal position, and benchmark structure. Even if
+the model never sees benchmark answers, it could learn to choose refs from the
+shape of the string rather than from KMP visible state. That is not the model
+we want.
+
+The preparer now supports two hardening flags:
+
+```text
+--anonymize-refs
+--require-visible-target-refs
+```
+
+`--anonymize-refs` rewrites the model-facing trajectory with stable synthetic
+refs per decision step:
+
+```text
+about/current_ref/known_refs/target_action refs -> ref_0001, ref_0002, ...
+```
+
+The original trajectories are still written for audit:
+
+```text
+train_trajectories.jsonl
+eval_trajectories.jsonl
+all_trajectories.jsonl
+```
+
+The anonymized trajectories are written for model evaluation:
+
+```text
+train_model_trajectories.jsonl
+eval_model_trajectories.jsonl
+all_model_trajectories.jsonl
+```
+
+Predictions from the anonymized dataset must be evaluated against
+`eval_model_trajectories.jsonl`, not against the raw audit trajectories.
+
+`--require-visible-target-refs` drops any row whose target action refers to a
+ref that is not present in:
+
+```text
+current_ref
+trace_target_ref
+candidate_refs
+known_refs
+last_observed_refs
+```
+
+This matters because the first writer-read export exposed a real issue: some
+read-before-write `kernel_near` targets were only recoverable from the raw ref
+naming pattern, not from visible state. Those rows are not valid training
+examples for an operator model.
+
+Strict dataset command:
+
+```text
+python scripts/operator/prepare_operator_sft_dataset.py \
+  --trajectories /tmp/kernel-operator-trajectories-100-with-writer/trajectories.jsonl \
+  --output /tmp/kernel-operator-sft-100-with-writer-by-task-anon-visible \
+  --split-mode group \
+  --group-key task_id \
+  --eval-ratio 0.1 \
+  --seed 42 \
+  --anonymize-refs \
+  --require-visible-target-refs \
+  --force
+```
+
+Real output:
+
+| Dataset | Source rows | Kept | Dropped non-visible refs | Train | Eval | Train groups | Eval groups |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 100-task read + writer reads, grouped by task, anonymized refs | 5,724 | 4,318 | 1,406 | 3,854 | 464 | 89 | 11 |
+
+Kept rows by mode:
+
+| Mode | Rows |
+| --- | ---: |
+| `read` | 2,912 |
+| `write_context_read` | 1,406 |
+
+Kept target actions:
+
+| Target action | Rows |
+| --- | ---: |
+| `kernel_near` | 753 |
+| `kernel_inspect` | 2,159 |
+| `kernel_trace` | 653 |
+| `stop` | 753 |
+
+The dropped rows are currently the first writer context-read step where the
+target ref is not yet visible. That means the next writer exporter improvement
+is clear: if a writer is allowed to inspect a candidate, the candidate must be
+explicitly present in visible state. Otherwise the row is not trainable without
+leaking naming conventions.
+
+Leak audit for model-facing messages:
+
+```text
+jq -c 'select((.messages|map(.content)|join("\n")|test("memoryarena:|:question|:answer|:subtask:|:task:|target_action|observed_outcome|quality|gold|answer_session|has_answer")))' \
+  /tmp/kernel-operator-sft-100-with-writer-by-task-anon-visible/train.jsonl \
+  /tmp/kernel-operator-sft-100-with-writer-by-task-anon-visible/eval.jsonl \
+  /tmp/kernel-operator-sft-100-with-writer-by-task-anon-visible/openai_train.jsonl \
+  /tmp/kernel-operator-sft-100-with-writer-by-task-anon-visible/openai_eval.jsonl
+```
+
+returned no model-facing matches.
+
+The local trainer should use the messages-only files for training:
+
+```text
+openai_train.jsonl
+openai_eval.jsonl
+```
+
+The prediction script still uses `eval.jsonl`, because it needs `step_id` to
+write evaluator-compatible predictions. `step_id` is metadata for the runner,
+not part of the prompt.
+
+Evaluator sanity checks on the anonymized eval set:
+
+| Predictor | Total | Exact | Tool | Ref | Scope | Stop | Invalid | Unbounded |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Oracle baseline | 464 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 0 | 0 |
+| Deterministic baseline | 464 | 0.349 | 1.000 | 0.606 | 1.000 | 1.000 | 0 | 0 |
+
+The deterministic baseline losing ref accuracy after anonymization is expected
+and useful: it shows that simple rules can no longer benefit from raw ref
+naming. The next trained operator should beat this baseline by using visible
+state, not benchmark-shaped ids.
+
+Next V3 training rule:
+
+- train on `openai_train.jsonl` / `openai_eval.jsonl`;
+- predict on `eval.jsonl`;
+- evaluate predictions against `eval_model_trajectories.jsonl`;
+- keep `eval_trajectories.jsonl` only for audit against the original kernel
+  refs.
+
+V3 ref-safe trained operator result:
+
+| Item | Value |
+| --- | --- |
+| Base model | `Qwen/Qwen2.5-0.5B-Instruct` |
+| Adapter | `/tmp/kernel-operator-qwen05-lora-v3` |
+| Kubernetes train job | `kernel-operator-qwen05-lora-v3` |
+| Kubernetes predict job | `kernel-operator-qwen05-predict-v3` |
+| Train duration | 25m Kubernetes job duration; 1,476s trainer runtime |
+| Predict duration | 3m24s Kubernetes job duration with `--batch-size 8` |
+| Train rows | 3,854 |
+| Eval rows | 464 |
+| Prediction failures | 0 |
+
+Training metrics:
+
+| Metric | Value |
+| --- | ---: |
+| `train_loss` | 0.06846 |
+| `eval_loss` | 0.01203 |
+| `eval_mean_token_accuracy` | 0.995 |
+| `train_samples_per_second` | 7.834 |
+| `train_steps_per_second` | 0.49 |
+
+Held-out ref-safe eval result:
+
+| Predictor | Total | Exact | Tool | Ref | Scope | Stop | Invalid | Unbounded |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Oracle baseline | 464 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 0 | 0 |
+| Deterministic baseline | 464 | 0.349 | 1.000 | 0.606 | 1.000 | 1.000 | 0 | 0 |
+| Qwen 0.5B LoRA V3 | 464 | 0.996 | 1.000 | 0.995 | 1.000 | 1.000 | 0 | 0 |
+
+The two V3 misses are both in `write_context_read`. In both cases the model
+selected the correct tool, bounded scope, and action type, but chose a different
+visible `kernel_inspect` ref from the same candidate set. There were no missing
+predictions, invalid JSON actions, unbounded tool calls, wrong tools, wrong
+scopes, or wrong stop actions.
+
+This is the first credible operator-model result because:
+
+- benchmark-shaped raw refs are not visible to the prompt;
+- train/eval is grouped by task;
+- target refs must be visible to the model;
+- evaluation is against anonymized model trajectories, not the raw audit
+  trajectories.
+
+Remaining gaps after V3:
+
+- batched prediction is now acceptable for offline replay, but still not a live
+  serving path: 464 rows took 3m24s with `--batch-size 8`, including dependency
+  installation and model load;
+- 1,406 writer-read rows were intentionally dropped because the target ref was
+  not visible to the prompt; the exporter must expose valid candidates rather
+  than relying on raw ref shape;
+- the result is held out by task, but still from one 100-task MemoryArena run;
+  the next credible step is a larger run and a family-held-out split;
+- live MCP validation is still separate from offline policy replay;
+- writer relation proposals should remain disabled until the read operator is
+  validated at larger scale.
+
+### P1.6 Candidate-Visible Writer Hardening
+
+The V3 result was credible, but it exposed a dataset construction gap: 1,406
+writer-read rows were dropped because their target refs were valid candidates
+for the writer but were not present in the model-facing visible state. That is
+not acceptable for a training claim. If the operator is allowed to choose a ref,
+that ref must be visible without relying on raw naming conventions.
+
+The exporter now adds `visible_state.candidate_refs` for writer context-read
+steps. Candidate refs are gathered from:
+
+- writer read context inspected refs;
+- writer read context temporal refs;
+- planned relation targets;
+- relation-quality targets;
+- primary refs already present in the recorded pre-read tool calls.
+
+The current entry ref is excluded. The preparer now treats `candidate_refs` as
+part of the visible ref set for strict target-ref validation and prompt
+compaction.
+
+Candidate-visible export:
+
+```text
+cargo run -p rehydration-testkit --bin kernel_operator_trajectory_export -- \
+  --run /tmp/memoryarena-smart-writer-paged-100tasks-20260508-1407-run \
+  --output /tmp/kernel-operator-trajectories-100-with-writer-candidates \
+  --include-writer-reads \
+  --expected-run-id smart-writer-paged-100tasks-20260508-1407 \
+  --force
+```
+
+Strict candidate-visible dataset:
+
+```text
+python scripts/operator/prepare_operator_sft_dataset.py \
+  --trajectories /tmp/kernel-operator-trajectories-100-with-writer-candidates/trajectories.jsonl \
+  --output /tmp/kernel-operator-sft-100-with-writer-by-task-anon-visible-candidates \
+  --split-mode group \
+  --group-key task_id \
+  --eval-ratio 0.1 \
+  --seed 42 \
+  --anonymize-refs \
+  --require-visible-target-refs \
+  --force
+```
+
+Real output:
+
+| Dataset | Source rows | Kept | Dropped non-visible refs | Train | Eval | Train groups | Eval groups |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 100-task read + writer reads, grouped by task, anonymized refs, candidate-visible | 5,724 | 5,724 | 0 | 5,109 | 615 | 89 | 11 |
+
+Rows by mode:
+
+| Mode | Rows |
+| --- | ---: |
+| `read` | 2,912 |
+| `write_context_read` | 2,812 |
+
+Target actions:
+
+| Target action | Rows |
+| --- | ---: |
+| `kernel_near` | 2,159 |
+| `kernel_inspect` | 2,159 |
+| `kernel_trace` | 653 |
+| `stop` | 753 |
+
+Eval-set baselines:
+
+| Predictor | Total | Exact | Tool | Ref | Scope | Stop | Invalid | Unbounded |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Oracle baseline | 615 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 0 | 0 |
+| Deterministic baseline | 615 | 0.263 | 1.000 | 0.434 | 1.000 | 1.000 | 0 | 0 |
+
+V4 trained operator result:
+
+| Item | Value |
+| --- | --- |
+| Base model | `Qwen/Qwen2.5-0.5B-Instruct` |
+| Adapter | `/tmp/kernel-operator-qwen05-lora-v4` |
+| Kubernetes train job | `kernel-operator-qwen05-lora-v4` |
+| Kubernetes predict job | `kernel-operator-qwen05-predict-v4` |
+| Train duration | 32m Kubernetes job duration; 1,930s trainer runtime |
+| Predict duration | 5m14s Kubernetes job duration with `--batch-size 8` |
+| Train rows | 5,109 |
+| Eval rows | 615 |
+| Prediction failures | 0 |
+
+Training metrics:
+
+| Metric | Value |
+| --- | ---: |
+| `train_loss` | 0.05677 |
+| `eval_loss` | 0.01068 |
+| `eval_mean_token_accuracy` | 0.9952 |
+| `train_samples_per_second` | 7.942 |
+| `train_steps_per_second` | 0.497 |
+
+Held-out candidate-visible eval result:
+
+| Predictor | Total | Exact | Tool | Ref | Scope | Stop | Invalid | Unbounded |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Oracle baseline | 615 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 0 | 0 |
+| Deterministic baseline | 615 | 0.263 | 1.000 | 0.434 | 1.000 | 1.000 | 0 | 0 |
+| Qwen 0.5B LoRA V4 | 615 | 0.993 | 1.000 | 0.993 | 1.000 | 1.000 | 0 | 0 |
+
+The four V4 misses are all in `write_context_read` for the same MemoryArena
+task family slice. They use the correct action type, tool, bounded arguments,
+scope, and stop behavior, but choose a different visible candidate ref. This is
+not a leak or boundedness issue. It points to the next dataset/modeling gap:
+candidate refs are visible, but still unranked and mostly untyped. A stronger
+writer-operator dataset should expose candidate roles, relation intent, or
+writer evidence summaries rather than only a flat candidate ref list.
+
+### P1.7 Writer Candidate Details
+
+The next hardening step is to make writer candidates understandable without
+leaking the writer's final relation decision.
+
+The exporter now adds `visible_state.candidate_ref_details` beside
+`candidate_refs`. Each detail is deliberately structural:
+
+```json
+{
+  "ref": "ref_0002",
+  "role": "same_subtask_question",
+  "turn_kind": "question",
+  "relative_position": "same_subtask",
+  "temporal_distance": 0,
+  "priority": 10,
+  "relation_hint": "answer_addresses_question",
+  "sources": ["writer_candidate_pool"]
+}
+```
+
+What is intentionally not included:
+
+- final `connect_to.rel`;
+- final relation `why`;
+- final relation evidence;
+- raw memory text;
+- benchmark answer labels;
+- source names that reveal which candidate became the recorded action.
+
+This matters because a writer operator should learn how to choose between
+visible candidates, not memorize the post-hoc relation emitted by the writer.
+The current source is normalized as `writer_candidate_pool` to avoid turning
+candidate provenance into a label leak. The useful signal is structural:
+turn kind, relative temporal position, candidate role, and bounded priority.
+
+Candidate-detail export:
+
+```text
+cargo run -p rehydration-testkit --bin kernel_operator_trajectory_export -- \
+  --run /tmp/memoryarena-smart-writer-paged-100tasks-20260508-1407-run \
+  --output /tmp/kernel-operator-trajectories-100-with-writer-candidate-details \
+  --include-writer-reads \
+  --expected-run-id smart-writer-paged-100tasks-20260508-1407 \
+  --force
+```
+
+Strict candidate-detail dataset:
+
+```text
+python scripts/operator/prepare_operator_sft_dataset.py \
+  --trajectories /tmp/kernel-operator-trajectories-100-with-writer-candidate-details/trajectories.jsonl \
+  --output /tmp/kernel-operator-sft-100-with-writer-by-task-anon-visible-candidate-details \
+  --split-mode group \
+  --group-key task_id \
+  --eval-ratio 0.1 \
+  --seed 42 \
+  --anonymize-refs \
+  --require-visible-target-refs \
+  --force
+```
+
+Real output:
+
+| Dataset | Source rows | Kept | Dropped non-visible refs | Train | Eval | Train groups | Eval groups |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 100-task read + writer reads, grouped by task, anonymized refs, candidate details | 5,724 | 5,724 | 0 | 5,109 | 615 | 89 | 11 |
+
+Leak audit returned no model-facing rows for raw MemoryArena refs, target
+actions, observed outcomes, quality fields, benchmark gold labels, answer
+session ids, or `has_answer`.
+
+The V5 training run uses the same base model and split as V4, but with
+candidate details in the model-facing visible state:
+
+| Item | Value |
+| --- | --- |
+| Base model | `Qwen/Qwen2.5-0.5B-Instruct` |
+| Adapter | `/tmp/kernel-operator-qwen05-lora-v5` |
+| Kubernetes train job | `kernel-operator-qwen05-lora-v5` |
+| Kubernetes predict job | `kernel-operator-qwen05-predict-v5` |
+| Train duration | 35m27s Kubernetes job duration; 2,092s trainer runtime |
+| Predict duration | 4m55s Kubernetes job duration with `--batch-size 8` |
+| Train rows | 5,109 |
+| Eval rows | 615 |
+| Prediction failures | 0 |
+
+Training metrics:
+
+| Metric | Value |
+| --- | ---: |
+| `train_loss` | 0.05612 |
+| `eval_loss` | 0.00966 |
+| `eval_mean_token_accuracy` | 0.9957 |
+| `train_samples_per_second` | 7.326 |
+| `train_steps_per_second` | 0.459 |
+
+Held-out candidate-detail eval result:
+
+| Predictor | Total | Exact | Tool | Ref | Scope | Stop | Invalid | Unbounded |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Oracle baseline | 615 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 0 | 0 |
+| Deterministic baseline | 615 | 0.263 | 1.000 | 0.434 | 1.000 | 1.000 | 0 | 0 |
+| Qwen 0.5B LoRA V5 | 615 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 0 | 0 |
+
+V5 closed the four V4 writer-context-read misses. The important change is not
+more hidden answer signal; it is better visible structure around the candidate
+refs. The model sees candidate role, turn kind, relative temporal position,
+priority, and a relation hint, while the final relation decision and evidence
+remain hidden.
 
 ## Fast Training Path
 
