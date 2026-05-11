@@ -39,6 +39,7 @@ Current integration stance:
 | [kernel-write-protocol-plan.md](product/kernel-write-protocol-plan.md) | Writer-first plan for LLM/human memory ingestion above canonical `kernel_ingest` |
 | [kernel-tool-operator-model-plan.md](product/kernel-tool-operator-model-plan.md) | P1 plan for a small sidecar model that learns bounded KMP/MCP tool operation from audited trajectories |
 | [kernel-tool-operator-publication-plan.md](product/kernel-tool-operator-publication-plan.md) | Hugging Face publication gate, model/dataset packaging, and repository visibility checklist |
+| [huggingface/README.md](product/huggingface/README.md) | Draft Hugging Face model card, dataset card, eval summary, and repo visibility assets |
 
 ## Operations
 

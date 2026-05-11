@@ -22,6 +22,7 @@ These documents are the current source of truth for users and maintainers:
 | Writer helper protocol | [product/kernel-write-protocol-plan.md](product/kernel-write-protocol-plan.md) |
 | Kernel tool-operator model | [product/kernel-tool-operator-model-plan.md](product/kernel-tool-operator-model-plan.md) |
 | Operator publication gate | [product/kernel-tool-operator-publication-plan.md](product/kernel-tool-operator-publication-plan.md) |
+| Hugging Face publication assets | [product/huggingface/README.md](product/huggingface/README.md) |
 | Plugin architecture | [product/kernel-plugin-architecture.md](product/kernel-plugin-architecture.md) |
 | Interpretation plugins | [product/reusable-interpretation-plugins.md](product/reusable-interpretation-plugins.md) |
 | MCP stdio operations | [operations/mcp-stdio.md](operations/mcp-stdio.md) |

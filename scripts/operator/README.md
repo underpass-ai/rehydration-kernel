@@ -472,3 +472,19 @@ Only after that passes, de-anonymize and replay against live MCP as shown in
 sections 5 and 6. Use `--limit 100` first; run the full replay only if the
 smoke has zero missing predictions, invalid predictions, unbounded calls, MCP
 failures, and missing expected refs.
+
+## 8. Publication Packaging
+
+Do not publish a model only from local accuracy. Package the release after the
+P1.11 gate is clean:
+
+- copy the model card template from
+  `docs/product/huggingface/kernel-tool-operator-small-model-card-template.md`;
+- copy the dataset card template from
+  `docs/product/huggingface/kernel-operator-trajectories-dataset-card-template.md`;
+- fill the release evaluation summary from
+  `docs/product/huggingface/operator-release-eval-summary-template.md`;
+- keep Hugging Face repos private first;
+- verify download, local inference, offline eval, de-anonymization, and live MCP
+  replay from the published artifacts;
+- make the repos public only after that verification is clean.

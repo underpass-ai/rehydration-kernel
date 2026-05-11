@@ -92,6 +92,14 @@ The dataset repo should contain:
 Do not publish raw private memory, API outputs containing secrets, hidden
 benchmark gold fields, or unrestricted kernel traces.
 
+Draft publication assets live in
+[`product/huggingface/`](huggingface/README.md):
+
+- model card template;
+- dataset card template;
+- release evaluation summary template;
+- repository visibility checklist.
+
 ## Model Card Skeleton
 
 Required sections:
@@ -153,7 +161,8 @@ Repo visibility checklist:
 2. Export trajectories with candidate details.
 3. Prepare grouped anonymized split.
 4. Run prompt leak audit.
-5. Train the small operator from scratch.
+5. Train the small operator release candidate, either as adapter weights or
+   full weights.
 6. Run offline policy eval.
 7. De-anonymize predictions.
 8. Run live MCP replay against the public TLS endpoint.
