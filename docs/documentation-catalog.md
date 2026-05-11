@@ -1,6 +1,6 @@
 # Documentation Catalog
 
-Date: 2026-05-09
+Date: 2026-05-11
 Status: active documentation hygiene map
 
 This catalog separates authoritative documentation from historical artifacts.
@@ -20,6 +20,7 @@ These documents are the current source of truth for users and maintainers:
 | KMP product/API design | [product/kernel-context-api-design.md](product/kernel-context-api-design.md) |
 | Typed KMS/gRPC status | [product/kernel-memory-service-grpc-plan.md](product/kernel-memory-service-grpc-plan.md) |
 | Writer helper protocol | [product/kernel-write-protocol-plan.md](product/kernel-write-protocol-plan.md) |
+| Kernel tool-operator model | [product/kernel-tool-operator-model-plan.md](product/kernel-tool-operator-model-plan.md) |
 | Plugin architecture | [product/kernel-plugin-architecture.md](product/kernel-plugin-architecture.md) |
 | Interpretation plugins | [product/reusable-interpretation-plugins.md](product/reusable-interpretation-plugins.md) |
 | MCP stdio operations | [operations/mcp-stdio.md](operations/mcp-stdio.md) |
@@ -45,8 +46,9 @@ The current roadmap is:
    dedupe into plugins outside kernel core.
 8. Add hybrid candidate retrieval and reranking behind ports, without turning
    KMP into a vector database API.
-9. Stabilize KMP pagination, limits, scopes, and audited tool trajectories
-   before training a small kernel tool-operator model.
+9. Scale the small kernel tool-operator model beyond the current V6 holdout:
+   keep grouped anonymized splits, compare baselines, and validate raw
+   predictions through live MCP/gRPC before any publication claim.
 10. Continue reducing infrastructure coupling through conformance tests and
     backend-independent semantics.
 

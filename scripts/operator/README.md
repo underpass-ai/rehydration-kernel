@@ -403,3 +403,66 @@ Full replay action latency against the public TLS endpoint:
 | `kernel_inspect` | 424 | 79.2 | 146 |
 | `kernel_trace` | 128 | 105.9 | 168 |
 | `stop` | 148 | 0.0 | 0 |
+
+## 7. Next Scale Run
+
+The validated claim today is the V6 explicit holdout20 run. The next publishable
+operator cut should scale the same pipeline rather than changing model
+semantics.
+
+Run rules:
+
+- start from a fresh audited MemoryArena smart-writer run;
+- split by task id or run family, never by individual trajectory row;
+- keep `--anonymize-refs` and `--require-visible-target-refs`;
+- use raw refs only after prediction, through de-anonymization;
+- run live MCP replay only after offline policy eval has zero invalid and
+  unbounded actions.
+
+Recommended sequence:
+
+```bash
+cargo run -p rehydration-testkit --bin kernel_operator_trajectory_export -- \
+  --run <memoryarena-run-dir> \
+  --output <operator-trajectories-dir> \
+  --include-writer-reads \
+  --force
+
+python scripts/operator/prepare_operator_sft_dataset.py \
+  --trajectories <operator-trajectories-dir>/trajectories.jsonl \
+  --output <operator-sft-dir> \
+  --split-mode group \
+  --group-key task_id \
+  --anonymize-refs \
+  --require-visible-target-refs \
+  --force
+
+python scripts/operator/train_operator_sft_lora.py \
+  --train-jsonl <operator-sft-dir>/openai_train.jsonl \
+  --eval-jsonl <operator-sft-dir>/openai_eval.jsonl \
+  --model-id Qwen/Qwen2.5-0.5B-Instruct \
+  --output-dir <operator-lora-dir> \
+  --epochs 3 \
+  --batch-size 2 \
+  --grad-accum 8 \
+  --max-length 2048 \
+  --bf16
+
+python scripts/operator/predict_operator_sft.py \
+  --dataset-jsonl <operator-sft-dir>/eval.jsonl \
+  --model-id Qwen/Qwen2.5-0.5B-Instruct \
+  --adapter <operator-lora-dir> \
+  --output <operator-predictions-dir> \
+  --batch-size 8 \
+  --force
+
+cargo run -p rehydration-testkit --bin kernel_operator_policy_eval -- \
+  --trajectories <operator-sft-dir>/eval_model_trajectories.jsonl \
+  --predictions <operator-predictions-dir>/predictions.jsonl \
+  --output <operator-policy-eval>.json
+```
+
+Only after that passes, de-anonymize and replay against live MCP as shown in
+sections 5 and 6. Use `--limit 100` first; run the full replay only if the
+smoke has zero missing predictions, invalid predictions, unbounded calls, MCP
+failures, and missing expected refs.
