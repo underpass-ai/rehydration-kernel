@@ -1171,6 +1171,55 @@ robustness. It does prove that the operator is not only memorizing the smaller
 V5 split: with benchmark-shaped refs hidden, it generalizes across a larger
 explicit held-out task range inside the same MemoryArena run.
 
+### P1.9 Raw-Ref Replay Bridge
+
+The V6 result is intentionally evaluated on anonymized model trajectories. That
+is the right training/eval boundary because the model must not learn from raw
+MemoryArena ref shape. But it creates a practical follow-up: a live MCP replay
+cannot execute `ref_0001`.
+
+P1.9 adds an explicit de-anonymization bridge outside kernel core:
+
+```text
+scripts/operator/deanonymize_operator_predictions.py
+```
+
+Inputs:
+
+- raw audit trajectories: `eval_trajectories.jsonl`;
+- anonymized model trajectories: `eval_model_trajectories.jsonl`;
+- model predictions: `predictions.jsonl`.
+
+Outputs:
+
+- raw-ref `predictions.jsonl` for evaluator and future live replay;
+- `audit.jsonl` showing model action, raw action, and mapped refs;
+- `failures.jsonl` for unmappable predictions;
+- `summary.json`.
+
+The mapping is derived only from paired raw/model trajectory state for the same
+`step_id`. If the model predicts a synthetic ref that was not visible in that
+trajectory, the row fails fast. There is no fallback and no invented ref.
+
+V6 holdout20 de-anonymization result:
+
+| Item | Value |
+| --- | ---: |
+| Selected predictions | 1,124 |
+| Written raw predictions | 1,124 |
+| Failures | 0 |
+| Mapped synthetic refs | 5,240 |
+
+Raw-ref policy eval remained exact:
+
+| Predictor | Total | Exact | Tool | Ref | Scope | Stop | Invalid | Unbounded |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Qwen 0.5B LoRA V6 holdout20, de-anonymized | 1,124 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 0 | 0 |
+
+This is not live MCP validation yet. It is the required bridge before live
+validation: the same prediction can now be inspected in model-ref form and raw
+kernel-ref form without contaminating the training prompt.
+
 ## Fast Training Path
 
 The goal is fast iteration, not a large first model. The first operator model

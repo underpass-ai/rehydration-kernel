@@ -269,3 +269,59 @@ V6 trained on 4,600 rows and evaluated on 1,124 rows. Prediction produced
 1,124 rows with zero parse failures. The training job completed in 33m01s, with
 final `eval_loss` 0.01425 and `eval_mean_token_accuracy` 0.9954. The prediction
 job completed in 8m50s including dependency installation and model load.
+
+## 5. De-Anonymize Predictions For Raw Replay
+
+Predictions from strict anonymized datasets contain synthetic refs such as
+`ref_0001`. They are correct for offline model evaluation, but they cannot be
+executed against a live kernel until those refs are mapped back to raw kernel
+refs.
+
+Use the paired raw/model trajectory files to create evaluator-compatible raw
+predictions:
+
+```bash
+python scripts/operator/deanonymize_operator_predictions.py \
+  --raw-trajectories /tmp/kernel-operator-sft-100-with-writer-by-task-anon-visible-candidate-details-holdout20/eval_trajectories.jsonl \
+  --model-trajectories /tmp/kernel-operator-sft-100-with-writer-by-task-anon-visible-candidate-details-holdout20/eval_model_trajectories.jsonl \
+  --predictions /tmp/kernel-operator-qwen05-predictions-v6-holdout20/predictions.jsonl \
+  --output /tmp/kernel-operator-qwen05-predictions-v6-holdout20-raw \
+  --force
+```
+
+Outputs:
+
+- `predictions.jsonl`: raw-ref predictions accepted by
+  `kernel_operator_policy_eval`;
+- `audit.jsonl`: one row per prediction with model action, raw action, and
+  mapped synthetic refs;
+- `failures.jsonl`: missing or unmappable refs;
+- `summary.json`: selected/written/failure counts.
+
+Fail-fast behavior is intentional. If a predicted synthetic ref is not visible
+in the paired model/raw trajectory, the row is rejected instead of inventing a
+mapping.
+
+Raw-ref evaluation:
+
+```bash
+cargo run -p rehydration-testkit --bin kernel_operator_policy_eval -- \
+  --trajectories /tmp/kernel-operator-sft-100-with-writer-by-task-anon-visible-candidate-details-holdout20/eval_trajectories.jsonl \
+  --predictions /tmp/kernel-operator-qwen05-predictions-v6-holdout20-raw/predictions.jsonl \
+  --output /tmp/kernel-operator-qwen05-predictions-v6-holdout20-raw-policy-eval.json
+```
+
+Observed V6 de-anonymization result on 2026-05-11:
+
+| Item | Value |
+| --- | ---: |
+| Selected predictions | 1,124 |
+| Written raw predictions | 1,124 |
+| Failures | 0 |
+| Mapped synthetic refs | 5,240 |
+
+Raw-ref policy eval stayed exact:
+
+| Predictor | Total | Exact | Tool | Ref | Scope | Stop | Invalid | Unbounded |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Qwen 0.5B LoRA V6 holdout20, de-anonymized | 1,124 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 0 | 0 |
