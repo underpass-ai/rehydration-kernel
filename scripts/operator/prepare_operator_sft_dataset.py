@@ -59,9 +59,26 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--split-mode", choices=["row", "group"], default="row")
     parser.add_argument(
         "--group-key",
-        choices=["task_id", "about", "run_id"],
+        choices=["task_id", "task_type", "task_family", "mode", "about", "run_id"],
         default="task_id",
         help="Grouping key used when --split-mode=group.",
+    )
+    parser.add_argument(
+        "--eval-group-values",
+        default=None,
+        help=(
+            "Comma-separated group values to reserve for eval when "
+            "--split-mode=group. Fails fast if any value is absent."
+        ),
+    )
+    parser.add_argument(
+        "--eval-group-values-file",
+        type=Path,
+        default=None,
+        help=(
+            "File with one group value per line to reserve for eval when "
+            "--split-mode=group. Blank lines and # comments are ignored."
+        ),
     )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--max-refs", type=int, default=32)
@@ -217,6 +234,9 @@ def split_pairs(
     dict[str, Any],
 ]:
     rng = random.Random(args.seed)
+    eval_group_values = requested_eval_group_values(args)
+    if eval_group_values and args.split_mode != "group":
+        raise ValueError("--eval-group-values requires --split-mode=group")
     if args.split_mode == "row":
         shuffled = list(pairs)
         rng.shuffle(shuffled)
@@ -235,6 +255,38 @@ def split_pairs(
         group = group_value(pair[1], args.group_key)
         groups.setdefault(group, []).append(pair)
     group_ids = sorted(groups)
+    if eval_group_values:
+        group_set = set(group_ids)
+        missing_groups = sorted(set(eval_group_values) - group_set)
+        if missing_groups:
+            raise ValueError(
+                "explicit eval group values are not present: "
+                + ", ".join(missing_groups)
+            )
+        eval_group_value_set = set(eval_group_values)
+        eval_group_ids = [
+            group for group in group_ids if group in eval_group_value_set
+        ]
+        train_group_ids = [
+            group for group in group_ids if group not in eval_group_value_set
+        ]
+        if not eval_group_ids:
+            raise ValueError("explicit eval group selection produced an empty eval split")
+        if not train_group_ids:
+            raise ValueError("explicit eval group selection produced an empty train split")
+        return (
+            [pair for group_id in train_group_ids for pair in groups[group_id]],
+            [pair for group_id in eval_group_ids for pair in groups[group_id]],
+            {
+                "split_mode": "group",
+                "group_key": args.group_key,
+                "train_groups": len(train_group_ids),
+                "eval_groups": len(eval_group_ids),
+                "eval_group_selection": "explicit",
+                "eval_group_values": eval_group_ids,
+            },
+        )
+
     rng.shuffle(group_ids)
     target_eval_rows = int(round(len(pairs) * args.eval_ratio))
     if len(pairs) > 1 and args.eval_ratio > 0:
@@ -260,7 +312,26 @@ def split_pairs(
         "group_key": args.group_key,
         "train_groups": len(group_ids) - len(eval_group_ids),
         "eval_groups": len(eval_group_ids),
+        "eval_group_selection": "ratio",
+        "eval_group_values": eval_group_ids,
     }
+
+
+def requested_eval_group_values(args: argparse.Namespace) -> list[str]:
+    values: list[str] = []
+    if args.eval_group_values:
+        values.extend(
+            value.strip()
+            for value in args.eval_group_values.split(",")
+            if value.strip()
+        )
+    if args.eval_group_values_file:
+        with args.eval_group_values_file.open(encoding="utf-8") as handle:
+            for line in handle:
+                value = line.strip()
+                if value and not value.startswith("#"):
+                    values.append(value)
+    return sorted(set(values))
 
 
 def group_value(item: dict[str, Any], key: str) -> str:
@@ -268,6 +339,23 @@ def group_value(item: dict[str, Any], key: str) -> str:
         return str(item.get("run_id", "missing"))
     if key == "about":
         return str(item.get("about", "missing"))
+    if key == "task_family":
+        return str(item.get("task_family", "missing"))
+    if key == "mode":
+        return str(item.get("mode", "missing"))
+    if key == "task_type":
+        task_type = (
+            item.get("visible_state", {})
+            .get("task", {})
+            .get("task_type")
+        )
+        if task_type is not None:
+            return str(task_type)
+        about = str(item.get("about", "missing"))
+        marker = ":task_type:"
+        if marker in about:
+            return about.rsplit(marker, 1)[-1].split(":", 1)[0]
+        return about
     task_id = (
         item.get("visible_state", {})
         .get("task", {})

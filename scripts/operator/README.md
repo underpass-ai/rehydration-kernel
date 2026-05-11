@@ -63,10 +63,25 @@ would reveal the recorded target action.
 
 The previous grouped V2 training attempt was stopped after this issue was
 identified. V3 fixed the reporting path by dropping non-visible refs. V4 made
-writer candidates visible and the strict split dropped zero rows. V5 is the
-preferred claim because it adds structural candidate details and closes the
-remaining writer-context-read ref selection misses without exposing final writer
-relations.
+writer candidates visible and the strict split dropped zero rows. V5 adds
+structural candidate details and closes the remaining writer-context-read ref
+selection misses without exposing final writer relations. V6 is the preferred
+validation claim because it repeats the candidate-detail setup with a larger
+explicit holdout of task ids `80` through `99`.
+
+Explicit holdout split:
+
+```bash
+python scripts/operator/prepare_operator_sft_dataset.py \
+  --trajectories /tmp/kernel-operator-trajectories-100-with-writer-candidate-details/trajectories.jsonl \
+  --output /tmp/kernel-operator-sft-100-with-writer-by-task-anon-visible-candidate-details-holdout20 \
+  --split-mode group \
+  --group-key task_id \
+  --eval-group-values-file /tmp/kernel-operator-holdout20-groups.txt \
+  --anonymize-refs \
+  --require-visible-target-refs \
+  --force
+```
 
 Outputs:
 
@@ -223,3 +238,34 @@ synthetic model-facing refs. Prediction produced 615 rows with zero parse
 failures and completed in 4m55s including dependency installation and model
 load. The training job completed in 35m27s, with final `eval_loss` 0.00966 and
 `eval_mean_token_accuracy` 0.9957.
+
+V6 explicit-holdout run:
+
+```bash
+python scripts/operator/prepare_operator_sft_dataset.py \
+  --trajectories /tmp/kernel-operator-trajectories-100-with-writer-candidate-details/trajectories.jsonl \
+  --output /tmp/kernel-operator-sft-100-with-writer-by-task-anon-visible-candidate-details-holdout20 \
+  --split-mode group \
+  --group-key task_id \
+  --eval-group-values-file /tmp/kernel-operator-holdout20-groups.txt \
+  --anonymize-refs \
+  --require-visible-target-refs \
+  --force
+```
+
+The holdout file reserves task ids `80` through `99` for eval. The split
+contains 4,600 train rows and 1,124 eval rows, with zero dropped non-visible
+target refs.
+
+Observed V6 explicit-holdout run on 2026-05-11 with `--batch-size 8`:
+
+| Predictor | Total | Exact | Tool | Ref | Scope | Stop | Invalid | Unbounded |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Oracle baseline | 1,124 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 0 | 0 |
+| Deterministic baseline | 1,124 | 0.263 | 1.000 | 0.434 | 1.000 | 1.000 | 0 | 0 |
+| Qwen 0.5B LoRA V6 holdout20 | 1,124 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 0 | 0 |
+
+V6 trained on 4,600 rows and evaluated on 1,124 rows. Prediction produced
+1,124 rows with zero parse failures. The training job completed in 33m01s, with
+final `eval_loss` 0.01425 and `eval_mean_token_accuracy` 0.9954. The prediction
+job completed in 8m50s including dependency installation and model load.
