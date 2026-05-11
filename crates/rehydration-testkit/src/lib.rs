@@ -3,6 +3,7 @@ pub mod dataset_generator;
 mod graph_batch_llm;
 mod in_memory_stores;
 pub mod interpretation_plugins;
+pub mod kernel_operator;
 pub mod llm_evaluator;
 mod llm_graph;
 pub mod longmemeval;
@@ -40,6 +41,10 @@ pub use interpretation_plugins::{
     EvidenceValuePlugin, InterpretationError, InterpretedValue, InterpretedValueMention,
     MathExpressionNotation, MathExpressionValuePlugin, MoneyValuePlugin, OperandLabel, OperandRole,
     SourceCodeSegmentKind, SourceCodeValuePlugin, TextSpan, UrlValuePlugin, ValueOperationPlugin,
+};
+pub use kernel_operator::{
+    kernel_operator_allowed_read_tools, kernel_operator_is_bounded_tool_call,
+    kernel_operator_primary_refs,
 };
 pub use llm_evaluator::{
     CalibrationCase, EvaluationGroundTruth, LlmEvaluationResult, LlmEvaluatorConfig, LlmProvider,
