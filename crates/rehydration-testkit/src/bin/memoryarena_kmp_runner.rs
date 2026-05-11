@@ -6,7 +6,7 @@ use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-use rehydration_mcp::KernelMcpServer;
+use rehydration_mcp::{KernelMcpGrpcTlsConfig, KernelMcpServer};
 use rehydration_testkit::{
     LlmProvider, MemoryArenaExpected, MemoryArenaSmartWriter, MemoryArenaSmartWriterConfig,
     MemoryArenaSmartWriterEvent, MemoryArenaSmartWriterResult, MemoryArenaSmartWriterSummary,
@@ -159,7 +159,10 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     validate_events_expected_alignment(&events, &expected_by_ask)?;
 
     let server = match args.endpoint.as_deref() {
-        Some(endpoint) => KernelMcpServer::grpc(endpoint),
+        Some(endpoint) => KernelMcpServer::grpc_with_tls(
+            endpoint,
+            KernelMcpGrpcTlsConfig::from_env_for_endpoint(Some(endpoint)),
+        ),
         None => KernelMcpServer::try_from_env()
             .map_err(|error| format!("failed to configure MCP gRPC backend from env: {error}"))?,
     };

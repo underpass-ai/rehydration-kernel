@@ -413,11 +413,17 @@ semantics.
 Run rules:
 
 - start from a fresh audited MemoryArena smart-writer run;
+- generate a fresh `run_id` for every live run or smoke;
 - split by task id or run family, never by individual trajectory row;
 - keep `--anonymize-refs` and `--require-visible-target-refs`;
 - use raw refs only after prediction, through de-anonymization;
 - run live MCP replay only after offline policy eval has zero invalid and
   unbounded actions.
+
+Do not reuse the same `run_id` for a second live smoke. The deployed kernel is
+append/projection based; previous writes under the same `about` can make early
+asks observe answer feedback from an earlier attempt and create false
+future-leak failures.
 
 Recommended sequence:
 

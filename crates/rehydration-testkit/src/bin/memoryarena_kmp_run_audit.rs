@@ -6,7 +6,7 @@ use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-use rehydration_mcp::KernelMcpServer;
+use rehydration_mcp::{KernelMcpGrpcTlsConfig, KernelMcpServer};
 use serde::Serialize;
 use serde_json::{Value, json};
 
@@ -374,7 +374,10 @@ async fn inspect_refs(
     endpoint: &str,
     refs: &BTreeSet<String>,
 ) -> Result<InspectSummary, Box<dyn Error + Send + Sync>> {
-    let server = KernelMcpServer::grpc(endpoint);
+    let server = KernelMcpServer::grpc_with_tls(
+        endpoint,
+        KernelMcpGrpcTlsConfig::from_env_for_endpoint(Some(endpoint)),
+    );
     let mut id = 1u64;
     let mut found = 0usize;
     let mut missing = Vec::new();

@@ -21,6 +21,7 @@ These documents are the current source of truth for users and maintainers:
 | Typed KMS/gRPC status | [product/kernel-memory-service-grpc-plan.md](product/kernel-memory-service-grpc-plan.md) |
 | Writer helper protocol | [product/kernel-write-protocol-plan.md](product/kernel-write-protocol-plan.md) |
 | Kernel tool-operator model | [product/kernel-tool-operator-model-plan.md](product/kernel-tool-operator-model-plan.md) |
+| Operator publication gate | [product/kernel-tool-operator-publication-plan.md](product/kernel-tool-operator-publication-plan.md) |
 | Plugin architecture | [product/kernel-plugin-architecture.md](product/kernel-plugin-architecture.md) |
 | Interpretation plugins | [product/reusable-interpretation-plugins.md](product/reusable-interpretation-plugins.md) |
 | MCP stdio operations | [operations/mcp-stdio.md](operations/mcp-stdio.md) |
@@ -49,7 +50,10 @@ The current roadmap is:
 9. Scale the small kernel tool-operator model beyond the current V6 holdout:
    keep grouped anonymized splits, compare baselines, and validate raw
    predictions through live MCP/gRPC before any publication claim.
-10. Continue reducing infrastructure coupling through conformance tests and
+10. Publish the operator model and trajectory dataset to Hugging Face only
+    after the publication gate is clean, then update repo visibility around
+    reproducible KMP evidence rather than broad claims.
+11. Continue reducing infrastructure coupling through conformance tests and
     backend-independent semantics.
 
 ## Active Research And Benchmark Docs

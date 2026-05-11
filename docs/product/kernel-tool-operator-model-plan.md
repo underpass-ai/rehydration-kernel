@@ -1320,11 +1320,28 @@ Input rules:
   cost-estimate rows;
 - keep train/eval split grouped by task id or run family, never by individual
   trajectory row;
+- use a fresh `run_id` / `about` namespace for every live kernel run;
 - keep synthetic model-facing refs for training and evaluation;
 - keep de-anonymized raw refs only for offline policy evaluation and live MCP
   replay;
 - do not expose benchmark answers, hidden tool outcomes, final writer
   relations, or future refs in the model-facing prompt.
+
+Live run hygiene:
+
+- do not reuse a `run_id` after a non-smart or partial smoke has written data
+  to the deployed kernel;
+- if a smoke is repeated, regenerate artifacts with a new `run_id`;
+- a repeated run over the same `about` can make early asks observe answer
+  feedback written by the previous run, producing false future-leak failures.
+
+Observed P1.11 setup smokes on 2026-05-11:
+
+| Smoke | Scope | Result |
+| --- | ---: | --- |
+| TLS runner smoke without writer | 1 task / 27 events | 27/27 successful, 9/9 known-at-clean, 0 future leaks |
+| Smart-writer smoke with reused `run_id` | 1 task / 27 events | invalid smoke: prior data caused 9/9 future leaks |
+| Smart-writer smoke with fresh `run_id` | 1 task / 27 events | 27/27 successful, 9/9 known-at-clean, 0 future leaks, 17/17 valid LLM outputs |
 
 Recommended run order:
 
@@ -1503,7 +1520,9 @@ Day 5:
 
 ### Hugging Face Publication Path
 
-Publish only after redaction and eval are credible.
+Publish only after redaction, evaluation, and live replay are credible. The
+release checklist is tracked in
+[`kernel-tool-operator-publication-plan.md`](kernel-tool-operator-publication-plan.md).
 
 Recommended artifacts:
 
