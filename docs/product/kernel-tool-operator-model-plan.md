@@ -3,11 +3,12 @@
 Status: P1.1 trajectory exporter, P1.2/P1.3 offline evaluator/deterministic
 baseline, P1.4 generalist LLM baseline CLI, and P1.5 SFT training are
 implemented. The row-split LoRA run remains only a smoke test. The preferred
-result is now the V5 candidate-detail run: grouped task split, synthetic
-model-facing refs, zero dropped non-visible target refs, structural writer
-candidate details, and evaluation against anonymized model trajectories. It
-reached 1.000 exact action accuracy, 1.000 primary-ref accuracy, and zero
-invalid or unbounded actions.
+result is now the V6 explicit holdout20 run: grouped task split with tasks
+80-99 reserved for eval, synthetic model-facing refs, zero dropped non-visible
+target refs, structural writer candidate details, and evaluation against
+anonymized model trajectories. It reached 1.000 exact action accuracy, 1.000
+primary-ref accuracy, and zero invalid or unbounded actions on 1,124 held-out
+decisions.
 
 Date: 2026-05-11.
 
@@ -1062,6 +1063,113 @@ more hidden answer signal; it is better visible structure around the candidate
 refs. The model sees candidate role, turn kind, relative temporal position,
 priority, and a relation hint, while the final relation decision and evidence
 remain hidden.
+
+### P1.8 Explicit Holdout Validation
+
+V5 proved that candidate details closed the remaining writer-context-read
+misses, but the eval split was still produced by a seeded ratio over task
+groups. P1.8 makes the holdout explicit and larger so the result is easier to
+repeat and audit.
+
+The SFT preparer now supports explicit group holdouts:
+
+```text
+--eval-group-values
+--eval-group-values-file
+```
+
+It also supports additional group keys:
+
+```text
+task_id
+task_type
+task_family
+mode
+about
+run_id
+```
+
+The V6 validation reserved task ids `80` through `99` for evaluation:
+
+```text
+python scripts/operator/prepare_operator_sft_dataset.py \
+  --trajectories /tmp/kernel-operator-trajectories-100-with-writer-candidate-details/trajectories.jsonl \
+  --output /tmp/kernel-operator-sft-100-with-writer-by-task-anon-visible-candidate-details-holdout20 \
+  --split-mode group \
+  --group-key task_id \
+  --eval-group-values-file /tmp/kernel-operator-holdout20-groups.txt \
+  --anonymize-refs \
+  --require-visible-target-refs \
+  --force
+```
+
+Real output:
+
+| Dataset | Source rows | Train | Eval | Train groups | Eval groups | Dropped non-visible refs | Eval group values |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 100-task read + writer reads, grouped by explicit task holdout, anonymized refs, candidate details | 5,724 | 4,600 | 1,124 | 80 | 20 | 0 | `80`-`99` |
+
+Eval-set composition:
+
+| Mode | Rows |
+| --- | ---: |
+| `read` | 572 |
+| `write_context_read` | 552 |
+
+| Target action | Rows |
+| --- | ---: |
+| `kernel_near` | 424 |
+| `kernel_inspect` | 424 |
+| `kernel_trace` | 128 |
+| `stop` | 148 |
+
+Leak audit returned no model-facing rows for raw MemoryArena refs, target
+actions, observed outcomes, quality fields, benchmark gold labels, answer
+session ids, or `has_answer`.
+
+Eval-set baselines:
+
+| Predictor | Total | Exact | Tool | Ref | Scope | Stop | Invalid | Unbounded |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Oracle baseline | 1,124 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 0 | 0 |
+| Deterministic baseline | 1,124 | 0.263 | 1.000 | 0.434 | 1.000 | 1.000 | 0 | 0 |
+
+V6 explicit-holdout trained operator result:
+
+| Item | Value |
+| --- | --- |
+| Base model | `Qwen/Qwen2.5-0.5B-Instruct` |
+| Adapter | `/tmp/kernel-operator-qwen05-lora-v6-holdout20` |
+| Kubernetes train job | `kernel-operator-qwen05-lora-v6-holdout20` |
+| Kubernetes predict job | `kernel-operator-qwen05-predict-v6-holdout20` |
+| Train duration | 33m01s Kubernetes job duration; 1,946s trainer runtime |
+| Predict duration | 8m50s Kubernetes job duration with `--batch-size 8` |
+| Train rows | 4,600 |
+| Eval rows | 1,124 |
+| Prediction failures | 0 |
+
+Training metrics:
+
+| Metric | Value |
+| --- | ---: |
+| `train_loss` | 0.0588 |
+| `eval_loss` | 0.01425 |
+| `eval_mean_token_accuracy` | 0.9954 |
+| `train_samples_per_second` | 7.092 |
+| `train_steps_per_second` | 0.444 |
+
+Held-out explicit-task eval result:
+
+| Predictor | Total | Exact | Tool | Ref | Scope | Stop | Invalid | Unbounded |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Oracle baseline | 1,124 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 0 | 0 |
+| Deterministic baseline | 1,124 | 0.263 | 1.000 | 0.434 | 1.000 | 1.000 | 0 | 0 |
+| Qwen 0.5B LoRA V6 holdout20 | 1,124 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 0 | 0 |
+
+This does not prove cross-benchmark generalization or live MCP serving
+robustness. It does prove that the operator is not only memorizing the smaller
+V5 split: with benchmark-shaped refs hidden, it generalizes across a larger
+explicit held-out task range inside the same MemoryArena run.
 
 ## Fast Training Path
 
