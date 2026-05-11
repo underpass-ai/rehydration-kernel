@@ -1,14 +1,19 @@
 # Kernel Tool Operator Model Plan
 
-Status: P1.1 trajectory exporter, P1.2/P1.3 offline evaluator/deterministic
-baseline, P1.4 generalist LLM baseline CLI, and P1.5 SFT training are
-implemented. The row-split LoRA run remains only a smoke test. The preferred
-result is now the V6 explicit holdout20 run: grouped task split with tasks
-80-99 reserved for eval, synthetic model-facing refs, zero dropped non-visible
-target refs, structural writer candidate details, and evaluation against
-anonymized model trajectories. It reached 1.000 exact action accuracy, 1.000
-primary-ref accuracy, and zero invalid or unbounded actions on 1,124 held-out
-decisions.
+Status: P1.1-P1.10 are implemented: trajectory export, offline evaluation,
+deterministic and generalist baselines, ref-safe datasets, SFT LoRA training,
+explicit holdout validation, raw-ref de-anonymization, and live MCP replay.
+The row-split LoRA run remains only a smoke test. The preferred result is now
+the V6 explicit holdout20 run: grouped task split with tasks 80-99 reserved for
+eval, synthetic model-facing refs, zero dropped non-visible target refs,
+structural writer candidate details, and evaluation against anonymized model
+trajectories. It reached 1.000 exact action accuracy, 1.000 primary-ref
+accuracy, and zero invalid or unbounded actions on 1,124 held-out decisions.
+The same 1,124 predictions were de-anonymized and replayed through the public
+TLS MCP/gRPC endpoint: 976 executed tool calls, 148 stop actions, 0 MCP
+failures, 0 missing expected refs, and 7m18.7s elapsed. The next active slice
+is P1.11: scale the same pipeline before any publication or model-release
+claim.
 
 Date: 2026-05-11.
 
@@ -622,7 +627,7 @@ Interpretation:
 - next held-out cuts should split by task id/run family, not only random
   trajectory rows.
 
-### P1.5 Ref-Safe Dataset Hardening
+### P1.5b Ref-Safe Dataset Hardening
 
 The first LoRA result was useful, but the row split was too easy and the raw
 refs were not acceptable for a serious training claim.
@@ -1302,6 +1307,60 @@ dominates live replay latency. That makes candidate retrieval performance and
 pagination/budget behavior the next operational thing to watch as the holdout
 scales.
 
+### P1.11 Scale And Publication Gate
+
+P1.10 proves that the current V6 operator predictions are executable through
+the real MCP/gRPC boundary. It does not yet prove that the operator generalizes
+across a larger corpus. The next cut should keep kernel core unchanged and
+scale the same training/evaluation path.
+
+Input rules:
+
+- use a fresh audited MemoryArena smart-writer run, not only prepared
+  cost-estimate rows;
+- keep train/eval split grouped by task id or run family, never by individual
+  trajectory row;
+- keep synthetic model-facing refs for training and evaluation;
+- keep de-anonymized raw refs only for offline policy evaluation and live MCP
+  replay;
+- do not expose benchmark answers, hidden tool outcomes, final writer
+  relations, or future refs in the model-facing prompt.
+
+Recommended run order:
+
+1. Generate or select the next larger MemoryArena run. Target the 221-task
+   progressive set when cost and time are acceptable; use a smaller stepped
+   run only as a smoke.
+2. Export trajectories with writer candidate details.
+3. Prepare a grouped, anonymized, visible-ref-only split.
+4. Run deterministic and generalist baselines on the same eval set.
+5. Train the same small Qwen 0.5B LoRA recipe from scratch.
+6. Predict on the held-out set and evaluate against anonymized trajectories.
+7. De-anonymize predictions and run raw-ref policy evaluation.
+8. Run live MCP replay first with `--limit 100`, then full replay only if the
+   smoke has zero missing predictions, invalid predictions, unbounded calls,
+   MCP failures, and missing expected refs.
+
+Metrics to publish for this cut:
+
+- trajectory count, train count, eval count, grouped split rule;
+- exact/tool/ref/scope/stop accuracy;
+- invalid prediction and unbounded call counts;
+- deterministic baseline comparison;
+- generalist LLM baseline comparison, if cost allows;
+- live MCP replay success, missing expected refs, extra observed refs, and
+  latency by action;
+- prompt leak audit result.
+
+Exit criteria:
+
+- no model-facing leak of raw MemoryArena refs or benchmark answers;
+- zero invalid and unbounded operator actions on the held-out set;
+- live MCP replay has zero MCP failures and zero missing expected refs;
+- latency report shows whether `kernel_near` remains the dominant cost;
+- failures, if any, are classified as operator, kernel retrieval, writer,
+  reader, or benchmark/domain reasoning.
+
 ## Fast Training Path
 
 The goal is fast iteration, not a large first model. The first operator model
@@ -1460,18 +1519,22 @@ Correct positioning:
 Avoid claims that it is a general QA model, a memory database, or a replacement
 for the kernel.
 
-## Tomorrow's First Slice
+## Next Execution Slice
 
-Recommended first execution slice:
+The original first-slice checklist is complete. The next execution slice is
+P1.11:
 
-1. Create `kernel-operator-trajectory-v1` Rust structs in `rehydration-testkit`.
-2. Implement exporter support for MemoryArena smart-writer logs only.
-3. Export the 50-task run into `/tmp/kernel-operator-trajectories-50`.
-4. Add unit tests for redaction, mixed-run rejection, and bounded-action shape.
-5. Document the exported summary in this file or `memoryarena-benchmark.md`.
+1. produce a larger audited MemoryArena smart-writer run;
+2. export trajectories with candidate details;
+3. prepare a grouped anonymized split;
+4. train and evaluate the small operator from scratch;
+5. de-anonymize predictions;
+6. replay them through live MCP;
+7. update this document with the larger-run table before making any public
+   model claim.
 
-Do not start model training tomorrow unless the exporter and evaluator are
-already producing clean data. Bad operator data will be worse than no model.
+Do not publish the dataset or model until the leak audit, offline policy eval,
+and live MCP replay are all clean.
 
 ## Open Questions
 
@@ -1481,8 +1544,9 @@ already producing clean data. Bad operator data will be worse than no model.
   reader's terminal move? Initial answer: allow it, but score overuse.
 - Should the model learn relation writing directly? Initial answer: only after
   read/navigation is stable, and only with proof-cited relations.
-- Should the first operator be trained or just prompted? Initial answer: export
-  trajectories and run baselines before deciding.
+- Should the first public release use only read/navigation actions, or include
+  writer relation proposal? Initial answer: keep the first public operator
+  read/navigation only.
 
 ## Success Criteria For P1
 
@@ -1492,6 +1556,7 @@ P1 is successful when we can say:
 - a baseline can be scored without benchmark gold answers;
 - the operator policy is bounded and auditable;
 - tool-call efficiency can be compared against a generalist LLM;
+- de-anonymized predictions can be replayed through live MCP/gRPC;
 - failures are classified by stage: operator, kernel retrieval, reader, writer,
   or benchmark/domain reasoning.
 
