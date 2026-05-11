@@ -325,3 +325,81 @@ Raw-ref policy eval stayed exact:
 | Predictor | Total | Exact | Tool | Ref | Scope | Stop | Invalid | Unbounded |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | Qwen 0.5B LoRA V6 holdout20, de-anonymized | 1,124 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 0 | 0 |
+
+## 6. Replay Raw Predictions Against Live MCP
+
+Raw-ref policy eval proves the predicted action matches the audited target
+action. Live replay proves the predicted action is executable against the
+kernel through the real MCP adapter and typed gRPC service.
+
+Use `kernel_operator_mcp_replay` after de-anonymization:
+
+```bash
+cargo run -p rehydration-testkit --bin kernel_operator_mcp_replay -- \
+  --trajectories /tmp/kernel-operator-sft-100-with-writer-by-task-anon-visible-candidate-details-holdout20/eval_trajectories.jsonl \
+  --predictions /tmp/kernel-operator-qwen05-predictions-v6-holdout20-raw/predictions.jsonl \
+  --output /tmp/kernel-operator-qwen05-predictions-v6-holdout20-mcp-replay-100 \
+  --endpoint https://rehydration-kernel.underpassai.com \
+  --limit 100 \
+  --log-progress-every 25 \
+  --force
+```
+
+Outputs:
+
+- `results.jsonl`: one row per trajectory step with action, tool result,
+  observed refs, missing expected refs, and extra observed refs;
+- `summary.json`: selected rows, tool calls, stop actions, boundedness failures,
+  MCP failures, ref coverage, action mix, and latency by action.
+
+For long runs, `--log-progress-every N` writes compact JSONL progress events to
+stderr without changing the replay result files.
+
+The replay fails fast when:
+
+- a prediction is missing;
+- a prediction is malformed;
+- a tool call is unbounded;
+- MCP/gRPC returns an error;
+- a tool call does not return the refs observed in the audited trajectory.
+
+Observed 100-step live smoke on 2026-05-11:
+
+| Item | Value |
+| --- | ---: |
+| Selected trajectory steps | 100 |
+| Executed tool calls | 85 |
+| Stop actions | 15 |
+| Successful tool calls | 85 |
+| Failed tool calls | 0 |
+| Missing expected ref rows | 0 |
+| Unbounded tool calls | 0 |
+
+Observed full V6 holdout20 live replay on 2026-05-11:
+
+| Item | Value |
+| --- | ---: |
+| Selected trajectory steps | 1,124 |
+| Executed tool calls | 976 |
+| Stop actions | 148 |
+| Successful tool calls | 976 |
+| Failed tool calls | 0 |
+| Missing expected ref rows | 0 |
+| Missing predictions | 0 |
+| Invalid predictions | 0 |
+| Unbounded tool calls | 0 |
+| Extra observed ref rows | 848 |
+| Elapsed | 7m18.7s |
+
+Extra observed refs mean the live kernel returned additional valid context
+beyond the audited minimum. The replay fails only when expected refs are
+missing.
+
+Full replay action latency against the public TLS endpoint:
+
+| Action | Count | Avg ms | Max ms |
+| --- | ---: | ---: | ---: |
+| `kernel_near` | 424 | 922.2 | 1,738 |
+| `kernel_inspect` | 424 | 79.2 | 146 |
+| `kernel_trace` | 128 | 105.9 | 168 |
+| `stop` | 148 | 0.0 | 0 |
