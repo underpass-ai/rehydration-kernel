@@ -1220,6 +1220,88 @@ This is not live MCP validation yet. It is the required bridge before live
 validation: the same prediction can now be inspected in model-ref form and raw
 kernel-ref form without contaminating the training prompt.
 
+### P1.10 Live MCP Replay
+
+Raw-ref policy evaluation still runs offline: it compares JSON actions against
+JSON targets. The next validation step is to execute those predicted actions
+through the real MCP adapter against the deployed kernel.
+
+P1.10 adds:
+
+```text
+cargo run -p rehydration-testkit --bin kernel_operator_mcp_replay
+```
+
+The replayer takes:
+
+- raw audit trajectories;
+- raw-ref predictions from the de-anonymizer;
+- a live kernel endpoint, usually
+  `https://rehydration-kernel.underpassai.com`.
+
+For long runs, `--log-progress-every N` emits compact JSONL progress events to
+stderr so the operator can see which trajectory step is being replayed without
+parsing Kubernetes logs.
+
+It executes only bounded tool calls. `stop` actions are recorded but do not call
+MCP. For tool calls, the replayer verifies:
+
+- MCP returns a successful JSON-RPC response;
+- the response contains typed `structuredContent`;
+- every ref observed in the audited trajectory is present in the live response.
+
+This is deliberately stricter than "the JSON action looked right". It proves the
+operator action can be replayed through the same MCP/gRPC boundary an agent
+would use.
+
+Observed 100-step V6 holdout smoke on 2026-05-11:
+
+| Item | Value |
+| --- | ---: |
+| Selected trajectory steps | 100 |
+| Executed tool calls | 85 |
+| Stop actions | 15 |
+| Successful tool calls | 85 |
+| Failed tool calls | 0 |
+| Missing expected ref rows | 0 |
+| Missing predictions | 0 |
+| Invalid predictions | 0 |
+| Unbounded tool calls | 0 |
+
+Observed full V6 holdout20 replay on 2026-05-11:
+
+| Item | Value |
+| --- | ---: |
+| Selected trajectory steps | 1,124 |
+| Executed tool calls | 976 |
+| Stop actions | 148 |
+| Successful tool calls | 976 |
+| Failed tool calls | 0 |
+| Missing expected ref rows | 0 |
+| Missing predictions | 0 |
+| Invalid predictions | 0 |
+| Unbounded tool calls | 0 |
+| Extra observed ref rows | 848 |
+| Elapsed | 7m18.7s |
+
+Extra observed refs mean the live kernel returned additional valid context
+beyond the audited minimum. The correctness gate is missing expected refs, not
+the presence of extra inspectable context.
+
+Full replay latency by action against the public TLS endpoint:
+
+| Action | Count | Avg ms | Max ms |
+| --- | ---: | ---: | ---: |
+| `kernel_near` | 424 | 922.2 | 1,738 |
+| `kernel_inspect` | 424 | 79.2 | 146 |
+| `kernel_trace` | 128 | 105.9 | 168 |
+| `stop` | 148 | 0.0 | 0 |
+
+The current signal is good: correctness holds through MCP, but `kernel_near`
+dominates live replay latency. That makes candidate retrieval performance and
+pagination/budget behavior the next operational thing to watch as the holdout
+scales.
+
 ## Fast Training Path
 
 The goal is fast iteration, not a large first model. The first operator model
