@@ -177,6 +177,14 @@ pub(crate) fn temporal_response_from_result(
     } else {
         Vec::new()
     };
+    let page = traversal.page();
+    let mut warnings = Vec::new();
+    if page.has_more() {
+        warnings.push(
+            "temporal response paginated; use page.next_cursor as a temporal cursor ref to continue"
+                .to_string(),
+        );
+    }
 
     TemporalMoveResponse {
         summary: format!(
@@ -206,8 +214,14 @@ pub(crate) fn temporal_response_from_result(
                 MemoryConfidence::Medium
             },
         )),
-        warnings: Vec::new(),
+        warnings,
         raw_refs,
+        page: Some(PageInfo {
+            returned: u32_saturating(page.returned()),
+            total: u32_saturating(page.total()),
+            has_more: page.has_more(),
+            next_cursor: page.next_cursor().unwrap_or_default().to_string(),
+        }),
     }
 }
 

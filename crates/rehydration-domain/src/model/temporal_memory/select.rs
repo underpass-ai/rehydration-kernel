@@ -7,6 +7,12 @@ use super::TemporalTraversalRequest;
 use super::axis_key::{TemporalAxisKey, primary_coordinate_key};
 use super::position::{ResolvedTemporalCursor, TemporalPosition};
 
+pub(super) struct TemporalSelection {
+    pub positions: Vec<TemporalPosition>,
+    pub total_unique_refs: usize,
+    pub next_cursor: Option<String>,
+}
+
 pub(super) fn resolve_cursor(
     positions: &[TemporalPosition],
     cursor: &TemporalCursor,
@@ -38,7 +44,7 @@ pub(super) fn select_positions(
     positions: &[TemporalPosition],
     cursor: &ResolvedTemporalCursor,
     request: &TemporalTraversalRequest,
-) -> Vec<TemporalPosition> {
+) -> TemporalSelection {
     let comparable = positions
         .iter()
         .filter(|position| position.axis_key.axis() == cursor.axis_key.axis())
@@ -46,46 +52,125 @@ pub(super) fn select_positions(
         .collect::<Vec<_>>();
 
     match request.direction() {
-        TemporalDirection::Goto => take_last(
-            comparable
+        TemporalDirection::Goto => {
+            let candidates = comparable
                 .into_iter()
                 .filter(|position| position.axis_key <= cursor.axis_key)
-                .collect(),
-            request.limit_entries().unwrap_or(1),
-        ),
-        TemporalDirection::Rewind => take_last(
-            comparable
+                .collect::<Vec<_>>();
+            select_limited(
+                candidates,
+                request.limit_entries().unwrap_or(1),
+                PageSide::Before,
+            )
+        }
+        TemporalDirection::Rewind => {
+            let candidates = comparable
                 .into_iter()
                 .filter(|position| position.axis_key < cursor.axis_key)
-                .collect(),
-            request.limit_entries().unwrap_or(5),
-        ),
-        TemporalDirection::Forward => comparable
-            .into_iter()
-            .filter(|position| position.axis_key > cursor.axis_key)
-            .take(request.limit_entries().unwrap_or(5))
-            .collect(),
+                .collect::<Vec<_>>();
+            select_limited(
+                candidates,
+                request.limit_entries().unwrap_or(5),
+                PageSide::Before,
+            )
+        }
+        TemporalDirection::Forward => {
+            let candidates = comparable
+                .into_iter()
+                .filter(|position| position.axis_key > cursor.axis_key)
+                .collect::<Vec<_>>();
+            select_limited(
+                candidates,
+                request.limit_entries().unwrap_or(5),
+                PageSide::After,
+            )
+        }
         TemporalDirection::Near => {
-            let before = take_last(
-                comparable
-                    .iter()
-                    .filter(|position| position.axis_key < cursor.axis_key)
-                    .cloned()
-                    .collect(),
-                request.window().before_entries(),
-            );
+            let before_candidates = comparable
+                .iter()
+                .filter(|position| position.axis_key < cursor.axis_key)
+                .cloned()
+                .collect::<Vec<_>>();
+            let before = take_last(before_candidates.clone(), request.window().before_entries());
             let exact = comparable
                 .iter()
                 .filter(|position| position.axis_key == cursor.axis_key)
                 .cloned()
                 .collect::<Vec<_>>();
-            let after = comparable
+            let after_candidates = comparable
                 .into_iter()
                 .filter(|position| position.axis_key > cursor.axis_key)
-                .take(request.window().after_entries());
+                .collect::<Vec<_>>();
+            let after = after_candidates
+                .iter()
+                .take(request.window().after_entries())
+                .cloned()
+                .collect::<Vec<_>>();
+            let before_more =
+                unique_ref_count(before.iter()) < unique_ref_count(before_candidates.iter());
+            let after_more =
+                unique_ref_count(after.iter()) < unique_ref_count(after_candidates.iter());
+            let total_unique_refs = unique_ref_count(
+                before_candidates
+                    .iter()
+                    .chain(exact.iter())
+                    .chain(after_candidates.iter()),
+            );
+            let positions = before
+                .into_iter()
+                .chain(exact)
+                .chain(after)
+                .collect::<Vec<_>>();
+            let returned_refs = ordered_unique_ref_ids(positions.clone());
+            let next_cursor = if returned_refs.len() < total_unique_refs {
+                if after_more {
+                    returned_refs.last().cloned()
+                } else if before_more {
+                    returned_refs.first().cloned()
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
 
-            before.into_iter().chain(exact).chain(after).collect()
+            TemporalSelection {
+                positions,
+                total_unique_refs,
+                next_cursor,
+            }
         }
+    }
+}
+
+enum PageSide {
+    Before,
+    After,
+}
+
+fn select_limited(
+    candidates: Vec<TemporalPosition>,
+    limit: usize,
+    page_side: PageSide,
+) -> TemporalSelection {
+    let total_unique_refs = unique_ref_count(candidates.iter());
+    let positions = match page_side {
+        PageSide::Before => take_last(candidates, limit),
+        PageSide::After => candidates.into_iter().take(limit).collect(),
+    };
+    let returned_refs = ordered_unique_ref_ids(positions.clone());
+    let next_cursor = if returned_refs.len() < total_unique_refs {
+        match page_side {
+            PageSide::Before => returned_refs.first().cloned(),
+            PageSide::After => returned_refs.last().cloned(),
+        }
+    } else {
+        None
+    };
+    TemporalSelection {
+        positions,
+        total_unique_refs,
+        next_cursor,
     }
 }
 
@@ -126,6 +211,14 @@ fn take_last(mut positions: Vec<TemporalPosition>, limit: usize) -> Vec<Temporal
     positions.sort();
     let keep_from = positions.len().saturating_sub(limit);
     positions.into_iter().skip(keep_from).collect()
+}
+
+fn unique_ref_count<'a>(positions: impl IntoIterator<Item = &'a TemporalPosition>) -> usize {
+    positions
+        .into_iter()
+        .map(|position| position.ref_id.as_str())
+        .collect::<BTreeSet<_>>()
+        .len()
 }
 
 fn compare_coordinates(left: &TemporalCoordinate, right: &TemporalCoordinate) -> Ordering {

@@ -16,6 +16,10 @@ struct Args {
     endpoint: Option<String>,
     output: Option<PathBuf>,
     expected_run_id: Option<String>,
+    limit: Option<usize>,
+    offset: usize,
+    log_progress_every: Option<usize>,
+    progress_output: Option<PathBuf>,
     inspect: bool,
     force: bool,
 }
@@ -63,10 +67,15 @@ struct AuditCounts {
 
 #[derive(Debug, Serialize)]
 struct InspectSummary {
+    total_refs: usize,
+    offset: usize,
+    limit: Option<usize>,
     checked_refs: usize,
     found_refs: usize,
     missing_refs: usize,
     errored_refs: usize,
+    next_offset: usize,
+    completed: bool,
     missing: Vec<String>,
     errors: Vec<InspectError>,
 }
@@ -104,7 +113,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             .endpoint
             .as_deref()
             .ok_or("--inspect requires --endpoint")?;
-        Some(inspect_refs(endpoint, &projected_refs).await?)
+        Some(inspect_refs(endpoint, &projected_refs, &args).await?)
     } else {
         None
     };
@@ -373,73 +382,217 @@ fn extract_run_id(reference: &str) -> Option<String> {
 async fn inspect_refs(
     endpoint: &str,
     refs: &BTreeSet<String>,
+    args: &Args,
 ) -> Result<InspectSummary, Box<dyn Error + Send + Sync>> {
     let server = KernelMcpServer::grpc_with_tls(
         endpoint,
         KernelMcpGrpcTlsConfig::from_env_for_endpoint(Some(endpoint)),
     );
+    let selected_refs = refs
+        .iter()
+        .skip(args.offset)
+        .take(args.limit.unwrap_or(usize::MAX))
+        .cloned()
+        .collect::<Vec<_>>();
+    let mut progress = ProgressLogger::new(args)?;
     let mut id = 1u64;
     let mut found = 0usize;
     let mut missing = Vec::new();
     let mut errors = Vec::new();
+    let started = Instant::now();
 
-    for reference in refs {
-        let request = json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "method": "tools/call",
-            "params": {
-                "name": "kernel_inspect",
-                "arguments": {
-                    "ref": reference,
-                    "include": {
-                        "incoming": false,
-                        "outgoing": false,
-                        "details": false,
-                        "raw": false
-                    }
-                }
-            }
-        });
+    for (index, reference) in selected_refs.iter().enumerate() {
+        let processed = index + 1;
+        let outcome = inspect_one_ref(&server, id, reference).await?;
         id = id.checked_add(1).ok_or("request id overflow")?;
-        let response = server
-            .handle_json_line(&request.to_string())
-            .await
-            .ok_or("kernel_inspect returned no JSON-RPC response")?;
-        let value = serde_json::from_str::<Value>(&response)?;
-        if let Some(error) = value.get("error") {
-            errors.push(InspectError {
+        match outcome {
+            InspectRefOutcome::Found => found += 1,
+            InspectRefOutcome::Missing => missing.push(reference.clone()),
+            InspectRefOutcome::Error(error) => errors.push(InspectError {
                 r#ref: reference.clone(),
-                error: error.to_string(),
-            });
-            continue;
+                error,
+            }),
         }
-        let Some(result) = value.get("result") else {
-            errors.push(InspectError {
-                r#ref: reference.clone(),
-                error: "missing JSON-RPC result".to_string(),
-            });
-            continue;
-        };
-        if result
-            .get("isError")
-            .and_then(Value::as_bool)
-            .unwrap_or(false)
-        {
-            missing.push(reference.clone());
-            continue;
-        }
-        found += 1;
+        progress.log(InspectProgress {
+            processed,
+            selected: selected_refs.len(),
+            total: refs.len(),
+            offset: args.offset,
+            limit: args.limit,
+            reference,
+            found,
+            missing: missing.len(),
+            errors: errors.len(),
+            page_completed: false,
+            started: &started,
+            force: false,
+        })?;
     }
+    progress.log(InspectProgress {
+        processed: selected_refs.len(),
+        selected: selected_refs.len(),
+        total: refs.len(),
+        offset: args.offset,
+        limit: args.limit,
+        reference: selected_refs.last().map(String::as_str).unwrap_or(""),
+        found,
+        missing: missing.len(),
+        errors: errors.len(),
+        page_completed: true,
+        started: &started,
+        force: true,
+    })?;
 
     Ok(InspectSummary {
-        checked_refs: refs.len(),
+        total_refs: refs.len(),
+        offset: args.offset,
+        limit: args.limit,
+        checked_refs: selected_refs.len(),
         found_refs: found,
         missing_refs: missing.len(),
         errored_refs: errors.len(),
+        next_offset: args.offset.saturating_add(selected_refs.len()),
+        completed: args.offset.saturating_add(selected_refs.len()) >= refs.len(),
         missing,
         errors,
     })
+}
+
+enum InspectRefOutcome {
+    Found,
+    Missing,
+    Error(String),
+}
+
+async fn inspect_one_ref(
+    server: &KernelMcpServer,
+    id: u64,
+    reference: &str,
+) -> Result<InspectRefOutcome, Box<dyn Error + Send + Sync>> {
+    let request = json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "method": "tools/call",
+        "params": {
+            "name": "kernel_inspect",
+            "arguments": {
+                "ref": reference,
+                "include": {
+                    "incoming": false,
+                    "outgoing": false,
+                    "details": false,
+                    "raw": false
+                }
+            }
+        }
+    });
+    let response = server
+        .handle_json_line(&request.to_string())
+        .await
+        .ok_or("kernel_inspect returned no JSON-RPC response")?;
+    let value = serde_json::from_str::<Value>(&response)?;
+    if let Some(error) = value.get("error") {
+        return Ok(InspectRefOutcome::Error(error.to_string()));
+    }
+    let Some(result) = value.get("result") else {
+        return Ok(InspectRefOutcome::Error(
+            "missing JSON-RPC result".to_string(),
+        ));
+    };
+    if result
+        .get("isError")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        return Ok(InspectRefOutcome::Missing);
+    }
+    Ok(InspectRefOutcome::Found)
+}
+
+struct ProgressLogger {
+    every: Option<usize>,
+    file: Option<BufWriter<File>>,
+}
+
+struct InspectProgress<'a> {
+    processed: usize,
+    selected: usize,
+    total: usize,
+    offset: usize,
+    limit: Option<usize>,
+    reference: &'a str,
+    found: usize,
+    missing: usize,
+    errors: usize,
+    page_completed: bool,
+    started: &'a Instant,
+    force: bool,
+}
+
+impl ProgressLogger {
+    fn new(args: &Args) -> Result<Self, Box<dyn Error + Send + Sync>> {
+        let file = match args.progress_output.as_deref() {
+            Some(path) => {
+                if path.exists() && !args.force {
+                    return Err(format!(
+                        "progress output exists: {} (use --force)",
+                        path.display()
+                    )
+                    .into());
+                }
+                if let Some(parent) = path.parent() {
+                    fs::create_dir_all(parent)?;
+                }
+                Some(BufWriter::new(File::create(path)?))
+            }
+            None => None,
+        };
+        Ok(Self {
+            every: args.log_progress_every,
+            file,
+        })
+    }
+
+    fn log(&mut self, progress: InspectProgress<'_>) -> Result<(), Box<dyn Error + Send + Sync>> {
+        if !progress.page_completed && progress.processed == progress.selected {
+            return Ok(());
+        }
+        let should_log = progress.force
+            || progress.page_completed
+            || self
+                .every
+                .is_some_and(|every| every > 0 && progress.processed.is_multiple_of(every));
+        if !should_log {
+            return Ok(());
+        }
+        let event = json!({
+            "event": "memoryarena_kmp_run_audit.inspect.progress",
+            "processed": progress.processed,
+            "selected": progress.selected,
+            "total": progress.total,
+            "offset": progress.offset,
+            "limit": progress.limit,
+            "next_offset": progress.offset.saturating_add(progress.processed),
+            "ref": if progress.reference.is_empty() {
+                Value::Null
+            } else {
+                Value::String(progress.reference.to_string())
+            },
+            "found_refs": progress.found,
+            "missing_refs": progress.missing,
+            "errored_refs": progress.errors,
+            "page_completed": progress.page_completed,
+            "completed": progress.offset.saturating_add(progress.processed) >= progress.total,
+            "elapsed_ms": progress.started.elapsed().as_millis(),
+        });
+        eprintln!("{event}");
+        if let Some(file) = self.file.as_mut() {
+            serde_json::to_writer(&mut *file, &event)?;
+            file.write_all(b"\n")?;
+            file.flush()?;
+        }
+        Ok(())
+    }
 }
 
 fn write_output(
@@ -468,6 +621,10 @@ fn parse_args(
     let mut endpoint = None;
     let mut output = None;
     let mut expected_run_id = None;
+    let mut limit = None;
+    let mut offset = 0usize;
+    let mut log_progress_every = None;
+    let mut progress_output = None;
     let mut inspect = false;
     let mut force = false;
 
@@ -477,6 +634,22 @@ fn parse_args(
             "--endpoint" => endpoint = Some(required_flag_value(&mut args, &arg)?),
             "--output" => output = Some(PathBuf::from(required_flag_value(&mut args, &arg)?)),
             "--expected-run-id" => expected_run_id = Some(required_flag_value(&mut args, &arg)?),
+            "--limit" => {
+                limit = Some(parse_positive_usize(
+                    &required_flag_value(&mut args, &arg)?,
+                    &arg,
+                )?);
+            }
+            "--offset" => offset = required_flag_value(&mut args, &arg)?.parse()?,
+            "--log-progress-every" => {
+                log_progress_every = Some(parse_positive_usize(
+                    &required_flag_value(&mut args, &arg)?,
+                    &arg,
+                )?);
+            }
+            "--progress-output" => {
+                progress_output = Some(PathBuf::from(required_flag_value(&mut args, &arg)?));
+            }
             "--inspect" => inspect = true,
             "--force" => force = true,
             "--help" | "-h" => {
@@ -492,6 +665,10 @@ fn parse_args(
         endpoint,
         output,
         expected_run_id,
+        limit,
+        offset,
+        log_progress_every,
+        progress_output,
         inspect,
         force,
     })
@@ -505,9 +682,19 @@ fn required_flag_value(
         .ok_or_else(|| format!("{flag} requires a value").into())
 }
 
+fn parse_positive_usize(value: &str, flag: &str) -> Result<usize, Box<dyn Error + Send + Sync>> {
+    let parsed = value
+        .parse::<usize>()
+        .map_err(|error| format!("invalid {flag} value `{value}`: {error}"))?;
+    if parsed == 0 {
+        return Err(format!("{flag} must be greater than zero").into());
+    }
+    Ok(parsed)
+}
+
 fn print_usage() {
     eprintln!(
-        "Usage: memoryarena_kmp_run_audit --run <runner-output-dir> [--endpoint http://host --inspect] [--expected-run-id RUN] [--output audit.json] [--force]"
+        "Usage: memoryarena_kmp_run_audit --run <runner-output-dir> [--endpoint http://host --inspect] [--expected-run-id RUN] [--output audit.json] [--limit N] [--offset N] [--log-progress-every N] [--progress-output progress.jsonl] [--force]"
     );
 }
 
@@ -548,6 +735,46 @@ mod tests {
         assert_eq!(
             foreign_refs(&refs, "a"),
             vec!["memoryarena:run:b:task_type:t:task:0"]
+        );
+    }
+
+    #[test]
+    fn parse_args_accepts_paged_progress_audit_flags() {
+        let args = parse_args(
+            [
+                "--run",
+                "/tmp/run",
+                "--limit",
+                "100",
+                "--offset",
+                "200",
+                "--log-progress-every",
+                "25",
+                "--progress-output",
+                "/tmp/progress.jsonl",
+            ]
+            .into_iter()
+            .map(ToString::to_string),
+        )
+        .expect("args should parse");
+
+        assert_eq!(args.run, PathBuf::from("/tmp/run"));
+        assert_eq!(args.limit, Some(100));
+        assert_eq!(args.offset, 200);
+        assert_eq!(args.log_progress_every, Some(25));
+        assert_eq!(
+            args.progress_output.as_deref(),
+            Some(Path::new("/tmp/progress.jsonl"))
+        );
+    }
+
+    #[test]
+    fn parse_positive_usize_rejects_zero() {
+        let error = parse_positive_usize("0", "--limit").expect_err("zero should fail");
+        assert!(
+            error
+                .to_string()
+                .contains("--limit must be greater than zero")
         );
     }
 }

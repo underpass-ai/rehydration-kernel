@@ -689,14 +689,16 @@ containment. This removed false negatives for one-token answers such as
 `Poem: "Namaste" | Book: "Almost Human" by Thomas Centolella`. The scorecard is
 still a local, paper-aligned evaluator, not an official MemoryArena evaluator.
 
-Remaining follow-up: add the same explicit bounded behavior to every API
-surface that can traverse or materialize growing memory:
+Remaining follow-up: keep tightening bounded behavior on the expensive parts of
+the read path. Temporal response page metadata is now part of the API/MCP
+contract, but expansion budgets still need operational pressure at larger
+scale:
 
 - `kernel_near`, `goto`, `rewind`, and `forward` must make entry windows,
   relation expansion, evidence expansion, and proof expansion independently
   bounded.
-- MCP tools must expose the same pagination contract as the API, with explicit
-  `next_cursor`/`has_more` metadata.
+- MCP tools expose the same pagination contract as the API, with explicit
+  `next_cursor`/`has_more` metadata for temporal moves and trace.
 - The digest should remain the operational check: after pagination, the same
   MemoryArena slice should show bounded commit latency even when
   `about_written_before` grows.

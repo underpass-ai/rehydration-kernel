@@ -128,7 +128,7 @@ Response families:
 | `IngestResponse` | Summary, accepted counts, memory id, read-after-write readiness, warnings. |
 | `WakeResponse` | Summary, wake payload, proof, warnings. |
 | `AskResponse` | Summary, optional answer, evidence reasons, proof, warnings. |
-| `GotoResponse`, `NearResponse`, `RewindResponse`, `ForwardResponse` | Method-specific temporal responses with summary, resolved cursor, coverage, temporal entries, proof, warnings. |
+| `GotoResponse`, `NearResponse`, `RewindResponse`, `ForwardResponse` | Method-specific temporal responses with summary, resolved cursor, coverage, temporal entries, proof, warnings, and page info. |
 | `TraceResponse` | Summary, paged relationship trace, warnings, page info. |
 | `InspectResponse` | Summary, inspected object, incoming/outgoing links, evidence, warnings. |
 
@@ -253,6 +253,9 @@ Temporal traversal rules:
 - `near` returns bounded before/after windows around the cursor;
 - `rewind` returns entries strictly before the cursor;
 - `forward` returns entries strictly after the cursor;
+- temporal responses include `PageInfo` (`returned`, `total`, `has_more`,
+  `next_cursor`) so bounded temporal reads are explicit through both gRPC and
+  MCP;
 - malformed cursors fail with `INVALID_ARGUMENT`;
 - absent temporal positions are returned as proof `missing`, not fabricated.
 

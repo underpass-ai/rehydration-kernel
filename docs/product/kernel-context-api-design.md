@@ -210,6 +210,10 @@ rewind -> state before cursor
 forward -> state after cursor
 ```
 
+Temporal responses carry page metadata (`returned`, `total`, `has_more`,
+`next_cursor`) so bounded reads through gRPC, MCP, or future adapters can be
+resumed explicitly.
+
 Supported temporal coordinates:
 
 | Coordinate | Meaning |

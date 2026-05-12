@@ -120,8 +120,13 @@ pub(crate) fn temporal_from_response(response: TemporalMoveResponse) -> Value {
                 "requested": Value::Null,
                 "included": Vec::<String>::new(),
                 "missing": Vec::<String>::new()
-            })),
+        })),
         "entries": response.entries.iter().map(temporal_entry_json).collect::<Vec<_>>(),
+        "page": response
+            .page
+            .as_ref()
+            .map(page_info_json)
+            .unwrap_or_else(empty_page_info_json),
         "raw_refs": response.raw_refs.iter().map(raw_memory_ref_json).collect::<Vec<_>>(),
         "proof": response.proof.as_ref().map(proof_json).unwrap_or_else(empty_proof_json),
         "warnings": response.warnings
@@ -500,6 +505,12 @@ mod tests {
             proof: None,
             warnings: Vec::new(),
             raw_refs: Vec::new(),
+            page: Some(rehydration_proto::v1beta1::PageInfo {
+                returned: 1,
+                total: 2,
+                has_more: true,
+                next_cursor: "claim:target".to_string(),
+            }),
         };
 
         let value = temporal_from_response(response);
@@ -512,6 +523,10 @@ mod tests {
             value["coverage"]["requested"]["scope_ids"][0],
             "timeline:main"
         );
+        assert_eq!(value["page"]["returned"], 1);
+        assert_eq!(value["page"]["total"], 2);
+        assert_eq!(value["page"]["has_more"], true);
+        assert_eq!(value["page"]["next_cursor"], "claim:target");
     }
 
     #[test]

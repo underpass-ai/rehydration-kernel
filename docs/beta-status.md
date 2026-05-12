@@ -66,6 +66,9 @@ with a non-empty `abouts` list. `ALL_ABOUTS` uses the kernel memory about index
 to traverse every memory anchor. Temporal coverage preserves the requested
 scope for audit instead of normalizing `CURRENT_ABOUT` to an `ABOUTS` list.
 Temporal `raw_refs=true` returns typed raw audit refs for selected entries.
+Temporal movement responses expose `PageInfo` through gRPC and MCP, including
+`returned`, `total`, `has_more`, and `next_cursor` when a bounded move is
+partial.
 `Ask` currently uses deterministic evidence for all answer policies. Explicit
 conflict relations are surfaced in `proof.conflicts`; inferred conflict
 resolution and generated/best-effort fallback text are not implemented.

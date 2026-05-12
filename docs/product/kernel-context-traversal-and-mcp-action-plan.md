@@ -913,6 +913,10 @@ Input:
 }
 ```
 
+Temporal tool outputs include a `page` object with `returned`, `total`,
+`has_more`, and `next_cursor`. A partial temporal read is therefore visible to
+both humans and LLM clients instead of being confused with a complete traversal.
+
 ### `kernel_trace`
 
 Proof-path tool. Use this when the caller needs to know why a memory answer is

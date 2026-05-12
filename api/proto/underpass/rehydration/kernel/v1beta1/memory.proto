@@ -234,6 +234,7 @@ message TemporalMoveResponse {
   Proof proof = 5;
   repeated string warnings = 6;
   repeated RawMemoryRef raw_refs = 7;
+  PageInfo page = 8;
 }
 
 message GotoResponse {
@@ -244,6 +245,7 @@ message GotoResponse {
   Proof proof = 5;
   repeated string warnings = 6;
   repeated RawMemoryRef raw_refs = 7;
+  PageInfo page = 8;
 }
 
 message NearResponse {
@@ -254,6 +256,7 @@ message NearResponse {
   Proof proof = 5;
   repeated string warnings = 6;
   repeated RawMemoryRef raw_refs = 7;
+  PageInfo page = 8;
 }
 
 message RewindResponse {
@@ -264,6 +267,7 @@ message RewindResponse {
   Proof proof = 5;
   repeated string warnings = 6;
   repeated RawMemoryRef raw_refs = 7;
+  PageInfo page = 8;
 }
 
 message ForwardResponse {
@@ -274,6 +278,7 @@ message ForwardResponse {
   Proof proof = 5;
   repeated string warnings = 6;
   repeated RawMemoryRef raw_refs = 7;
+  PageInfo page = 8;
 }
 
 message TemporalState {

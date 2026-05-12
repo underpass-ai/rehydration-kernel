@@ -50,10 +50,20 @@ struct ReplayRow {
     elapsed_ms: u128,
     success: bool,
     error: Option<String>,
+    partial_result: bool,
+    page: Option<ReplayPage>,
     expected_observed_refs: Vec<String>,
     observed_refs: Vec<String>,
     missing_expected_refs: Vec<String>,
     extra_observed_refs: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct ReplayPage {
+    returned: Option<u64>,
+    total: Option<u64>,
+    has_more: bool,
+    next_cursor: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -77,6 +87,8 @@ struct ReplaySummary {
     missing_expected_ref_total: usize,
     extra_observed_ref_rows: usize,
     extra_observed_ref_total: usize,
+    partial_result_rows: usize,
+    partial_result_by_action: BTreeMap<String, usize>,
     by_action: BTreeMap<String, usize>,
     latency_ms_by_action: BTreeMap<String, ActionLatencySummary>,
     elapsed_ms: u128,
@@ -152,6 +164,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             .filter(|row| !row.extra_observed_refs.is_empty())
             .count(),
         extra_observed_ref_total: rows.iter().map(|row| row.extra_observed_refs.len()).sum(),
+        partial_result_rows: rows.iter().filter(|row| row.partial_result).count(),
+        partial_result_by_action: partial_result_by_action(&rows),
         by_action: by_action(&rows),
         latency_ms_by_action: latency_ms_by_action(&rows),
         elapsed_ms: started.elapsed().as_millis(),
@@ -229,6 +243,8 @@ async fn replay_one(
                 elapsed_ms: 0,
                 success: true,
                 error: None,
+                partial_result: false,
+                page: None,
                 expected_observed_refs,
                 observed_refs: Vec::new(),
                 missing_expected_refs: Vec::new(),
@@ -272,6 +288,8 @@ async fn replay_one(
             match call_mcp_tool(server, id, tool, arguments).await {
                 Ok(content) => {
                     let elapsed_ms = started.elapsed().as_millis();
+                    let page = page_from_content(&content);
+                    let partial_result = page.as_ref().is_some_and(|page| page.has_more);
                     let observed_refs = collect_memory_refs(&content)
                         .into_iter()
                         .collect::<Vec<_>>();
@@ -297,6 +315,8 @@ async fn replay_one(
                         } else {
                             Some("missing_expected_refs".to_string())
                         },
+                        partial_result,
+                        page,
                         expected_observed_refs,
                         observed_refs,
                         missing_expected_refs,
@@ -384,6 +404,8 @@ fn failed_row(
         elapsed_ms: 0,
         success: false,
         error: Some(error),
+        partial_result: false,
+        page: None,
         expected_observed_refs,
         observed_refs: Vec::new(),
         missing_expected_refs: Vec::new(),
@@ -588,6 +610,7 @@ fn log_progress(args: &Args, processed: usize, total: usize, row: &ReplayRow, st
             "step_id": row.step_id,
             "action": row.action_label,
             "success": row.success,
+            "partial_result": row.partial_result,
             "elapsed_ms": started.elapsed().as_millis(),
         })
     );
@@ -650,11 +673,39 @@ fn latency_ms_by_action(rows: &[ReplayRow]) -> BTreeMap<String, ActionLatencySum
         .collect()
 }
 
+fn partial_result_by_action(rows: &[ReplayRow]) -> BTreeMap<String, usize> {
+    let mut by_action = BTreeMap::new();
+    for row in rows.iter().filter(|row| row.partial_result) {
+        *by_action.entry(row.action_label.clone()).or_default() += 1;
+    }
+    by_action
+}
+
 #[derive(Debug, Default)]
 struct LatencyDraft {
     count: usize,
     total_ms: u128,
     max_ms: u128,
+}
+
+fn page_from_content(content: &Value) -> Option<ReplayPage> {
+    let page = content.get("page")?;
+    let object = page.as_object()?;
+    let next_cursor = object
+        .get("next_cursor")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .map(ToString::to_string);
+
+    Some(ReplayPage {
+        returned: object.get("returned").and_then(Value::as_u64),
+        total: object.get("total").and_then(Value::as_u64),
+        has_more: object
+            .get("has_more")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        next_cursor,
+    })
 }
 
 fn collect_memory_refs(value: &Value) -> BTreeSet<String> {

@@ -11,11 +11,12 @@ trajectories. It reached 1.000 exact action accuracy, 1.000 primary-ref
 accuracy, and zero invalid or unbounded actions on 1,124 held-out decisions.
 The same 1,124 predictions were de-anonymized and replayed through the public
 TLS MCP/gRPC endpoint: 976 executed tool calls, 148 stop actions, 0 MCP
-failures, 0 missing expected refs, and 7m18.7s elapsed. The next active slice
-is P1.11: scale the same pipeline before any publication or model-release
-claim.
+failures, 0 missing expected refs, and 7m18.7s elapsed. The top active
+requirement is now P1.11.0: bounded pagination, progress, and resume semantics
+for large KMP traversal, remote audit, and replay. No publication or
+model-release claim should move forward until that gate is clean.
 
-Date: 2026-05-11.
+Date: 2026-05-12.
 
 ## Goal
 
@@ -98,9 +99,10 @@ A small model can be viable because the task surface is narrow:
 
 Do not start model training until these are true:
 
+- Top 1: `near`, `trace`, `goto`, `rewind`, `forward`, remote audit, and live
+  replay expose bounded pagination/progress/resume behavior consistently
+  through gRPC/KMP and MCP.
 - MCP tool schemas are stable enough to serialize into the training prompt.
-- `near`, `trace`, `goto`, `rewind`, and `forward` expose bounded behavior and
-  pagination consistently.
 - Tool errors are fail-fast and explicit enough to be useful training labels.
 - Raw logs are redacted: no API keys, credentials, private raw memory, or
   unbounded prompt dumps.
@@ -1307,12 +1309,49 @@ dominates live replay latency. That makes candidate retrieval performance and
 pagination/budget behavior the next operational thing to watch as the holdout
 scales.
 
-### P1.11 Scale And Publication Gate
+### P1.11 Scale, Pagination, And Publication Gate
 
 P1.10 proves that the current V6 operator predictions are executable through
 the real MCP/gRPC boundary. It does not yet prove that the operator generalizes
 across a larger corpus. The next cut should keep kernel core unchanged and
 scale the same training/evaluation path.
+
+Top 1 requirement: P1.11.0 pagination/progress/resume gate.
+
+- `kernel_trace` must keep returning bounded paths with explicit page metadata:
+  cursor, `has_more`, returned count, and budget consumed.
+- `kernel_near`, `goto`, `rewind`, and `forward` must expose the same bounded
+  pagination semantics through both gRPC/KMP and MCP.
+- Remote audit tools must report progress by about/task and support limit,
+  offset or cursor-based resume. A long audit must not look like a hung
+  process.
+- Operator trajectories must include page metadata in `visible_state` when a
+  tool result is partial, so the operator can learn when to continue, narrow
+  scope, or stop.
+- Publication requires a clean replay/audit where no tool call requests an
+  unbounded history and no `trace` silently materializes the whole graph.
+
+P1.11.0 first implementation slice:
+
+- `memoryarena_kmp_run_audit` now supports `--limit`, `--offset`,
+  `--log-progress-every`, and `--progress-output`.
+- Remote inspect audit summaries now report `total_refs`, `offset`, `limit`,
+  `checked_refs`, `next_offset`, and global `completed`.
+- Audit progress events include `processed`, `selected`, `total`,
+  `next_offset`, `page_completed`, global `completed`, found/missing/error
+  counts, and elapsed time.
+- Resume is explicit: rerun with `--offset <inspect.next_offset>` or the last
+  progress event's `next_offset`.
+- Live smoke against the public TLS endpoint validated page 0, page 1, and a
+  single-ref page over the 221-task MemoryArena run with found refs and no
+  errors.
+- Temporal movement responses now carry `PageInfo` in the API contract for
+  `Goto`, `Near`, `Rewind`, and `Forward`; the MCP adapter maps the same page
+  object into `kernel_goto`, `kernel_near`, `kernel_rewind`, and
+  `kernel_forward` structured output.
+- `kernel_operator_mcp_replay` already exposes `--limit`, `--offset`, and
+  `--log-progress-every`; replay rows now record `partial_result` and `page`,
+  and summaries count partial results by action.
 
 Input rules:
 
@@ -1343,18 +1382,87 @@ Observed P1.11 setup smokes on 2026-05-11:
 | Smart-writer smoke with reused `run_id` | 1 task / 27 events | invalid smoke: prior data caused 9/9 future leaks |
 | Smart-writer smoke with fresh `run_id` | 1 task / 27 events | 27/27 successful, 9/9 known-at-clean, 0 future leaks, 17/17 valid LLM outputs |
 
+Observed 221-task progressive-search run on 2026-05-12:
+
+| Runner item | Result |
+| --- | ---: |
+| Abouts / tasks | 221 |
+| Subtasks / asks | 1,641 |
+| Ingest writes | 3,282 |
+| MCP navigation asks | 1,641 |
+| `kernel_near` probe calls | 1,641 |
+| `kernel_inspect` probe calls | 1,641 |
+| `kernel_trace` probe calls | 1,420 |
+| Future answer leaks | 0 |
+| Unexpected refs | 0 |
+| Smart-writer LLM invalid outputs | 0 |
+| Suspect relations | 0 |
+| Elapsed | 3h12m23s |
+
+Local scorecard over the same run:
+
+| Scorecard item | Result |
+| --- | ---: |
+| Task successes | 216 / 221 |
+| Task success rate | 0.9774 |
+| Process score | 0.8325 |
+| Micro process score | 0.8422 |
+| Full ref recall asks | 1,641 / 1,641 |
+| Future answer leaks | 0 |
+| Unexpected refs | 0 |
+| Failure class | reader/extraction gap only |
+
+Trajectory export and SFT preparation from that run:
+
+| Dataset item | Result |
+| --- | ---: |
+| Exported operator trajectories | 12,465 |
+| Read-mode trajectories | 6,343 |
+| Writer context-read trajectories | 6,122 |
+| Tool-call trajectories | 10,824 |
+| Stop trajectories | 1,641 |
+| Export failures | 0 |
+| Redaction findings | 0 |
+| SFT train rows | 11,177 |
+| SFT eval rows | 1,288 |
+| Train task groups | 197 |
+| Eval task groups | 24 |
+| Dropped non-visible target refs | 0 |
+| Model-facing leak audit findings | 0 |
+
+Baseline checks on the anonymized eval split:
+
+| Predictor | Total | Exact | Tool | Ref | Scope | Stop | Invalid | Unbounded |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Oracle | 1,288 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 0 | 0 |
+| Deterministic | 1,288 | 0.264 | 1.000 | 0.435 | 1.000 | 1.000 | 0 | 0 |
+
+The deterministic baseline losing ref accuracy after anonymization is expected
+and useful: the larger corpus no longer lets a rule recover the right ref from
+the raw MemoryArena id shape. The operator must use visible state and tool
+observations.
+
+This run is the first useful P1.11 scale corpus, but the remote `--inspect`
+audit exposed why P1.11.0 is now top priority: an exhaustive audit over
+thousands of remote `inspect` calls is too opaque while it runs. Large audits
+and graph traversal must be paged, bounded, resumable, and observable in the
+same way normal KMP reads are.
+
 Recommended run order:
 
-1. Generate or select the next larger MemoryArena run. Target the 221-task
+1. Implement and validate P1.11.0 pagination/progress/resume for KMP/MCP
+   traversal, remote audit, and replay.
+2. Generate or select the next larger MemoryArena run. Target the 221-task
    progressive set when cost and time are acceptable; use a smaller stepped
    run only as a smoke.
-2. Export trajectories with writer candidate details.
-3. Prepare a grouped, anonymized, visible-ref-only split.
-4. Run deterministic and generalist baselines on the same eval set.
-5. Train the same small Qwen 0.5B LoRA recipe from scratch.
-6. Predict on the held-out set and evaluate against anonymized trajectories.
-7. De-anonymize predictions and run raw-ref policy evaluation.
-8. Run live MCP replay first with `--limit 100`, then full replay only if the
+3. Run local scorecard and remote audit with progress/pagination enabled.
+4. Export trajectories with writer candidate details.
+5. Prepare a grouped, anonymized, visible-ref-only split.
+6. Run deterministic and generalist baselines on the same eval set.
+7. Train the same small Qwen 0.5B LoRA recipe from scratch.
+8. Predict on the held-out set and evaluate against anonymized trajectories.
+9. De-anonymize predictions and run raw-ref policy evaluation.
+10. Run live MCP replay first with `--limit 100`, then full replay only if the
    smoke has zero missing predictions, invalid predictions, unbounded calls,
    MCP failures, and missing expected refs.
 
@@ -1371,6 +1479,8 @@ Metrics to publish for this cut:
 
 Exit criteria:
 
+- P1.11.0 pagination/progress/resume reports prove that `trace`, `near`,
+  temporal moves, replay, and audit stay bounded at 221-task scale or higher;
 - no model-facing leak of raw MemoryArena refs or benchmark answers;
 - zero invalid and unbounded operator actions on the held-out set;
 - live MCP replay has zero MCP failures and zero missing expected refs;

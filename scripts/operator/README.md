@@ -412,6 +412,8 @@ semantics.
 
 Run rules:
 
+- top 1 gate: bounded pagination/progress/resume for remote audit and replay
+  must be validated before using a run as publication evidence;
 - start from a fresh audited MemoryArena smart-writer run;
 - generate a fresh `run_id` for every live run or smoke;
 - split by task id or run family, never by individual trajectory row;
@@ -427,7 +429,36 @@ future-leak failures.
 
 Recommended sequence:
 
+First validate the P1.11.0 audit/replay pagination gate. The audit command must
+emit progress by about/task and support resume before it is used as publication
+evidence.
+
+`memoryarena_kmp_run_audit` supports paged remote inspect through `--limit` and
+`--offset`. It writes `inspect.next_offset` in the summary and emits JSONL
+progress events to stderr and, optionally, `--progress-output`.
+
+Temporal reads are also page-aware. `kernel_goto`, `kernel_near`,
+`kernel_rewind`, `kernel_forward`, and `kernel_trace` expose a `page` object in
+MCP structured output. Live replay writes that page into `results.jsonl`,
+marks rows with `partial_result=true` when `page.has_more=true`, and reports
+partial-result counts in `summary.json`.
+
 ```bash
+cargo run -p rehydration-testkit --bin memoryarena_kmp_run_audit -- \
+  --run <memoryarena-run-dir> \
+  --endpoint <public-kernel-url> \
+  --inspect \
+  --expected-run-id <run-id> \
+  --output <audit.json> \
+  --limit 100 \
+  --offset 0 \
+  --log-progress-every 25 \
+  --progress-output <audit-progress.jsonl> \
+  --force
+
+# For the next audit page, use inspect.next_offset from <audit.json> or the
+# last progress event's next_offset as the new --offset.
+
 cargo run -p rehydration-testkit --bin kernel_operator_trajectory_export -- \
   --run <memoryarena-run-dir> \
   --output <operator-trajectories-dir> \

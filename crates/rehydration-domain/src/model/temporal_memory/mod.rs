@@ -122,6 +122,7 @@ pub struct TemporalTraversalResult {
     included_dimensions: Vec<String>,
     missing_dimensions: Vec<String>,
     entries: Vec<TemporalEntry>,
+    page: TemporalTraversalPage,
     missing: Vec<String>,
 }
 
@@ -150,8 +151,45 @@ impl TemporalTraversalResult {
         &self.entries
     }
 
+    pub fn page(&self) -> &TemporalTraversalPage {
+        &self.page
+    }
+
     pub fn missing(&self) -> &[String] {
         &self.missing
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TemporalTraversalPage {
+    returned: usize,
+    total: usize,
+    next_cursor: Option<String>,
+}
+
+impl TemporalTraversalPage {
+    pub fn new(returned: usize, total: usize, next_cursor: Option<String>) -> Self {
+        Self {
+            returned,
+            total,
+            next_cursor,
+        }
+    }
+
+    pub fn returned(&self) -> usize {
+        self.returned
+    }
+
+    pub fn total(&self) -> usize {
+        self.total
+    }
+
+    pub fn has_more(&self) -> bool {
+        self.returned < self.total
+    }
+
+    pub fn next_cursor(&self) -> Option<&str> {
+        self.next_cursor.as_deref()
     }
 }
 
@@ -179,8 +217,13 @@ impl TemporalMemoryTraversal {
         let has_comparable_positions = positions
             .iter()
             .any(|position| position.axis_key.axis() == cursor.axis_key.axis());
-        let selected_positions = select_positions(&positions, &cursor, request);
-        let selected_ref_ids = ordered_unique_ref_ids(selected_positions);
+        let selection = select_positions(&positions, &cursor, request);
+        let selected_ref_ids = ordered_unique_ref_ids(selection.positions);
+        let page = TemporalTraversalPage::new(
+            selected_ref_ids.len(),
+            selection.total_unique_refs,
+            selection.next_cursor,
+        );
         let coordinates_by_ref = coordinates_by_ref(&positions);
         let entries = build_entries(
             selected_ref_ids,
@@ -208,6 +251,7 @@ impl TemporalMemoryTraversal {
             included_dimensions,
             missing_dimensions,
             entries,
+            page,
             missing,
         })
     }
@@ -309,6 +353,9 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(refs, vec!["claim:one", "claim:two", "claim:three"]);
+        assert_eq!(result.page().returned(), 3);
+        assert_eq!(result.page().total(), 3);
+        assert!(!result.page().has_more());
         assert!(result.missing().is_empty());
     }
 
@@ -344,8 +391,35 @@ mod tests {
             TemporalMemoryTraversal::traverse(&bundle, &request).expect("forward should traverse");
 
         assert!(result.entries().is_empty());
+        assert_eq!(result.page().returned(), 0);
+        assert_eq!(result.page().total(), 0);
+        assert!(!result.page().has_more());
         assert!(result.missing_dimensions().is_empty());
         assert!(result.missing().is_empty());
+    }
+
+    #[test]
+    fn forward_reports_page_metadata_when_limited() {
+        let bundle = temporal_bundle(&[
+            ("claim:one", "decision", "decision:main", 1),
+            ("claim:two", "decision", "decision:main", 2),
+            ("claim:three", "decision", "decision:main", 3),
+        ]);
+        let request = TemporalTraversalRequest::new(
+            TemporalDirection::Forward,
+            TemporalCursor::sequence(1).expect("sequence cursor should be valid"),
+        )
+        .with_limit_entries(1)
+        .expect("limit should be valid");
+
+        let result =
+            TemporalMemoryTraversal::traverse(&bundle, &request).expect("forward should traverse");
+
+        assert_eq!(result.entries()[0].ref_id(), "claim:two");
+        assert_eq!(result.page().returned(), 1);
+        assert_eq!(result.page().total(), 2);
+        assert!(result.page().has_more());
+        assert_eq!(result.page().next_cursor(), Some("claim:two"));
     }
 
     fn temporal_bundle(entries: &[(&str, &str, &str, u32)]) -> RehydrationBundle {
