@@ -272,6 +272,8 @@ fn export_results(path: &Path, data: &mut ExportData) -> Result<(), Box<dyn Erro
         let mut known_refs = BTreeSet::<String>::new();
         let mut last_tool: Option<String> = None;
         let mut last_observed_refs = Vec::<String>::new();
+        let mut last_page: Option<Value> = None;
+        let mut last_partial_result: Option<bool> = None;
 
         for (call_index, call) in calls.iter().enumerate() {
             let Some(tool) = call.get("tool").and_then(Value::as_str) else {
@@ -285,6 +287,8 @@ fn export_results(path: &Path, data: &mut ExportData) -> Result<(), Box<dyn Erro
             };
             let arguments = call.get("arguments").cloned().unwrap_or_else(|| json!({}));
             let observed_refs = string_array(call, "observed_refs");
+            let current_page = call_page(call);
+            let current_partial_result = call_partial_result(call);
             let bounded = kernel_operator_is_bounded_tool_call(tool, &arguments);
             if !bounded {
                 data.failures.push(FailureRow {
@@ -319,6 +323,8 @@ fn export_results(path: &Path, data: &mut ExportData) -> Result<(), Box<dyn Erro
                     "known_refs": known_refs.iter().cloned().collect::<Vec<_>>(),
                     "last_tool": last_tool,
                     "last_observed_refs": last_observed_refs,
+                    "last_result_page": last_page.clone(),
+                    "last_result_partial": last_partial_result,
                     "remaining_budget": {
                         "tool_calls": calls.len().saturating_sub(call_index),
                         "context_chars": DEFAULT_CONTEXT_CHARS,
@@ -341,6 +347,8 @@ fn export_results(path: &Path, data: &mut ExportData) -> Result<(), Box<dyn Erro
                     "observed_refs": observed_refs,
                     "elapsed_ms": call.get("elapsed_ms").and_then(Value::as_u64),
                     "observed_ref_count": observed_refs.len(),
+                    "partial_result": current_partial_result,
+                    "page": current_page.clone(),
                 })),
                 quality: json!({
                     "known_at_clean": known_at_clean,
@@ -360,6 +368,8 @@ fn export_results(path: &Path, data: &mut ExportData) -> Result<(), Box<dyn Erro
             known_refs.extend(observed_refs.iter().cloned());
             last_tool = Some(tool.to_string());
             last_observed_refs = observed_refs;
+            last_page = current_page;
+            last_partial_result = current_partial_result;
         }
 
         let stop_correct = known_at_clean && !future_answer_leak && missing_allowed_refs.is_empty();
@@ -384,6 +394,8 @@ fn export_results(path: &Path, data: &mut ExportData) -> Result<(), Box<dyn Erro
                 "known_refs": known_refs.iter().cloned().collect::<Vec<_>>(),
                 "last_tool": last_tool,
                 "last_observed_refs": last_observed_refs,
+                "last_result_page": last_page.clone(),
+                "last_result_partial": last_partial_result,
                 "remaining_budget": {
                     "tool_calls": 0,
                     "context_chars": DEFAULT_CONTEXT_CHARS,
@@ -452,6 +464,8 @@ fn export_writer_reads(
         let mut known_refs = BTreeSet::<String>::new();
         let mut last_tool: Option<String> = None;
         let mut last_observed_refs = Vec::<String>::new();
+        let mut last_page: Option<Value> = None;
+        let mut last_partial_result: Option<bool> = None;
         let allowed_tools = kernel_operator_allowed_read_tools();
         let candidate_ref_details =
             writer_candidate_ref_details(&value, &calls, entry_ref, entry_kind);
@@ -473,6 +487,8 @@ fn export_writer_reads(
             };
             let arguments = call.get("arguments").cloned().unwrap_or_else(|| json!({}));
             let observed_refs = string_array(call, "observed_refs");
+            let current_page = call_page(call);
+            let current_partial_result = call_partial_result(call);
             let bounded = kernel_operator_is_bounded_tool_call(tool, &arguments);
             if !bounded {
                 data.failures.push(FailureRow {
@@ -504,6 +520,8 @@ fn export_writer_reads(
                     "known_refs": known_refs.iter().cloned().collect::<Vec<_>>(),
                     "last_tool": last_tool,
                     "last_observed_refs": last_observed_refs,
+                    "last_result_page": last_page.clone(),
+                    "last_result_partial": last_partial_result,
                     "remaining_budget": {
                         "tool_calls": calls.len().saturating_sub(call_index).min(DEFAULT_TOOL_CALL_BUDGET),
                         "context_chars": DEFAULT_CONTEXT_CHARS,
@@ -524,6 +542,8 @@ fn export_writer_reads(
                     "observed_refs": observed_refs,
                     "elapsed_ms": call.get("elapsed_ms").and_then(Value::as_u64),
                     "observed_ref_count": observed_refs.len(),
+                    "partial_result": current_partial_result,
+                    "page": current_page.clone(),
                 })),
                 quality: json!({
                     "known_at_clean": null,
@@ -540,9 +560,21 @@ fn export_writer_reads(
             known_refs.extend(observed_refs.iter().cloned());
             last_tool = Some(tool.to_string());
             last_observed_refs = observed_refs;
+            last_page = current_page;
+            last_partial_result = current_partial_result;
         }
     }
     Ok(())
+}
+
+fn call_page(call: &Value) -> Option<Value> {
+    call.get("page").filter(|page| page.is_object()).cloned()
+}
+
+fn call_partial_result(call: &Value) -> Option<bool> {
+    call.get("partial_result")
+        .and_then(Value::as_bool)
+        .or_else(|| call_page(call).and_then(|page| page.get("has_more").and_then(Value::as_bool)))
 }
 
 fn writer_candidate_ref_details(
@@ -1075,6 +1107,36 @@ mod tests {
             "authorization": "Bearer sk-test",
         }));
         assert_eq!(report.findings.len(), 2);
+    }
+
+    #[test]
+    fn call_partial_result_uses_page_has_more_when_not_explicit() {
+        let call = json!({
+            "page": {
+                "returned": 12,
+                "total": 20,
+                "has_more": true,
+                "next_cursor": "ref:next"
+            }
+        });
+
+        assert_eq!(call_partial_result(&call), Some(true));
+        assert_eq!(
+            call_page(&call).and_then(|page| page.get("total").cloned()),
+            Some(json!(20))
+        );
+    }
+
+    #[test]
+    fn call_partial_result_prefers_explicit_value() {
+        let call = json!({
+            "partial_result": false,
+            "page": {
+                "has_more": true
+            }
+        });
+
+        assert_eq!(call_partial_result(&call), Some(false));
     }
 
     #[test]

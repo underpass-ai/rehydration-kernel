@@ -1442,6 +1442,34 @@ and useful: the larger corpus no longer lets a rule recover the right ref from
 the raw MemoryArena id shape. The operator must use visible state and tool
 observations.
 
+Post-deploy P1.11.0 checks on 2026-05-12:
+
+| Check | Result |
+| --- | ---: |
+| Deployed image | `ghcr.io/underpass-ai/rehydration-kernel:dev-78e9a9f` |
+| MCP temporal page smoke | `kernel_forward` page 1 `has_more=true`, page 2 `has_more=false` |
+| Remote inspect audit smoke | 100 / 100 refs found |
+| Remote inspect audit errors | 0 |
+| Remote inspect audit total refs | 12,150 |
+| Remote inspect audit next offset | 100 |
+| Regenerated trajectories from current exporter | 12,465 |
+| Regenerated SFT train rows | 11,177 |
+| Regenerated SFT eval rows | 1,288 |
+| Regenerated eval oracle exact accuracy | 1.000 |
+| Regenerated eval deterministic exact accuracy | 0.264 |
+
+The local artifact cache for this cut is outside the repository tree at
+`../rehydration-kernel-artifacts/operator/p111-pageinfo-221-20260512/`. It
+contains large benchmark runs, JSONL trajectories, SFT splits, logs, and audit
+outputs copied from `/tmp`.
+
+The 221-task run was recorded before temporal `page` metadata existed in stored
+MCP navigation rows, so its exported trajectories do not contain historical
+`page` or `partial_result` values. The trajectory exporter now preserves that
+metadata when source rows carry it. Page metadata is already validated through
+live KMP/MCP calls and must be captured by future page-aware replay or fresh
+page-aware benchmark runs.
+
 This run is the first useful P1.11 scale corpus, but the remote `--inspect`
 audit exposed why P1.11.0 is now top priority: an exhaustive audit over
 thousands of remote `inspect` calls is too opaque while it runs. Large audits
