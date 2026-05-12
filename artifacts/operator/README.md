@@ -11,3 +11,8 @@ Current local cache:
 - `../rehydration-kernel-artifacts/operator/p111-pageinfo-221-20260512/`:
   MemoryArena P1.11 221-task run, remote audit smoke, regenerated Operator
   trajectories, SFT split, and policy eval outputs.
+- `../rehydration-kernel-artifacts/operator/longmemeval-valid-20260512/`:
+  preserved LongMemEval Balanced60/100/MS30 smart-writer artifacts, exported
+  LongMemEval Operator trajectories, mixed MemoryArena+LongMemEval SFT data,
+  no-gold audit report, downloaded `longmemeval_s_cleaned.json`, and the
+  500-item full-history smoke artifacts.

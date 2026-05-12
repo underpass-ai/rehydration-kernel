@@ -1676,6 +1676,106 @@ Correct positioning:
 Avoid claims that it is a general QA model, a memory database, or a replacement
 for the kernel.
 
+### LongMemEval Mixed-Trajectory Slice
+
+The Operator dataset should not learn only the MemoryArena graph shape. The
+LongMemEval rows are exported by a separate binary,
+`longmemeval_operator_trajectory_export`, but use the same
+`kernel-operator-trajectory-v1` output contract as MemoryArena.
+
+Current preserved local cache:
+
+```text
+../rehydration-kernel-artifacts/operator/longmemeval-valid-20260512/
+```
+
+Exported LongMemEval trajectory counts:
+
+| Source | Trajectories | Notes |
+| --- | ---: | --- |
+| Balanced60 v6 | 120 | `kernel_ask` + stop rows |
+| 100-prefix v6 | 200 | `kernel_ask` + stop rows |
+| MS30 smart writer | 268 | `kernel_ask`, stop, `kernel_near`, `kernel_inspect` writer reads |
+
+Mixed MemoryArena P1.11 + LongMemEval SFT output:
+
+```text
+../rehydration-kernel-artifacts/operator/longmemeval-valid-20260512/kernel-operator-sft-mixed-memoryarena-longmemeval-20260512/
+```
+
+Summary:
+
+- total model-facing rows: 13,053;
+- train rows: 11,729;
+- eval rows: 1,324;
+- split mode: grouped by `task_id`; LongMemEval maps this to `question_id`;
+- dropped non-visible target refs: 0;
+- no-gold audit findings: 0.
+
+Action mix:
+
+| Action | Rows |
+| --- | ---: |
+| `kernel_near` | 4,806 |
+| `kernel_inspect` | 4,806 |
+| `kernel_trace` | 1,420 |
+| `kernel_ask` | 190 |
+| `stop` | 1,831 |
+
+The no-gold audit checks the model-facing OpenAI JSONL files for
+`target_action`, `observed_outcome`, `expected_answer`,
+`expected_answer_turn_refs`, `answer_session_ids`, `answer_session_refs`,
+`has_answer`, and gold-label markers.
+
+### LongMemEval 500 Full-History Smoke
+
+The cleaned LongMemEval-S file was restored from Hugging Face and preserved
+outside the repo:
+
+```text
+../rehydration-kernel-artifacts/operator/longmemeval-valid-20260512/datasets/longmemeval_s_cleaned.json
+```
+
+The 500-item adapter pass completed:
+
+- prepared items: 500;
+- sessions: 23,867;
+- turns: 246,750;
+- expected evidence turns: 896;
+- abstention items: 30.
+
+The first live smoke initially exposed an infrastructure regression:
+
+```text
+Valkey TLS failed with UnknownIssuer because valkey.tls was enabled for the
+server but valkeyTls was disabled for the kernel client.
+```
+
+The deployed release was corrected with Helm revision 128 by enabling
+`valkeyTls.enabled=true` and mounting `rehydration-kernel-valkey-tls`.
+
+After redeploy, a one-item full-history smoke against the public TLS endpoint
+completed:
+
+| Metric | Value |
+| --- | ---: |
+| Items | 1 |
+| Ingested entries | 551 |
+| Full evidence hits | 1 / 1 |
+| Elapsed | 130,052 ms |
+
+The smoke used the MCP runner path. A direct Codex MCP check also exercised
+`kernel_ingest`, `kernel_ask`, `kernel_near`, and `kernel_inspect` against the
+same live kernel boundary on the isolated about
+`codex:mcp:operator-longmemeval-smoke:20260512`.
+
+Do not treat this as the publishable LongMemEval-500 score. The full 500 run was
+not launched in this slice because the smoke projects to many hours, and the
+current LongMemEval adapter still uses `has_answer` to emit `supports_answer`
+relations when no generated labels are provided. A publishable official-style
+run needs a context-construction path that does not use `has_answer`,
+`answer_session_ids`, or gold answer metadata.
+
 ## Next Execution Slice
 
 The original first-slice checklist is complete. The next execution slice is
