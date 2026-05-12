@@ -34,6 +34,8 @@ Allowed action shapes:
 
 {"action":{"type":"tool_call","tool":"kernel_trace","arguments":{"from":"...","to":"...","goal":"Kernel operator trace probe","budget":{"depth":1,"tokens":1600}}}}
 
+{"action":{"type":"tool_call","tool":"kernel_ask","arguments":{"about":"...","answer_policy":"evidence_or_unknown","dimensions":{"mode":"all","scope":"current_about"},"question":"...","budget":{"tokens":2400}}}}
+
 {"action":{"type":"stop","answer_policy":"evidence_or_unknown","final_refs":["..."],"reason":"sufficient_evidence"}}
 
 Rules:
@@ -44,6 +46,7 @@ Rules:
 - For `kernel_near`, `arguments.about` must equal the top-level `about` value exactly.
 - Do not use `current_ref` as `arguments.about`.
 - `kernel_inspect.include.raw` must be false.
+- For `kernel_ask`, `arguments.about` must equal the top-level `about` value exactly.
 """
 
 
@@ -363,6 +366,20 @@ def group_value(item: dict[str, Any], key: str) -> str:
     )
     if task_id is not None:
         return str(task_id)
+    question_id = (
+        item.get("visible_state", {})
+        .get("task", {})
+        .get("question_id")
+    )
+    if question_id is not None:
+        return str(question_id)
+    writer_question_id = (
+        item.get("visible_state", {})
+        .get("writer", {})
+        .get("question_id")
+    )
+    if writer_question_id is not None:
+        return str(writer_question_id)
     about = str(item.get("about", "missing"))
     marker = ":task:"
     if marker in about:

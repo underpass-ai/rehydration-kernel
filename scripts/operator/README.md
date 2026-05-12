@@ -112,14 +112,59 @@ For strict anonymized datasets:
 Prompt leak audit:
 
 ```bash
-jq -c 'select((.messages|map(.content)|join("\n")|test("memoryarena:|:question|:answer|:subtask:|:task:|target_action|observed_outcome|quality|gold|answer_session|has_answer")))' \
-  /tmp/kernel-operator-sft-100-with-writer-by-task-anon-visible-candidate-details/train.jsonl \
-  /tmp/kernel-operator-sft-100-with-writer-by-task-anon-visible-candidate-details/eval.jsonl \
+python scripts/operator/audit_operator_sft_no_gold.py \
   /tmp/kernel-operator-sft-100-with-writer-by-task-anon-visible-candidate-details/openai_train.jsonl \
-  /tmp/kernel-operator-sft-100-with-writer-by-task-anon-visible-candidate-details/openai_eval.jsonl
+  /tmp/kernel-operator-sft-100-with-writer-by-task-anon-visible-candidate-details/openai_eval.jsonl \
+  --output /tmp/kernel-operator-sft-100-with-writer-by-task-anon-visible-candidate-details/no-gold-audit.json
 ```
 
-Expected output: no rows.
+Expected result: `finding_count` is `0`.
+
+### LongMemEval Trajectories
+
+LongMemEval uses a separate exporter. Do not route LongMemEval rows through the
+MemoryArena exporter; both exporters emit the same
+`kernel-operator-trajectory-v1` contract so downstream preparation can consume
+them together.
+
+```bash
+cargo run -p rehydration-testkit --bin longmemeval_operator_trajectory_export -- \
+  --run <longmemeval-run-dir> \
+  --artifacts <longmemeval-adapter-artifacts-dir> \
+  --output <longmemeval-operator-trajectories-dir> \
+  --expected-run-id <run-id> \
+  --force
+```
+
+For LongMemEval smart-writer runs, include writer context reads:
+
+```bash
+cargo run -p rehydration-testkit --bin longmemeval_operator_trajectory_export -- \
+  --run <longmemeval-smart-writer-run-dir> \
+  --artifacts <longmemeval-smart-writer-artifacts-dir> \
+  --output <longmemeval-smart-writer-operator-trajectories-dir> \
+  --expected-run-id <run-id> \
+  --include-writer-reads \
+  --force
+```
+
+Mixed MemoryArena + LongMemEval SFT data is prepared by passing multiple
+trajectory files. Keep `--split-mode group --group-key task_id`: MemoryArena
+groups by task id, LongMemEval groups by question id, and writer rows use the
+same logical question id.
+
+```bash
+python scripts/operator/prepare_operator_sft_dataset.py \
+  --trajectories <memoryarena-operator-trajectories>/trajectories.jsonl \
+  --trajectories <longmemeval-operator-trajectories>/trajectories.jsonl \
+  --trajectories <longmemeval-smart-writer-operator-trajectories>/trajectories.jsonl \
+  --output <mixed-operator-sft-dir> \
+  --split-mode group \
+  --group-key task_id \
+  --anonymize-refs \
+  --require-visible-target-refs \
+  --force
+```
 
 ## 2. Train LoRA
 
