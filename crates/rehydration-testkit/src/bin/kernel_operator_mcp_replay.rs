@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::env;
 use std::error::Error;
 use std::fs::{self, File};
@@ -107,7 +107,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     ensure_output_dir(&args.output, args.force)?;
 
     let trajectories = select_trajectories(read_trajectories(&args.trajectories)?, &args);
-    let predictions = read_predictions(&args.predictions)?;
+    let mut predictions = read_predictions(&args.predictions)?;
     let server = match args.endpoint.as_deref() {
         Some(endpoint) => KernelMcpServer::grpc_with_tls(
             endpoint,
@@ -133,7 +133,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             &server,
             &mut request_id,
             trajectory,
-            predictions.get(&trajectory.step_id),
+            take_prediction(&mut predictions, &trajectory.step_id).as_ref(),
             &mut counters,
         )
         .await;
@@ -497,7 +497,7 @@ fn read_trajectories(path: &Path) -> Result<Vec<Trajectory>, Box<dyn Error + Sen
 
 fn read_predictions(
     path: &Path,
-) -> Result<BTreeMap<String, Prediction>, Box<dyn Error + Send + Sync>> {
+) -> Result<BTreeMap<String, VecDeque<Prediction>>, Box<dyn Error + Send + Sync>> {
     let mut predictions = BTreeMap::new();
     for (index, value) in read_jsonl(path)?.into_iter().enumerate() {
         let location = format!("{}:{}", path.display(), index + 1);
@@ -510,9 +510,19 @@ fn read_predictions(
             .or_else(|| value.get("target_action"))
             .cloned()
             .ok_or_else(|| format!("{location} missing `action` or `target_action`"))?;
-        predictions.insert(step_id.to_string(), Prediction { action });
+        predictions
+            .entry(step_id.to_string())
+            .or_insert_with(VecDeque::new)
+            .push_back(Prediction { action });
     }
     Ok(predictions)
+}
+
+fn take_prediction(
+    predictions: &mut BTreeMap<String, VecDeque<Prediction>>,
+    step_id: &str,
+) -> Option<Prediction> {
+    predictions.get_mut(step_id).and_then(VecDeque::pop_front)
 }
 
 fn read_jsonl(path: &Path) -> Result<Vec<Value>, Box<dyn Error + Send + Sync>> {
@@ -765,7 +775,14 @@ fn field_allows_memory_ref(field: Option<&str>) -> bool {
 }
 
 fn looks_like_memory_ref(value: &str) -> bool {
-    value.starts_with("memoryarena:") && !value.contains(' ') && value.len() <= 320
+    !value.contains(' ')
+        && value.len() <= 500
+        && (value.starts_with("memoryarena:")
+            || value.starts_with("longmemeval:")
+            || value.starts_with("turn:")
+            || value.starts_with("question:")
+            || value.starts_with("evidence:")
+            || value.starts_with("about:"))
 }
 
 fn action_label(action: &Value) -> String {
@@ -782,4 +799,64 @@ fn action_type(action: &Value) -> Option<&str> {
 
 fn tool(action: &Value) -> Option<&str> {
     action.get("tool").and_then(Value::as_str)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn collect_memory_refs_accepts_memoryarena_and_longmemeval_refs() {
+        let refs = collect_memory_refs(&json!({
+            "proof": {
+                "evidence": [
+                    {
+                        "supports": [
+                            "memoryarena:run:demo:task:1",
+                            "turn:run:lme:question:q:answer:a:1",
+                            "evidence:run:lme:question:q:answer:a:1"
+                        ],
+                        "source": "question:run:lme:question:q"
+                    }
+                ],
+                "path": [
+                    {
+                        "from": "about:longmemeval:run:lme:item:q:dimension:longmemeval:session:s1",
+                        "to": "longmemeval:run:lme:item:q"
+                    }
+                ]
+            },
+            "answer": "mentions turn:run:lme:question:q:answer:a:2 but answer text is not proof"
+        }));
+
+        assert!(refs.contains("memoryarena:run:demo:task:1"));
+        assert!(refs.contains("turn:run:lme:question:q:answer:a:1"));
+        assert!(refs.contains("evidence:run:lme:question:q:answer:a:1"));
+        assert!(refs.contains("question:run:lme:question:q"));
+        assert!(refs.contains("about:longmemeval:run:lme:item:q:dimension:longmemeval:session:s1"));
+        assert!(refs.contains("longmemeval:run:lme:item:q"));
+        assert!(!refs.contains("turn:run:lme:question:q:answer:a:2"));
+    }
+
+    #[test]
+    fn take_prediction_preserves_duplicate_step_id_order() {
+        let mut predictions = BTreeMap::from([(
+            "same-step".to_string(),
+            VecDeque::from([
+                Prediction {
+                    action: json!({"type": "tool_call", "tool": "kernel_ask"}),
+                },
+                Prediction {
+                    action: json!({"type": "stop"}),
+                },
+            ]),
+        )]);
+
+        let first = take_prediction(&mut predictions, "same-step").expect("first prediction");
+        let second = take_prediction(&mut predictions, "same-step").expect("second prediction");
+
+        assert_eq!(first.action["tool"], "kernel_ask");
+        assert_eq!(second.action["type"], "stop");
+        assert!(take_prediction(&mut predictions, "same-step").is_none());
+    }
 }

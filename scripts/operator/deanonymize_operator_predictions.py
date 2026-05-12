@@ -62,8 +62,8 @@ def main() -> None:
                     },
                 )
                 continue
-            raw = raw_by_step.get(step_id)
-            model = model_by_step.get(step_id)
+            raw = pop_trajectory(raw_by_step, step_id)
+            model = pop_trajectory(model_by_step, step_id)
             if raw is None or model is None:
                 failures += 1
                 write_jsonl(
@@ -127,14 +127,21 @@ def main() -> None:
         raise SystemExit(f"failed to de-anonymize {failures} prediction(s)")
 
 
-def read_trajectories(path: Path) -> dict[str, dict[str, Any]]:
-    values: dict[str, dict[str, Any]] = {}
+def read_trajectories(path: Path) -> dict[str, list[dict[str, Any]]]:
+    values: dict[str, list[dict[str, Any]]] = {}
     for index, value in enumerate(read_jsonl(path), start=1):
         step_id = string_field(value, "step_id")
-        if step_id in values:
-            raise SystemExit(f"{path}:{index} duplicates step_id {step_id}")
-        values[step_id] = value
+        values.setdefault(step_id, []).append(value)
     return values
+
+
+def pop_trajectory(
+    values: dict[str, list[dict[str, Any]]], step_id: str
+) -> dict[str, Any] | None:
+    matches = values.get(step_id)
+    if not matches:
+        return None
+    return matches.pop(0)
 
 
 def read_jsonl(path: Path) -> list[dict[str, Any]]:
