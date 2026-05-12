@@ -157,21 +157,26 @@ Repo visibility checklist:
 
 ## Release Sequence
 
-1. Finish P1.11 larger MemoryArena run.
-2. Export trajectories with candidate details.
-3. Prepare grouped anonymized split.
-4. Run prompt leak audit.
-5. Train the small operator release candidate, either as adapter weights or
+1. Implement and validate P1.11.0: bounded pagination, progress, and resume for
+   KMP/MCP traversal, remote audit, and live replay.
+2. Finish P1.11 larger MemoryArena run.
+3. Run local scorecard plus remote audit with bounded pagination/progress
+   visible by about/task.
+4. Export trajectories with candidate details, including page metadata when a
+   KMP/MCP read returns a partial result.
+5. Prepare grouped anonymized split.
+6. Run prompt leak audit.
+7. Train the small operator release candidate, either as adapter weights or
    full weights.
-6. Run offline policy eval.
-7. De-anonymize predictions.
-8. Run live MCP replay against the public TLS endpoint.
-9. Produce model card, dataset card, and eval summary.
-10. Publish model and dataset as private Hugging Face repos first.
-11. Verify downloads and local inference from the published artifacts.
-12. Make Hugging Face repos public.
-13. Update kernel README, docs index, and article links.
-14. Create a GitHub release pointing to the exact HF artifacts.
+8. Run offline policy eval.
+9. De-anonymize predictions.
+10. Run live MCP replay against the public TLS endpoint.
+11. Produce model card, dataset card, and eval summary.
+12. Publish model and dataset as private Hugging Face repos first.
+13. Verify downloads and local inference from the published artifacts.
+14. Make Hugging Face repos public.
+15. Update kernel README, docs index, and article links.
+16. Create a GitHub release pointing to the exact HF artifacts.
 
 ## CLI Notes
 

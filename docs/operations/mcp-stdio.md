@@ -129,7 +129,9 @@ including dimension coordinates when the object is contained by memory
 dimensions.
 
 Temporal `include.raw_refs=true` returns typed raw audit refs for selected
-entries. `include.evidence` and `include.relations` are supported.
+entries. `include.evidence` and `include.relations` are supported. Temporal
+tools include a `page` object in structured output so partial bounded reads are
+visible to operators and LLM clients.
 
 ## Smoke Test
 

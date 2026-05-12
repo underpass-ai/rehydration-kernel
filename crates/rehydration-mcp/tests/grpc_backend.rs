@@ -867,6 +867,7 @@ fn goto_response_from_temporal(response: TemporalMoveResponse) -> GotoResponse {
         proof: response.proof,
         warnings: response.warnings,
         raw_refs: response.raw_refs,
+        page: response.page,
     }
 }
 
@@ -879,6 +880,7 @@ fn near_response_from_temporal(response: TemporalMoveResponse) -> NearResponse {
         proof: response.proof,
         warnings: response.warnings,
         raw_refs: response.raw_refs,
+        page: response.page,
     }
 }
 
@@ -891,6 +893,7 @@ fn rewind_response_from_temporal(response: TemporalMoveResponse) -> RewindRespon
         proof: response.proof,
         warnings: response.warnings,
         raw_refs: response.raw_refs,
+        page: response.page,
     }
 }
 
@@ -903,6 +906,7 @@ fn forward_response_from_temporal(response: TemporalMoveResponse) -> ForwardResp
         proof: response.proof,
         warnings: response.warnings,
         raw_refs: response.raw_refs,
+        page: response.page,
     }
 }
 
@@ -927,6 +931,12 @@ fn temporal_response(
         proof: Some(proof("claim:rachel-denver", "claim:rachel-austin")),
         warnings: Vec::new(),
         raw_refs: vec![raw_ref("claim:rachel-austin")],
+        page: Some(rehydration_proto::v1beta1::PageInfo {
+            returned: 1,
+            total: 1,
+            has_more: false,
+            next_cursor: String::new(),
+        }),
     }
 }
 

@@ -477,6 +477,11 @@ The immediate next slice is the benchmark/documentation hardening path that can
 support a public article without overstating the kernel:
 
 ```text
+TOP 1: remote scorecard/audit/replay must expose progress, paging, and resume
+  points before larger benchmark runs are considered operationally
+  reproducible
++ Temporal `goto`/`near`/`rewind`/`forward` and `trace` expose page metadata
+  through the API/MCP contract; replay reports partial reads explicitly.
 LongMemEval official 500-question regression preparation
 + RunPod/GPU reader validation when local VRAM is insufficient
 + MemoryArena remains the primary agentic-memory proof line
