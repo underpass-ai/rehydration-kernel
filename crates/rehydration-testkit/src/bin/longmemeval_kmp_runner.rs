@@ -147,6 +147,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let mut request_id = 1u64;
     let plugin_reader = ComposedEvidenceReader::kernel_default();
 
+    let total_items = ingests.len();
     for (item_index, ((ingest, ask), expected)) in ingests
         .iter()
         .zip(asks.iter())
@@ -154,6 +155,13 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .enumerate()
     {
         validate_matching_artifacts(ingest, ask, expected)?;
+        eprintln!(
+            "longmemeval runner item {}/{} question_id={} question_type={}",
+            item_index + 1,
+            total_items,
+            ingest.question_id,
+            ingest.question_type
+        );
 
         let ingest_started = Instant::now();
         let ingest_response =
@@ -228,6 +236,15 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             ingest_elapsed_ms,
             ask_elapsed_ms,
         });
+        eprintln!(
+            "longmemeval runner item {}/{} done question_id={} evidence_hit={:?} ingest_elapsed_ms={} ask_elapsed_ms={}",
+            item_index + 1,
+            total_items,
+            expected.question_id,
+            evidence_hit,
+            ingest_elapsed_ms,
+            ask_elapsed_ms
+        );
     }
 
     let summary = summarize_run(

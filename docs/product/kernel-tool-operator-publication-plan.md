@@ -47,7 +47,8 @@ The first public Hugging Face release requires all of these:
 | Split | Grouped by task id or run family, never by trajectory row |
 | Ref hygiene | Model-facing refs are synthetic; raw MemoryArena refs never appear in prompts |
 | Leak audit | No benchmark answer, target action, observed outcome, future ref, or raw tool output leak |
-| Offline eval | Zero invalid predictions and zero unbounded calls |
+| Action contract | Strict KMP/MCP action validator, no additional properties, validator version recorded |
+| Offline eval | Zero invalid predictions and zero unbounded calls under the strict validator |
 | Live MCP replay | Zero MCP/gRPC failures and zero missing expected refs |
 | Baselines | Deterministic baseline reported; generalist LLM baseline reported if cost allows |
 | Scope | First release stays read/navigation only unless writer mode has separate proof |
@@ -55,6 +56,31 @@ The first public Hugging Face release requires all of these:
 
 If any gate fails, publish the result as an internal experiment, not as a public
 model release.
+
+Current 2026-05-13 rule: the mixed MemoryArena + LongMemEval model remains an
+internal baseline. LongMemEval-S cleaned 500 full-history artifacts are
+quarantined for release claims until repeated `session_id` semantics are
+explicitly modeled by the adapter. The first public release should be
+MemoryArena-first unless a later LongMemEval slice passes the same audit gates.
+
+Current 2026-05-14 rule: all Operator metrics generated before the strict
+action-contract hardening are `pre-strict` unless revalidated. A prediction is
+not valid merely because it has `type`, `tool`, and `arguments`; it must match
+the exact KMP/MCP tool schema. See
+[`operator-action-contract-audit-2026-05-14.md`](operator-action-contract-audit-2026-05-14.md).
+
+Current 2026-05-14 evidence: MemoryArena V6 holdout20 was regenerated with the
+strict predictor, de-anonymized, evaluated offline, and replayed through the
+public TLS MCP/gRPC endpoint. It produced 1,124/1,124 exact actions, 0 invalid
+actions, 0 unbounded calls, 976/976 successful live tool calls, and 0 missing
+expected refs. This is release-grade evidence for the current small holdout,
+not yet a public model release: the release still requires a larger fresh
+MemoryArena run with the same gate.
+
+The benchmark boundary and next execution steps are tracked in
+[`operator-benchmark-status-and-next-steps-2026-05-14.md`](operator-benchmark-status-and-next-steps-2026-05-14.md).
+Do not present the MemoryArena Operator result as a LongMemEval multi-session
+QA result.
 
 ## Hugging Face Artifacts
 

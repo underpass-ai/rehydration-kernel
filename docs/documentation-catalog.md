@@ -21,6 +21,8 @@ These documents are the current source of truth for users and maintainers:
 | Typed KMS/gRPC status | [product/kernel-memory-service-grpc-plan.md](product/kernel-memory-service-grpc-plan.md) |
 | Writer helper protocol | [product/kernel-write-protocol-plan.md](product/kernel-write-protocol-plan.md) |
 | Kernel tool-operator model | [product/kernel-tool-operator-model-plan.md](product/kernel-tool-operator-model-plan.md) |
+| Operator benchmark status | [product/operator-benchmark-status-and-next-steps-2026-05-14.md](product/operator-benchmark-status-and-next-steps-2026-05-14.md) |
+| Operator MCP/API coverage audit | [product/operator-mcp-api-contract-gap-audit-2026-05-14.md](product/operator-mcp-api-contract-gap-audit-2026-05-14.md) |
 | Operator publication gate | [product/kernel-tool-operator-publication-plan.md](product/kernel-tool-operator-publication-plan.md) |
 | Hugging Face publication assets | [product/huggingface/README.md](product/huggingface/README.md) |
 | Plugin architecture | [product/kernel-plugin-architecture.md](product/kernel-plugin-architecture.md) |

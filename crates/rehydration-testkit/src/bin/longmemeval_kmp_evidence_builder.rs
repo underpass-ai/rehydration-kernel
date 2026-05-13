@@ -12,7 +12,6 @@ use rehydration_testkit::{
     parse_longmemeval_dataset,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 #[derive(Debug, Clone)]
 struct Args {
@@ -106,8 +105,20 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .build()?;
     let started = Instant::now();
     let mut results = Vec::new();
+    let mut labels_writer =
+        BufWriter::new(File::create(args.output.join("evidence_labels.jsonl"))?);
+    let mut results_writer =
+        BufWriter::new(File::create(args.output.join("builder_results.jsonl"))?);
 
-    for item in selected_items {
+    let total_items = selected_items.len();
+    for (item_index, item) in selected_items.into_iter().enumerate() {
+        eprintln!(
+            "longmemeval evidence builder item {}/{} question_id={} question_type={}",
+            item_index + 1,
+            total_items,
+            item.question_id,
+            item.question_type
+        );
         let candidates = longmemeval_candidate_turns(item, args.run_id.as_deref())?;
         let prompt = build_builder_prompt(item, &candidates);
         let call_started = Instant::now();
@@ -125,7 +136,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         let latency_ms = call_started.elapsed().as_millis();
         let labels = parse_builder_labels(item, &candidates, &raw_response)?;
 
-        results.push(BuilderItemResult {
+        let result = BuilderItemResult {
             question_id: item.question_id.clone(),
             question_type: item.question_type.clone(),
             candidate_turns: candidates.len(),
@@ -134,19 +145,25 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             prompt_tokens,
             completion_tokens,
             latency_ms,
-        });
+        };
+        serde_json::to_writer(&mut labels_writer, &result.labels)?;
+        labels_writer.write_all(b"\n")?;
+        labels_writer.flush()?;
+        serde_json::to_writer(&mut results_writer, &result)?;
+        results_writer.write_all(b"\n")?;
+        results_writer.flush()?;
+        eprintln!(
+            "longmemeval evidence builder item {}/{} done question_id={} selected_turns={} latency_ms={}",
+            item_index + 1,
+            total_items,
+            result.question_id,
+            result.selected_turns,
+            result.latency_ms
+        );
+        results.push(result);
     }
-
-    write_jsonl(
-        &args.output.join("evidence_labels.jsonl"),
-        results
-            .iter()
-            .map(|result| serde_json::to_value(&result.labels)),
-    )?;
-    write_jsonl(
-        &args.output.join("builder_results.jsonl"),
-        results.iter().map(serde_json::to_value),
-    )?;
+    labels_writer.flush()?;
+    results_writer.flush()?;
     let summary = summarize_builder_run(
         &args,
         endpoint,
@@ -222,6 +239,7 @@ fn build_builder_prompt(item: &LongMemEvalItem, candidates: &[LongMemEvalCandida
          {selection_instruction}\n\
          Do not use the gold answer. Do not use outside knowledge.\n\
          Prefer complete evidence over sparse evidence: for aggregation, include every counted item; for temporal questions, include all dated events needed for comparison or duration; for knowledge updates, include old and new facts when needed; for preferences, include the personal preference evidence.\n\
+         The ref value must be copied exactly from the candidate bracket header. Do not abbreviate refs, do not write session/turn labels, and do not invent ids.\n\
          {type_specific_instruction}\n\
          Return strict JSON only, no markdown, with this shape:\n\
          {{\"evidence_turn_refs\":[{{\"ref\":\"turn:...\",\"reason\":\"why this turn is needed\",\"confidence\":\"high|medium|low|unknown\"}}]}}\n\n\
@@ -359,20 +377,6 @@ fn ensure_output_dir(output: &Path, force: bool) -> Result<(), Box<dyn Error + S
         }
     }
     fs::create_dir_all(output)?;
-    Ok(())
-}
-
-fn write_jsonl<I>(path: &Path, values: I) -> Result<(), Box<dyn Error + Send + Sync>>
-where
-    I: Iterator<Item = Result<Value, serde_json::Error>>,
-{
-    let file = File::create(path)?;
-    let mut writer = BufWriter::new(file);
-    for value in values {
-        serde_json::to_writer(&mut writer, &value?)?;
-        writer.write_all(b"\n")?;
-    }
-    writer.flush()?;
     Ok(())
 }
 

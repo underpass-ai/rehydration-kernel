@@ -17,3 +17,18 @@ pub use backend::{
 pub use fixture::FixtureKernelMcpBackend;
 pub use grpc::GrpcKernelMcpBackend;
 pub use server::KernelMcpServer;
+
+pub fn kernel_mcp_tools_list_result() -> serde_json::Value {
+    protocol::tools_list_result()
+}
+
+pub fn kernel_mcp_tool_names() -> Vec<String> {
+    kernel_mcp_tools_list_result()
+        .get("tools")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|tool| tool.get("name").and_then(serde_json::Value::as_str))
+        .map(ToString::to_string)
+        .collect()
+}

@@ -43,8 +43,9 @@ pub use interpretation_plugins::{
     SourceCodeSegmentKind, SourceCodeValuePlugin, TextSpan, UrlValuePlugin, ValueOperationPlugin,
 };
 pub use kernel_operator::{
+    kernel_operator_action_contract_error, kernel_operator_action_shape_error,
     kernel_operator_allowed_read_tools, kernel_operator_is_bounded_tool_call,
-    kernel_operator_primary_refs,
+    kernel_operator_is_valid_action_shape, kernel_operator_primary_refs,
 };
 pub use llm_evaluator::{
     CalibrationCase, EvaluationGroundTruth, LlmEvaluationResult, LlmEvaluatorConfig, LlmProvider,
