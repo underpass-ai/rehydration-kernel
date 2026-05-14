@@ -49,6 +49,21 @@ Rules:
 - For `kernel_ask`, `arguments.about` must equal the top-level `about` value exactly.
 """
 
+FORBIDDEN_MODEL_VISIBLE_STRING_VALUES = {
+    "recorded_pre_read_argument",
+    "writer_candidate_pool",
+    "writer_candidate_quality_target",
+    "writer_candidate_relation_target",
+    "writer_read_context_inspected",
+    "writer_read_context_temporal",
+    "writer_target_ref",
+}
+
+FORBIDDEN_MODEL_VISIBLE_STRING_PREFIXES = (
+    "writer_candidate_",
+    "writer_read_context_",
+)
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -120,6 +135,7 @@ def main() -> None:
     selected = trajectories[args.offset :]
     if args.limit is not None:
         selected = selected[: args.limit]
+    validate_unique_step_ids(selected, "selected trajectories")
 
     dropped_rows: list[dict[str, Any]] = []
     if args.require_visible_target_refs:
@@ -140,6 +156,7 @@ def main() -> None:
             else:
                 visible_selected.append(item)
         selected = visible_selected
+        validate_unique_step_ids(selected, "visible selected trajectories")
 
     pairs = [build_pair(item, args.max_refs, args.anonymize_refs) for item in selected]
     train_pairs, eval_pairs, split_summary = split_pairs(pairs, args)
@@ -222,10 +239,28 @@ def build_pair(
     max_refs: int,
     anonymize_refs: bool,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
-    if not anonymize_refs:
-        return to_sft_row(item, max_refs), item, item
-    anonymized = anonymize_trajectory(item)
-    return to_sft_row(anonymized, max_refs), item, anonymized
+    model_item = sanitize_model_facing_trajectory(item)
+    add_operator_state_features(model_item)
+    assert_model_facing_visible_state_clean(model_item)
+    if anonymize_refs:
+        model_item = anonymize_trajectory(model_item)
+        assert_model_facing_visible_state_clean(model_item)
+    return to_sft_row(model_item, max_refs), item, model_item
+
+
+def validate_unique_step_ids(rows: list[dict[str, Any]], label: str) -> None:
+    seen: dict[str, int] = {}
+    for index, row in enumerate(rows, start=1):
+        step_id = row.get("step_id")
+        if not isinstance(step_id, str) or not step_id:
+            raise ValueError(f"{label} row {index} missing string step_id")
+        previous = seen.get(step_id)
+        if previous is not None:
+            raise ValueError(
+                f"{label} duplicate step_id `{step_id}` at rows {previous} and {index}; "
+                "operator SFT data requires unique decision ids"
+            )
+        seen[step_id] = index
 
 
 def split_pairs(
@@ -389,6 +424,9 @@ def group_value(item: dict[str, Any], key: str) -> str:
 
 def to_sft_row(item: dict[str, Any], max_refs: int) -> dict[str, Any]:
     visible_state = compact_visible_state(item["visible_state"], max_refs)
+    assert_model_facing_visible_state_clean(
+        {"step_id": item["step_id"], "visible_state": visible_state}
+    )
     user_payload = {
         "task_family": item["task_family"],
         "mode": item["mode"],
@@ -456,6 +494,10 @@ def looks_like_ref(value: str) -> bool:
         value.startswith("memoryarena:run:")
         or value.startswith("longmemeval:")
         or value.startswith("memoryagentbench:")
+        or value.startswith("about:")
+        or value.startswith("evidence:")
+        or value.startswith("question:run:")
+        or value.startswith("turn:run:")
         or ":subtask:" in value
         or ":task:" in value
     )
@@ -513,6 +555,141 @@ def compact_visible_state(value: dict[str, Any], max_refs: int) -> dict[str, Any
             compact[f"{key}_truncated"] = len(refs) - max_refs
             compact[key] = refs[:max_refs]
     return compact
+
+
+def sanitize_model_facing_trajectory(item: dict[str, Any]) -> dict[str, Any]:
+    """Remove exporter-only metadata from the model-facing trajectory.
+
+    Audit trajectories may keep provenance fields for debugging. SFT prompts must
+    expose only the state a real MCP/KMP operator would see.
+    """
+    model_item = json.loads(json.dumps(item))
+    state = model_item.get("visible_state")
+    if not isinstance(state, dict):
+        return model_item
+
+    state.pop("writer", None)
+    candidate_details = state.get("candidate_ref_details")
+    if isinstance(candidate_details, list):
+        for detail in candidate_details:
+            if isinstance(detail, dict):
+                detail.pop("sources", None)
+    return model_item
+
+
+def add_operator_state_features(item: dict[str, Any]) -> None:
+    """Add compact, non-gold state features for small operator models.
+
+    These fields are derived only from visible state. They do not reveal the
+    target action; they make already-visible navigation state easier for small
+    models to consume without counting long arrays or inferring phases from
+    raw tool history.
+    """
+    state = item.get("visible_state")
+    if not isinstance(state, dict):
+        return
+
+    candidate_details = state.get("candidate_ref_details")
+    if not isinstance(candidate_details, list):
+        candidate_details = []
+    candidate_refs = state.get("candidate_refs")
+    if not isinstance(candidate_refs, list):
+        candidate_refs = []
+    known_refs = state.get("known_refs")
+    if not isinstance(known_refs, list):
+        known_refs = []
+    observed_refs = state.get("last_observed_refs")
+    if not isinstance(observed_refs, list):
+        observed_refs = []
+
+    last_tool = state.get("last_tool")
+    if not isinstance(last_tool, str):
+        last_tool = None
+
+    primary_candidate = first_primary_candidate(candidate_details)
+    operator_state: dict[str, Any] = {
+        "navigation_phase": navigation_phase(last_tool, len(observed_refs)),
+        "last_tool": last_tool or "none",
+        "last_observed_ref_count": len(observed_refs),
+        "candidate_ref_count": len(candidate_refs),
+        "candidate_detail_count": len(candidate_details),
+        "known_ref_count": len(known_refs),
+        "has_candidate_details": bool(candidate_details),
+        "has_observed_refs": bool(observed_refs),
+    }
+    if primary_candidate is not None:
+        operator_state["primary_candidate"] = primary_candidate
+    state["operator_state"] = operator_state
+
+
+def first_primary_candidate(candidate_details: list[Any]) -> dict[str, Any] | None:
+    typed_details = [detail for detail in candidate_details if isinstance(detail, dict)]
+    if not typed_details:
+        return None
+
+    def sort_key(detail: dict[str, Any]) -> tuple[int, int]:
+        role = detail.get("role")
+        priority = detail.get("priority")
+        if not isinstance(priority, int):
+            priority = 10_000
+        role_rank = 0 if role in {"target_question", "current", "anchor"} else 1
+        return role_rank, priority
+
+    selected = sorted(typed_details, key=sort_key)[0]
+    compact: dict[str, Any] = {}
+    for key in ("ref", "role", "relation_hint", "priority"):
+        value = selected.get(key)
+        if value is not None:
+            compact[key] = value
+    return compact or None
+
+
+def navigation_phase(last_tool: str | None, observed_ref_count: int) -> str:
+    if last_tool is None:
+        return "start"
+    if last_tool == "kernel_near" and observed_ref_count > 0:
+        return "after_near_with_observed_refs"
+    if last_tool == "kernel_near":
+        return "after_near_without_observed_refs"
+    return f"after_{last_tool}"
+
+
+def assert_model_facing_visible_state_clean(item: dict[str, Any]) -> None:
+    state = item.get("visible_state")
+    if not isinstance(state, dict):
+        return
+
+    findings: list[str] = []
+
+    def walk(value: Any, path: str) -> None:
+        if isinstance(value, dict):
+            for key, child in value.items():
+                child_path = f"{path}.{key}"
+                if key in {"sources", "writer"}:
+                    findings.append(child_path)
+                walk(child, child_path)
+            return
+        if isinstance(value, list):
+            for index, child in enumerate(value):
+                walk(child, f"{path}[{index}]")
+            return
+        if isinstance(value, str) and is_forbidden_model_visible_string(value):
+            findings.append(path)
+
+    walk(state, "visible_state")
+    if findings:
+        step_id = item.get("step_id", "unknown")
+        raise ValueError(
+            f"model-facing visible_state contains exporter-only context for {step_id}: "
+            + ", ".join(sorted(set(findings)))
+        )
+
+
+def is_forbidden_model_visible_string(value: str) -> bool:
+    return (
+        value in FORBIDDEN_MODEL_VISIBLE_STRING_VALUES
+        or any(value.startswith(prefix) for prefix in FORBIDDEN_MODEL_VISIBLE_STRING_PREFIXES)
+    )
 
 
 def write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:

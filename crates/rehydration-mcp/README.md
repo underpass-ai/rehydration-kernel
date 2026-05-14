@@ -4,9 +4,9 @@ Installable stdio MCP adapter for Kernel Memory Protocol (KMP).
 
 Current status:
 
-- exposes `kernel_ingest`, `kernel_wake`, `kernel_ask`, `kernel_goto`,
-  `kernel_near`, `kernel_rewind`, `kernel_forward`, `kernel_trace`, and
-  `kernel_inspect`;
+- exposes `kernel_ingest`, `kernel_write_memory`, `kernel_wake`, `kernel_ask`,
+  `kernel_goto`, `kernel_near`, `kernel_rewind`, `kernel_forward`,
+  `kernel_trace`, and `kernel_inspect`;
 - can serve explicit fixture-backed KMP responses from
   `api/examples/kernel/v1beta1/kmp`;
 - can use the live gRPC kernel when `REHYDRATION_KERNEL_GRPC_ENDPOINT` is set;
@@ -89,6 +89,7 @@ Live backend mapping:
 | Tool | Kernel read/write |
 |:-----|:------------------|
 | `kernel_ingest` | `KernelMemoryService.Ingest` |
+| `kernel_write_memory` | writer-friendly helper that validates relation quality and compiles to `KernelMemoryService.Ingest` |
 | `kernel_wake` | `KernelMemoryService.Wake` |
 | `kernel_ask` | `KernelMemoryService.Ask` |
 | `kernel_goto` | `KernelMemoryService.Goto` |

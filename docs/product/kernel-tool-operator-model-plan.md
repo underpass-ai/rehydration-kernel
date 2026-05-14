@@ -9,14 +9,221 @@ eval, synthetic model-facing refs, zero dropped non-visible target refs,
 structural writer candidate details, and evaluation against anonymized model
 trajectories. It reached 1.000 exact action accuracy, 1.000 primary-ref
 accuracy, and zero invalid or unbounded actions on 1,124 held-out decisions.
-The same 1,124 predictions were de-anonymized and replayed through the public
-TLS MCP/gRPC endpoint: 976 executed tool calls, 148 stop actions, 0 MCP
-failures, 0 missing expected refs, and 7m18.7s elapsed. The top active
-requirement is now P1.11.0: bounded pagination, progress, and resume semantics
-for large KMP traversal, remote audit, and replay. No publication or
-model-release claim should move forward until that gate is clean.
+The same 1,124 predictions were regenerated with the strict
+`kernel-operator-action-contract-v1` validator, de-anonymized, and replayed
+through the public TLS MCP/gRPC endpoint on 2026-05-14: 976 executed tool
+calls, 148 stop actions, 0 MCP failures, 0 invalid actions, 0 unbounded calls,
+0 missing expected refs, 424 explicit partial results, and 10m15.9s elapsed.
+The P1.11.0 pagination/progress/replay gate is clean for this V6 holdout. The
+next publication requirement is a larger fresh MemoryArena run with the same
+strict contract and live replay evidence.
 
 Date: 2026-05-12.
+
+Update 2026-05-13: the previous Operator models are retained as baselines, not
+discarded. The clean current training base is the MemoryArena P1.11 corpus.
+The mixed MemoryArena + LongMemEval run is internal comparison only. The
+LongMemEval-S cleaned 500 full-history artifacts are quarantined because the
+dataset contains repeated or normalized-colliding `session_id`s inside some
+questions, which used to generate duplicate dimensions. The adapter now fails
+fast on that unsupported shape. See
+[`operator-training-data-audit-2026-05-13.md`](operator-training-data-audit-2026-05-13.md).
+
+Update 2026-05-13, later cut: a LongMemEval-only legacy experiment was run to
+stress the Operator before the next MemoryArena-first training pass. It exposed
+and fixed a duplicate `step_id` problem in trajectory export/evaluation. The
+corrected v7 LoRA run is valid as an internal stress result, but not yet a
+model-release candidate: exact action accuracy reached 0.7000 on 60 held-out
+decisions, with zero invalid or unbounded tool calls, but 12 strict parse
+failures concentrated in smart-writer `read:1` steps. The next Operator gate is
+single-action termination/constrained emission, without parser fallback.
+
+Update 2026-05-13, backbone check: Hammer2.0-0.5B was tested as a
+function-calling 0.5B alternative on the same corrected LongMemEval v7 slice.
+It parsed more actions than Qwen under the strict single-JSON contract, but
+policy quality was lower: exact action accuracy reached 0.6500, with 7
+prediction failures and 1 unbounded tool call. It remains a useful measured
+candidate, not a release candidate. Google FunctionGemma 270M is now the next
+sub-0.5B candidate to evaluate because it is explicitly designed for
+tool/function calling and has a dedicated tuning workflow for custom function
+schemas.
+
+FunctionGemma relaunch note: the Kubernetes secret for Hugging Face exists, but
+the first launch was not authorized for the gated `google/functiongemma-270m-it`
+repository. After accepting the terms for the token account, the same manifest
+trained successfully. The compatibility-cut result does not beat Qwen or
+Hammer: exact action accuracy reached 0.5000, with 30 strict prediction
+failures and zero unbounded calls. This does not fully evaluate FunctionGemma's
+intended mode because the cut used the generic chat/JSON prompt, not
+FunctionGemma-native tool schemas.
+
+FunctionGemma-native follow-up: KMP actions were mapped to FunctionGemma tool
+declarations and predictions were parsed back into the same policy-eval
+contract. The native cut trained cleanly and reached final eval loss 0.05202,
+but policy quality remained weak: 39/60 parsed predictions, 0.4667 exact action
+accuracy, 0 unbounded tool calls. It overused `kernel_ask` and `kernel_stop`
+and did not reliably choose `kernel_near` or `kernel_inspect`. FunctionGemma
+270M is therefore not the current Operator backbone.
+
+Llama 3.2 1B control note: `meta-llama/Llama-3.2-1B-Instruct` was added as a
+larger control candidate. It is not a sub-0.5B Operator target. The first
+cluster launch failed before model load because Hugging Face reports the
+access request is awaiting review from the repo authors. Relaunch only after
+the token account is approved for the model.
+
+SmolLM2 360M control note: `HuggingFaceTB/SmolLM2-360M-Instruct` is public,
+Apache-2.0, not gated, and uses the standard Llama architecture. It trained
+quickly on the LongMemEval v7 slice, reaching final eval loss 0.07627, but it
+is not a viable Operator backbone under the strict single-JSON contract: only
+38/60 predictions parsed, exact action accuracy reached 0.4833, and 3 tool
+calls were unbounded. Failures were dominated by incomplete JSON and invalid
+stop refs. The issue is structured action reliability, not GPU memory or
+training throughput.
+
+Nemotron Flash 3B note: `nvidia/Nemotron-Flash-3B-Instruct` remains
+architecturally interesting for NVIDIA alignment, but the current local stack
+is blocked. The model requires `flash_attn`, `mamba_ssm`, and `causal_conv1d`
+at import time. A CUDA 13 / Torch 2.9.1 image compiled `flash-attn`, but failed
+on `causal-conv1d` and `mamba-ssm`: their expected prebuilt wheels are not
+available for this combination and the PyPI source packages do not contain the
+required C++/CUDA sources. Do not treat this as a model-quality result.
+
+LFM2.5 Nova Function Calling note: `NovachronoAI/LFM2.5-1.2B-Nova-Function-Calling`
+was added as the next Hugging Face candidate. It is larger than the preferred
+0.5B target, but remains small, public, Apache-2.0, safetensors-based, and is
+explicitly tuned for function calling/tool use. It is a useful non-Qwen control
+for whether a tool-specialized backbone improves strict KMP/MCP action
+emission.
+
+LFM2.5 Nova result: the model trained cleanly in 9m27s on one RTX 3090, using
+about 7.8 GiB VRAM and reaching final eval loss 0.0589. Policy quality matched
+Hammer but did not beat the Qwen v7 baseline: exact action accuracy reached
+0.6500, with 46/60 parsed predictions, 14 strict prediction failures, and zero
+unbounded tool calls. Stop accuracy was perfect. The valid action distribution
+contained `kernel_ask`, `kernel_near`, and `stop`, but no valid
+`kernel_inspect` predictions, which explains the remaining gap on smart-writer
+read steps. The failure reasons were 8 unsupported action types, 2 incomplete
+JSON responses, 2 extra-content-after-JSON responses, and 2 missing action
+types. Keep this as a useful non-Qwen control, not a release candidate.
+
+LFM2.5 Nova mixed-data control: the MemoryArena P1.11 + LongMemEval v7 mixed
+training cut was rerun with 4 RTX 3090 GPUs using torchrun/DDP. The hardware
+path is valid: the same effective batch size trained in about 29 minutes, with
+all 4 GPUs saturated, about 13 GiB VRAM used per GPU, final eval loss 0.0590,
+and eval token accuracy 0.9873. The policy result is not valid as an
+improvement: only 42/60 predictions parsed, exact action accuracy dropped to
+0.5167, and the model still produced zero valid `kernel_inspect` predictions.
+All 18 strict failures were `longmemeval.smart_writer` steps. Failure analysis
+showed the model copying large `writer_*` visible-state fragments into the
+action JSON, producing incomplete or malformed actions. Do not continue this
+mixed recipe. The next useful dataset work is to simplify and normalize
+writer-mode visible state, keep internal writer labels out of model-facing
+action arguments, and train/evaluate read and writer policies as explicit
+modes instead of relying on raw mixed traces.
+
+Hammer clean visible-state rerun: after removing exporter-only `sources`,
+`visible_state.writer`, and internal `writer_*` provenance from model-facing
+SFT data, `MadeAgents/Hammer2.0-0.5b` was rerun on the same LongMemEval v7
+holdout using 4 RTX 3090 GPUs. Training completed in 5m12s with final
+`eval_loss=0.05494` and `eval_mean_token_accuracy=0.9847`. Policy quality
+improved materially versus the earlier Hammer v7 run: exact action accuracy
+rose from 0.6500 to 0.7500, missing predictions fell from 7 to 1, and primary
+ref accuracy rose from 0.7727 to 0.9545. This confirms the leak cleanup matters.
+The model is still not a release candidate: it emits no valid `kernel_inspect`
+predictions and 6/60 predictions are unbounded, mostly `kernel_near` calls
+missing `limit.tokens`. The next gate is stronger action-shape supervision or
+constrained emission for required bounded fields, then rerun Qwen/Hammer/LFM on
+the same clean split.
+
+FunctionGemma 270M clean visible-state rerun: `google/functiongemma-270m-it`
+was rerun in native function-call mode on the same clean split. DDP support was
+added to the FunctionGemma trainer so the run could use 4 RTX 3090 GPUs. The
+first 4-GPU attempt with per-device batch size 4 failed with CUDA OOM; the
+stable run used per-device batch size 1 and gradient accumulation 4. Training
+completed in 4m15s with final `eval_loss=0.05393` and
+`eval_mean_token_accuracy=0.9879`, but policy quality remained weak: only 33/60
+predictions parsed, exact action accuracy reached 0.5000, and valid predicted
+tools were limited to `kernel_ask` and `stop`. The main failure mode is native
+function-call corruption: incomplete calls, copied function declarations, and
+overlong `kernel_stop` calls with large `final_refs`. FunctionGemma remains a
+useful small-model control, but not a viable Operator backbone in this setup.
+
+Qwen 0.5B clean visible-state rerun: `Qwen/Qwen2.5-0.5B-Instruct` was rerun on
+the same LongMemEval v8 clean split using 4 RTX 3090 GPUs. Training completed
+in 5m03s with final `eval_loss=0.05537` and
+`eval_mean_token_accuracy=0.9846`. Strict single-JSON inference produced 56/60
+valid predictions: 4 predictions were rejected, with one each of
+`incomplete_json`, `invalid_json`, `missing_action_type`, and `missing_tool`.
+Policy quality improved versus the earlier Qwen v7 run: exact action accuracy
+rose from 0.7000 to 0.7500, strict parse failures fell from 12 to 4, and stop
+accuracy stayed at 1.000. The remaining dominant gap is not generic JSON
+emission. It is tool semantics in smart-writer read steps: the held-out target
+contains 14 `kernel_inspect` actions, but Qwen produced zero valid
+`kernel_inspect` predictions, mapping 10 of them to `kernel_near` and missing
+the other 4. One valid prediction was unbounded because it mixed a
+`kernel_near` tool name with `kernel_ask`-shaped arguments, omitting
+`around.ref` and `limit`. Qwen and Hammer now tie on exact action accuracy
+(`0.7500`) on this clean split, but neither is a release candidate until the
+training data or constrained emission teaches the inspect-vs-near boundary.
+
+Prompt-only v9 negative result: adding a longer textual tool-selection policy
+to the SFT system prompt did not solve the inspect-vs-near boundary. It made
+Qwen more verbose and less stable under strict JSON generation: exact action
+accuracy dropped to 0.5167, strict prediction failures rose to 7/60, and the
+model still emitted zero valid `kernel_inspect` predictions. Keep the base
+prompt compact. The problem is representation and action-shape learning, not
+more prose.
+
+Qwen 0.5B operator-state v10 result: the SFT preparer now adds a compact,
+non-gold `visible_state.operator_state` derived only from visible state, and
+reference anonymization now covers LongMemEval `question:run:`, `turn:run:`,
+`about:`, and `evidence:` refs. This removes long raw refs from model-facing
+state and exposes already-visible navigation facts such as
+`navigation_phase=start` versus `after_near_with_observed_refs`, candidate
+counts, observed-ref counts, and the primary visible candidate. On the same
+LongMemEval holdout, Qwen trained in 3m18s with final `eval_loss=0.04027` and
+`eval_mean_token_accuracy=0.9890`. The model produced the full expected action
+distribution including all 14 `kernel_inspect` actions. A follow-up hardening
+pass moved action-shape validation into the shared testkit contract and rejected
+extra fields in tool arguments. Under that stricter evaluator, the same
+prediction file has 59/60 valid predictions, 1 invalid prediction, zero
+unbounded tool calls, 0.9773 tool accuracy, 0.9773 primary-ref accuracy, 0.9773
+scope accuracy, 1.000 stop accuracy, and 0.9833 exact action accuracy. The
+invalid row was a semantically correct `kernel_ask` that added `final_refs`
+inside `arguments`, which is not part of the KMP/MCP tool schema. The 2026-05-14
+strict predictor rerun now rejects that shape at parse time, writes 59
+predictions and 1 failure, and policy eval reports 1 missing prediction, 0
+invalid predictions, and 0 unbounded calls. This is the first strong evidence
+that the small Operator path
+works when KMP state is represented for tool operation instead of raw
+transcript-like copying, while also showing why strict contract validation must
+be part of the benchmark gate.
+
+Update 2026-05-14: the predictor/evaluator contract issue is documented in
+[`operator-action-contract-audit-2026-05-14.md`](operator-action-contract-audit-2026-05-14.md).
+All Operator metrics produced before this hardening are `pre-strict` unless
+they are revalidated with the shared action contract. This does not affect KMP
+core, MCP/gRPC, persistence, temporal traversal, or multidimensional memory.
+It affects Operator measurement and publication claims. The next mandatory
+step is to rerun any model result we intend to cite publicly through the strict
+predictor, strict policy evaluator, and live MCP replay gate.
+
+Update 2026-05-14, revalidation sweep: MemoryArena V6 holdout20 was revalidated
+with `kernel-operator-action-contract-v1` in both anonymized and de-anonymized
+forms. Both remain clean: 1,124/1,124 exact actions, zero missing predictions,
+zero invalid predictions, zero unbounded calls, and no invalid reasons.
+LongMemEval v8 clean was also revalidated and is not release-grade under the
+strict contract: 4 missing predictions, 2 invalid predictions, 0 unbounded
+calls, and 0.7500 exact action accuracy. The invalid v8 reasons were one extra
+`remaining_context_chars` field inside `kernel_ask.arguments` and one
+`kernel_near` action missing required `around`, `include`, and `limit` fields.
+
+Update 2026-05-14, benchmark boundary: the current benchmark status and next
+steps are summarized in
+[`operator-benchmark-status-and-next-steps-2026-05-14.md`](operator-benchmark-status-and-next-steps-2026-05-14.md).
+The important distinction is that MemoryArena V6 validates Operator tool
+operation over KMP/MCP, while LongMemEval multi-session remains a secondary
+system-level regression for retrieval + reader + plugins + task reasoning.
 
 ## Goal
 
@@ -976,8 +1183,7 @@ The exporter now adds `visible_state.candidate_ref_details` beside
   "relative_position": "same_subtask",
   "temporal_distance": 0,
   "priority": 10,
-  "relation_hint": "answer_addresses_question",
-  "sources": ["writer_candidate_pool"]
+  "relation_hint": "answer_addresses_question"
 }
 ```
 
@@ -988,13 +1194,20 @@ What is intentionally not included:
 - final relation evidence;
 - raw memory text;
 - benchmark answer labels;
-- source names that reveal which candidate became the recorded action.
+- exporter source names such as writer candidate provenance or recorded action
+  provenance.
 
 This matters because a writer operator should learn how to choose between
 visible candidates, not memorize the post-hoc relation emitted by the writer.
-The current source is normalized as `writer_candidate_pool` to avoid turning
-candidate provenance into a label leak. The useful signal is structural:
-turn kind, relative temporal position, candidate role, and bounded priority.
+The useful signal is structural: turn kind, relative temporal position,
+candidate role, relation hint, and bounded priority.
+
+This is now a cross-benchmark rule. Benchmark exporters may keep provenance
+metadata in audit trajectories, but model-facing SFT data must not expose
+internal exporter sources, hidden writer labels, final relation decisions, gold
+answers, or raw memory that a real KMP/MCP operator would not see at inference
+time. The SFT preparer sanitizes legacy trajectories and fails fast if those
+fields reach `visible_state`.
 
 Candidate-detail export:
 
@@ -1261,7 +1474,7 @@ This is deliberately stricter than "the JSON action looked right". It proves the
 operator action can be replayed through the same MCP/gRPC boundary an agent
 would use.
 
-Observed 100-step V6 holdout smoke on 2026-05-11:
+Observed 100-step V6 holdout strict smoke on 2026-05-14:
 
 | Item | Value |
 | --- | ---: |
@@ -1274,8 +1487,10 @@ Observed 100-step V6 holdout smoke on 2026-05-11:
 | Missing predictions | 0 |
 | Invalid predictions | 0 |
 | Unbounded tool calls | 0 |
+| Partial result rows | 36 |
+| Elapsed | 1m26.5s |
 
-Observed full V6 holdout20 replay on 2026-05-11:
+Observed full V6 holdout20 strict replay on 2026-05-14:
 
 | Item | Value |
 | --- | ---: |
@@ -1289,25 +1504,27 @@ Observed full V6 holdout20 replay on 2026-05-11:
 | Invalid predictions | 0 |
 | Unbounded tool calls | 0 |
 | Extra observed ref rows | 848 |
-| Elapsed | 7m18.7s |
+| Extra observed refs | 7,216 |
+| Partial result rows | 424 |
+| Elapsed | 10m15.9s |
 
 Extra observed refs mean the live kernel returned additional valid context
 beyond the audited minimum. The correctness gate is missing expected refs, not
 the presence of extra inspectable context.
 
-Full replay latency by action against the public TLS endpoint:
+Full strict replay latency by action against the public TLS endpoint:
 
 | Action | Count | Avg ms | Max ms |
 | --- | ---: | ---: | ---: |
-| `kernel_near` | 424 | 922.2 | 1,738 |
-| `kernel_inspect` | 424 | 79.2 | 146 |
-| `kernel_trace` | 128 | 105.9 | 168 |
+| `kernel_near` | 424 | 1,302.7 | 2,517 |
+| `kernel_inspect` | 424 | 110.0 | 198 |
+| `kernel_trace` | 128 | 127.1 | 181 |
 | `stop` | 148 | 0.0 | 0 |
 
-The current signal is good: correctness holds through MCP, but `kernel_near`
-dominates live replay latency. That makes candidate retrieval performance and
-pagination/budget behavior the next operational thing to watch as the holdout
-scales.
+The current signal is good: correctness holds through MCP under the strict
+action contract, and every partial result is explicit. `kernel_near` dominates
+live replay latency, so candidate retrieval performance and pagination/budget
+behavior remain the main operational things to watch as the holdout scales.
 
 ### P1.11 Scale, Pagination, And Publication Gate
 
@@ -1776,10 +1993,98 @@ relations when no generated labels are provided. A publishable official-style
 run needs a context-construction path that does not use `has_answer`,
 `answer_session_ids`, or gold answer metadata.
 
+Post-audit status on 2026-05-13: the generated 500 full-history artifacts are
+also quarantined for Operator training claims. The cleaned dataset contains
+questions where a `session_id` appears more than once, or normalizes to the
+same KMP dimension id more than once. The adapter now rejects this shape before
+writing artifacts or calling the kernel:
+
+```text
+question 58bf7951 has duplicate or colliding session_id `07b7a667_1` at session index 47; repeated LongMemEval session ids are not supported by the KMP adapter
+```
+
+This is intentional. The adapter must not invent a fallback identity for
+benchmark sessions. LongMemEval support needs an explicit model for repeated
+session ids before this dataset shape can be used. Until then, the 500
+full-history artifacts remain quarantined.
+
+### LongMemEval Legacy Operator Stress Run
+
+After quarantining the cleaned 500 full-history shape, a smaller
+LongMemEval-only Operator run was executed from audited legacy slices:
+
+| Source | Decisions |
+| --- | ---: |
+| Balanced60 v6 | 120 |
+| 100-prefix v6 | 200 |
+| MS30 smart writer | 268 |
+| Total | 588 |
+
+The first version of this combined dataset exposed a trajectory identity bug:
+`step_id` was unique inside each source run, but not across combined
+LongMemEval slices. Because the policy evaluator keys predictions by `step_id`,
+duplicate ids could silently overwrite predictions. The exporter now prefixes
+LongMemEval decision ids with the source `run_id`, and both dataset preparation
+and policy evaluation reject duplicates fail-fast.
+
+Corrected v7 dataset:
+
+| Metric | Value |
+| --- | ---: |
+| Total rows | 588 |
+| Train rows | 528 |
+| Eval rows | 60 |
+| Duplicate `step_id`s | 0 |
+| No-gold audit findings | 0 |
+
+Corrected v7 LoRA training:
+
+| Metric | Value |
+| --- | ---: |
+| Base model | `Qwen/Qwen2.5-0.5B-Instruct` |
+| Method | LoRA SFT |
+| Epochs | 3 |
+| Best/final eval loss | 0.06259 |
+| Eval mean token accuracy | 0.9830 |
+| Runtime | 7m03s |
+
+The earlier five-epoch LongMemEval-only run showed validation loss
+deterioration after the best point. Three epochs are the current safe setting
+for this small dataset until the corpus is larger.
+
+Corrected v7 policy evaluation:
+
+| Metric | Value |
+| --- | ---: |
+| Eval decisions | 60 |
+| Predictions parsed | 48 |
+| Prediction failures | 12 |
+| Invalid predictions | 0 |
+| Unbounded tool calls | 0 |
+| Exact action accuracy | 0.7000 |
+| Tool accuracy | 0.6818 |
+| Primary ref accuracy | 0.7273 |
+| Stop accuracy | 1.0000 |
+
+The 12 prediction failures are all in MS30 smart-writer `read:1` steps. The
+target action in those rows is typically `kernel_inspect`, but the model tends
+to over-generate: it starts with a plausible JSON-like action and then emits
+additional JSON/action fragments until the strict parser rejects the response.
+
+This is a useful failure. It says the next Operator work is not more benchmark
+scoring. The next gate is reliable single-action emission:
+
+- exactly one JSON action;
+- top-level `type`, `tool`, and `arguments` when calling a tool;
+- no invented fields;
+- no second action in the same response;
+- bounded arguments only;
+- fail-fast parsing, not permissive recovery.
+
 ## Next Execution Slice
 
-The original first-slice checklist is complete. The next execution slice is
-P1.11:
+The original first-slice checklist is complete. The next execution slice remains
+P1.11, with MemoryArena P1.11 as the clean training base:
 
 1. produce a larger audited MemoryArena smart-writer run;
 2. export trajectories with candidate details;
@@ -1793,6 +2098,10 @@ P1.11:
 Do not publish the dataset or model until the leak audit, offline policy eval,
 and live MCP replay are all clean.
 
+Do not continue training from the mixed LongMemEval model for publication. Keep
+it as an internal baseline only. The next publishable candidate should be
+trained from a clean, versioned dataset after the audit gates pass.
+
 ## Open Questions
 
 - Should write-mode trajectories be a separate dataset from read-mode
@@ -1804,6 +2113,25 @@ and live MCP replay are all clean.
 - Should the first public release use only read/navigation actions, or include
   writer relation proposal? Initial answer: keep the first public operator
   read/navigation only.
+- Should agentic retrieval/reranking models be added to the Operator path?
+  Initial answer: yes, but not inside the first Operator training cut. Models
+  such as `lightonai/Agent-ModernColBERT` are retrieval/reranking sidecars, not
+  Operator replacements. They can rank candidate refs before the Operator or
+  reader chooses the next KMP move.
+- Should function-calling specialist SLMs be tested before abandoning the 0.5B
+  path? Current answer: yes. `MadeAgents/Hammer2.0-0.5b` was measured and did
+  not beat the Qwen v7 baseline on exact policy quality. It still proves that a
+  function-calling prior helps parse validity, but it is not enough by itself.
+  `google/functiongemma-270m-it` is now the next serious sub-0.5B candidate:
+  it is gated and uses the Gemma license, but it is explicitly aligned with
+  tool/function calling and has a tuning lab for custom function schemas. Under
+  the generic chat/JSON compatibility cut it underperformed; under the native
+  tool-schema cut it improved parse count but still underperformed on policy
+  accuracy. Do not rerun the same corpus immediately; use this result to drive
+  constrained decoding and stronger decision data.
+- Should a larger non-0.5B model be measured as a control? Initial answer: yes.
+  `meta-llama/Llama-3.2-1B-Instruct` is the first 1B control candidate, but it
+  is gated and currently awaiting access approval for the cluster token.
 
 ## Success Criteria For P1
 

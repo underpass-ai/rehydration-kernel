@@ -96,7 +96,6 @@ struct ExportData {
 #[derive(Debug, Clone)]
 struct CandidateDraft {
     reference: String,
-    sources: BTreeSet<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -452,10 +451,6 @@ fn export_writer_reads(
             .get("entry_kind")
             .and_then(Value::as_str)
             .unwrap_or("unknown");
-        let relation_strategy = value
-            .get("relation_strategy")
-            .and_then(Value::as_str)
-            .unwrap_or("unknown");
         let calls = value
             .get("pre_read_calls")
             .and_then(Value::as_array)
@@ -525,10 +520,6 @@ fn export_writer_reads(
                     "remaining_budget": {
                         "tool_calls": calls.len().saturating_sub(call_index).min(DEFAULT_TOOL_CALL_BUDGET),
                         "context_chars": DEFAULT_CONTEXT_CHARS,
-                    },
-                    "writer": {
-                        "entry_kind": entry_kind,
-                        "relation_strategy": relation_strategy,
                     }
                 }),
                 allowed_tools: allowed_tools.clone(),
@@ -588,13 +579,11 @@ fn writer_candidate_ref_details(
     collect_candidate_array(
         value.pointer("/write_request/read_context/inspected_refs"),
         entry_ref,
-        "writer_read_context_inspected",
         &mut candidates,
     );
     collect_candidate_array(
         value.pointer("/write_request/read_context/temporal_refs"),
         entry_ref,
-        "writer_read_context_temporal",
         &mut candidates,
     );
     if let Some(connect_to) = value
@@ -605,11 +594,7 @@ fn writer_candidate_ref_details(
             if let Some(reference) = relation.get("ref").and_then(Value::as_str)
                 && reference != entry_ref
             {
-                insert_candidate(
-                    &mut candidates,
-                    reference,
-                    "writer_candidate_relation_target",
-                );
+                insert_candidate(&mut candidates, reference);
             }
         }
     }
@@ -618,11 +603,7 @@ fn writer_candidate_ref_details(
             if let Some(reference) = relation.get("to").and_then(Value::as_str)
                 && reference != entry_ref
             {
-                insert_candidate(
-                    &mut candidates,
-                    reference,
-                    "writer_candidate_quality_target",
-                );
+                insert_candidate(&mut candidates, reference);
             }
         }
     }
@@ -657,7 +638,6 @@ fn writer_candidate_ref_details(
 fn collect_candidate_array(
     value: Option<&Value>,
     entry_ref: &str,
-    source: &str,
     candidates: &mut BTreeMap<String, CandidateDraft>,
 ) {
     if let Some(values) = value.and_then(Value::as_array) {
@@ -665,7 +645,7 @@ fn collect_candidate_array(
             if let Some(reference) = item.as_str()
                 && reference != entry_ref
             {
-                insert_candidate(candidates, reference, source);
+                insert_candidate(candidates, reference);
             }
         }
     }
@@ -680,7 +660,7 @@ fn collect_action_primary_candidates(
         if let Some(reference) = arguments.get(key).and_then(Value::as_str)
             && reference != entry_ref
         {
-            insert_candidate(candidates, reference, "recorded_pre_read_argument");
+            insert_candidate(candidates, reference);
         }
     }
     if let Some(reference) = arguments
@@ -689,22 +669,16 @@ fn collect_action_primary_candidates(
         .and_then(Value::as_str)
         && reference != entry_ref
     {
-        insert_candidate(candidates, reference, "recorded_pre_read_argument");
+        insert_candidate(candidates, reference);
     }
 }
 
-fn insert_candidate(
-    candidates: &mut BTreeMap<String, CandidateDraft>,
-    reference: &str,
-    source: &str,
-) {
-    let candidate = candidates
+fn insert_candidate(candidates: &mut BTreeMap<String, CandidateDraft>, reference: &str) {
+    candidates
         .entry(reference.to_string())
         .or_insert_with(|| CandidateDraft {
             reference: reference.to_string(),
-            sources: BTreeSet::new(),
         });
-    candidate.sources.insert(source.to_string());
 }
 
 fn writer_candidate_detail(candidate: &CandidateDraft, entry_ref: &str, entry_kind: &str) -> Value {
@@ -724,7 +698,6 @@ fn writer_candidate_detail(candidate: &CandidateDraft, entry_ref: &str, entry_ki
         "temporal_distance": temporal_distance,
         "priority": writer_candidate_priority(entry_kind, &role),
         "relation_hint": writer_candidate_relation_hint(entry_kind, &role),
-        "sources": ["writer_candidate_pool"],
     })
 }
 
@@ -1191,12 +1164,7 @@ mod tests {
                 "node:to",
             ]
         );
-        assert!(details.iter().all(|detail| {
-            detail
-                .get("sources")
-                .and_then(Value::as_array)
-                .is_some_and(|sources| !sources.is_empty())
-        }));
+        assert!(details.iter().all(|detail| detail.get("sources").is_none()));
     }
 
     #[test]

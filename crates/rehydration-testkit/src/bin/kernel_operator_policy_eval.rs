@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::error::Error;
 use std::fs::File;
@@ -9,9 +9,14 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::Serialize;
 use serde_json::{Value, json};
 
-use rehydration_testkit::{kernel_operator_is_bounded_tool_call, kernel_operator_primary_refs};
+use rehydration_testkit::{
+    kernel_operator_action_shape_error, kernel_operator_is_bounded_tool_call,
+    kernel_operator_primary_refs,
+};
 
 const EVALUATOR: &str = "kernel-operator-policy-eval-v1";
+const ACTION_VALIDATOR: &str = "kernel-operator-action-contract-v1";
+const SCHEMA_MODE: &str = "strict-no-additional-properties";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Args {
@@ -42,6 +47,8 @@ struct Trajectory {
 #[derive(Debug, Serialize)]
 struct EvalSummary {
     evaluator: &'static str,
+    action_validator: &'static str,
+    schema_mode: &'static str,
     generated_at_unix_seconds: u64,
     trajectories: String,
     predictions: Option<String>,
@@ -51,6 +58,7 @@ struct EvalSummary {
     by_task_family: BTreeMap<String, usize>,
     target_actions: BTreeMap<String, usize>,
     predicted_actions: BTreeMap<String, usize>,
+    invalid_prediction_reasons: BTreeMap<String, usize>,
     counts: EvalCounts,
     rates: EvalRates,
 }
@@ -170,13 +178,21 @@ fn usage() -> String {
 }
 
 fn read_trajectories(path: &Path) -> Result<Vec<Trajectory>, Box<dyn Error + Send + Sync>> {
+    let mut seen_step_ids = BTreeSet::<String>::new();
     read_jsonl(path)?
         .into_iter()
         .enumerate()
         .map(|(index, value)| {
             let location = format!("{}:{}", path.display(), index + 1);
+            let step_id = required_string(&value, "step_id", &location)?.to_string();
+            if !seen_step_ids.insert(step_id.clone()) {
+                return Err(format!(
+                    "{location} duplicate step_id `{step_id}`; policy evaluation requires unique trajectory step ids"
+                )
+                .into());
+            }
             Ok(Trajectory {
-                step_id: required_string(&value, "step_id", &location)?.to_string(),
+                step_id,
                 about: required_string(&value, "about", &location)?.to_string(),
                 mode: required_string(&value, "mode", &location)?.to_string(),
                 task_family: required_string(&value, "task_family", &location)?.to_string(),
@@ -211,7 +227,12 @@ fn read_predictions(path: &Path) -> Result<BTreeMap<String, Value>, Box<dyn Erro
             .or_else(|| value.get("target_action"))
             .cloned()
             .ok_or_else(|| format!("{location} missing `action` or `target_action`"))?;
-        predictions.insert(step_id.to_string(), action);
+        if predictions.insert(step_id.to_string(), action).is_some() {
+            return Err(format!(
+                "{location} duplicate prediction step_id `{step_id}`; policy evaluation requires unique prediction step ids"
+            )
+            .into());
+        }
     }
     Ok(predictions)
 }
@@ -257,6 +278,7 @@ fn evaluate(
     let mut by_task_family = BTreeMap::<String, usize>::new();
     let mut target_actions = BTreeMap::<String, usize>::new();
     let mut predicted_actions = BTreeMap::<String, usize>::new();
+    let mut invalid_prediction_reasons = BTreeMap::<String, usize>::new();
 
     for trajectory in trajectories {
         *by_mode.entry(trajectory.mode.clone()).or_default() += 1;
@@ -280,8 +302,9 @@ fn evaluate(
         *predicted_actions
             .entry(action_label(&predicted))
             .or_default() += 1;
-        if !is_valid_action(&predicted) {
+        if let Some(error) = kernel_operator_action_shape_error(&predicted) {
             counts.invalid_predictions += 1;
+            *invalid_prediction_reasons.entry(error).or_default() += 1;
             continue;
         }
         if is_unbounded_tool_call(&predicted) {
@@ -293,6 +316,8 @@ fn evaluate(
     let rates = rates(&counts, trajectories.len());
     Ok(EvalSummary {
         evaluator: EVALUATOR,
+        action_validator: ACTION_VALIDATOR,
+        schema_mode: SCHEMA_MODE,
         generated_at_unix_seconds: SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs(),
         trajectories: args.trajectories.display().to_string(),
         predictions: args
@@ -311,6 +336,7 @@ fn evaluate(
         by_task_family,
         target_actions,
         predicted_actions,
+        invalid_prediction_reasons,
         counts,
         rates,
     })
@@ -452,14 +478,6 @@ fn action_label(action: &Value) -> String {
     }
 }
 
-fn is_valid_action(action: &Value) -> bool {
-    match action_type(action) {
-        Some("tool_call") => tool(action).is_some() && action.get("arguments").is_some(),
-        Some("stop") => true,
-        _ => false,
-    }
-}
-
 fn is_unbounded_tool_call(action: &Value) -> bool {
     if action_type(action) != Some("tool_call") {
         return false;
@@ -490,6 +508,7 @@ fn scope_about(action: &Value) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     #[test]
     fn deterministic_policy_starts_with_near() -> Result<(), Box<dyn Error + Send + Sync>> {
@@ -532,7 +551,12 @@ mod tests {
                 "tool": "kernel_inspect",
                 "arguments": {
                     "ref": "node:1",
-                    "include": { "raw": false }
+                    "include": {
+                        "details": true,
+                        "incoming": true,
+                        "outgoing": true,
+                        "raw": false
+                    }
                 }
             }),
         }];
@@ -565,8 +589,13 @@ mod tests {
                 "type": "tool_call",
                 "tool": "kernel_near",
                 "arguments": {
+                    "about": "about:1",
                     "around": { "ref": "node:1" },
-                    "limit": { "entries": 12, "tokens": 2400 }
+                    "dimensions": { "mode": "all", "scope": "current_about" },
+                    "include": { "evidence": true, "raw_refs": false, "relations": true },
+                    "limit": { "entries": 12, "tokens": 2400 },
+                    "budget": { "depth": 3, "tokens": 2400 },
+                    "window": { "before_entries": 6, "after_entries": 0 }
                 }
             }),
         }];
@@ -577,8 +606,13 @@ mod tests {
                 "type": "tool_call",
                 "tool": "kernel_near",
                 "arguments": {
+                    "about": "about:1",
                     "around": { "ref": "node:1" },
-                    "limit": { "entries": 1000, "tokens": 2400 }
+                    "dimensions": { "mode": "all", "scope": "current_about" },
+                    "include": { "evidence": true, "raw_refs": false, "relations": true },
+                    "limit": { "entries": 1000, "tokens": 2400 },
+                    "budget": { "depth": 3, "tokens": 2400 },
+                    "window": { "before_entries": 6, "after_entries": 0 }
                 }
             }),
         );
@@ -592,6 +626,106 @@ mod tests {
         };
         let summary = evaluate(&args, &trajectories, Some(&predictions))?;
         assert_eq!(summary.counts.unbounded_tool_calls, 1);
+        Ok(())
+    }
+
+    #[test]
+    fn invalid_prediction_reason_is_counted() -> Result<(), Box<dyn Error + Send + Sync>> {
+        let trajectories = vec![Trajectory {
+            step_id: "s1".to_string(),
+            about: "about:1".to_string(),
+            mode: "read".to_string(),
+            task_family: "longmemeval.temporal-reasoning".to_string(),
+            visible_state: json!({
+                "current_ref": "node:1",
+                "last_tool": null,
+            }),
+            target_action: json!({
+                "type": "tool_call",
+                "tool": "kernel_ask",
+                "arguments": {
+                    "about": "about:1",
+                    "answer_policy": "evidence_or_unknown",
+                    "dimensions": { "mode": "all", "scope": "current_about" },
+                    "question": "What changed?"
+                }
+            }),
+        }];
+        let mut predictions = BTreeMap::new();
+        predictions.insert(
+            "s1".to_string(),
+            json!({
+                "type": "tool_call",
+                "tool": "kernel_ask",
+                "arguments": {
+                    "about": "about:1",
+                    "answer_policy": "evidence_or_unknown",
+                    "dimensions": { "mode": "all", "scope": "current_about" },
+                    "question": "What changed?",
+                    "final_refs": ["node:1"]
+                }
+            }),
+        );
+        let args = Args {
+            trajectories: PathBuf::from("trajectories.jsonl"),
+            predictions: Some(PathBuf::from("predictions.jsonl")),
+            baseline: Baseline::Deterministic,
+            output: None,
+            limit: None,
+            offset: 0,
+        };
+        let summary = evaluate(&args, &trajectories, Some(&predictions))?;
+        assert_eq!(summary.action_validator, ACTION_VALIDATOR);
+        assert_eq!(summary.schema_mode, SCHEMA_MODE);
+        assert_eq!(summary.counts.invalid_predictions, 1);
+        assert_eq!(
+            summary
+                .invalid_prediction_reasons
+                .get("action.arguments has unexpected field `final_refs`"),
+            Some(&1)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn read_predictions_rejects_duplicate_step_ids() -> Result<(), Box<dyn Error + Send + Sync>> {
+        let path = env::temp_dir().join(format!(
+            "kernel-operator-policy-eval-duplicate-predictions-{}.jsonl",
+            std::process::id()
+        ));
+        fs::write(
+            &path,
+            r#"{"step_id":"s1","action":{"type":"stop"}}"#.to_string()
+                + "\n"
+                + r#"{"step_id":"s1","action":{"type":"stop"}}"#
+                + "\n",
+        )?;
+        let result = read_predictions(&path);
+        let _ = fs::remove_file(&path);
+        let error = result.expect_err("duplicate prediction step ids should fail");
+        assert!(error.to_string().contains("duplicate prediction step_id"));
+        Ok(())
+    }
+
+    #[test]
+    fn read_trajectories_rejects_duplicate_step_ids() -> Result<(), Box<dyn Error + Send + Sync>> {
+        let path = env::temp_dir().join(format!(
+            "kernel-operator-policy-eval-duplicate-trajectories-{}.jsonl",
+            std::process::id()
+        ));
+        let row = json!({
+            "step_id": "s1",
+            "about": "about:1",
+            "mode": "read",
+            "task_family": "test",
+            "visible_state": {},
+            "target_action": { "type": "stop" }
+        });
+        fs::write(&path, format!("{row}\n{row}\n"))?;
+        let result = read_trajectories(&path);
+        let _ = fs::remove_file(&path);
+        let error = result.expect_err("duplicate trajectory step ids should fail");
+        assert!(error.to_string().contains("duplicate step_id"));
         Ok(())
     }
 }

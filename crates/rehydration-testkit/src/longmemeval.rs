@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
 
@@ -754,6 +754,22 @@ fn validate_item_shape(item: &LongMemEvalItem) -> Result<(), LongMemEvalAdapterE
             item.question_id
         )));
     }
+    let mut session_refs = BTreeSet::new();
+    for (session_index, session_id) in item.haystack_session_ids.iter().enumerate() {
+        let session_ref = sanitize_ref_segment(session_id);
+        if session_ref.is_empty() {
+            return Err(LongMemEvalAdapterError::new(format!(
+                "question {} has empty session_id after normalization at session index {}; this LongMemEval shape is not supported",
+                item.question_id, session_index
+            )));
+        }
+        if !session_refs.insert(session_ref.clone()) {
+            return Err(LongMemEvalAdapterError::new(format!(
+                "question {} has duplicate or colliding session_id `{}` at session index {}; repeated LongMemEval session ids are not supported by the KMP adapter",
+                item.question_id, session_id, session_index
+            )));
+        }
+    }
     Ok(())
 }
 
@@ -931,6 +947,84 @@ mod tests {
         let error = prepare_longmemeval_item(&item, &LongMemEvalAdapterConfig::default())
             .expect_err("mismatched dates should fail");
         assert!(error.to_string().contains("session ids but 0 dates"));
+    }
+
+    #[test]
+    fn rejects_duplicate_session_ids_as_unsupported() {
+        let item = LongMemEvalItem {
+            question_id: "q-duplicate".to_string(),
+            question_type: "single-session-user".to_string(),
+            question: "What happened?".to_string(),
+            answer: json!("answer"),
+            question_date: "2023/05/21 (Sun) 00:00".to_string(),
+            haystack_session_ids: vec!["same-session".to_string(), "same-session".to_string()],
+            haystack_dates: vec![
+                "2023/05/20 (Sat) 00:04".to_string(),
+                "2023/05/20 (Sat) 00:05".to_string(),
+            ],
+            haystack_sessions: vec![
+                vec![LongMemEvalTurn {
+                    role: "user".to_string(),
+                    content: "First.".to_string(),
+                    has_answer: false,
+                }],
+                vec![LongMemEvalTurn {
+                    role: "user".to_string(),
+                    content: "Second.".to_string(),
+                    has_answer: false,
+                }],
+            ],
+            answer_session_ids: Vec::new(),
+        };
+
+        let error = longmemeval_candidate_turns(&item, Some("run-a"))
+            .expect_err("duplicate session ids should fail fast");
+
+        assert!(
+            error
+                .to_string()
+                .contains("repeated LongMemEval session ids")
+        );
+        assert!(error.to_string().contains("not supported"));
+    }
+
+    #[test]
+    fn rejects_normalized_session_id_collisions_as_unsupported() {
+        let item = LongMemEvalItem {
+            question_id: "q-collision".to_string(),
+            question_type: "single-session-user".to_string(),
+            question: "What happened?".to_string(),
+            answer: json!("answer"),
+            question_date: "2023/05/21 (Sun) 00:00".to_string(),
+            haystack_session_ids: vec!["same session".to_string(), "same-session".to_string()],
+            haystack_dates: vec![
+                "2023/05/20 (Sat) 00:04".to_string(),
+                "2023/05/20 (Sat) 00:05".to_string(),
+            ],
+            haystack_sessions: vec![
+                vec![LongMemEvalTurn {
+                    role: "user".to_string(),
+                    content: "First.".to_string(),
+                    has_answer: false,
+                }],
+                vec![LongMemEvalTurn {
+                    role: "user".to_string(),
+                    content: "Second.".to_string(),
+                    has_answer: false,
+                }],
+            ],
+            answer_session_ids: Vec::new(),
+        };
+
+        let error = prepare_longmemeval_item(&item, &LongMemEvalAdapterConfig::default())
+            .expect_err("normalized session id collisions should fail fast");
+
+        assert!(
+            error
+                .to_string()
+                .contains("duplicate or colliding session_id")
+        );
+        assert!(error.to_string().contains("not supported"));
     }
 
     #[test]

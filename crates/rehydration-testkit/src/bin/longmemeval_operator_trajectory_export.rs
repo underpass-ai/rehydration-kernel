@@ -105,7 +105,6 @@ struct ExportData {
 #[derive(Debug, Clone)]
 struct CandidateDraft {
     reference: String,
-    sources: BTreeSet<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -150,7 +149,9 @@ fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let run_id = resolve_run_id(&data.run_ids, args.expected_run_id.as_deref())?;
     for item in &mut data.trajectories {
         item.run_id = run_id.clone();
+        item.step_id = namespaced_step_id(&run_id, &item.step_id);
     }
+    ensure_unique_step_ids(&data.trajectories)?;
 
     let bounded_failures = data
         .failures
@@ -225,6 +226,30 @@ fn next_arg(
 
 fn usage() -> String {
     "usage: longmemeval_operator_trajectory_export --run <longmemeval-run-dir> --artifacts <longmemeval-artifacts-dir> --output <dir> [--expected-run-id id] [--include-writer-reads] [--force]".to_string()
+}
+
+fn namespaced_step_id(run_id: &str, step_id: &str) -> String {
+    if step_id.starts_with("longmemeval:run:") {
+        return step_id.to_string();
+    }
+    let suffix = step_id.strip_prefix("longmemeval:").unwrap_or(step_id);
+    format!("longmemeval:run:{run_id}:{suffix}")
+}
+
+fn ensure_unique_step_ids(
+    trajectories: &[TrajectoryItem],
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let mut seen = BTreeSet::<&str>::new();
+    for item in trajectories {
+        if !seen.insert(item.step_id.as_str()) {
+            return Err(format!(
+                "duplicate LongMemEval operator trajectory step_id `{}`; step ids must be unique",
+                item.step_id
+            )
+            .into());
+        }
+    }
+    Ok(())
 }
 
 fn ensure_output_dir(path: &Path, force: bool) -> Result<(), Box<dyn Error + Send + Sync>> {
@@ -507,18 +532,6 @@ fn export_writer_reads(
         let location = format!("{}:{}", path.display(), line_index + 1);
         let about = required_string(&value, "about", &location)?;
         let entry_ref = required_string(&value, "entry_ref", &location)?;
-        let question_id = value
-            .get("question_id")
-            .and_then(Value::as_str)
-            .unwrap_or("unknown");
-        let question_type = value
-            .get("question_type")
-            .and_then(Value::as_str)
-            .unwrap_or("unknown");
-        let relation_strategy = value
-            .get("relation_strategy")
-            .and_then(Value::as_str)
-            .unwrap_or("unknown");
         let calls = value
             .get("pre_read_calls")
             .and_then(Value::as_array)
@@ -593,13 +606,6 @@ fn export_writer_reads(
                     "remaining_budget": {
                         "tool_calls": calls.len().saturating_sub(call_index).min(DEFAULT_TOOL_CALL_BUDGET),
                         "context_chars": DEFAULT_CONTEXT_CHARS,
-                    },
-                    "writer": {
-                        "benchmark": "LongMemEval",
-                        "question_id": question_id,
-                        "question_type": question_type,
-                        "target_ref": target_ref,
-                        "relation_strategy": relation_strategy,
                     }
                 }),
                 allowed_tools: allowed_tools.clone(),
@@ -656,18 +662,16 @@ fn writer_candidate_ref_details(
 ) -> Vec<Value> {
     let mut candidates = BTreeMap::<String, CandidateDraft>::new();
     if !target_ref.is_empty() && target_ref != entry_ref {
-        insert_candidate(&mut candidates, target_ref, "writer_target_ref");
+        insert_candidate(&mut candidates, target_ref);
     }
     collect_candidate_array(
         value.pointer("/write_request/read_context/inspected_refs"),
         entry_ref,
-        "writer_read_context_inspected",
         &mut candidates,
     );
     collect_candidate_array(
         value.pointer("/write_request/read_context/temporal_refs"),
         entry_ref,
-        "writer_read_context_temporal",
         &mut candidates,
     );
     if let Some(connect_to) = value
@@ -678,11 +682,7 @@ fn writer_candidate_ref_details(
             if let Some(reference) = relation.get("ref").and_then(Value::as_str)
                 && reference != entry_ref
             {
-                insert_candidate(
-                    &mut candidates,
-                    reference,
-                    "writer_candidate_relation_target",
-                );
+                insert_candidate(&mut candidates, reference);
             }
         }
     }
@@ -691,11 +691,7 @@ fn writer_candidate_ref_details(
             if let Some(reference) = relation.get("to").and_then(Value::as_str)
                 && reference != entry_ref
             {
-                insert_candidate(
-                    &mut candidates,
-                    reference,
-                    "writer_candidate_quality_target",
-                );
+                insert_candidate(&mut candidates, reference);
             }
         }
     }
@@ -730,7 +726,6 @@ fn writer_candidate_ref_details(
 fn collect_candidate_array(
     value: Option<&Value>,
     entry_ref: &str,
-    source: &str,
     candidates: &mut BTreeMap<String, CandidateDraft>,
 ) {
     if let Some(values) = value.and_then(Value::as_array) {
@@ -738,7 +733,7 @@ fn collect_candidate_array(
             if let Some(reference) = item.as_str()
                 && reference != entry_ref
             {
-                insert_candidate(candidates, reference, source);
+                insert_candidate(candidates, reference);
             }
         }
     }
@@ -753,7 +748,7 @@ fn collect_action_primary_candidates(
         if let Some(reference) = arguments.get(key).and_then(Value::as_str)
             && reference != entry_ref
         {
-            insert_candidate(candidates, reference, "recorded_pre_read_argument");
+            insert_candidate(candidates, reference);
         }
     }
     if let Some(reference) = arguments
@@ -762,22 +757,16 @@ fn collect_action_primary_candidates(
         .and_then(Value::as_str)
         && reference != entry_ref
     {
-        insert_candidate(candidates, reference, "recorded_pre_read_argument");
+        insert_candidate(candidates, reference);
     }
 }
 
-fn insert_candidate(
-    candidates: &mut BTreeMap<String, CandidateDraft>,
-    reference: &str,
-    source: &str,
-) {
-    let candidate = candidates
+fn insert_candidate(candidates: &mut BTreeMap<String, CandidateDraft>, reference: &str) {
+    candidates
         .entry(reference.to_string())
         .or_insert_with(|| CandidateDraft {
             reference: reference.to_string(),
-            sources: BTreeSet::new(),
         });
-    candidate.sources.insert(source.to_string());
 }
 
 fn writer_candidate_detail(candidate: &CandidateDraft, entry_ref: &str, target_ref: &str) -> Value {
@@ -788,7 +777,6 @@ fn writer_candidate_detail(candidate: &CandidateDraft, entry_ref: &str, target_r
         "role": role,
         "priority": priority,
         "relation_hint": writer_candidate_relation_hint(&role),
-        "sources": candidate.sources.iter().cloned().collect::<Vec<_>>(),
     })
 }
 
@@ -1202,6 +1190,51 @@ mod tests {
                 "question:run:lme-a:question:q1",
             ),
             "target_question"
+        );
+    }
+
+    #[test]
+    fn writer_candidate_details_do_not_expose_exporter_sources() {
+        let value = json!({
+            "write_request": {
+                "read_context": {
+                    "inspected_refs": ["turn:run:lme-a:question:q1:answer_session_1:6"],
+                    "temporal_refs": ["turn:run:lme-a:question:q1:answer_session_1:5"]
+                },
+                "connect_to": [
+                    { "ref": "question:run:lme-a:question:q1" }
+                ]
+            },
+            "relation_quality": [
+                { "to": "turn:run:lme-a:question:q1:answer_session_1:4" }
+            ]
+        });
+        let calls = vec![json!({
+            "arguments": {
+                "around": { "ref": "turn:run:lme-a:question:q1:answer_session_1:6" }
+            }
+        })];
+
+        let details = writer_candidate_ref_details(
+            &value,
+            &calls,
+            "turn:run:lme-a:question:q1:answer_session_1:7",
+            "question:run:lme-a:question:q1",
+        );
+
+        assert!(!details.is_empty());
+        assert!(details.iter().all(|detail| detail.get("sources").is_none()));
+    }
+
+    #[test]
+    fn namespaced_step_id_adds_run_scope_once() {
+        assert_eq!(
+            namespaced_step_id("lme-a", "longmemeval:multi-session:q1:read:0"),
+            "longmemeval:run:lme-a:multi-session:q1:read:0"
+        );
+        assert_eq!(
+            namespaced_step_id("lme-a", "longmemeval:run:lme-a:multi-session:q1:read:0"),
+            "longmemeval:run:lme-a:multi-session:q1:read:0"
         );
     }
 

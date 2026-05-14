@@ -7,7 +7,8 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use rehydration_testkit::{
-    LlmProvider, call_llm, detect_provider_from_model, kernel_operator_is_bounded_tool_call,
+    LlmProvider, call_llm, detect_provider_from_model, kernel_operator_action_shape_error,
+    kernel_operator_is_bounded_tool_call, kernel_operator_is_valid_action_shape,
     kernel_operator_primary_refs, normalize_llm_json_response, parse_provider,
 };
 use serde::{Deserialize, Serialize};
@@ -425,6 +426,9 @@ fn parse_action(raw_response: &str) -> Result<Value, Box<dyn Error + Send + Sync
 }
 
 fn validate_action_shape(action: &Value) -> Result<(), Box<dyn Error + Send + Sync>> {
+    if let Some(error) = kernel_operator_action_shape_error(action) {
+        return Err(error.into());
+    }
     match action.get("type").and_then(Value::as_str) {
         Some("stop") => Ok(()),
         Some("tool_call") => {
@@ -579,14 +583,7 @@ fn summarize(input: SummaryInput<'_>) -> Result<BaselineSummary, Box<dyn Error +
 }
 
 fn valid_action_shape(action: &Value) -> bool {
-    match action.get("type").and_then(Value::as_str) {
-        Some("stop") => true,
-        Some("tool_call") => {
-            action.get("tool").and_then(Value::as_str).is_some()
-                && action.get("arguments").is_some()
-        }
-        _ => false,
-    }
+    kernel_operator_is_valid_action_shape(action)
 }
 
 fn unbounded_action(action: &Value) -> bool {
@@ -674,7 +671,7 @@ mod tests {
     #[test]
     fn parse_action_accepts_wrapped_tool_call() -> Result<(), Box<dyn Error + Send + Sync>> {
         let action = parse_action(
-            r#"{"action":{"type":"tool_call","tool":"kernel_inspect","arguments":{"ref":"node:1","include":{"raw":false}}}}"#,
+            r#"{"action":{"type":"tool_call","tool":"kernel_inspect","arguments":{"ref":"node:1","include":{"details":true,"incoming":true,"outgoing":true,"raw":false}}}}"#,
         )?;
         assert_eq!(
             action.get("tool").and_then(Value::as_str),
@@ -686,12 +683,12 @@ mod tests {
     #[test]
     fn parse_action_rejects_raw_inspect() {
         let error = parse_action(
-            r#"{"action":{"type":"tool_call","tool":"kernel_inspect","arguments":{"ref":"node:1","include":{"raw":true}}}}"#,
+            r#"{"action":{"type":"tool_call","tool":"kernel_inspect","arguments":{"ref":"node:1","include":{"details":true,"incoming":true,"outgoing":true,"raw":true}}}}"#,
         )
         .err()
         .map(|error| error.to_string())
         .unwrap_or_default();
-        assert!(error.contains("unbounded") || error.contains("invalid"));
+        assert!(error.contains("raw") || error.contains("unbounded"));
     }
 
     #[test]
@@ -707,6 +704,9 @@ mod tests {
                 "type": "tool_call",
                 "tool": "kernel_ask",
                 "arguments": {
+                    "about": "about:1",
+                    "answer_policy": "evidence_or_unknown",
+                    "dimensions": { "mode": "all", "scope": "current_about" },
                     "question": "what now?",
                     "budget": { "tokens": 800 }
                 }
@@ -733,7 +733,12 @@ mod tests {
                 "tool": "kernel_inspect",
                 "arguments": {
                     "ref": "node:2",
-                    "include": { "raw": false }
+                    "include": {
+                        "details": true,
+                        "incoming": true,
+                        "outgoing": true,
+                        "raw": false
+                    }
                 }
             }),
             &trajectory,

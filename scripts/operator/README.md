@@ -4,6 +4,67 @@ This folder contains the external training path for a small KMP tool-operator
 model. The model is not part of kernel core. It learns to emit one bounded
 KMP/MCP action from a visible memory state.
 
+Current training-data status, 2026-05-13:
+
+- keep previous LoRA runs as baselines;
+- use the MemoryArena P1.11 corpus as the clean current training base;
+- treat mixed MemoryArena + LongMemEval data as internal comparison only;
+- do not train publication candidates from the LongMemEval-S cleaned 500
+  full-history artifacts until repeated `session_id` semantics are explicitly
+  modeled;
+- fail fast on unsupported benchmark shapes instead of generating fallback ids.
+
+See
+[`docs/product/operator-training-data-audit-2026-05-13.md`](../../docs/product/operator-training-data-audit-2026-05-13.md)
+for the current classification.
+
+Current action-contract status, 2026-05-14:
+
+- previous Operator policy metrics are `pre-strict` unless revalidated with the
+  shared action validator;
+- a prediction is valid only if it matches the exact KMP/MCP action schema;
+- fields that belong to `stop`, such as `final_refs`, are invalid inside
+  `tool_call.arguments`;
+- the predictor now rejects out-of-contract actions before writing
+  `predictions.jsonl`;
+- publication candidates must have zero invalid predictions and zero unbounded
+  calls under the strict validator.
+
+See
+[`docs/product/operator-action-contract-audit-2026-05-14.md`](../../docs/product/operator-action-contract-audit-2026-05-14.md)
+for impact, corrected v10 metrics, and the required revalidation plan.
+
+Current revalidation result:
+
+- MemoryArena V6 holdout20 remains clean under
+  `kernel-operator-action-contract-v1`: 1,124/1,124 exact, zero missing, zero
+  invalid, zero unbounded, both anonymized and de-anonymized.
+- The same strict raw predictions replayed through the public TLS MCP/gRPC
+  endpoint: 976/976 tool calls succeeded, 148 stop actions, zero missing
+  expected refs, and 424 explicit partial results from `kernel_near`.
+- LongMemEval v8 clean is internal only under the strict contract: 4 missing
+  predictions, 2 invalid predictions, 0 unbounded, 0.7500 exact.
+
+Current contract-coverage status:
+
+- `operator-read` contract coverage is 100% after adding `kernel_wake`,
+  time/sequence temporal cursors, full dimension mode/scope validation, trace
+  pagination, and window-policy capability checks.
+- `operator-full` contract coverage is 85.71%; write operations are still out
+  of profile.
+- MemoryArena V6 target capability coverage is only 41.67% for the read
+  profile. The model has not yet seen all API/MCP use cases.
+- P0 is to create API/MCP conformance datasets by use case before claiming the
+  Operator can operate KMP fully.
+
+Coverage command:
+
+```bash
+cargo run -p rehydration-testkit --bin kernel_operator_contract_coverage -- \
+  --profile read \
+  --trajectories /tmp/kernel-operator-sft-100-with-writer-by-task-anon-visible-candidate-details-holdout20/eval_trajectories.jsonl
+```
+
 ## 1. Prepare SFT Data
 
 ```bash
@@ -302,7 +363,7 @@ The holdout file reserves task ids `80` through `99` for eval. The split
 contains 4,600 train rows and 1,124 eval rows, with zero dropped non-visible
 target refs.
 
-Observed V6 explicit-holdout run on 2026-05-11 with `--batch-size 8`:
+Observed V6 explicit-holdout strict rerun on 2026-05-14 with `--batch-size 8`:
 
 | Predictor | Total | Exact | Tool | Ref | Scope | Stop | Invalid | Unbounded |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -311,9 +372,10 @@ Observed V6 explicit-holdout run on 2026-05-11 with `--batch-size 8`:
 | Qwen 0.5B LoRA V6 holdout20 | 1,124 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 0 | 0 |
 
 V6 trained on 4,600 rows and evaluated on 1,124 rows. Prediction produced
-1,124 rows with zero parse failures. The training job completed in 33m01s, with
-final `eval_loss` 0.01425 and `eval_mean_token_accuracy` 0.9954. The prediction
-job completed in 8m50s including dependency installation and model load.
+1,124 rows with zero failures under
+`kernel-operator-action-contract-v1` and
+`strict-no-additional-properties`. The training job completed in 33m01s, with
+final `eval_loss` 0.01425 and `eval_mean_token_accuracy` 0.9954.
 
 ## 5. De-Anonymize Predictions For Raw Replay
 
@@ -329,8 +391,8 @@ predictions:
 python scripts/operator/deanonymize_operator_predictions.py \
   --raw-trajectories /tmp/kernel-operator-sft-100-with-writer-by-task-anon-visible-candidate-details-holdout20/eval_trajectories.jsonl \
   --model-trajectories /tmp/kernel-operator-sft-100-with-writer-by-task-anon-visible-candidate-details-holdout20/eval_model_trajectories.jsonl \
-  --predictions /tmp/kernel-operator-qwen05-predictions-v6-holdout20/predictions.jsonl \
-  --output /tmp/kernel-operator-qwen05-predictions-v6-holdout20-raw \
+  --predictions /tmp/kernel-operator-qwen05-predictions-v6-holdout20-strict-20260514/predictions.jsonl \
+  --output /tmp/kernel-operator-qwen05-predictions-v6-holdout20-strict-20260514-raw \
   --force
 ```
 
@@ -352,11 +414,11 @@ Raw-ref evaluation:
 ```bash
 cargo run -p rehydration-testkit --bin kernel_operator_policy_eval -- \
   --trajectories /tmp/kernel-operator-sft-100-with-writer-by-task-anon-visible-candidate-details-holdout20/eval_trajectories.jsonl \
-  --predictions /tmp/kernel-operator-qwen05-predictions-v6-holdout20-raw/predictions.jsonl \
-  --output /tmp/kernel-operator-qwen05-predictions-v6-holdout20-raw-policy-eval.json
+  --predictions /tmp/kernel-operator-qwen05-predictions-v6-holdout20-strict-20260514-raw/predictions.jsonl \
+  --output /tmp/kernel-operator-qwen05-predictions-v6-holdout20-strict-20260514-raw-policy-eval.json
 ```
 
-Observed V6 de-anonymization result on 2026-05-11:
+Observed V6 strict de-anonymization result on 2026-05-14:
 
 | Item | Value |
 | --- | ---: |
@@ -382,8 +444,8 @@ Use `kernel_operator_mcp_replay` after de-anonymization:
 ```bash
 cargo run -p rehydration-testkit --bin kernel_operator_mcp_replay -- \
   --trajectories /tmp/kernel-operator-sft-100-with-writer-by-task-anon-visible-candidate-details-holdout20/eval_trajectories.jsonl \
-  --predictions /tmp/kernel-operator-qwen05-predictions-v6-holdout20-raw/predictions.jsonl \
-  --output /tmp/kernel-operator-qwen05-predictions-v6-holdout20-mcp-replay-100 \
+  --predictions /tmp/kernel-operator-qwen05-predictions-v6-holdout20-strict-20260514-raw/predictions.jsonl \
+  --output /tmp/kernel-operator-qwen05-predictions-v6-holdout20-strict-20260514-mcp-replay-100 \
   --endpoint https://rehydration-kernel.underpassai.com \
   --limit 100 \
   --log-progress-every 25 \
@@ -408,7 +470,7 @@ The replay fails fast when:
 - MCP/gRPC returns an error;
 - a tool call does not return the refs observed in the audited trajectory.
 
-Observed 100-step live smoke on 2026-05-11:
+Observed 100-step strict live smoke on 2026-05-14:
 
 | Item | Value |
 | --- | ---: |
@@ -418,9 +480,13 @@ Observed 100-step live smoke on 2026-05-11:
 | Successful tool calls | 85 |
 | Failed tool calls | 0 |
 | Missing expected ref rows | 0 |
+| Missing predictions | 0 |
+| Invalid predictions | 0 |
 | Unbounded tool calls | 0 |
+| Partial result rows | 36 |
+| Elapsed | 1m26.5s |
 
-Observed full V6 holdout20 live replay on 2026-05-11:
+Observed full V6 holdout20 strict live replay on 2026-05-14:
 
 | Item | Value |
 | --- | ---: |
@@ -434,20 +500,26 @@ Observed full V6 holdout20 live replay on 2026-05-11:
 | Invalid predictions | 0 |
 | Unbounded tool calls | 0 |
 | Extra observed ref rows | 848 |
-| Elapsed | 7m18.7s |
+| Extra observed refs | 7,216 |
+| Partial result rows | 424 |
+| Elapsed | 10m15.9s |
 
 Extra observed refs mean the live kernel returned additional valid context
 beyond the audited minimum. The replay fails only when expected refs are
 missing.
 
-Full replay action latency against the public TLS endpoint:
+Full strict replay action latency against the public TLS endpoint:
 
 | Action | Count | Avg ms | Max ms |
 | --- | ---: | ---: | ---: |
-| `kernel_near` | 424 | 922.2 | 1,738 |
-| `kernel_inspect` | 424 | 79.2 | 146 |
-| `kernel_trace` | 128 | 105.9 | 168 |
+| `kernel_near` | 424 | 1,302.7 | 2,517 |
+| `kernel_inspect` | 424 | 110.0 | 198 |
+| `kernel_trace` | 128 | 127.1 | 181 |
 | `stop` | 148 | 0.0 | 0 |
+
+All partial results in the strict replay came from `kernel_near`. That is the
+expected bounded behavior: the replay records `partial_result=true` and the page
+object instead of accepting an unbounded traversal.
 
 ## 7. Next Scale Run
 
