@@ -1,5 +1,7 @@
 # Underpass Kernel
 
+> Part of [Underpass AI](https://underpassai.com) — memory and execution infrastructure for reliable AI agents.
+
 Kernel Memory Protocol for navigable, temporal, multidimensional AI agent
 memory.
 
