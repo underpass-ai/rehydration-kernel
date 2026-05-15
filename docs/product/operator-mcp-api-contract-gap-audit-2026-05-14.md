@@ -116,14 +116,22 @@ Medicion actual del reporter `kernel_operator_contract_coverage`:
 
 | Scope | Coverage | Lectura |
 | --- | ---: | --- |
-| MCP global tools | 80.00% | `kernel_ingest` y `kernel_write_memory` no pertenecen al perfil lector actual. |
+| MCP global tools desde `operator-read` | 80.00% | `kernel_ingest` y `kernel_write_memory` no pertenecen al perfil lector actual. |
+| MCP global tools desde `operator-full` | 100.00% | El contrato full ya cubre todas las tools MCP publicadas. |
 | `operator-read` contract | 100.00% | El contrato ya puede expresar el perfil lector completo. |
-| `operator-full` contract | 85.71% | Falta escribir/validar `kernel_ingest`, `kernel_write_memory`, relation quality y read_context proof. |
+| `operator-full` contract | 100.00% | El contrato ya expresa `kernel_ingest`, `kernel_write_memory`, relation quality y read_context proof. |
 | MemoryArena V6 target capabilities | 41.67% | El dataset actual no cubre todo el perfil lector. |
+| MemoryArena V6 target capabilities contra full | 35.71% | El dataset actual no contiene acciones de escritura. |
+| KMP conformance full target capabilities | 100.00% | Suite sintetica v7 de 61 trajectories para cubrir todo el contrato full. |
+| P1.11 + conformance v7 read train target capabilities | 100.00% | Split capability-aware; 24/24 capacidades read en train. |
+| P1.11 + conformance v7 read eval target capabilities | 100.00% | Split capability-aware; 24/24 capacidades read en eval. |
 
-El dato importante es el tercero. Aunque el contrato ya pueda expresar
-`operator-read`, el modelo no ha sido entrenado/evaluado con suficientes casos
-para decir que domina ese perfil.
+El dato importante ya no es solo el contrato. El contrato `operator-full` puede
+expresar todo KMP/MCP, incluida escritura. El gap principal pasa a ser de datos:
+el modelo no ha sido entrenado/evaluado todavia con suficientes casos para decir
+que domina el perfil full. Para `operator-read`, el primer dataset mixto con
+cobertura 100% en train y eval ya existe; todavia falta entrenar, evaluar y
+replayar contra MCP real antes de convertirlo en claim de modelo.
 
 ## P0: Datasets Por Caso De Uso MCP/API
 
@@ -168,7 +176,340 @@ Hasta tener estas suites, no se debe afirmar que Operator sabe usar KMP al
 maximo. La afirmacion correcta sigue siendo:
 
 ```text
-Operator sabe operar el subconjunto KMP/MCP cubierto por el dataset actual.
+Operator sabe operar el subconjunto KMP/MCP cubierto por el modelo evaluado.
+```
+
+Update 2026-05-14:
+
+```text
+El dataset `operator-read` ya cubre 100% del perfil read en train y eval.
+La afirmacion de modelo aun espera entrenamiento, policy eval y live replay.
+```
+
+## Auditoria De Muestras: No Entrenar A Inventar
+
+La ejecucion de conformance v4 encontro un gap importante del corpus.
+
+No era correcto interpretar todos los fallos como incapacidad del modelo. Varias
+muestras pedian al Operator emitir una accion con campos que no estaban
+presentes en el `visible_state`.
+
+Eso rompe una regla basica de KMP:
+
+```text
+El Operator puede seleccionar, copiar, acotar, transformar de forma controlada
+o parar. No debe inventar memoria.
+```
+
+### Caso `kernel_ingest`
+
+El target `kernel_ingest` contiene un payload completo:
+
+- `memory.dimensions`;
+- `memory.entries`;
+- `memory.relations`;
+- `memory.evidence`;
+- `provenance`;
+- `idempotency_key`;
+- `dry_run`.
+
+En conformance v4, el `visible_state` de algunos casos solo decia:
+
+```json
+{"canonical_payload_ready": true}
+```
+
+Eso no basta. Si el payload completo no esta visible, el modelo no puede
+reconstruirlo de forma honesta. El resultado observado fue exactamente el que
+debia esperarse:
+
+- el modelo eligio bien `kernel_ingest` en 4/4;
+- pero cambio entradas, relaciones, textos, ids e `idempotency_key`;
+- la exactitud fue 0/4.
+
+Lectura correcta:
+
+```text
+El modelo aprendio que debe usar ingest, pero el dataset le obligaba a inventar
+el contenido del nodo.
+```
+
+Correccion v5:
+
+```json
+{
+  "canonical_payload_ready": true,
+  "canonical_payload": { "...": "payload completo que debe pasar a kernel_ingest" }
+}
+```
+
+Si `canonical_payload` no esta visible, el target no debe ser `kernel_ingest`.
+Debe ser `stop` con una razon fail-fast, por ejemplo
+`canonical_payload_not_visible`.
+
+### Caso `kernel_write_memory`
+
+`kernel_write_memory` no es solo "guardar texto".
+
+El target incluye:
+
+- `about`;
+- `intent`;
+- `actor`;
+- `observed_at`;
+- `scope`;
+- `current.kind`;
+- `current.summary`;
+- `current.evidence`;
+- `connect_to`;
+- relacion (`rel`, `class`, `why`, `evidence`, `confidence`);
+- `read_context`;
+- `semantic_delta` cuando aplica;
+- `idempotency_key`;
+- `options`.
+
+En v4, algunos casos complejos solo exponian algo como:
+
+```json
+{
+  "draft_write": {
+    "intent": "record_memory",
+    "relation_requirement": "use only strict kernel_write_memory fields"
+  }
+}
+```
+
+Eso tampoco basta. El modelo no puede saber que `current`, `scope`,
+`connect_to`, `semantic_delta` e `idempotency_key` exactos debe emitir si no
+estan visibles.
+
+Correccion v5:
+
+```json
+{
+  "draft_write": {
+    "intent": "record_memory",
+    "prepared_arguments": { "...": "argumentos completos de kernel_write_memory" },
+    "relation_requirement": "use only strict kernel_write_memory fields"
+  }
+}
+```
+
+Esto convierte la muestra en una tarea legitima de copia/ejecucion:
+
+```text
+hay un draft preparado y valido -> decide usar kernel_write_memory y emite ese
+payload sin inventar campos.
+```
+
+Si el draft no esta preparado, la muestra debe ensenar otra politica:
+
+```text
+leer mas contexto, inspeccionar refs, trazar, o parar.
+```
+
+### Decision De Producto Sobre Escritura
+
+Aunque v5 corrige el problema de "pedir inventar", no debe interpretarse como
+el camino final para entrenar escritura.
+
+La escritura real en KMP es mas compleja que copiar un payload preparado. El
+flujo correcto es:
+
+```text
+1. El LLM/writer identifica el contexto de escritura.
+2. Lee memoria cercana con KMP: near, inspect, trace, rewind/forward si hace falta.
+3. Decide si el nuevo nodo debe conectarse con memoria previa.
+4. Si hay una relacion rica justificada, escribe texto + relacion + why + evidencia.
+5. Si no hay relacion rica justificable, cae a la relacion anemica determinista
+   por defecto, normalmente follows.
+6. El kernel valida alcance, prueba, contrato, idempotencia y auditabilidad.
+```
+
+La parte no determinista es importante:
+
+```text
+El porque de una relacion rica lo decide el writer/LLM que usa KMP.
+El kernel no debe inferir ese significado.
+```
+
+El kernel puede validar que la relacion sea honesta:
+
+- el target existe y esta dentro del alcance correcto;
+- el writer ha leido/inspeccionado la evidencia necesaria;
+- `why` y `evidence` estan presentes;
+- la relacion cumple el contrato;
+- no se han inventado campos;
+- la decision queda auditable.
+
+Pero el kernel no debe decidir por si mismo que una entrada `contradicts`,
+`supersedes`, `chosen_because`, `updates_state` o `contributes_to` otra. Esa
+decision pertenece al writer.
+
+Por tanto, el plan queda dividido:
+
+| Area | Estado |
+| --- | --- |
+| `operator-read` | P0 actual. Debe aprender a navegar KMP al maximo. |
+| `operator-full` con write preparado | Util como test de contrato y anti-invencion, no como producto final de escritura. |
+| `writer inteligente` | Diseño separado. Primero debe leer contexto y despues decidir relacion. La decision semantica rica no debe recaer inicialmente en un modelo 0.5B. |
+| fallback anemico | Determinista y permitido cuando no hay relacion rica honesta. |
+
+Regla para los datasets de escritura:
+
+```text
+No entrenar al modelo a inventar memoria.
+No entrenar escritura como simple autocompletado de campos.
+Entrenar primero la politica de lectura/contexto que permite escribir bien.
+```
+
+### Teacher De Escritura
+
+Para writer semantico, el dataset no debe asumir que un modelo pequeno de
+0.5B puede decidir relaciones ricas de forma fiable.
+
+El reparto correcto es:
+
+| Pieza | Responsabilidad |
+| --- | --- |
+| GPT-5.5 teacher | Generar decisiones de escritura semantica offline: relacion, `why`, evidencia y fallback cuando no hay prueba suficiente. |
+| Operator 0.5B | Solo operar KMP: decidir que herramienta llamar, con que limites, cuando inspeccionar, cuando trazar, cuando parar y cuando escalar. |
+| Kernel | Validar contrato, alcance, evidencia, idempotencia y auditabilidad. No inferir significado. |
+
+El Operator 0.5B no debe ser tratado como autor de relaciones ricas en la
+primera version. Puede aprender:
+
+- que necesita leer antes de escribir;
+- que refs son candidatas visibles;
+- que una escritura preparada puede ejecutarse si ya contiene relacion y prueba;
+- que puede ejecutar una relacion anemica cuando ya viene preparada o la
+  politica explicita lo permite sin inventar significado;
+- que debe escalar a un modelo teacher/razonador grande cuando falta decision
+  semantica.
+
+En otras palabras: el 0.5B no escribe significado. Aprende el protocolo de uso
+del kernel.
+
+Las muestras teacher de escritura deben conservar procedencia obligatoria:
+
+- `label_source = gpt5_5_teacher`;
+- `teacher_model` con el identificador exacto usado en la ejecucion;
+- `teacher_prompt_version`;
+- herramientas KMP/MCP permitidas durante la lectura;
+- refs inspeccionadas;
+- evidencia citada por cada relacion rica;
+- razon explicita cuando la decision sea fallback anemico o escalado.
+
+Si el teacher no esta disponible, no se genera ese dataset. No hay fallback
+silencioso a otro modelo para muestras de escritura semantica.
+
+Hasta cerrar ese diseno, no se debe lanzar un entrenamiento publicable de
+`operator-full` con escritura. El siguiente entrenamiento recomendado vuelve a
+ser `operator-read`.
+
+### Caso `about` Vs `ref`
+
+Otro problema detectado fue la anonimizacion.
+
+En raw:
+
+```text
+about = incident:mobile-login
+current_ref = incident:mobile-login:draft:...
+```
+
+En v4 model-facing, `about` podia convertirse en `ref_0001`, igual que las refs
+de nodos. Eso mezcla conceptos:
+
+- `about` es el ambito/caso sobre el que se trabaja;
+- `ref` es una referencia a un nodo/entrada/evidencia.
+
+Para KMP esa diferencia importa mucho. Si el dataset borra esa diferencia, el
+modelo puede aprender que `about` es una ref mas y usar `current_ref` como
+`arguments.about`.
+
+Correccion v5:
+
+```text
+about -> about_0001
+node refs -> ref_0001, ref_0002, ...
+```
+
+La regla queda:
+
+```text
+arguments.about debe copiar el top-level about, pero no debe confundirse con
+current_ref ni con refs de nodos.
+```
+
+### Como Leer Los Resultados v4
+
+Conformance v4 sigue siendo util, pero como auditoria del corpus.
+
+Resultados relevantes:
+
+| Area | Resultado v4 | Lectura |
+| --- | ---: | --- |
+| Contract coverage | 100% | El contrato full esta representado. |
+| `goal` en prompt | si | El bug de prompt v3 esta corregido. |
+| Exact action | 14/58 | No publicable. |
+| Missing predictions | 10/58 | El modelo rompe formato en casos complejos. |
+| `kernel_ingest` tool | 4/4 | Elige la herramienta correcta. |
+| `kernel_ingest` exact | 0/4 | El payload no estaba visible; el modelo invento. |
+| `kernel_write_memory` exact | 0/8 | Los drafts complejos no estaban suficientemente materializados. |
+| Stop/fail-fast | fuerte | El modelo aprende bien a parar cuando el target es claro. |
+
+Por tanto, v4 no debe usarse para afirmar:
+
+```text
+Qwen 0.5B no sabe escribir KMP.
+```
+
+La afirmacion correcta es:
+
+```text
+El corpus v4 todavia contenia muestras que pedian inventar memoria. v5 corrige
+esa frontera haciendo visible el payload que debe emitirse o convirtiendo el
+caso en fail-fast.
+```
+
+## Medicion De Aporte Por Muestra
+
+Para no seguir anadiendo datos a ciegas, el policy evaluator emite un detalle
+por muestra con:
+
+- `step_id`;
+- `target_capability_key`;
+- target action;
+- predicted action;
+- estado de prediccion: `valid`, `missing`, `invalid`;
+- aciertos por componente:
+  - action type;
+  - tool;
+  - refs primarias;
+  - scope;
+  - cursor mode;
+  - window;
+  - limit;
+  - page continuation;
+  - stop;
+  - exact action.
+
+Esto permite comparar dos ejecuciones sobre el mismo probe set y clasificar el
+efecto de un lote de muestras:
+
+| Verdict | Significado |
+| --- | --- |
+| `improved` | El nuevo entrenamiento mejora esa muestra/probe. |
+| `regressed` | El nuevo entrenamiento rompe algo que antes iba mejor. |
+| `stable_correct` | La muestra ya estaba resuelta y sigue resuelta. |
+| `stable_gap` | La muestra sigue fallando; faltan datos, prompt o capacidad. |
+
+La regla para aceptar nuevas muestras pasa a ser:
+
+```text
+Un lote aporta si reduce stable_gap/improves en su capacidad objetivo sin crear
+regresiones relevantes en capacidades ya verdes.
 ```
 
 ## Herramientas MCP/API
@@ -188,7 +529,7 @@ MCP expone actualmente:
 | `kernel_trace` | `KernelMemoryService.Trace` | proof/path traversal |
 | `kernel_inspect` | `KernelMemoryService.Inspect` | node/detail inspection |
 
-El Operator actual permite solo:
+El contrato actual del Operator permite:
 
 | Operator action | Estado |
 | --- | --- |
@@ -200,15 +541,16 @@ El Operator actual permite solo:
 | `kernel_trace` | Cubierto, sin page continuation en targets. |
 | `kernel_inspect` | Cubierto con `raw=false`. |
 | `stop` | Cubierto. |
-| `kernel_wake` | No permitido. |
-| `kernel_ingest` | No permitido. |
-| `kernel_write_memory` | No permitido. |
+| `kernel_wake` | Permitido por contrato y cubierto por conformance v4; no cubierto en V6 holdout. |
+| `kernel_ingest` | Permitido por contrato full y cubierto por conformance v4; no cubierto en V6 holdout. |
+| `kernel_write_memory` | Permitido por contrato full y cubierto por conformance v4; no cubierto en V6 holdout. |
 
 Decision pendiente:
 
 ```text
-Si queremos un Operator que use KMP al maximo, hay que decidir si hay un solo
-Operator full-KMP o perfiles separados: read-operator, writer-operator,
+Si queremos un Operator que use KMP al maximo, el contrato ya permite un
+Operator full-KMP. La decision de producto sigue siendo si publicamos un unico
+modelo full o perfiles separados: read-operator, writer-operator,
 audit-operator.
 ```
 
@@ -267,15 +609,17 @@ API/MCP:
 
 Operator:
 
-- no lo permite;
-- no hay targets;
-- no hay policy eval;
+- permitido por contrato;
+- cubierto por conformance v4;
+- no aparece en MemoryArena V6 target;
 - no hay replay.
 
 Gap:
 
 ```text
-El Operator no sabe decidir cuando despertar contexto en vez de hacer ask/near.
+MemoryArena V6 no demuestra cuando despertar contexto en vez de hacer ask/near.
+Conformance v4 cubre la forma contractual, pero falta replay real y mas
+variantes de politica.
 ```
 
 P0/P1 decision:
@@ -321,7 +665,7 @@ API/MCP:
 Operator:
 
 - cubierto;
-- exige cursor `around.ref`;
+- acepta cursor `around.ref`, `around.time` y `around.sequence`;
 - exige `window`, `limit`, `dimensions`, `include`, `budget`;
 - aprende dos presets:
   - `read`: entries 12, tokens 2400, depth 3, before 6, after 0;
@@ -329,12 +673,14 @@ Operator:
 
 Gaps:
 
-- no usa cursor `time`;
-- no usa cursor `sequence`;
-- no aprende expansion/reduccion dinamica de ventana;
-- no aprende continuation policy sobre `page.has_more`;
+- MemoryArena V6 no usa cursor `time`;
+- MemoryArena V6 no usa cursor `sequence`;
+- MemoryArena V6 no aprende expansion/reduccion dinamica de ventana;
+- MemoryArena V6 no aprende continuation policy sobre `page.has_more`;
 - no aprende `after_entries > 0` en este holdout;
-- no aprende scopes `abouts` o `all_abouts`.
+- MemoryArena V6 no aprende scopes `abouts` o `all_abouts`;
+- conformance v4 cubre esos modos como contrato, pero todavia necesita mas
+  variantes para politica estable.
 
 ### `kernel_goto`
 
@@ -347,13 +693,13 @@ API/MCP:
 Operator:
 
 - permitido por contrato;
+- cubierto por conformance v4;
 - no cubierto en V6 targets;
-- validador solo acepta `at.ref`.
+- validador acepta `at.ref`, `at.time` y `at.sequence`.
 
 Gaps:
 
-- no hay training/eval real;
-- no hay cursor time/sequence;
+- no hay training/eval real en un benchmark no sintetico;
 - no hay decision policy para "estado conocido en ese momento";
 - no hay benchmark de known-at usando `goto`.
 
@@ -368,15 +714,15 @@ API/MCP:
 Operator:
 
 - permitido por contrato;
+- cubierto por conformance v4;
 - no cubierto en V6 targets;
-- validador solo acepta `from.ref`.
+- validador acepta `from.ref`, `from.time` y `from.sequence`.
 
 Gaps:
 
-- no hay training/eval real;
+- no hay training/eval real en un benchmark no sintetico;
 - no hay policy para buscar decisiones previas;
-- no hay policy de profundidad temporal;
-- no hay cursor time/sequence.
+- no hay policy de profundidad temporal.
 
 ### `kernel_forward`
 
@@ -389,15 +735,15 @@ API/MCP:
 Operator:
 
 - permitido por contrato;
+- cubierto por conformance v4;
 - no cubierto en V6 targets;
-- validador solo acepta `from.ref`.
+- validador acepta `from.ref`, `from.time` y `from.sequence`.
 
 Gaps:
 
-- no hay training/eval real;
+- no hay training/eval real en un benchmark no sintetico;
 - no hay policy para buscar cambios posteriores;
-- no hay policy para actualizar estado vigente;
-- no hay cursor time/sequence.
+- no hay policy para actualizar estado vigente.
 
 ### `kernel_trace`
 
@@ -412,13 +758,14 @@ Operator:
 
 - cubierto;
 - exige `budget`;
-- permite `page`, pero no hay targets con `page`;
+- permite `page`;
+- conformance v4 cubre primera pagina y continuacion con `page.cursor`;
 - V6 target/predictions: 128 `kernel_trace`, todos sin `page`.
 
 Gaps:
 
-- no aprende continuation de trace;
-- no aprende `page.cursor`;
+- MemoryArena V6 no aprende continuation de trace;
+- MemoryArena V6 no aprende `page.cursor`;
 - no aprende cuando aumentar `page.entries`;
 - no aprende cuando parar con trace parcial;
 - no consume warnings/page como senal de siguiente decision.
@@ -465,13 +812,16 @@ API/MCP:
 
 Operator:
 
-- no permitido;
-- no entrenado.
+- permitido por contrato full;
+- cubierto por conformance v4;
+- no cubierto por MemoryArena V6.
 
 Gap:
 
 ```text
-El Operator actual no sabe escribir memoria canonical KMP.
+El contrato ya sabe representar escritura canonical KMP y conformance v4 la
+ejercita. Falta pasar de cobertura sintetica a corpus amplio y replay real de
+writer.
 ```
 
 Decision:
@@ -490,15 +840,17 @@ API/MCP:
 
 Operator:
 
-- no permitido;
-- no entrenado;
+- permitido por contrato full;
+- cubierto por conformance v4;
 - el smart writer actual lo usa como pipeline externo, no como decision del
   Operator pequeno.
 
 Gap:
 
 ```text
-El Operator no sabe todavia escribir memoria inteligente por MCP.
+El contrato ya sabe representar escritura inteligente por MCP y conformance v4
+la ejercita. Falta mas corpus y replay real antes de poner un Operator writer
+delante de KMP.
 ```
 
 Decision:
@@ -535,10 +887,11 @@ Operator strict profile != todo el espacio valido de MCP/API.
 | Cursor | API/MCP | Operator |
 | --- | --- | --- |
 | `ref` | soportado | soportado |
-| `time` | soportado | no soportado |
-| `sequence` | soportado | no soportado |
+| `time` | soportado | soportado |
+| `sequence` | soportado | soportado |
 
-Este es gap claro para usar KMP al maximo.
+El gap ya no es de contrato, sino de corpus: MemoryArena V6 no ejercita
+`time`/`sequence`; conformance v4 si los cubre.
 
 ### Dimension Selection
 
@@ -546,25 +899,26 @@ MCP/gRPC valida semantica:
 
 | Regla | API/MCP runtime | Operator validator actual |
 | --- | --- | --- |
-| `mode=all` no lleva `include/exclude` | valida | no valida completo |
-| `mode=only` requiere `include` | valida | no valida completo |
-| `mode=except` requiere `exclude` | valida | no valida completo |
-| `scope=current_about` no lleva `abouts` | valida | no valida completo |
-| `scope=abouts` requiere `abouts` no vacio | valida | no valida completo |
-| `scope=all_abouts` no lleva `abouts` | valida | no valida completo |
+| `mode=all` no lleva `include/exclude` | valida | valida |
+| `mode=only` requiere `include` | valida | valida |
+| `mode=except` requiere `exclude` | valida | valida |
+| `scope=current_about` no lleva `abouts` | valida | valida |
+| `scope=abouts` requiere `abouts` no vacio | valida | valida |
+| `scope=all_abouts` no lleva `abouts` | valida | valida |
 
-Este es gap P0 de contrato, porque puede inflar metricas offline:
+Este gap P0 de contrato queda cerrado en el validador Rust. La regla sigue
+siendo importante:
 
 ```text
-Una accion podria pasar policy eval y fallar luego en MCP/gRPC.
+Una accion no debe pasar policy eval si MCP/gRPC la rechazaria de forma
+determinista.
 ```
 
-Accion:
+Acciones abiertas:
 
-- mover/duplicar las reglas semanticas de `dimension_selection_from_arguments`
-  al validador del Operator;
-- anadir fixtures validos e invalidos;
-- contar `invalid_prediction_reasons` por regla.
+- mantener fixtures validos e invalidos por regla;
+- mantener paridad con el predictor Python;
+- contar `invalid_prediction_reasons` por regla cuando el modelo falle.
 
 ### Temporal Window
 
@@ -827,6 +1181,109 @@ Acceptance:
 
 Create a small "KMP operator conformance" dataset before scaling benchmarks.
 
+Implemented exporter:
+
+```bash
+cargo run -p rehydration-testkit --bin kernel_operator_conformance_trajectory_export -- \
+  --output /tmp/kernel-operator-conformance-full-v4 \
+  --force
+
+cargo run -p rehydration-testkit --bin kernel_operator_contract_coverage -- \
+  --profile full \
+  --trajectories /tmp/kernel-operator-conformance-full-v4/trajectories.jsonl \
+  --fail-under 100
+```
+
+Current generated suite:
+
+| Metric | Value |
+| --- | ---: |
+| trajectories | 58 |
+| read trajectories | 42 |
+| write trajectories | 16 |
+| target capability coverage | 100.00% |
+| contract validation failures | 0 |
+
+Current SFT preparation from that suite:
+
+| Metric | Value |
+| --- | ---: |
+| selected rows | 58 |
+| train rows | 44 |
+| eval rows | 14 |
+| dropped non-visible target refs | 0 |
+| no-gold audit findings | 0 |
+| model-facing full target capability coverage | 100.00% |
+| `goal` included in model-facing prompt | yes |
+
+Previous Qwen2.5-0.5B full-contract smoke:
+
+| Metric | Value |
+| --- | ---: |
+| adapter | `/tmp/kernel-operator-qwen05-lora-conformance-full-v2` |
+| predictions | `/tmp/kernel-operator-qwen05-conformance-full-v2-predictions` |
+| strict policy eval | `/tmp/kernel-operator-qwen05-conformance-full-v2-policy-eval.json` |
+| training epochs | 8 |
+| final eval loss | 0.06752 |
+| final eval mean token accuracy | 0.9894 |
+| valid predictions | 25/30 |
+| missing predictions | 5/30 |
+| exact action accuracy | 6/30 |
+| action type accuracy | 24/30 |
+| tool accuracy | 17/27 tool calls |
+| primary ref accuracy | 18/27 tool calls |
+| scope accuracy | 23/27 tool calls |
+| cursor mode accuracy | 4/13 cursor actions |
+| window shape accuracy | 10/13 window actions |
+| limit policy accuracy | 10/13 limit actions |
+| continue page accuracy | 2/2 page continuations |
+
+This is useful as a smoke test, not as a release metric. The model learned to
+produce valid full-contract actions more often than the older pre-full adapter,
+but the v2 30-row conformance set was only a coverage smoke. It was too small
+to teach stable selection across temporal cursor modes, tool choice, dynamic
+window policy, and strict smart-write details.
+
+The v3 58-row run exposed a dataset-preparation gap: the SFT user prompt did
+not include the top-level `goal`. The model saw visible state and allowed tools
+but not the actual intent of the decision. Treat v3 predictions as diagnostic
+only.
+
+The v4 58-row run fixes that prompt shape and is the current conformance corpus
+seed for training/evaluation. It is still a seed, not a final public dataset:
+the next step is more variants per capability until strict-output failures go
+to zero under the full contract.
+
+Observed failure classes:
+
+- `kernel_ask` sometimes used `dimensions.mode=only` without `include`;
+- `kernel_write_memory` sometimes missed the top-level action type;
+- `kernel_write_memory` sometimes added `semantic_delta` without
+  `semantic_delta.why`;
+- `kernel_write_memory` sometimes invented an extra `strategy` object;
+- temporal move targets are still confused, especially `goto`/`rewind` being
+  predicted as `forward`.
+
+Generated paths:
+
+```text
+/tmp/kernel-operator-conformance-full-v4/trajectories.jsonl
+/tmp/kernel-operator-conformance-full-v4-sft/openai_train.jsonl
+/tmp/kernel-operator-conformance-full-v4-sft/openai_eval.jsonl
+/tmp/kernel-operator-conformance-full-v4-sft/all_model_trajectories.jsonl
+```
+
+The write slice includes:
+
+- rich `kernel_write_memory` with `chosen_because`, `why`, evidence, and
+  read-context proof;
+- rich `kernel_write_memory` with and without optional `semantic_delta`;
+- anemic fallback `kernel_write_memory` with `follows`;
+- fail-fast stop when a rich write lacks read-context proof;
+- fail-fast stop when relation evidence is ambiguous;
+- canonical `kernel_ingest` when a complete typed memory payload is ready;
+- multi-entry canonical `kernel_ingest`.
+
 Required cases:
 
 | Case | Required target |
@@ -937,26 +1394,56 @@ Operator currently operates a strict bounded read/navigation subset of KMP,
 validated on MemoryArena V6 holdout20 and live MCP replay.
 ```
 
+The next public claim must be based on the capability-aware v7 read dataset plus
+fresh training, strict policy eval, and live MCP replay.
+
 ## Immediate Work Items
 
 P0 implementation checklist:
 
-1. Extend `kernel_operator_action_contract_error` with full dimension semantic
+1. [x] Extend `kernel_operator_action_contract_error` with full dimension semantic
    validation.
-2. Add tests for invalid dimensions:
+2. [x] Add tests for invalid dimensions:
    - `mode=only` without include;
    - `mode=except` without exclude;
    - `scope=abouts` without abouts;
    - `scope=all_abouts` with abouts.
-3. Add cursor mode support to Operator validator:
+3. [x] Add cursor mode support to Operator validator:
    - ref;
    - time;
    - sequence.
-4. Decide if operator profile still requires ref-only for first release. If
-   yes, document that as profile restriction, not API limitation.
-5. Add page-aware visible state to trajectory export from live/replay rows.
-6. Generate KMP conformance trajectories.
-7. Add evaluator metrics for dynamic window/page policy.
-8. Run a small conformance SFT/eval before any larger MemoryArena run.
-9. Replay conformance predictions through public TLS MCP endpoint.
-10. Only after this, scale MemoryArena.
+4. [x] Add `kernel_write_memory` and `kernel_ingest` to the full Operator
+   contract, including relation quality and read-context proof validation.
+5. [x] Keep `operator-read` separate from write-capable `operator-full`.
+6. [x] Add page-aware visible state to trajectory export from live/replay rows.
+7. [x] Add evaluator metrics for dynamic window/page policy.
+8. [x] Generate KMP conformance trajectories.
+9. [x] Run a small conformance SFT/eval before any larger MemoryArena run.
+   - [x] Prepare anonymized conformance SFT rows.
+   - [x] Run no-gold audit on model-facing rows.
+   - [x] Verify model-facing full target coverage is 100%.
+   - [x] Train/predict in the GPU inference environment.
+   - [x] Evaluate predictions with strict policy eval.
+10. [x] Expand conformance data v4 before scaling:
+   - add more rows per temporal cursor mode;
+   - add more rows for dynamic window expansion/shrink;
+   - add more trace continuation rows;
+   - add more strict `kernel_write_memory` rows with and without
+     `semantic_delta`;
+   - add more canonical `kernel_ingest` rows.
+11. [x] Grow conformance beyond coverage smoke enough for `operator-read`
+    train/eval splits:
+   - [x] at least two groups for every required read capability;
+   - [x] duplicated `kernel_wake`;
+   - [x] duplicated `dimensions.scope:all_abouts`;
+   - [x] duplicated `trace.page:first`;
+   - [x] capability-aware split preserves 100% read coverage in train and eval.
+12. [ ] Grow conformance beyond coverage smoke for `operator-full`:
+   - multiple variants per full target capability;
+   - balanced temporal direction labels;
+   - negative examples for invalid dimension modes;
+   - strict smart-write examples without invented helper fields;
+   - include the top-level `goal` in every model-facing prompt;
+   - zero strict-output failures before live replay.
+13. [ ] Replay clean conformance predictions through public TLS MCP endpoint.
+14. [ ] Only after this, scale MemoryArena.

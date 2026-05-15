@@ -50,12 +50,36 @@ Current contract-coverage status:
 - `operator-read` contract coverage is 100% after adding `kernel_wake`,
   time/sequence temporal cursors, full dimension mode/scope validation, trace
   pagination, and window-policy capability checks.
-- `operator-full` contract coverage is 85.71%; write operations are still out
-  of profile.
+- `operator-full` contract coverage is 100%; the contract now includes
+  `kernel_ingest`, `kernel_write_memory`, relation-quality validation, and
+  read-context proof.
 - MemoryArena V6 target capability coverage is only 41.67% for the read
   profile. The model has not yet seen all API/MCP use cases.
-- P0 is to create API/MCP conformance datasets by use case before claiming the
-  Operator can operate KMP fully.
+- MemoryArena V6 target capability coverage is 35.71% for the full profile
+  because it has not yet seen write actions.
+- The synthetic KMP conformance exporter now produces 58 strict trajectories
+  that cover 100% of the `operator-full` target capabilities, including
+  `kernel_write_memory`, `kernel_ingest`, relation quality, read-context proof,
+  trace pagination, temporal cursor modes, dimension modes/scopes, dynamic
+  window cases, stop decisions, and write/read fail-fast behavior.
+- The conformance SFT prompt now includes the top-level `goal`. Earlier
+  conformance predictions without `goal` are diagnostic only: they exposed a
+  dataset-preparation gap, not a stable model-quality result.
+- The v4 conformance SFT path exposed a second dataset problem: some write
+  samples required the model to invent `kernel_ingest`/`kernel_write_memory`
+  payloads that were not visible in the prompt.
+- The v5 conformance SFT path fixes that corpus honesty issue by keeping
+  `about_*` separate from node `ref_*`, by exposing `canonical_payload` for
+  canonical ingest tests, and by exposing `draft_write.prepared_arguments` for
+  prepared write tests.
+- Do not train a public `operator-full` writer yet. The next public training
+  target is still `operator-read`; write samples are contract/anti-invention
+  tests until the smart-writer flow is designed separately.
+- Treat the 0.5B model as a strict Kernel Operator, not as a semantic relation
+  author. It should only learn how to use KMP: bounded tool calls,
+  read-before-write policy, prepared-write execution, escalation decisions, and
+  strict JSON emission. Rich writer relation labels should come from an offline
+  strong teacher dataset, with GPT-5.5 as the preferred teacher for this line.
 
 Coverage command:
 
@@ -64,6 +88,146 @@ cargo run -p rehydration-testkit --bin kernel_operator_contract_coverage -- \
   --profile read \
   --trajectories /tmp/kernel-operator-sft-100-with-writer-by-task-anon-visible-candidate-details-holdout20/eval_trajectories.jsonl
 ```
+
+Conformance trajectory command:
+
+```bash
+cargo run -p rehydration-testkit --bin kernel_operator_conformance_trajectory_export -- \
+  --output /tmp/kernel-operator-conformance-full-v5 \
+  --force
+
+cargo run -p rehydration-testkit --bin kernel_operator_contract_coverage -- \
+  --profile full \
+  --trajectories /tmp/kernel-operator-conformance-full-v5/trajectories.jsonl \
+  --fail-under 100
+```
+
+Conformance SFT preparation:
+
+```bash
+python scripts/operator/prepare_operator_sft_dataset.py \
+  --trajectories /tmp/kernel-operator-conformance-full-v5/trajectories.jsonl \
+  --output /tmp/kernel-operator-conformance-full-v5-sft \
+  --eval-ratio 0.25 \
+  --seed 42 \
+  --anonymize-refs \
+  --require-visible-target-refs \
+  --require-visible-target-cursors \
+  --force
+
+python scripts/operator/audit_operator_sft_no_gold.py \
+  /tmp/kernel-operator-conformance-full-v5-sft/openai_train.jsonl \
+  /tmp/kernel-operator-conformance-full-v5-sft/openai_eval.jsonl \
+  --output /tmp/kernel-operator-conformance-full-v5-sft/no_gold_audit.json
+```
+
+Current conformance SFT output:
+
+| Metric | Value |
+| --- | ---: |
+| selected rows | 58 |
+| train rows | 44 |
+| eval rows | 14 |
+| read rows | 42 |
+| write rows | 16 |
+| dropped non-visible target refs | 0 |
+| dropped non-visible target cursors | check for new golden cuts |
+| debug audit | `<output>/debug_audit.jsonl` |
+| no-gold audit findings | 0 |
+| full target capability coverage on `all_model_trajectories` | 100% |
+| `goal` present in model-facing user prompt | yes |
+
+Current Qwen2.5-0.5B conformance smoke history:
+
+| Metric | Value |
+| --- | ---: |
+| adapter | `/tmp/kernel-operator-qwen05-lora-conformance-full-v2` |
+| prediction output | `/tmp/kernel-operator-qwen05-conformance-full-v2-predictions` |
+| policy eval | `/tmp/kernel-operator-qwen05-conformance-full-v2-policy-eval.json` |
+| training epochs | 8 |
+| final eval loss | 0.06752 |
+| final eval mean token accuracy | 0.9894 |
+| valid predictions | 25/30 |
+| missing predictions | 5/30 |
+| exact action accuracy | 6/30 |
+| action type accuracy | 24/30 |
+| tool accuracy | 17/27 tool calls |
+| primary ref accuracy | 18/27 tool calls |
+| scope accuracy | 23/27 tool calls |
+| cursor mode accuracy | 4/13 cursor actions |
+| window shape accuracy | 10/13 window actions |
+| limit policy accuracy | 10/13 limit actions |
+| continue page accuracy | 2/2 page continuations |
+
+This was a pipeline/conformance smoke, not a release result. The old v6 adapter
+failed the full contract almost completely because it was trained before
+`operator-full`; v2 proved that the training path can learn valid full-contract
+actions, but a 30-row suite was too small to teach stable tool choice, cursor
+choice, dynamic window policy, and strict smart-write behavior.
+
+The v3 run expanded the suite to 58 rows but exposed a more important issue:
+the SFT user payload did not include the top-level `goal`. The model saw the
+state and allowed tools, but not the actual operator intent. Treat v3
+predictions as diagnostic only.
+
+The v4 run keeps the 58-row expanded suite and fixes the SFT prompt by adding
+`goal`. Its predictions are diagnostic only for write behavior because the
+write/ingest prompts still required invented payload content.
+
+The v5 run keeps the same coverage but fixes the write data shape:
+
+- `about` anonymizes to `about_0001`, not `ref_0001`;
+- canonical ingest targets expose the exact `visible_state.canonical_payload`;
+- prepared write targets expose the exact
+  `visible_state.draft_write.prepared_arguments`;
+- no write target requires fields that are absent from visible state.
+
+This does not mean writing is ready for public Operator training. Real KMP
+writing requires a writer/LLM to read context first, decide the semantic
+relation and `why`, then write a rich relation only when justified. If that
+relation is not justified, the writer should use the deterministic anemic
+fallback such as `follows`. The kernel validates scope, evidence and audit
+proof; it does not infer the relation meaning.
+
+Do not expect a 0.5B Operator to author rich relations from scratch.
+For writer data, use a strong offline teacher to produce the semantic decision:
+relation, `why`, cited evidence, and explicit fallback/escalation when the proof
+is insufficient. The preferred teacher for this track is GPT-5.5, pinned in
+dataset provenance as the exact model id used for the run. If that teacher is
+not available, writer dataset generation should fail fast rather than silently
+switching models.
+
+The 0.5B Operator can still learn valuable kernel-operation behavior around
+writer workflows:
+
+- when to call `kernel_near`, `kernel_trace`, or `kernel_inspect` before write;
+- when visible context is enough to execute a prepared `kernel_write_memory`;
+- when a relation needs escalation to the teacher/large reasoning model;
+- when only an explicit anemic fallback is allowed;
+- how to emit one bounded KMP/MCP action without inventing refs or arguments.
+
+Observed failure classes:
+
+- two `kernel_ask` generations used `dimensions.mode=only` without `include`,
+  which the strict validator rejects;
+- one `kernel_write_memory` generation omitted the top-level action type;
+- one `kernel_write_memory` generation added `semantic_delta` but omitted the
+  required `semantic_delta.why`;
+- one `kernel_write_memory` generation added an unexpected `strategy` object;
+- several `kernel_goto`/`kernel_rewind` targets were predicted as
+  `kernel_forward`, showing that temporal direction and cursor-mode selection
+  still need more data.
+
+Next P0 before scaling benchmarks: grow the `operator-read` conformance corpus
+with multiple variants per capability, train from the v5+ prompt shape, then
+require zero strict-output failures before any public read-Operator claim or
+live MCP replay. Keep write training separate until the smart-writer design is
+closed.
+
+The current shell does not have local inference dependencies installed
+(`torch`, `transformers`, `peft`, `accelerate`). Run the LoRA/prediction steps
+from the GPU training environment or Kubernetes job used for previous Operator
+runs.
 
 ## 1. Prepare SFT Data
 
@@ -93,6 +257,56 @@ Use the grouped split for model claims. The row split is useful only for smoke
 tests because it can place adjacent steps from the same task in both train and
 eval.
 
+Mode filters are available for profile-specific datasets:
+
+```bash
+python scripts/operator/prepare_operator_sft_dataset.py \
+  --trajectories <trajectories.jsonl> \
+  --output <operator-read-sft-dir> \
+  --include-mode read \
+  --include-mode write_context_read \
+  --split-mode group \
+  --group-key task_or_step \
+  --anonymize-refs \
+  --require-visible-target-refs \
+  --force
+```
+
+Use `--include-mode read` to create a pure read conformance slice without
+`kernel_ingest` or `kernel_write_memory`. Use `task_or_step` when mixing real
+benchmark tasks with synthetic conformance rows: real benchmark rows remain
+grouped by task/question id, while synthetic rows without task ids fall back to
+their `step_id`.
+
+Capability-aware split for Operator read claims:
+
+```bash
+python scripts/operator/prepare_operator_sft_dataset.py \
+  --trajectories <real-benchmark-trajectories.jsonl> \
+  --trajectories <conformance-trajectories.jsonl> \
+  --output <operator-read-sft-dir> \
+  --include-mode read \
+  --include-mode write_context_read \
+  --split-mode group \
+  --group-key task_or_step \
+  --eval-ratio 0.1 \
+  --seed 42 \
+  --anonymize-refs \
+  --require-visible-target-refs \
+  --capability-split-profile read \
+  --require-eval-capability-coverage \
+  --require-train-capability-coverage \
+  --force
+```
+
+Use this for serious `operator-read` training. It orders groups with a stable
+seeded hash strategy, seeds eval with groups that cover the declared KMP/MCP
+capability profile, preserves benchmark task grouping, and fails before writing
+a usable training claim if either train or eval lacks a required capability. If
+a required capability appears in fewer than two distinct groups, the command
+fails because the same example cannot prove both train exposure and eval
+coverage without leakage.
+
 Strict ref-safe split for the current real operator run:
 
 ```bash
@@ -114,6 +328,38 @@ refs that are not visible in `current_ref`, `trace_target_ref`,
 `candidate_refs`, `candidate_ref_details`, `known_refs`, or
 `last_observed_refs`. `candidate_refs` is required for writer context-read rows;
 without it, valid writer candidates can look invisible after anonymization.
+
+Requested-field projection is available for contract translation and live replay
+smokes:
+
+```bash
+python scripts/operator/prepare_operator_sft_dataset.py \
+  --trajectories <operator-trajectories>/trajectories.jsonl \
+  --output <operator-requested-sft-dir> \
+  --include-mode read \
+  --split-mode group \
+  --group-key task_id \
+  --anonymize-refs \
+  --require-visible-target-refs \
+  --inject-target-request-fields \
+  --force
+```
+
+This projects the audited `target_action` into model-visible requested fields
+such as `requested_wake`, `requested_ask`, `requested_move`,
+`requested_scope`, `requested_bounds`, `requested_trace`,
+`inspection_request`, and `requested_stop`.
+
+Use it only when the claim is:
+
+```text
+Operator translates an explicit upstream KMP request into the strict MCP/API
+action contract.
+```
+
+Do not use it to claim autonomous benchmark planning. A planner dataset must
+make the upstream decision visible through real state, not by projecting the
+target action into requested fields.
 
 The current preferred dataset also includes `candidate_ref_details` for writer
 context-read rows. These details are structural and model-facing after
@@ -264,7 +510,8 @@ python scripts/operator/predict_operator_sft.py \
 cargo run -p rehydration-testkit --bin kernel_operator_policy_eval -- \
   --trajectories /tmp/kernel-operator-sft-100-with-writer-by-task-anon-visible-candidate-details/eval_model_trajectories.jsonl \
   --predictions /tmp/kernel-operator-qwen05-predictions-v5/predictions.jsonl \
-  --output /tmp/kernel-operator-qwen05-predictions-v5-policy-eval.json
+  --output /tmp/kernel-operator-qwen05-predictions-v5-policy-eval.json \
+  --details-output /tmp/kernel-operator-qwen05-predictions-v5-policy-details.jsonl
 ```
 
 For non-anonymized smoke datasets, `eval_model_trajectories.jsonl` and
@@ -274,6 +521,21 @@ use `eval_model_trajectories.jsonl`.
 The Kubernetes prediction job may create `/tmp/kernel-operator-qwen05-predictions-v5`
 as `nobody`. In that case, write `policy-eval.json` to a sibling path as shown
 above.
+
+Use policy details to compare whether a new dataset or model actually improves
+the same frozen probe set:
+
+```bash
+python scripts/operator/compare_operator_policy_details.py \
+  --baseline-details <baseline-policy-details>.jsonl \
+  --candidate-details <candidate-policy-details>.jsonl \
+  --output <candidate-vs-baseline-details>.jsonl \
+  --summary-output <candidate-vs-baseline-summary>.json \
+  --force
+```
+
+The comparison groups rows by `target_capability_key` and reports whether each
+probe improved, regressed, stayed correct, or stayed as an unresolved gap.
 
 The main comparison is against:
 
@@ -384,6 +646,11 @@ Predictions from strict anonymized datasets contain synthetic refs such as
 executed against a live kernel until those refs are mapped back to raw kernel
 refs.
 
+Scoped predictions may also contain synthetic about ids such as `about_0001`.
+The de-anonymizer maps both refs and about ids from the paired model/raw
+trajectory files. If a synthetic value was not visible in the paired trajectory,
+the row fails fast instead of inventing a mapping.
+
 Use the paired raw/model trajectory files to create evaluator-compatible raw
 predictions:
 
@@ -401,9 +668,9 @@ Outputs:
 - `predictions.jsonl`: raw-ref predictions accepted by
   `kernel_operator_policy_eval`;
 - `audit.jsonl`: one row per prediction with model action, raw action, and
-  mapped synthetic refs;
+  mapped synthetic refs and about ids;
 - `failures.jsonl`: missing or unmappable refs;
-- `summary.json`: selected/written/failure counts.
+- `summary.json`: selected/written/failure counts plus mapped ref/about totals.
 
 Fail-fast behavior is intentional. If a predicted synthetic ref is not visible
 in the paired model/raw trajectory, the row is rejected instead of inventing a

@@ -21,6 +21,7 @@ These documents are the current source of truth for users and maintainers:
 | Typed KMS/gRPC status | [product/kernel-memory-service-grpc-plan.md](product/kernel-memory-service-grpc-plan.md) |
 | Writer helper protocol | [product/kernel-write-protocol-plan.md](product/kernel-write-protocol-plan.md) |
 | Kernel tool-operator model | [product/kernel-tool-operator-model-plan.md](product/kernel-tool-operator-model-plan.md) |
+| Operator training process | [product/operator-training-experiment-process.md](product/operator-training-experiment-process.md), [product/operator-training-runs/README.md](product/operator-training-runs/README.md) |
 | Operator benchmark status | [product/operator-benchmark-status-and-next-steps-2026-05-14.md](product/operator-benchmark-status-and-next-steps-2026-05-14.md) |
 | Operator MCP/API coverage audit | [product/operator-mcp-api-contract-gap-audit-2026-05-14.md](product/operator-mcp-api-contract-gap-audit-2026-05-14.md) |
 | Operator publication gate | [product/kernel-tool-operator-publication-plan.md](product/kernel-tool-operator-publication-plan.md) |
@@ -53,10 +54,13 @@ The current roadmap is:
 9. Scale the small kernel tool-operator model beyond the current V6 holdout:
    keep grouped anonymized splits, compare baselines, and validate raw
    predictions through live MCP/gRPC before any publication claim.
-10. Publish the operator model and trajectory dataset to Hugging Face only
+10. Record every serious Operator training attempt in
+    [product/operator-training-runs/](product/operator-training-runs/README.md)
+    with dataset provenance, evidence, stop gates, and final status.
+11. Publish the operator model and trajectory dataset to Hugging Face only
     after the publication gate is clean, then update repo visibility around
     reproducible KMP evidence rather than broad claims.
-11. Continue reducing infrastructure coupling through conformance tests and
+12. Continue reducing infrastructure coupling through conformance tests and
     backend-independent semantics.
 
 ## Active Research And Benchmark Docs

@@ -209,7 +209,7 @@ Por tanto, el score `1.000` no demuestra dominio de:
 - cursores por tiempo;
 - cursores por secuencia.
 
-### Gap 3: Cursor API Mas Amplio Que Cursor Operator
+### Cierre 3: Cursor API En El Operator
 
 MCP/API acepta cursor temporal por:
 
@@ -217,16 +217,23 @@ MCP/API acepta cursor temporal por:
 - `time`;
 - `sequence`.
 
-El contrato del Operator solo acepta cursor por `ref`:
+El contrato del Operator acepta ya los tres modos:
 
 ```text
 around.ref
+around.time
+around.sequence
 at.ref
+at.time
+at.sequence
 from.ref
+from.time
+from.sequence
 ```
 
-Esto es una restriccion fuerte del Operator. Es aceptable para el holdout
-actual, pero no cubre todo el contrato temporal KMP/MCP.
+MemoryArena V6 no ejercita `time` ni `sequence`, asi que su score no demuestra
+dominio de esos cursores. La suite de conformance v4 si los cubre como parte
+del perfil full.
 
 ### Gap 4: Operator Es Mas Estricto Que MCP En Campos Opcionales
 
@@ -257,7 +264,7 @@ El Operator opera un subconjunto estricto y acotado de MCP/API.
 No opera todavia todo el espacio valido de la API.
 ```
 
-### Gap 5: Reglas De Dimensiones No Estan Duplicadas Completo En El Operator
+### Cierre 5: Reglas De Dimensiones En El Operator
 
 El mapping MCP/gRPC valida reglas semanticas:
 
@@ -268,15 +275,15 @@ El mapping MCP/gRPC valida reglas semanticas:
 - `scope=abouts` requiere `abouts` no vacio;
 - `scope=all_abouts` no debe llevar `abouts`.
 
-El validador del Operator comprueba tipos y valores permitidos, pero no replica
-todas esas reglas semanticas. Eso significa que una accion podria pasar el
-policy eval del Operator y fallar despues en MCP/gRPC.
+El validador del Operator replica ya estas reglas semanticas. Eso evita que una
+accion pase el policy eval del Operator y falle despues en MCP/gRPC por una
+seleccion de dimensiones invalida.
 
-Este si es gap P0 del validador:
+La regla de producto queda asi:
 
 ```text
-El validador del Operator debe incorporar las mismas reglas semanticas de
-DimensionSelection que MCP/gRPC.
+Una salida del Operator debe ser mas estricta que MCP si hace falta, pero no
+debe aceptar nada que MCP/gRPC vaya a rechazar de forma predecible.
 ```
 
 ### Gap 6: `inspect.raw=true` Existe En MCP, Pero Operator Lo Bloquea
@@ -389,47 +396,121 @@ Medicion actual con `kernel_operator_contract_coverage` sobre el holdout V6:
 
 | Metric | Value |
 | --- | ---: |
-| MCP global tool coverage | 80.00% |
+| MCP global tool coverage from `operator-read` | 80.00% |
+| MCP global tool coverage from `operator-full` | 100.00% |
 | Read profile contract coverage | 100.00% |
-| Full profile contract coverage | 85.71% |
+| Full profile contract coverage | 100.00% |
 | V6 target capability coverage | 41.67% |
+| V6 target capability coverage against full profile | 35.71% |
+| KMP conformance full target capability coverage | 100.00% |
+| P1.11 + conformance v7 read train target capability coverage | 100.00% |
+| P1.11 + conformance v7 read eval target capability coverage | 100.00% |
+| KMP conformance SFT no-gold audit findings | 0 |
+| KMP conformance v7 selected rows | 61 |
+| KMP conformance v7 read/write rows | 45 / 16 |
+| KMP conformance v7 contract validation failures | 0 |
+| KMP conformance v7 model-facing read train/eval target coverage | 100.00% / 100.00% |
+| KMP conformance v7 prompt includes `goal` | yes |
 
 Interpretacion:
 
 - el contrato lector ya puede expresar el perfil `operator-read`;
-- el perfil full todavia no debe prometerse porque faltan escritura canonica y
-  escritura helper;
-- el dataset V6 no cubre todavia ese perfil;
+- el contrato full ya puede expresar escritura canonica y escritura helper;
+- el dataset V6 no cubria ni todo read ni full;
+- la mezcla P1.11 + conformance v7 ya cubre el perfil `operator-read` en train
+  y eval; todavia falta entrenar, evaluar y replayar el modelo nuevo antes de
+  convertirlo en claim publico;
+- la suite sintetica de conformance v7 cubre todo el contrato full y ya es el
+  seed correcto para entrenamiento de conformidad; para `operator-full` sigue
+  siendo pequena y hay que ampliar variantes por capacidad antes de considerarla
+  un corpus estable;
+- el SFT model-facing generado desde conformance no filtra campos gold y no
+  tiene targets con refs no visibles;
+- el SFT v4+ corrige el gap de prompt detectado en v3: el modelo recibe el
+  `goal` de la decision, no solo el estado visible y las herramientas
+  permitidas;
+- los resultados v2/v3 son diagnosticos. V2 era demasiado pequeno; v3 expuso
+  que faltaba `goal` en el prompt SFT. Los resultados de modelo deben tomarse
+  de v4 o posterior; el proximo intento publicable debe usar el split
+  capability-aware v7.
 - `kernel_ingest` y `kernel_write_memory` quedan fuera del perfil lector y por
-  eso el coverage global MCP no es 100%.
+  eso el coverage global MCP desde `operator-read` no es 100%.
 
 ## P0 Derivado De Estos Gaps
 
 Antes de escalar benchmark o publicar Operator:
 
-1. Alinear el validador del Operator con las reglas semanticas MCP/gRPC de
-   `DimensionSelection`.
-2. Generar trayectorias page-aware con `last_result_page` y
+1. Generar trayectorias page-aware con `last_result_page` y
    `last_result_partial`.
-3. Crear targets que ensenen:
+2. Crear targets que ensenen:
    - continuar pagina;
    - ampliar ventana;
    - reducir ventana;
    - parar cuando hay evidencia suficiente.
-4. Incluir cobertura real de:
+3. Incluir cobertura real de:
    - `kernel_ask`;
    - `kernel_goto`;
    - `kernel_rewind`;
    - `kernel_forward`;
    - cursor `time`;
    - cursor `sequence`.
-5. Crear datasets por caso de uso MCP/API hasta cubrir el 100% del perfil
-   declarado.
-6. Medir `operator_contract_coverage`, `dataset_target_coverage` y
+4. Crear datasets por caso de uso MCP/API hasta cubrir el 100% del perfil
+   declarado y, despues, ampliar cada caso con suficientes variantes para que
+   el modelo aprenda politica, no solo cobertura.
+5. Medir `operator_contract_coverage`, `dataset_target_coverage` y
    `live_replay_coverage` con umbral 100% para el perfil publicable.
-7. Decidir explicitamente si `kernel_wake`, `kernel_write_memory` y
-   `kernel_ingest` pertenecen al primer Operator publico o a un Operator writer
-   separado.
+6. Mantener escritura fuera del primer entrenamiento publicable. El primer
+   perfil debe ser `operator-read`; `kernel_write_memory` y `kernel_ingest`
+   quedan para un writer separado.
+
+## Decision Sobre Escritura
+
+La escritura no entra en el siguiente entrenamiento como `operator-full`.
+
+La auditoria de conformance mostro que algunas muestras de escritura estaban
+forzando al modelo a inventar contenido. Eso ya se corrigio para que el corpus
+sea honesto, pero el problema de producto es mas profundo: escribir memoria KMP
+no es solo emitir un JSON grande.
+
+El flujo correcto de escritura es:
+
+```text
+leer contexto -> inspeccionar nodos -> decidir relacion -> escribir o fallback
+```
+
+El `why` de una relacion rica no es determinista. Lo decide el writer/LLM que
+usa KMP despues de leer contexto suficiente. El kernel no infiere ese
+significado; lo valida. Si el writer no puede justificar una relacion rica,
+debe terminar en la relacion anemica determinista por defecto, normalmente
+`follows`.
+
+Por tanto:
+
+- `operator-read` sigue siendo P0;
+- escritura queda como diseno separado de writer inteligente;
+- los casos de `kernel_write_memory`/`kernel_ingest` se conservan como tests de
+  contrato, anti-invencion y futura base de writer;
+- no se debe publicar un claim de `operator-full` hasta tener el flujo de
+  escritura con lectura previa, decision semantica y fallback anemico medido.
+
+La decision semantica rica de writer no debe cargarse inicialmente sobre un
+modelo 0.5B. El 0.5B debe ser Operator en sentido estricto: solo sabe usar el
+kernel. Su trabajo es mover la lectura, acotar herramientas, detectar si falta
+contexto, ejecutar escrituras preparadas y escalar cuando la relacion requiere
+juicio semantico. Para generar datasets de writer, el teacher preferente es
+GPT-5.5 en modo offline, con salida estructurada, refs citadas y procedencia
+guardada por muestra.
+
+Regla de dataset:
+
+```text
+GPT-5.5 teacher decide relacion/why/evidencia.
+Operator 0.5B aprende solo a usar KMP y a escalar.
+Kernel valida; no infiere.
+```
+
+Si GPT-5.5 no esta disponible para ese corte, la generacion de muestras writer
+falla. No se sustituye silenciosamente por otro modelo.
 
 ## Que Demuestra Este Resultado
 
