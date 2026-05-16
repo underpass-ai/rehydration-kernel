@@ -1,3 +1,4 @@
+use rehydration_domain::{MemoryRelationQuality, MemoryRelationType, RelationSemanticClass};
 use serde_json::{Map, Value};
 
 pub fn kernel_operator_allowed_read_tools() -> Vec<String> {
@@ -14,6 +15,19 @@ pub fn kernel_operator_allowed_read_tools() -> Vec<String> {
     .iter()
     .map(ToString::to_string)
     .collect()
+}
+
+pub fn kernel_operator_allowed_write_tools() -> Vec<String> {
+    ["kernel_ingest", "kernel_write_memory"]
+        .iter()
+        .map(ToString::to_string)
+        .collect()
+}
+
+pub fn kernel_operator_allowed_full_tools() -> Vec<String> {
+    let mut tools = kernel_operator_allowed_read_tools();
+    tools.extend(kernel_operator_allowed_write_tools());
+    tools
 }
 
 pub fn kernel_operator_is_bounded_tool_call(tool: &str, arguments: &Value) -> bool {
@@ -60,6 +74,8 @@ pub fn kernel_operator_is_bounded_tool_call(tool: &str, arguments: &Value) -> bo
                 && optional_limit(arguments, &["budget", "tokens"], 16_000)
         }
         "kernel_ask" => optional_limit(arguments, &["budget", "tokens"], 16_000),
+        "kernel_write_memory" => bounded_write_memory(arguments),
+        "kernel_ingest" => bounded_ingest(arguments),
         _ => false,
     }
 }
@@ -114,6 +130,14 @@ pub fn kernel_operator_primary_refs(action: &Value) -> Vec<String> {
         "kernel_rewind" | "kernel_forward" => path_string(arguments, &["from", "ref"])
             .map(|value| vec![value.to_string()])
             .unwrap_or_default(),
+        "kernel_write_memory" => arguments
+            .get("connect_to")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|link| link.get("ref").and_then(Value::as_str))
+            .map(ToString::to_string)
+            .collect(),
         _ => Vec::new(),
     }
 }
@@ -142,6 +166,8 @@ fn validate_tool_call_shape(action: &Value) -> Result<(), String> {
         "kernel_forward" => validate_temporal_arguments(arguments, "from", "kernel_forward"),
         "kernel_trace" => validate_trace_arguments(arguments),
         "kernel_inspect" => validate_inspect_arguments(arguments),
+        "kernel_write_memory" => validate_write_memory_arguments(arguments),
+        "kernel_ingest" => validate_ingest_arguments(arguments),
         other => Err(format!("unsupported tool `{other}`")),
     }
 }
@@ -289,6 +315,91 @@ fn validate_inspect_arguments(arguments: &Value) -> Result<(), String> {
         required_value(arguments, "include", "action.arguments")?,
         "action.arguments.include",
     )?;
+    Ok(())
+}
+
+fn validate_write_memory_arguments(arguments: &Value) -> Result<(), String> {
+    exact_keys(
+        arguments,
+        "action.arguments",
+        &[
+            "about",
+            "intent",
+            "actor",
+            "observed_at",
+            "scope",
+            "current",
+            "connect_to",
+            "read_context",
+            "idempotency_key",
+            "options",
+        ],
+        &["semantic_delta", "source_kind"],
+    )?;
+    required_non_empty_string(arguments, "about", "action.arguments")?;
+    validate_writer_intent(required_string(arguments, "intent", "action.arguments")?)?;
+    required_non_empty_string(arguments, "actor", "action.arguments")?;
+    required_non_empty_string(arguments, "observed_at", "action.arguments")?;
+    validate_write_scope(
+        required_value(arguments, "scope", "action.arguments")?,
+        "action.arguments.scope",
+    )?;
+    let current_ref = validate_write_current(
+        required_value(arguments, "current", "action.arguments")?,
+        "action.arguments.current",
+    )?;
+    let semantic_delta_ref = if let Some(delta) = arguments.get("semantic_delta") {
+        validate_semantic_delta(delta, "action.arguments.semantic_delta")?
+    } else {
+        None
+    };
+    let read_context_refs = read_context_refs(
+        required_value(arguments, "read_context", "action.arguments")?,
+        "action.arguments.read_context",
+    )?;
+    let local_refs = [current_ref, semantic_delta_ref]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+    validate_connect_to(
+        required_value(arguments, "connect_to", "action.arguments")?,
+        "action.arguments.connect_to",
+        &local_refs,
+        &read_context_refs,
+    )?;
+    required_non_empty_string(arguments, "idempotency_key", "action.arguments")?;
+    validate_write_options(
+        required_value(arguments, "options", "action.arguments")?,
+        "action.arguments.options",
+    )?;
+    validate_optional_non_empty_string(arguments, "source_kind", "action.arguments")?;
+    Ok(())
+}
+
+fn validate_ingest_arguments(arguments: &Value) -> Result<(), String> {
+    exact_keys(
+        arguments,
+        "action.arguments",
+        &[
+            "about",
+            "memory",
+            "provenance",
+            "idempotency_key",
+            "dry_run",
+        ],
+        &[],
+    )?;
+    required_non_empty_string(arguments, "about", "action.arguments")?;
+    validate_ingest_memory(
+        required_value(arguments, "memory", "action.arguments")?,
+        "action.arguments.memory",
+    )?;
+    validate_ingest_provenance(
+        required_value(arguments, "provenance", "action.arguments")?,
+        "action.arguments.provenance",
+    )?;
+    required_non_empty_string(arguments, "idempotency_key", "action.arguments")?;
+    required_bool(arguments, "dry_run", "action.arguments")?;
     Ok(())
 }
 
@@ -441,11 +552,337 @@ fn validate_page(value: &Value, context: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn validate_write_scope(value: &Value, context: &str) -> Result<(), String> {
+    exact_keys(value, context, &["process"], &["task", "episode"])?;
+    required_non_empty_string(value, "process", context)?;
+    validate_optional_non_empty_string(value, "task", context)?;
+    validate_optional_non_empty_string(value, "episode", context)?;
+    Ok(())
+}
+
+fn validate_write_current(value: &Value, context: &str) -> Result<Option<String>, String> {
+    exact_keys(value, context, &["kind", "summary", "evidence"], &["ref"])?;
+    validate_writer_node_kind(required_string(value, "kind", context)?)?;
+    required_non_empty_string(value, "summary", context)?;
+    required_non_empty_string(value, "evidence", context)?;
+    validate_optional_non_empty_string(value, "ref", context)?;
+    Ok(value
+        .get("ref")
+        .and_then(Value::as_str)
+        .map(ToString::to_string))
+}
+
+fn validate_semantic_delta(value: &Value, context: &str) -> Result<Option<String>, String> {
+    exact_keys(value, context, &["from", "to", "why", "evidence"], &["ref"])?;
+    for field in ["from", "to", "why", "evidence"] {
+        required_non_empty_string(value, field, context)?;
+    }
+    validate_optional_non_empty_string(value, "ref", context)?;
+    Ok(value
+        .get("ref")
+        .and_then(Value::as_str)
+        .map(ToString::to_string))
+}
+
+fn validate_connect_to(
+    value: &Value,
+    context: &str,
+    local_refs: &[String],
+    read_context_refs: &[String],
+) -> Result<(), String> {
+    let links = non_empty_array(value, context)?;
+    for (index, link) in links.iter().enumerate() {
+        let link_context = format!("{context}[{index}]");
+        exact_keys(
+            link,
+            &link_context,
+            &["ref", "rel", "class", "why", "evidence"],
+            &["confidence"],
+        )?;
+        let target_ref = required_non_empty_string(link, "ref", &link_context)?;
+        let rel = required_non_empty_string(link, "rel", &link_context)?;
+        let class = required_non_empty_string(link, "class", &link_context)?;
+        let semantic_class = RelationSemanticClass::parse(class)
+            .map_err(|error| format!("{link_context}.class is invalid: {error}"))?;
+        let relation_type = MemoryRelationType::new(rel)
+            .map_err(|error| format!("{link_context}.rel is invalid: {error}"))?;
+        let Some(spec) = relation_type.writer_spec() else {
+            return Err(format!("{link_context}.rel is outside writer vocabulary"));
+        };
+        if !spec.allows_class(&semantic_class) {
+            return Err(format!(
+                "{link_context}.class `{class}` is not allowed for relation `{rel}`"
+            ));
+        }
+        if semantic_class != RelationSemanticClass::Structural {
+            required_non_empty_string(link, "why", &link_context)?;
+            required_non_empty_string(link, "evidence", &link_context)?;
+        }
+        if let Some(confidence) = link.get("confidence").and_then(Value::as_str) {
+            validate_confidence(confidence, &format!("{link_context}.confidence"))?;
+        }
+        let target_is_local = local_refs.iter().any(|local_ref| local_ref == target_ref);
+        let target_was_read = read_context_refs
+            .iter()
+            .any(|read_ref| read_ref == target_ref);
+        if spec.quality() == MemoryRelationQuality::Rich && !target_is_local && !target_was_read {
+            return Err(format!(
+                "{link_context}.ref `{target_ref}` uses a rich relation without read_context proof"
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn read_context_refs(value: &Value, context: &str) -> Result<Vec<String>, String> {
+    exact_keys(
+        value,
+        context,
+        &[],
+        &[
+            "inspected_refs",
+            "temporal_refs",
+            "wake_refs",
+            "ask_refs",
+            "trace_paths",
+        ],
+    )?;
+    let mut refs = Vec::new();
+    for field in ["inspected_refs", "temporal_refs", "wake_refs", "ask_refs"] {
+        if let Some(values) = value.get(field) {
+            for item in string_array(values, &format!("{context}.{field}"))? {
+                refs.push(item.to_string());
+            }
+        }
+    }
+    if let Some(paths) = value.get("trace_paths") {
+        for (index, path) in array(paths, &format!("{context}.trace_paths"))?
+            .iter()
+            .enumerate()
+        {
+            let path_context = format!("{context}.trace_paths[{index}]");
+            exact_keys(path, &path_context, &["from", "to"], &["refs"])?;
+            refs.push(required_non_empty_string(path, "from", &path_context)?.to_string());
+            refs.push(required_non_empty_string(path, "to", &path_context)?.to_string());
+            if let Some(path_refs) = path.get("refs") {
+                for item in string_array(path_refs, &format!("{path_context}.refs"))? {
+                    refs.push(item.to_string());
+                }
+            }
+        }
+    }
+    Ok(refs)
+}
+
+fn validate_write_options(value: &Value, context: &str) -> Result<(), String> {
+    exact_keys(value, context, &["dry_run", "strict"], &["sequence"])?;
+    required_bool(value, "dry_run", context)?;
+    let strict = required_bool(value, "strict", context)?;
+    if !strict {
+        return Err(format!("{context}.strict must be true for operator-write"));
+    }
+    validate_optional_positive_integer(value, "sequence", context)?;
+    Ok(())
+}
+
+fn validate_ingest_memory(value: &Value, context: &str) -> Result<(), String> {
+    exact_keys(
+        value,
+        context,
+        &["dimensions", "entries", "relations", "evidence"],
+        &[],
+    )?;
+    validate_dimensions_payload(required_value(value, "dimensions", context)?, context)?;
+    validate_entries_payload(required_value(value, "entries", context)?, context)?;
+    validate_relations_payload(required_value(value, "relations", context)?, context)?;
+    validate_evidence_payload(required_value(value, "evidence", context)?, context)?;
+    Ok(())
+}
+
+fn validate_dimensions_payload(value: &Value, context: &str) -> Result<(), String> {
+    for (index, dimension) in non_empty_array(value, &format!("{context}.dimensions"))?
+        .iter()
+        .enumerate()
+    {
+        let dimension_context = format!("{context}.dimensions[{index}]");
+        exact_keys(dimension, &dimension_context, &["id", "kind"], &["title"])?;
+        required_non_empty_string(dimension, "id", &dimension_context)?;
+        required_non_empty_string(dimension, "kind", &dimension_context)?;
+        validate_optional_non_empty_string(dimension, "title", &dimension_context)?;
+    }
+    Ok(())
+}
+
+fn validate_entries_payload(value: &Value, context: &str) -> Result<(), String> {
+    for (index, entry) in non_empty_array(value, &format!("{context}.entries"))?
+        .iter()
+        .enumerate()
+    {
+        let entry_context = format!("{context}.entries[{index}]");
+        exact_keys(
+            entry,
+            &entry_context,
+            &["id", "kind", "text"],
+            &["coordinates", "metadata"],
+        )?;
+        required_non_empty_string(entry, "id", &entry_context)?;
+        required_non_empty_string(entry, "kind", &entry_context)?;
+        required_non_empty_string(entry, "text", &entry_context)?;
+        if let Some(coordinates) = entry.get("coordinates") {
+            validate_coordinates(coordinates, &format!("{entry_context}.coordinates"))?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_coordinates(value: &Value, context: &str) -> Result<(), String> {
+    for (index, coordinate) in array(value, context)?.iter().enumerate() {
+        let coordinate_context = format!("{context}[{index}]");
+        exact_keys(
+            coordinate,
+            &coordinate_context,
+            &["dimension", "scope_id"],
+            &["sequence", "observed_at", "occurred_at", "valid_from"],
+        )?;
+        required_non_empty_string(coordinate, "dimension", &coordinate_context)?;
+        required_non_empty_string(coordinate, "scope_id", &coordinate_context)?;
+        validate_optional_positive_integer(coordinate, "sequence", &coordinate_context)?;
+        for field in ["observed_at", "occurred_at", "valid_from"] {
+            validate_optional_non_empty_string(coordinate, field, &coordinate_context)?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_relations_payload(value: &Value, context: &str) -> Result<(), String> {
+    for (index, relation) in array(value, &format!("{context}.relations"))?
+        .iter()
+        .enumerate()
+    {
+        let relation_context = format!("{context}.relations[{index}]");
+        exact_keys(
+            relation,
+            &relation_context,
+            &["from", "to", "rel", "class", "why", "evidence"],
+            &["confidence", "sequence"],
+        )?;
+        required_non_empty_string(relation, "from", &relation_context)?;
+        required_non_empty_string(relation, "to", &relation_context)?;
+        let rel = required_non_empty_string(relation, "rel", &relation_context)?;
+        MemoryRelationType::new(rel)
+            .map_err(|error| format!("{relation_context}.rel is invalid: {error}"))?;
+        let class = required_non_empty_string(relation, "class", &relation_context)?;
+        RelationSemanticClass::parse(class)
+            .map_err(|error| format!("{relation_context}.class is invalid: {error}"))?;
+        required_non_empty_string(relation, "why", &relation_context)?;
+        required_non_empty_string(relation, "evidence", &relation_context)?;
+        if let Some(confidence) = relation.get("confidence").and_then(Value::as_str) {
+            validate_confidence(confidence, &format!("{relation_context}.confidence"))?;
+        }
+        validate_optional_positive_integer(relation, "sequence", &relation_context)?;
+    }
+    Ok(())
+}
+
+fn validate_evidence_payload(value: &Value, context: &str) -> Result<(), String> {
+    for (index, evidence) in array(value, &format!("{context}.evidence"))?
+        .iter()
+        .enumerate()
+    {
+        let evidence_context = format!("{context}.evidence[{index}]");
+        exact_keys(
+            evidence,
+            &evidence_context,
+            &["id", "supports", "text"],
+            &["source", "time"],
+        )?;
+        required_non_empty_string(evidence, "id", &evidence_context)?;
+        validate_string_array(
+            required_value(evidence, "supports", &evidence_context)?,
+            &format!("{evidence_context}.supports"),
+        )?;
+        required_non_empty_string(evidence, "text", &evidence_context)?;
+        validate_optional_non_empty_string(evidence, "source", &evidence_context)?;
+        validate_optional_non_empty_string(evidence, "time", &evidence_context)?;
+    }
+    Ok(())
+}
+
+fn validate_ingest_provenance(value: &Value, context: &str) -> Result<(), String> {
+    exact_keys(
+        value,
+        context,
+        &[
+            "source_kind",
+            "source_agent",
+            "observed_at",
+            "correlation_id",
+            "causation_id",
+        ],
+        &[],
+    )?;
+    for field in [
+        "source_kind",
+        "source_agent",
+        "observed_at",
+        "correlation_id",
+        "causation_id",
+    ] {
+        required_non_empty_string(value, field, context)?;
+    }
+    Ok(())
+}
+
 fn validate_answer_policy(value: &str) -> Result<(), String> {
     if ["evidence_or_unknown", "show_conflicts", "best_effort"].contains(&value) {
         Ok(())
     } else {
         Err(format!("unsupported answer_policy `{value}`"))
+    }
+}
+
+fn validate_writer_intent(value: &str) -> Result<(), String> {
+    if [
+        "record_turn",
+        "record_observation",
+        "record_decision",
+        "record_feedback",
+        "record_delta",
+    ]
+    .contains(&value)
+    {
+        Ok(())
+    } else {
+        Err(format!("unsupported writer intent `{value}`"))
+    }
+}
+
+fn validate_writer_node_kind(value: &str) -> Result<(), String> {
+    if [
+        "turn",
+        "observation",
+        "decision",
+        "feedback",
+        "semantic_delta",
+        "constraint",
+        "preference",
+        "derived_value",
+        "error_path",
+        "success_path",
+    ]
+    .contains(&value)
+    {
+        Ok(())
+    } else {
+        Err(format!("unsupported writer current.kind `{value}`"))
+    }
+}
+
+fn validate_confidence(value: &str, context: &str) -> Result<(), String> {
+    if ["high", "medium", "low", "unknown"].contains(&value) {
+        Ok(())
+    } else {
+        Err(format!("{context} has unsupported value `{value}`"))
     }
 }
 
@@ -567,6 +1004,32 @@ fn validate_string_array(value: &Value, context: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn array<'a>(value: &'a Value, context: &str) -> Result<&'a [Value], String> {
+    value
+        .as_array()
+        .map(Vec::as_slice)
+        .ok_or_else(|| format!("{context} must be an array"))
+}
+
+fn non_empty_array<'a>(value: &'a Value, context: &str) -> Result<&'a [Value], String> {
+    let values = array(value, context)?;
+    if values.is_empty() {
+        Err(format!("{context} must not be empty"))
+    } else {
+        Ok(values)
+    }
+}
+
+fn string_array<'a>(value: &'a Value, context: &str) -> Result<Vec<&'a str>, String> {
+    validate_string_array(value, context)?;
+    Ok(value
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .collect())
+}
+
 fn array_len(value: Option<&Value>) -> usize {
     value.and_then(Value::as_array).map(Vec::len).unwrap_or(0)
 }
@@ -577,6 +1040,44 @@ fn positive_limit(value: &Value, path: &[&str], max: u64) -> bool {
 
 fn optional_limit(value: &Value, path: &[&str], max: u64) -> bool {
     path_u64(value, path).is_none_or(|actual| actual <= max)
+}
+
+fn bounded_write_memory(arguments: &Value) -> bool {
+    validate_write_memory_arguments(arguments).is_ok()
+        && arguments
+            .pointer("/options/strict")
+            .and_then(Value::as_bool)
+            == Some(true)
+        && arguments
+            .pointer("/options/dry_run")
+            .and_then(Value::as_bool)
+            .is_some()
+        && optional_limit(arguments, &["options", "sequence"], u32::MAX.into())
+        && arguments
+            .pointer("/connect_to")
+            .and_then(Value::as_array)
+            .is_some_and(|links| !links.is_empty() && links.len() <= 32)
+}
+
+fn bounded_ingest(arguments: &Value) -> bool {
+    validate_ingest_arguments(arguments).is_ok()
+        && arguments.get("dry_run").and_then(Value::as_bool).is_some()
+        && arguments
+            .pointer("/memory/dimensions")
+            .and_then(Value::as_array)
+            .is_some_and(|values| !values.is_empty() && values.len() <= 64)
+        && arguments
+            .pointer("/memory/entries")
+            .and_then(Value::as_array)
+            .is_some_and(|values| !values.is_empty() && values.len() <= 256)
+        && arguments
+            .pointer("/memory/relations")
+            .and_then(Value::as_array)
+            .is_some_and(|values| values.len() <= 512)
+        && arguments
+            .pointer("/memory/evidence")
+            .and_then(Value::as_array)
+            .is_some_and(|values| values.len() <= 512)
 }
 
 fn path_u64(value: &Value, path: &[&str]) -> Option<u64> {
@@ -689,6 +1190,19 @@ mod tests {
             })),
             ["node:2".to_string(), "node:1".to_string()]
         );
+        assert_eq!(
+            kernel_operator_primary_refs(&json!({
+                "type": "tool_call",
+                "tool": "kernel_write_memory",
+                "arguments": {
+                    "connect_to": [
+                        { "ref": "node:prior", "rel": "chosen_because" },
+                        { "ref": "node:fallback", "rel": "follows" }
+                    ]
+                }
+            })),
+            ["node:prior".to_string(), "node:fallback".to_string()]
+        );
     }
 
     #[test]
@@ -753,21 +1267,56 @@ mod tests {
 
     #[test]
     fn action_shape_rejects_invalid_dimension_semantics() {
-        let action = json!({
-            "type": "tool_call",
-            "tool": "kernel_ask",
-            "arguments": {
-                "about": "about:1",
-                "answer_policy": "evidence_or_unknown",
-                "dimensions": { "mode": "only", "scope": "abouts" },
-                "question": "What changed?"
-            }
-        });
+        for (dimensions, expected) in [
+            (
+                json!({ "mode": "all", "scope": "current_about", "include": ["agent"] }),
+                "action.arguments.dimensions.mode all must not set include or exclude values",
+            ),
+            (
+                json!({ "mode": "only", "scope": "abouts", "abouts": ["about:2"] }),
+                "action.arguments.dimensions.mode only requires include values",
+            ),
+            (
+                json!({ "mode": "only", "scope": "current_about", "include": ["agent"], "exclude": ["discarded"] }),
+                "action.arguments.dimensions.mode only must not set exclude values",
+            ),
+            (
+                json!({ "mode": "except", "scope": "current_about" }),
+                "action.arguments.dimensions.mode except requires exclude values",
+            ),
+            (
+                json!({ "mode": "except", "scope": "current_about", "include": ["agent"], "exclude": ["discarded"] }),
+                "action.arguments.dimensions.mode except must not set include values",
+            ),
+            (
+                json!({ "mode": "all", "scope": "current_about", "abouts": ["about:2"] }),
+                "action.arguments.dimensions.scope current_about must not set abouts",
+            ),
+            (
+                json!({ "mode": "all", "scope": "abouts" }),
+                "action.arguments.dimensions.scope abouts requires at least one about",
+            ),
+            (
+                json!({ "mode": "all", "scope": "all_abouts", "abouts": ["about:2"] }),
+                "action.arguments.dimensions.scope all_abouts must not set abouts",
+            ),
+        ] {
+            let action = json!({
+                "type": "tool_call",
+                "tool": "kernel_ask",
+                "arguments": {
+                    "about": "about:1",
+                    "answer_policy": "evidence_or_unknown",
+                    "dimensions": dimensions,
+                    "question": "What changed?"
+                }
+            });
 
-        assert_eq!(
-            kernel_operator_action_shape_error(&action),
-            Some("action.arguments.dimensions.mode only requires include values".to_string())
-        );
+            assert_eq!(
+                kernel_operator_action_shape_error(&action),
+                Some(expected.to_string())
+            );
+        }
     }
 
     #[test]
@@ -793,6 +1342,31 @@ mod tests {
                     .to_string()
             )
         );
+    }
+
+    #[test]
+    fn action_contract_accepts_all_temporal_cursor_modes() {
+        for cursor in [
+            json!({ "ref": "node:1" }),
+            json!({ "time": "2026-05-14T00:00:00Z" }),
+            json!({ "sequence": 7 }),
+        ] {
+            let action = json!({
+                "type": "tool_call",
+                "tool": "kernel_near",
+                "arguments": {
+                    "about": "about:1",
+                    "around": cursor,
+                    "dimensions": { "mode": "all", "scope": "current_about" },
+                    "include": { "evidence": true, "raw_refs": false, "relations": true },
+                    "limit": { "entries": 12, "tokens": 2400 },
+                    "budget": { "depth": 3, "tokens": 2400 },
+                    "window": { "before_entries": 6, "after_entries": 0 }
+                }
+            });
+
+            assert_eq!(kernel_operator_action_contract_error(&action), None);
+        }
     }
 
     #[test]
@@ -858,5 +1432,172 @@ mod tests {
             kernel_operator_action_contract_error(&action),
             Some("unbounded or invalid tool call for `kernel_near`".to_string())
         );
+    }
+
+    #[test]
+    fn action_contract_accepts_smart_write_memory() {
+        let action = json!({
+            "type": "tool_call",
+            "tool": "kernel_write_memory",
+            "arguments": valid_write_memory_arguments()
+        });
+
+        assert_eq!(kernel_operator_action_contract_error(&action), None);
+    }
+
+    #[test]
+    fn action_contract_rejects_rich_write_without_read_context_proof() {
+        let mut arguments = valid_write_memory_arguments();
+        arguments["read_context"] = json!({
+            "inspected_refs": []
+        });
+        let action = json!({
+            "type": "tool_call",
+            "tool": "kernel_write_memory",
+            "arguments": arguments
+        });
+
+        assert_eq!(
+            kernel_operator_action_contract_error(&action),
+            Some(
+                "action.arguments.connect_to[0].ref `incident:mobile-login:observation:401-refresh-race` uses a rich relation without read_context proof"
+                    .to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn action_contract_rejects_smart_write_without_relation_evidence() {
+        let mut arguments = valid_write_memory_arguments();
+        arguments["connect_to"][0]["evidence"] = json!("");
+        let action = json!({
+            "type": "tool_call",
+            "tool": "kernel_write_memory",
+            "arguments": arguments
+        });
+
+        assert_eq!(
+            kernel_operator_action_contract_error(&action),
+            Some("action.arguments.connect_to[0].evidence must not be empty".to_string())
+        );
+    }
+
+    #[test]
+    fn action_contract_accepts_canonical_ingest_write() {
+        let action = json!({
+            "type": "tool_call",
+            "tool": "kernel_ingest",
+            "arguments": valid_ingest_arguments()
+        });
+
+        assert_eq!(kernel_operator_action_contract_error(&action), None);
+    }
+
+    fn valid_write_memory_arguments() -> serde_json::Value {
+        json!({
+            "about": "incident:mobile-login",
+            "intent": "record_decision",
+            "actor": "agent:backend",
+            "observed_at": "2026-05-06T10:00:00Z",
+            "scope": {
+                "task": "incident:mobile-login",
+                "process": "incident:mobile-login:resolution",
+                "episode": "incident:mobile-login:episode:backend"
+            },
+            "current": {
+                "kind": "decision",
+                "summary": "Use token refresh retry instead of widening timeout.",
+                "evidence": "Logs show 401 immediately after token refresh."
+            },
+            "semantic_delta": {
+                "from": "The team suspected network timeout.",
+                "to": "The evidence points to token refresh race.",
+                "why": "The failing requests return 401 immediately after refresh.",
+                "evidence": "Auth logs show refresh success followed by 401 on the next request."
+            },
+            "connect_to": [
+                {
+                    "ref": "incident:mobile-login:observation:401-refresh-race",
+                    "rel": "chosen_because",
+                    "class": "causal",
+                    "why": "The decision addresses the observed token refresh race.",
+                    "evidence": "The chosen retry targets the refresh race seen in auth logs.",
+                    "confidence": "high"
+                }
+            ],
+            "read_context": {
+                "inspected_refs": [
+                    "incident:mobile-login:observation:401-refresh-race"
+                ]
+            },
+            "idempotency_key": "write:incident-mobile-login-decision-v1",
+            "options": {
+                "dry_run": true,
+                "strict": true,
+                "sequence": 1
+            }
+        })
+    }
+
+    fn valid_ingest_arguments() -> serde_json::Value {
+        json!({
+            "about": "incident:mobile-login",
+            "idempotency_key": "ingest:incident-mobile-login:1",
+            "dry_run": true,
+            "memory": {
+                "dimensions": [
+                    {
+                        "id": "incident:mobile-login",
+                        "kind": "task",
+                        "title": "Mobile login incident"
+                    }
+                ],
+                "entries": [
+                    {
+                        "id": "incident:mobile-login:entry:decision:retry-refresh",
+                        "kind": "decision",
+                        "text": "Use token refresh retry instead of widening timeout.",
+                        "coordinates": [
+                            {
+                                "dimension": "task",
+                                "scope_id": "incident:mobile-login",
+                                "sequence": 1,
+                                "observed_at": "2026-05-06T10:00:00Z"
+                            }
+                        ]
+                    }
+                ],
+                "relations": [
+                    {
+                        "from": "incident:mobile-login:entry:decision:retry-refresh",
+                        "to": "incident:mobile-login:observation:401-refresh-race",
+                        "rel": "chosen_because",
+                        "class": "causal",
+                        "why": "The decision addresses the observed token refresh race.",
+                        "evidence": "The chosen retry targets the refresh race seen in auth logs.",
+                        "confidence": "high",
+                        "sequence": 1
+                    }
+                ],
+                "evidence": [
+                    {
+                        "id": "evidence:incident-mobile-login:retry-refresh",
+                        "supports": [
+                            "incident:mobile-login:entry:decision:retry-refresh"
+                        ],
+                        "text": "Logs show 401 immediately after token refresh.",
+                        "source": "test",
+                        "time": "2026-05-06T10:00:00Z"
+                    }
+                ]
+            },
+            "provenance": {
+                "source_kind": "agent",
+                "source_agent": "agent:backend",
+                "observed_at": "2026-05-06T10:00:00Z",
+                "correlation_id": "kernel_write:incident:mobile-login",
+                "causation_id": "ingest:incident-mobile-login:1"
+            }
+        })
     }
 }

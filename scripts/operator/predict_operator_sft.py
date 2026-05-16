@@ -14,6 +14,76 @@ from typing import Any
 ACTION_VALIDATOR = "kernel-operator-action-contract-v1"
 SCHEMA_MODE = "strict-no-additional-properties"
 
+RELATION_CLASSES = {
+    "structural",
+    "causal",
+    "motivational",
+    "procedural",
+    "evidential",
+    "constraint",
+}
+
+WRITER_INTENTS = {
+    "record_turn",
+    "record_observation",
+    "record_decision",
+    "record_feedback",
+    "record_delta",
+}
+
+WRITER_NODE_KINDS = {
+    "turn",
+    "observation",
+    "decision",
+    "feedback",
+    "semantic_delta",
+    "constraint",
+    "preference",
+    "derived_value",
+    "error_path",
+    "success_path",
+}
+
+CONFIDENCE_VALUES = {"high", "medium", "low", "unknown"}
+
+RELATION_ALIASES = {
+    "conflicts": "contradicts",
+    "conflicts_with": "contradicts",
+    "conflict_with": "contradicts",
+    "matches_question_item": "matches_requirement",
+}
+
+RELATION_SPECS = {
+    "follows": ("anemic", {"procedural"}),
+    "answers": ("anemic", {"evidential"}),
+    "uses_background": ("anemic", {"evidential"}),
+    "depends_on": ("rich", {"causal"}),
+    "chosen_because": ("rich", {"causal", "motivational"}),
+    "semantic_delta_from": ("rich", {"causal"}),
+    "updates_state": ("rich", {"causal"}),
+    "supports": ("rich", {"evidential"}),
+    "supersedes": ("rich", {"evidential"}),
+    "contradicts": ("rich", {"evidential"}),
+    "satisfies_constraint": ("rich", {"constraint"}),
+    "violates_constraint": ("rich", {"constraint"}),
+    "contributes_to": ("rich", {"evidential"}),
+    "excluded_from": ("rich", {"constraint"}),
+    "checked_against": ("rich", {"constraint"}),
+    "derived_from": ("rich", {"evidential"}),
+    "confirms_selection": ("rich", {"evidential", "motivational"}),
+    "restates": ("rich", {"evidential"}),
+    "corrects": ("rich", {"evidential"}),
+    "component_of": ("rich", {"evidential"}),
+    "total_of": ("rich", {"evidential"}),
+    "same_event_as": ("rich", {"evidential"}),
+    "same_entity_as": ("rich", {"evidential"}),
+    "qualifies_as": ("rich", {"evidential"}),
+    "matches_requirement": ("rich", {"constraint"}),
+    "contains": ("structural", {"structural"}),
+    "member_of": ("structural", {"structural"}),
+    "scoped_to": ("structural", {"structural"}),
+}
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Predict KMP operator actions.")
@@ -503,7 +573,460 @@ def validate_tool_arguments(tool: str, arguments: dict[str, Any]) -> str | None:
             arguments.get("include"), "action.arguments.include"
         )
 
+    if tool == "kernel_write_memory":
+        return validate_write_memory_arguments(arguments)
+
+    if tool == "kernel_ingest":
+        return validate_ingest_arguments(arguments)
+
     return f"unsupported_tool:{tool}"
+
+
+def validate_write_memory_arguments(arguments: dict[str, Any]) -> str | None:
+    key_error = exact_keys(
+        arguments,
+        {
+            "about",
+            "intent",
+            "actor",
+            "observed_at",
+            "scope",
+            "current",
+            "connect_to",
+            "read_context",
+            "idempotency_key",
+            "options",
+        },
+        {"semantic_delta", "source_kind"},
+        "action.arguments",
+    )
+    if key_error is not None:
+        return key_error
+    for field in ("about", "actor", "observed_at", "idempotency_key"):
+        error = require_non_empty_string(arguments, field, "action.arguments")
+        if error is not None:
+            return error
+    intent = arguments.get("intent")
+    if not isinstance(intent, str) or intent not in WRITER_INTENTS:
+        return "action.arguments.intent_unsupported"
+    error = validate_write_scope(arguments.get("scope"), "action.arguments.scope")
+    if error is not None:
+        return error
+    error, current_ref = validate_write_current(
+        arguments.get("current"), "action.arguments.current"
+    )
+    if error is not None:
+        return error
+    semantic_delta_ref = None
+    if "semantic_delta" in arguments:
+        error, semantic_delta_ref = validate_semantic_delta(
+            arguments.get("semantic_delta"), "action.arguments.semantic_delta"
+        )
+        if error is not None:
+            return error
+    error, observed_read_refs = read_context_refs(
+        arguments.get("read_context"), "action.arguments.read_context"
+    )
+    if error is not None:
+        return error
+    local_refs = [
+        ref for ref in (current_ref, semantic_delta_ref) if isinstance(ref, str) and ref
+    ]
+    error = validate_connect_to(
+        arguments.get("connect_to"),
+        "action.arguments.connect_to",
+        local_refs,
+        observed_read_refs,
+    )
+    if error is not None:
+        return error
+    error = validate_write_options(arguments.get("options"), "action.arguments.options")
+    if error is not None:
+        return error
+    return validate_optional_non_empty_string(
+        arguments, "source_kind", "action.arguments"
+    )
+
+
+def validate_ingest_arguments(arguments: dict[str, Any]) -> str | None:
+    key_error = exact_keys(
+        arguments,
+        {"about", "memory", "provenance", "idempotency_key", "dry_run"},
+        set(),
+        "action.arguments",
+    )
+    if key_error is not None:
+        return key_error
+    for field in ("about", "idempotency_key"):
+        error = require_non_empty_string(arguments, field, "action.arguments")
+        if error is not None:
+            return error
+    error = validate_ingest_memory(
+        arguments.get("memory"), "action.arguments.memory"
+    )
+    if error is not None:
+        return error
+    error = validate_ingest_provenance(
+        arguments.get("provenance"), "action.arguments.provenance"
+    )
+    if error is not None:
+        return error
+    return require_bool(arguments, "dry_run", "action.arguments")
+
+
+def validate_write_scope(value: Any, context: str) -> str | None:
+    if not isinstance(value, dict):
+        return f"{context}_not_object"
+    key_error = exact_keys(value, {"process"}, {"task", "episode"}, context)
+    if key_error is not None:
+        return key_error
+    error = require_non_empty_string(value, "process", context)
+    if error is not None:
+        return error
+    for field in ("task", "episode"):
+        error = validate_optional_non_empty_string(value, field, context)
+        if error is not None:
+            return error
+    return None
+
+
+def validate_write_current(value: Any, context: str) -> tuple[str | None, str | None]:
+    if not isinstance(value, dict):
+        return f"{context}_not_object", None
+    key_error = exact_keys(value, {"kind", "summary", "evidence"}, {"ref"}, context)
+    if key_error is not None:
+        return key_error, None
+    kind = value.get("kind")
+    if not isinstance(kind, str) or kind not in WRITER_NODE_KINDS:
+        return f"{context}.kind_unsupported", None
+    for field in ("summary", "evidence"):
+        error = require_non_empty_string(value, field, context)
+        if error is not None:
+            return error, None
+    error = validate_optional_non_empty_string(value, "ref", context)
+    if error is not None:
+        return error, None
+    return None, value.get("ref")
+
+
+def validate_semantic_delta(value: Any, context: str) -> tuple[str | None, str | None]:
+    if not isinstance(value, dict):
+        return f"{context}_not_object", None
+    key_error = exact_keys(
+        value, {"from", "to", "why", "evidence"}, {"ref"}, context
+    )
+    if key_error is not None:
+        return key_error, None
+    for field in ("from", "to", "why", "evidence"):
+        error = require_non_empty_string(value, field, context)
+        if error is not None:
+            return error, None
+    error = validate_optional_non_empty_string(value, "ref", context)
+    if error is not None:
+        return error, None
+    return None, value.get("ref")
+
+
+def read_context_refs(value: Any, context: str) -> tuple[str | None, list[str]]:
+    if not isinstance(value, dict):
+        return f"{context}_not_object", []
+    key_error = exact_keys(
+        value,
+        set(),
+        {"inspected_refs", "temporal_refs", "wake_refs", "ask_refs", "trace_paths"},
+        context,
+    )
+    if key_error is not None:
+        return key_error, []
+    refs: list[str] = []
+    for field in ("inspected_refs", "temporal_refs", "wake_refs", "ask_refs"):
+        if field not in value:
+            continue
+        error = validate_string_array(value[field], f"{context}.{field}")
+        if error is not None:
+            return error, []
+        refs.extend(value[field])
+    if "trace_paths" in value:
+        paths = value["trace_paths"]
+        if not isinstance(paths, list):
+            return f"{context}.trace_paths_not_array", []
+        for index, path in enumerate(paths):
+            path_context = f"{context}.trace_paths[{index}]"
+            if not isinstance(path, dict):
+                return f"{path_context}_not_object", []
+            key_error = exact_keys(path, {"from", "to"}, {"refs"}, path_context)
+            if key_error is not None:
+                return key_error, []
+            for field in ("from", "to"):
+                error = require_non_empty_string(path, field, path_context)
+                if error is not None:
+                    return error, []
+                refs.append(path[field])
+            if "refs" in path:
+                error = validate_string_array(path["refs"], f"{path_context}.refs")
+                if error is not None:
+                    return error, []
+                refs.extend(path["refs"])
+    return None, refs
+
+
+def validate_connect_to(
+    value: Any,
+    context: str,
+    local_refs: list[str],
+    read_context_refs_value: list[str],
+) -> str | None:
+    if not isinstance(value, list):
+        return f"{context}_not_array"
+    if not value:
+        return f"{context}_empty"
+    for index, link in enumerate(value):
+        link_context = f"{context}[{index}]"
+        if not isinstance(link, dict):
+            return f"{link_context}_not_object"
+        key_error = exact_keys(
+            link,
+            {"ref", "rel", "class", "why", "evidence"},
+            {"confidence"},
+            link_context,
+        )
+        if key_error is not None:
+            return key_error
+        for field in ("ref", "rel", "class"):
+            error = require_non_empty_string(link, field, link_context)
+            if error is not None:
+                return error
+        target_ref = link["ref"]
+        relation = normalize_relation(link["rel"])
+        if relation not in RELATION_SPECS:
+            return f"{link_context}.rel_outside_writer_vocabulary"
+        semantic_class = link["class"]
+        if semantic_class not in RELATION_CLASSES:
+            return f"{link_context}.class_invalid"
+        quality, allowed_classes = RELATION_SPECS[relation]
+        if semantic_class not in allowed_classes:
+            return f"{link_context}.class_not_allowed_for_relation:{relation}"
+        if semantic_class != "structural":
+            for field in ("why", "evidence"):
+                error = require_non_empty_string(link, field, link_context)
+                if error is not None:
+                    return error
+        if "confidence" in link:
+            confidence = link.get("confidence")
+            if not isinstance(confidence, str) or confidence not in CONFIDENCE_VALUES:
+                return f"{link_context}.confidence_unsupported"
+        target_is_local = target_ref in local_refs
+        target_was_read = target_ref in read_context_refs_value
+        if quality == "rich" and not target_is_local and not target_was_read:
+            return f"{link_context}.ref_missing_read_context_proof"
+    return None
+
+
+def validate_write_options(value: Any, context: str) -> str | None:
+    if not isinstance(value, dict):
+        return f"{context}_not_object"
+    key_error = exact_keys(value, {"dry_run", "strict"}, {"sequence"}, context)
+    if key_error is not None:
+        return key_error
+    error = require_bool(value, "dry_run", context)
+    if error is not None:
+        return error
+    error = require_bool(value, "strict", context)
+    if error is not None:
+        return error
+    if value.get("strict") is not True:
+        return f"{context}.strict_must_be_true"
+    return validate_optional_positive_int(value, "sequence", context)
+
+
+def validate_ingest_memory(value: Any, context: str) -> str | None:
+    if not isinstance(value, dict):
+        return f"{context}_not_object"
+    key_error = exact_keys(
+        value, {"dimensions", "entries", "relations", "evidence"}, set(), context
+    )
+    if key_error is not None:
+        return key_error
+    validators = (
+        validate_dimensions_payload,
+        validate_entries_payload,
+        validate_relations_payload,
+        validate_evidence_payload,
+    )
+    for field, validator in zip(
+        ("dimensions", "entries", "relations", "evidence"), validators, strict=True
+    ):
+        error = validator(value.get(field), context)
+        if error is not None:
+            return error
+    return None
+
+
+def validate_dimensions_payload(value: Any, context: str) -> str | None:
+    if not isinstance(value, list):
+        return f"{context}.dimensions_not_array"
+    if not value:
+        return f"{context}.dimensions_empty"
+    for index, dimension in enumerate(value):
+        dimension_context = f"{context}.dimensions[{index}]"
+        if not isinstance(dimension, dict):
+            return f"{dimension_context}_not_object"
+        key_error = exact_keys(dimension, {"id", "kind"}, {"title"}, dimension_context)
+        if key_error is not None:
+            return key_error
+        for field in ("id", "kind"):
+            error = require_non_empty_string(dimension, field, dimension_context)
+            if error is not None:
+                return error
+        error = validate_optional_non_empty_string(dimension, "title", dimension_context)
+        if error is not None:
+            return error
+    return None
+
+
+def validate_entries_payload(value: Any, context: str) -> str | None:
+    if not isinstance(value, list):
+        return f"{context}.entries_not_array"
+    if not value:
+        return f"{context}.entries_empty"
+    for index, entry in enumerate(value):
+        entry_context = f"{context}.entries[{index}]"
+        if not isinstance(entry, dict):
+            return f"{entry_context}_not_object"
+        key_error = exact_keys(
+            entry, {"id", "kind", "text"}, {"coordinates", "metadata"}, entry_context
+        )
+        if key_error is not None:
+            return key_error
+        for field in ("id", "kind", "text"):
+            error = require_non_empty_string(entry, field, entry_context)
+            if error is not None:
+                return error
+        if "coordinates" in entry:
+            error = validate_coordinates(entry["coordinates"], f"{entry_context}.coordinates")
+            if error is not None:
+                return error
+    return None
+
+
+def validate_coordinates(value: Any, context: str) -> str | None:
+    if not isinstance(value, list):
+        return f"{context}_not_array"
+    for index, coordinate in enumerate(value):
+        coordinate_context = f"{context}[{index}]"
+        if not isinstance(coordinate, dict):
+            return f"{coordinate_context}_not_object"
+        key_error = exact_keys(
+            coordinate,
+            {"dimension", "scope_id"},
+            {"sequence", "observed_at", "occurred_at", "valid_from"},
+            coordinate_context,
+        )
+        if key_error is not None:
+            return key_error
+        for field in ("dimension", "scope_id"):
+            error = require_non_empty_string(coordinate, field, coordinate_context)
+            if error is not None:
+                return error
+        error = validate_optional_positive_int(coordinate, "sequence", coordinate_context)
+        if error is not None:
+            return error
+        for field in ("observed_at", "occurred_at", "valid_from"):
+            error = validate_optional_non_empty_string(coordinate, field, coordinate_context)
+            if error is not None:
+                return error
+    return None
+
+
+def validate_relations_payload(value: Any, context: str) -> str | None:
+    if not isinstance(value, list):
+        return f"{context}.relations_not_array"
+    for index, relation in enumerate(value):
+        relation_context = f"{context}.relations[{index}]"
+        if not isinstance(relation, dict):
+            return f"{relation_context}_not_object"
+        key_error = exact_keys(
+            relation,
+            {"from", "to", "rel", "class", "why", "evidence"},
+            {"confidence", "sequence"},
+            relation_context,
+        )
+        if key_error is not None:
+            return key_error
+        for field in ("from", "to", "rel", "class", "why", "evidence"):
+            error = require_non_empty_string(relation, field, relation_context)
+            if error is not None:
+                return error
+        if not normalize_relation(relation["rel"]):
+            return f"{relation_context}.rel_invalid"
+        semantic_class = relation["class"]
+        if semantic_class not in RELATION_CLASSES:
+            return f"{relation_context}.class_invalid"
+        if "confidence" in relation:
+            confidence = relation.get("confidence")
+            if not isinstance(confidence, str) or confidence not in CONFIDENCE_VALUES:
+                return f"{relation_context}.confidence_unsupported"
+        error = validate_optional_positive_int(relation, "sequence", relation_context)
+        if error is not None:
+            return error
+    return None
+
+
+def validate_evidence_payload(value: Any, context: str) -> str | None:
+    if not isinstance(value, list):
+        return f"{context}.evidence_not_array"
+    for index, evidence in enumerate(value):
+        evidence_context = f"{context}.evidence[{index}]"
+        if not isinstance(evidence, dict):
+            return f"{evidence_context}_not_object"
+        key_error = exact_keys(
+            evidence, {"id", "supports", "text"}, {"source", "time"}, evidence_context
+        )
+        if key_error is not None:
+            return key_error
+        error = require_non_empty_string(evidence, "id", evidence_context)
+        if error is not None:
+            return error
+        error = validate_string_array(evidence.get("supports"), f"{evidence_context}.supports")
+        if error is not None:
+            return error
+        error = require_non_empty_string(evidence, "text", evidence_context)
+        if error is not None:
+            return error
+        for field in ("source", "time"):
+            error = validate_optional_non_empty_string(evidence, field, evidence_context)
+            if error is not None:
+                return error
+    return None
+
+
+def validate_ingest_provenance(value: Any, context: str) -> str | None:
+    if not isinstance(value, dict):
+        return f"{context}_not_object"
+    key_error = exact_keys(
+        value,
+        {"source_kind", "source_agent", "observed_at", "correlation_id", "causation_id"},
+        set(),
+        context,
+    )
+    if key_error is not None:
+        return key_error
+    for field in (
+        "source_kind",
+        "source_agent",
+        "observed_at",
+        "correlation_id",
+        "causation_id",
+    ):
+        error = require_non_empty_string(value, field, context)
+        if error is not None:
+            return error
+    return None
+
+
+def normalize_relation(value: str) -> str:
+    normalized = value.strip().lower().replace("-", "_").replace(" ", "_")
+    return RELATION_ALIASES.get(normalized, normalized)
 
 
 def validate_temporal_arguments(arguments: dict[str, Any], cursor_key: str) -> str | None:
@@ -739,6 +1262,34 @@ def is_bounded_tool_call(tool: str, arguments: dict[str, Any]) -> bool:
         )
     if tool == "kernel_ask":
         return optional_limit(arguments, ("budget", "tokens"), 16_000)
+    if tool == "kernel_write_memory":
+        connect_to = arguments.get("connect_to")
+        return (
+            validate_write_memory_arguments(arguments) is None
+            and arguments.get("options", {}).get("strict") is True
+            and isinstance(arguments.get("options", {}).get("dry_run"), bool)
+            and optional_limit(arguments, ("options", "sequence"), 2**32 - 1)
+            and isinstance(connect_to, list)
+            and 0 < len(connect_to) <= 32
+        )
+    if tool == "kernel_ingest":
+        memory = arguments.get("memory", {})
+        dimensions = memory.get("dimensions") if isinstance(memory, dict) else None
+        entries = memory.get("entries") if isinstance(memory, dict) else None
+        relations = memory.get("relations") if isinstance(memory, dict) else None
+        evidence = memory.get("evidence") if isinstance(memory, dict) else None
+        return (
+            validate_ingest_arguments(arguments) is None
+            and isinstance(arguments.get("dry_run"), bool)
+            and isinstance(dimensions, list)
+            and 0 < len(dimensions) <= 64
+            and isinstance(entries, list)
+            and 0 < len(entries) <= 256
+            and isinstance(relations, list)
+            and len(relations) <= 512
+            and isinstance(evidence, list)
+            and len(evidence) <= 512
+        )
     return False
 
 

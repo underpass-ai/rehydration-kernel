@@ -9,10 +9,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::Serialize;
 use serde_json::{Value, json};
 
-use rehydration_testkit::{
-    kernel_operator_action_shape_error, kernel_operator_is_bounded_tool_call,
-    kernel_operator_primary_refs,
-};
+use rehydration_testkit::{kernel_operator_action_contract_error, kernel_operator_primary_refs};
 
 const EVALUATOR: &str = "kernel-operator-policy-eval-v1";
 const ACTION_VALIDATOR: &str = "kernel-operator-action-contract-v1";
@@ -24,6 +21,7 @@ struct Args {
     predictions: Option<PathBuf>,
     baseline: Baseline,
     output: Option<PathBuf>,
+    details_output: Option<PathBuf>,
     limit: Option<usize>,
     offset: usize,
 }
@@ -63,10 +61,47 @@ struct EvalSummary {
     rates: EvalRates,
 }
 
+#[derive(Debug, Serialize)]
+struct EvalResult {
+    summary: EvalSummary,
+    details: Vec<EvalDetail>,
+}
+
+#[derive(Debug, Serialize)]
+struct EvalDetail {
+    step_id: String,
+    mode: String,
+    task_family: String,
+    target_capability_key: String,
+    target_action_label: String,
+    predicted_action_label: Option<String>,
+    prediction_status: &'static str,
+    invalid_reason: Option<String>,
+    score: ActionScore,
+}
+
+#[derive(Debug, Default, Serialize)]
+struct ActionScore {
+    action_type_correct: bool,
+    tool_correct: bool,
+    primary_refs_correct: bool,
+    scope_correct: bool,
+    cursor_mode_correct: bool,
+    window_shape_correct: bool,
+    limit_policy_correct: bool,
+    continue_page_correct: bool,
+    stop_correct: bool,
+    exact_action_correct: bool,
+}
+
 #[derive(Debug, Default, Serialize)]
 struct EvalCounts {
     target_tool_calls: usize,
     target_stop_actions: usize,
+    target_cursor_actions: usize,
+    target_window_actions: usize,
+    target_limit_actions: usize,
+    target_page_continuations: usize,
     missing_predictions: usize,
     invalid_predictions: usize,
     unbounded_tool_calls: usize,
@@ -74,6 +109,10 @@ struct EvalCounts {
     tool_correct: usize,
     primary_refs_correct: usize,
     scope_correct: usize,
+    cursor_mode_correct: usize,
+    window_shape_correct: usize,
+    limit_policy_correct: usize,
+    continue_page_correct: usize,
     stop_correct: usize,
     exact_action_correct: usize,
 }
@@ -84,6 +123,10 @@ struct EvalRates {
     tool_accuracy: f64,
     primary_ref_accuracy: f64,
     scope_accuracy: f64,
+    cursor_mode_accuracy: f64,
+    window_shape_accuracy: f64,
+    limit_policy_accuracy: f64,
+    continue_page_accuracy: f64,
     stop_accuracy: f64,
     exact_action_accuracy: f64,
     invalid_prediction_rate: f64,
@@ -97,13 +140,22 @@ fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         Some(path) => Some(read_predictions(path)?),
         None => None,
     };
-    let summary = evaluate(&args, &trajectories, predictions.as_ref())?;
-    let rendered = serde_json::to_string_pretty(&summary)?;
+    let result = evaluate_internal(&args, &trajectories, predictions.as_ref())?;
+    let rendered = serde_json::to_string_pretty(&result.summary)?;
     if let Some(output) = args.output.as_deref() {
         let file = File::create(output)?;
         let mut writer = BufWriter::new(file);
         writer.write_all(rendered.as_bytes())?;
         writer.write_all(b"\n")?;
+        writer.flush()?;
+    }
+    if let Some(output) = args.details_output.as_deref() {
+        let file = File::create(output)?;
+        let mut writer = BufWriter::new(file);
+        for detail in &result.details {
+            serde_json::to_writer(&mut writer, detail)?;
+            writer.write_all(b"\n")?;
+        }
         writer.flush()?;
     }
     println!("{rendered}");
@@ -117,6 +169,7 @@ fn parse_args(
     let mut predictions = None;
     let mut baseline = Baseline::Deterministic;
     let mut output = None;
+    let mut details_output = None;
     let mut limit = None;
     let mut offset = 0usize;
 
@@ -132,6 +185,9 @@ fn parse_args(
                 baseline = parse_baseline(&next_arg(&mut args, "--baseline")?)?;
             }
             "--output" => output = Some(PathBuf::from(next_arg(&mut args, "--output")?)),
+            "--details-output" => {
+                details_output = Some(PathBuf::from(next_arg(&mut args, "--details-output")?));
+            }
             "--limit" => limit = Some(next_arg(&mut args, "--limit")?.parse()?),
             "--offset" => offset = next_arg(&mut args, "--offset")?.parse()?,
             "--help" | "-h" => return Err(usage().into()),
@@ -152,6 +208,7 @@ fn parse_args(
         predictions,
         baseline,
         output,
+        details_output,
         limit,
         offset,
     })
@@ -174,7 +231,7 @@ fn next_arg(
 }
 
 fn usage() -> String {
-    "usage: kernel_operator_policy_eval --trajectories <trajectories.jsonl> [--predictions predictions.jsonl] [--baseline deterministic|oracle] [--output summary.json] [--limit n] [--offset n]".to_string()
+    "usage: kernel_operator_policy_eval --trajectories <trajectories.jsonl> [--predictions predictions.jsonl] [--baseline deterministic|oracle] [--output summary.json] [--details-output details.jsonl] [--limit n] [--offset n]".to_string()
 }
 
 fn read_trajectories(path: &Path) -> Result<Vec<Trajectory>, Box<dyn Error + Send + Sync>> {
@@ -268,17 +325,27 @@ fn required_string<'a>(
         .ok_or_else(|| format!("{location} missing required string field `{field}`").into())
 }
 
+#[cfg(test)]
 fn evaluate(
     args: &Args,
     trajectories: &[Trajectory],
     predictions: Option<&BTreeMap<String, Value>>,
 ) -> Result<EvalSummary, Box<dyn Error + Send + Sync>> {
+    Ok(evaluate_internal(args, trajectories, predictions)?.summary)
+}
+
+fn evaluate_internal(
+    args: &Args,
+    trajectories: &[Trajectory],
+    predictions: Option<&BTreeMap<String, Value>>,
+) -> Result<EvalResult, Box<dyn Error + Send + Sync>> {
     let mut counts = EvalCounts::default();
     let mut by_mode = BTreeMap::<String, usize>::new();
     let mut by_task_family = BTreeMap::<String, usize>::new();
     let mut target_actions = BTreeMap::<String, usize>::new();
     let mut predicted_actions = BTreeMap::<String, usize>::new();
     let mut invalid_prediction_reasons = BTreeMap::<String, usize>::new();
+    let mut details = Vec::<EvalDetail>::new();
 
     for trajectory in trajectories {
         *by_mode.entry(trajectory.mode.clone()).or_default() += 1;
@@ -293,53 +360,99 @@ fn evaluate(
             Some("stop") => counts.target_stop_actions += 1,
             _ => {}
         }
+        count_target_navigation_metrics(&trajectory.target_action, &mut counts);
 
         let predicted = predicted_action(args.baseline, trajectory, predictions);
         let Some(predicted) = predicted else {
             counts.missing_predictions += 1;
+            details.push(eval_detail(
+                trajectory,
+                None,
+                "missing",
+                None,
+                ActionScore::default(),
+            ));
             continue;
         };
-        *predicted_actions
-            .entry(action_label(&predicted))
-            .or_default() += 1;
-        if let Some(error) = kernel_operator_action_shape_error(&predicted) {
+        let predicted_action_label = action_label(&predicted);
+        *predicted_actions.entry(predicted_action_label).or_default() += 1;
+        if let Some(error) = kernel_operator_action_contract_error(&predicted) {
             counts.invalid_predictions += 1;
+            if is_unbounded_contract_error(&error) {
+                counts.unbounded_tool_calls += 1;
+            }
             *invalid_prediction_reasons.entry(error).or_default() += 1;
+            let error = kernel_operator_action_contract_error(&predicted);
+            details.push(eval_detail(
+                trajectory,
+                Some(&predicted),
+                "invalid",
+                error,
+                ActionScore::default(),
+            ));
             continue;
         }
-        if is_unbounded_tool_call(&predicted) {
-            counts.unbounded_tool_calls += 1;
-        }
-        score_action(&trajectory.target_action, &predicted, &mut counts);
+        let score = action_score(&trajectory.target_action, &predicted);
+        apply_score(&trajectory.target_action, &predicted, &score, &mut counts);
+        details.push(eval_detail(
+            trajectory,
+            Some(&predicted),
+            "valid",
+            None,
+            score,
+        ));
     }
 
     let rates = rates(&counts, trajectories.len());
-    Ok(EvalSummary {
-        evaluator: EVALUATOR,
-        action_validator: ACTION_VALIDATOR,
-        schema_mode: SCHEMA_MODE,
-        generated_at_unix_seconds: SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs(),
-        trajectories: args.trajectories.display().to_string(),
-        predictions: args
-            .predictions
-            .as_ref()
-            .map(|path| path.display().to_string()),
-        predictor: match args.predictions.as_ref() {
-            Some(_) => "predictions".to_string(),
-            None => match args.baseline {
-                Baseline::Deterministic => "baseline:deterministic".to_string(),
-                Baseline::Oracle => "baseline:oracle".to_string(),
+    Ok(EvalResult {
+        summary: EvalSummary {
+            evaluator: EVALUATOR,
+            action_validator: ACTION_VALIDATOR,
+            schema_mode: SCHEMA_MODE,
+            generated_at_unix_seconds: SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs(),
+            trajectories: args.trajectories.display().to_string(),
+            predictions: args
+                .predictions
+                .as_ref()
+                .map(|path| path.display().to_string()),
+            predictor: match args.predictions.as_ref() {
+                Some(_) => "predictions".to_string(),
+                None => match args.baseline {
+                    Baseline::Deterministic => "baseline:deterministic".to_string(),
+                    Baseline::Oracle => "baseline:oracle".to_string(),
+                },
             },
+            total: trajectories.len(),
+            by_mode,
+            by_task_family,
+            target_actions,
+            predicted_actions,
+            invalid_prediction_reasons,
+            counts,
+            rates,
         },
-        total: trajectories.len(),
-        by_mode,
-        by_task_family,
-        target_actions,
-        predicted_actions,
-        invalid_prediction_reasons,
-        counts,
-        rates,
+        details,
     })
+}
+
+fn eval_detail(
+    trajectory: &Trajectory,
+    predicted: Option<&Value>,
+    prediction_status: &'static str,
+    invalid_reason: Option<String>,
+    score: ActionScore,
+) -> EvalDetail {
+    EvalDetail {
+        step_id: trajectory.step_id.clone(),
+        mode: trajectory.mode.clone(),
+        task_family: trajectory.task_family.clone(),
+        target_capability_key: target_capability_key(trajectory),
+        target_action_label: action_label(&trajectory.target_action),
+        predicted_action_label: predicted.map(action_label),
+        prediction_status,
+        invalid_reason,
+        score,
+    }
 }
 
 fn predicted_action(
@@ -425,28 +538,96 @@ fn deterministic_action(trajectory: &Trajectory) -> Value {
     }
 }
 
-fn score_action(target: &Value, predicted: &Value, counts: &mut EvalCounts) {
+fn action_score(target: &Value, predicted: &Value) -> ActionScore {
+    let mut score = ActionScore::default();
     let target_type = action_type(target);
     let predicted_type = action_type(predicted);
     if target_type == predicted_type {
-        counts.action_type_correct += 1;
+        score.action_type_correct = true;
     }
     if target_type == Some("stop") && predicted_type == Some("stop") {
-        counts.stop_correct += 1;
+        score.stop_correct = true;
     }
     if target == predicted {
-        counts.exact_action_correct += 1;
+        score.exact_action_correct = true;
     }
     if target_type == Some("tool_call") && predicted_type == Some("tool_call") {
         if tool(target) == tool(predicted) {
-            counts.tool_correct += 1;
+            score.tool_correct = true;
         }
         if kernel_operator_primary_refs(target) == kernel_operator_primary_refs(predicted) {
-            counts.primary_refs_correct += 1;
+            score.primary_refs_correct = true;
         }
         if scope_about(target) == scope_about(predicted) {
+            score.scope_correct = true;
+        }
+        if target_cursor_mode(target).is_some()
+            && target_cursor_mode(target) == target_cursor_mode(predicted)
+        {
+            score.cursor_mode_correct = true;
+        }
+        if action_window(target).is_some() && action_window(target) == action_window(predicted) {
+            score.window_shape_correct = true;
+        }
+        if action_limit(target).is_some() && action_limit(target) == action_limit(predicted) {
+            score.limit_policy_correct = true;
+        }
+        if trace_page_cursor(target).is_some()
+            && trace_page_cursor(target) == trace_page_cursor(predicted)
+        {
+            score.continue_page_correct = true;
+        }
+    }
+    score
+}
+
+fn apply_score(target: &Value, _predicted: &Value, score: &ActionScore, counts: &mut EvalCounts) {
+    if score.action_type_correct {
+        counts.action_type_correct += 1;
+    }
+    if score.stop_correct {
+        counts.stop_correct += 1;
+    }
+    if score.exact_action_correct {
+        counts.exact_action_correct += 1;
+    }
+    if action_type(target) == Some("tool_call") {
+        if score.tool_correct {
+            counts.tool_correct += 1;
+        }
+        if score.primary_refs_correct {
+            counts.primary_refs_correct += 1;
+        }
+        if score.scope_correct {
             counts.scope_correct += 1;
         }
+        if score.cursor_mode_correct {
+            counts.cursor_mode_correct += 1;
+        }
+        if score.window_shape_correct {
+            counts.window_shape_correct += 1;
+        }
+        if score.limit_policy_correct {
+            counts.limit_policy_correct += 1;
+        }
+        if score.continue_page_correct {
+            counts.continue_page_correct += 1;
+        }
+    }
+}
+
+fn count_target_navigation_metrics(target: &Value, counts: &mut EvalCounts) {
+    if target_cursor_mode(target).is_some() {
+        counts.target_cursor_actions += 1;
+    }
+    if action_window(target).is_some() {
+        counts.target_window_actions += 1;
+    }
+    if action_limit(target).is_some() {
+        counts.target_limit_actions += 1;
+    }
+    if trace_page_cursor(target).is_some() {
+        counts.target_page_continuations += 1;
     }
 }
 
@@ -456,6 +637,13 @@ fn rates(counts: &EvalCounts, total: usize) -> EvalRates {
         tool_accuracy: ratio(counts.tool_correct, counts.target_tool_calls),
         primary_ref_accuracy: ratio(counts.primary_refs_correct, counts.target_tool_calls),
         scope_accuracy: ratio(counts.scope_correct, counts.target_tool_calls),
+        cursor_mode_accuracy: ratio(counts.cursor_mode_correct, counts.target_cursor_actions),
+        window_shape_accuracy: ratio(counts.window_shape_correct, counts.target_window_actions),
+        limit_policy_accuracy: ratio(counts.limit_policy_correct, counts.target_limit_actions),
+        continue_page_accuracy: ratio(
+            counts.continue_page_correct,
+            counts.target_page_continuations,
+        ),
         stop_accuracy: ratio(counts.stop_correct, counts.target_stop_actions),
         exact_action_accuracy: ratio(counts.exact_action_correct, total),
         invalid_prediction_rate: ratio(counts.invalid_predictions, total),
@@ -478,15 +666,21 @@ fn action_label(action: &Value) -> String {
     }
 }
 
-fn is_unbounded_tool_call(action: &Value) -> bool {
-    if action_type(action) != Some("tool_call") {
-        return false;
-    }
-    let Some(tool) = tool(action) else {
-        return true;
-    };
-    let arguments = action.get("arguments").unwrap_or(&Value::Null);
-    !kernel_operator_is_bounded_tool_call(tool, arguments)
+fn target_capability_key(trajectory: &Trajectory) -> String {
+    let action = &trajectory.target_action;
+    let label = action_label(action);
+    let cursor = target_cursor_mode(action).unwrap_or("none");
+    let dimension_mode = dimension_mode(action).unwrap_or("none");
+    let dimension_scope = dimension_scope(action).unwrap_or("none");
+    let trace_page = trace_page_mode(action);
+    format!(
+        "{}|{}|cursor:{cursor}|dim_mode:{dimension_mode}|dim_scope:{dimension_scope}|trace_page:{trace_page}",
+        trajectory.task_family, label
+    )
+}
+
+fn is_unbounded_contract_error(error: &str) -> bool {
+    error.starts_with("unbounded or invalid tool call")
 }
 
 fn action_type(action: &Value) -> Option<&str> {
@@ -503,6 +697,78 @@ fn scope_about(action: &Value) -> Option<String> {
         .and_then(|arguments| arguments.get("about"))
         .and_then(Value::as_str)
         .map(ToString::to_string)
+}
+
+fn target_cursor_mode(action: &Value) -> Option<&'static str> {
+    let arguments = action.get("arguments")?;
+    let cursor_key = match tool(action)? {
+        "kernel_near" => "around",
+        "kernel_goto" => "at",
+        "kernel_rewind" | "kernel_forward" => "from",
+        _ => return None,
+    };
+    let cursor = arguments.get(cursor_key)?.as_object()?;
+    if cursor.contains_key("ref") {
+        Some("ref")
+    } else if cursor.contains_key("time") {
+        Some("time")
+    } else if cursor.contains_key("sequence") {
+        Some("sequence")
+    } else {
+        None
+    }
+}
+
+fn action_window(action: &Value) -> Option<&Value> {
+    action.get("arguments")?.get("window")
+}
+
+fn action_limit(action: &Value) -> Option<&Value> {
+    action.get("arguments")?.get("limit")
+}
+
+fn dimension_mode(action: &Value) -> Option<&str> {
+    action
+        .get("arguments")?
+        .get("dimensions")?
+        .get("mode")?
+        .as_str()
+}
+
+fn dimension_scope(action: &Value) -> Option<&str> {
+    action
+        .get("arguments")?
+        .get("dimensions")?
+        .get("scope")?
+        .as_str()
+}
+
+fn trace_page_mode(action: &Value) -> &'static str {
+    if tool(action) != Some("kernel_trace") {
+        return "none";
+    }
+    let Some(page) = action
+        .get("arguments")
+        .and_then(|arguments| arguments.get("page"))
+    else {
+        return "none";
+    };
+    if page.get("cursor").is_some() {
+        "continue"
+    } else {
+        "first"
+    }
+}
+
+fn trace_page_cursor(action: &Value) -> Option<&str> {
+    if tool(action) != Some("kernel_trace") {
+        return None;
+    }
+    action
+        .get("arguments")?
+        .get("page")?
+        .get("cursor")?
+        .as_str()
 }
 
 #[cfg(test)]
@@ -565,6 +831,7 @@ mod tests {
             predictions: None,
             baseline: Baseline::Oracle,
             output: None,
+            details_output: None,
             limit: None,
             offset: 0,
         };
@@ -621,11 +888,20 @@ mod tests {
             predictions: Some(PathBuf::from("predictions.jsonl")),
             baseline: Baseline::Deterministic,
             output: None,
+            details_output: None,
             limit: None,
             offset: 0,
         };
         let summary = evaluate(&args, &trajectories, Some(&predictions))?;
+        assert_eq!(summary.counts.invalid_predictions, 1);
         assert_eq!(summary.counts.unbounded_tool_calls, 1);
+        assert_eq!(summary.counts.tool_correct, 0);
+        assert_eq!(
+            summary
+                .invalid_prediction_reasons
+                .get("unbounded or invalid tool call for `kernel_near`"),
+            Some(&1)
+        );
         Ok(())
     }
 
@@ -671,6 +947,7 @@ mod tests {
             predictions: Some(PathBuf::from("predictions.jsonl")),
             baseline: Baseline::Deterministic,
             output: None,
+            details_output: None,
             limit: None,
             offset: 0,
         };
@@ -684,6 +961,176 @@ mod tests {
                 .get("action.arguments has unexpected field `final_refs`"),
             Some(&1)
         );
+        Ok(())
+    }
+
+    #[test]
+    fn navigation_policy_metrics_score_cursor_window_limit_and_page_continuation()
+    -> Result<(), Box<dyn Error + Send + Sync>> {
+        let near_action = json!({
+            "type": "tool_call",
+            "tool": "kernel_near",
+            "arguments": {
+                "about": "about:1",
+                "around": { "sequence": 7 },
+                "dimensions": { "mode": "all", "scope": "current_about" },
+                "include": { "evidence": true, "raw_refs": false, "relations": true },
+                "limit": { "entries": 12, "tokens": 2400 },
+                "budget": { "depth": 3, "tokens": 2400 },
+                "window": { "before_entries": 6, "after_entries": 0 }
+            }
+        });
+        let trace_action = json!({
+            "type": "tool_call",
+            "tool": "kernel_trace",
+            "arguments": {
+                "from": "node:1",
+                "to": "node:3",
+                "budget": { "depth": 2, "tokens": 2400 },
+                "page": { "entries": 16, "cursor": "page:next" }
+            }
+        });
+        let trajectories = vec![
+            Trajectory {
+                step_id: "near".to_string(),
+                about: "about:1".to_string(),
+                mode: "read".to_string(),
+                task_family: "conformance.temporal".to_string(),
+                visible_state: json!({ "current_ref": "node:1" }),
+                target_action: near_action.clone(),
+            },
+            Trajectory {
+                step_id: "trace".to_string(),
+                about: "about:1".to_string(),
+                mode: "read".to_string(),
+                task_family: "conformance.trace".to_string(),
+                visible_state: json!({ "current_ref": "node:1" }),
+                target_action: trace_action.clone(),
+            },
+        ];
+        let predictions = BTreeMap::from([
+            ("near".to_string(), near_action),
+            ("trace".to_string(), trace_action),
+        ]);
+        let args = Args {
+            trajectories: PathBuf::from("trajectories.jsonl"),
+            predictions: Some(PathBuf::from("predictions.jsonl")),
+            baseline: Baseline::Deterministic,
+            output: None,
+            details_output: None,
+            limit: None,
+            offset: 0,
+        };
+
+        let summary = evaluate(&args, &trajectories, Some(&predictions))?;
+
+        assert_eq!(summary.counts.target_cursor_actions, 1);
+        assert_eq!(summary.counts.cursor_mode_correct, 1);
+        assert_eq!(summary.counts.target_window_actions, 1);
+        assert_eq!(summary.counts.window_shape_correct, 1);
+        assert_eq!(summary.counts.target_limit_actions, 1);
+        assert_eq!(summary.counts.limit_policy_correct, 1);
+        assert_eq!(summary.counts.target_page_continuations, 1);
+        assert_eq!(summary.counts.continue_page_correct, 1);
+        assert_eq!(summary.rates.cursor_mode_accuracy, 1.0);
+        assert_eq!(summary.rates.window_shape_accuracy, 1.0);
+        assert_eq!(summary.rates.limit_policy_accuracy, 1.0);
+        assert_eq!(summary.rates.continue_page_accuracy, 1.0);
+        Ok(())
+    }
+
+    #[test]
+    fn navigation_policy_metrics_detect_mismatched_cursor_and_page()
+    -> Result<(), Box<dyn Error + Send + Sync>> {
+        let target_near = json!({
+            "type": "tool_call",
+            "tool": "kernel_near",
+            "arguments": {
+                "about": "about:1",
+                "around": { "sequence": 7 },
+                "dimensions": { "mode": "all", "scope": "current_about" },
+                "include": { "evidence": true, "raw_refs": false, "relations": true },
+                "limit": { "entries": 12, "tokens": 2400 },
+                "budget": { "depth": 3, "tokens": 2400 },
+                "window": { "before_entries": 6, "after_entries": 0 }
+            }
+        });
+        let predicted_near = json!({
+            "type": "tool_call",
+            "tool": "kernel_near",
+            "arguments": {
+                "about": "about:1",
+                "around": { "time": "2026-05-14T00:00:00Z" },
+                "dimensions": { "mode": "all", "scope": "current_about" },
+                "include": { "evidence": true, "raw_refs": false, "relations": true },
+                "limit": { "entries": 24, "tokens": 2400 },
+                "budget": { "depth": 3, "tokens": 2400 },
+                "window": { "before_entries": 3, "after_entries": 3 }
+            }
+        });
+        let target_trace = json!({
+            "type": "tool_call",
+            "tool": "kernel_trace",
+            "arguments": {
+                "from": "node:1",
+                "to": "node:3",
+                "budget": { "depth": 2, "tokens": 2400 },
+                "page": { "entries": 16, "cursor": "page:next" }
+            }
+        });
+        let predicted_trace = json!({
+            "type": "tool_call",
+            "tool": "kernel_trace",
+            "arguments": {
+                "from": "node:1",
+                "to": "node:3",
+                "budget": { "depth": 2, "tokens": 2400 },
+                "page": { "entries": 16, "cursor": "page:other" }
+            }
+        });
+        let trajectories = vec![
+            Trajectory {
+                step_id: "near".to_string(),
+                about: "about:1".to_string(),
+                mode: "read".to_string(),
+                task_family: "conformance.temporal".to_string(),
+                visible_state: json!({}),
+                target_action: target_near,
+            },
+            Trajectory {
+                step_id: "trace".to_string(),
+                about: "about:1".to_string(),
+                mode: "read".to_string(),
+                task_family: "conformance.trace".to_string(),
+                visible_state: json!({}),
+                target_action: target_trace,
+            },
+        ];
+        let predictions = BTreeMap::from([
+            ("near".to_string(), predicted_near),
+            ("trace".to_string(), predicted_trace),
+        ]);
+        let args = Args {
+            trajectories: PathBuf::from("trajectories.jsonl"),
+            predictions: Some(PathBuf::from("predictions.jsonl")),
+            baseline: Baseline::Deterministic,
+            output: None,
+            details_output: None,
+            limit: None,
+            offset: 0,
+        };
+
+        let summary = evaluate(&args, &trajectories, Some(&predictions))?;
+
+        assert_eq!(summary.counts.tool_correct, 2);
+        assert_eq!(summary.counts.cursor_mode_correct, 0);
+        assert_eq!(summary.counts.window_shape_correct, 0);
+        assert_eq!(summary.counts.limit_policy_correct, 0);
+        assert_eq!(summary.counts.continue_page_correct, 0);
+        assert_eq!(summary.rates.cursor_mode_accuracy, 0.0);
+        assert_eq!(summary.rates.window_shape_accuracy, 0.0);
+        assert_eq!(summary.rates.limit_policy_accuracy, 0.0);
+        assert_eq!(summary.rates.continue_page_accuracy, 0.0);
         Ok(())
     }
 

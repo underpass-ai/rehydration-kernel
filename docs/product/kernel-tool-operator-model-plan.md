@@ -235,6 +235,39 @@ next, with which arguments, and when to stop.
 The first useful outcome is not model training. The first useful outcome is a
 clean trajectory dataset and evaluator that make tool-use quality measurable.
 
+## North Star
+
+Keep the responsibility split simple and explicit:
+
+```text
+Operator 0.5B:
+  only learns to use KMP.
+
+Strong teacher:
+  produces semantics when semantics are needed.
+
+Kernel:
+  validates, stores, traverses, proves, and audits memory.
+```
+
+The small Operator is not trained to understand memory as an author. It is
+trained to operate the memory protocol:
+
+- choose bounded KMP/MCP tools;
+- choose scoped arguments;
+- inspect, trace, page, move temporally, stop, or escalate;
+- execute a prepared write only when the visible state already contains the
+  write payload and relation proof.
+
+The semantic decisions belong elsewhere. Rich writer relations, `why`, cited
+evidence, derivations, and domain interpretation should be produced by a strong
+teacher or another semantic layer. For writer datasets, the preferred teacher is
+GPT-5.5, used offline with exact model provenance and strict structured output.
+
+This prevents the project from drifting into a false goal: making a 0.5B model
+act like a general memory reasoner. The product goal is narrower and more
+measurable: a small model that uses KMP correctly.
+
 ## Boundary
 
 The operator model may:
@@ -242,14 +275,16 @@ The operator model may:
 - choose one KMP/MCP tool call at a time;
 - choose scoped, bounded arguments;
 - decide whether to continue, inspect, trace, move temporally, or stop;
-- propose `kernel_write_memory` relations only when the relation cites evidence
-  observed through previous kernel reads.
+- execute prepared `kernel_write_memory` calls only when the relation, `why`,
+  evidence, and read-context proof are already visible.
 
 The operator model must not:
 
 - bypass the public KMP/MCP/gRPC contract;
 - become a hidden memory API;
 - invent refs, evidence, relations, dimensions, or about scopes;
+- author rich writer relations from scratch;
+- decide semantic `why` for memory writes;
 - request unbounded histories by default;
 - own answer semantics for benchmark-specific tasks;
 - become a dependency of kernel core.
@@ -281,8 +316,10 @@ Write tool:
 - `kernel_write_memory`
 
 Write mode is a separate policy mode. The first operator slice should focus on
-read/navigation trajectories, then add writer relation trajectories after the
-read loop is measurable.
+read/navigation trajectories. Writer mode must be added only after the
+read loop is measurable, and it must remain scoped to kernel operation:
+read-before-write, prepared-write execution, bounded calls, and escalation to a
+strong semantic teacher when relation meaning is not already provided.
 
 ## Why This Is P1
 
@@ -499,7 +536,9 @@ The first exported action space is read/navigation:
 
 `--include-writer-reads` additionally exports read-before-write tool calls from
 the smart writer as `write_context_read` mode, but it does not yet train the
-model to propose `kernel_write_memory` relations.
+model to author `kernel_write_memory` relations. Writer-side training remains
+limited to kernel operation until a strong-teacher semantic writer dataset
+exists.
 
 Real export checks:
 
@@ -833,7 +872,7 @@ Interpretation:
 - the task is learnable by a very small model;
 - this does not yet prove generalization beyond the MemoryArena
   progressive-search trajectory distribution;
-- next held-out cuts should split by task id/run family, not only random
+- next held-out cuts should split by task id/run family, not only ratio-based
   trajectory rows.
 
 ### P1.5b Ref-Safe Dataset Hardening
@@ -1287,9 +1326,9 @@ remain hidden.
 ### P1.8 Explicit Holdout Validation
 
 V5 proved that candidate details closed the remaining writer-context-read
-misses, but the eval split was still produced by a seeded ratio over task
-groups. P1.8 makes the holdout explicit and larger so the result is easier to
-repeat and audit.
+misses, but the eval split was still produced by a seeded stable-hash ratio
+over task groups. P1.8 makes the holdout explicit and larger so the result is
+easier to repeat and audit.
 
 The SFT preparer now supports explicit group holdouts:
 

@@ -674,6 +674,12 @@ P1:
 - [x] enforce `read_context` evidence for strict rich external relations;
 - [x] return `prior_context_sources` per relation and prior-context coverage
   metrics;
+- [ ] add an offline GPT-5.5 teacher pipeline for writer datasets, with exact
+  model provenance, structured relation output, cited KMP evidence, and
+  fail-fast behavior when the teacher is unavailable;
+- [ ] keep 0.5B Operator writer mode scoped to KMP operation, prepared-write
+  execution, escalation policy, and bounded tool calls; do not treat it as a
+  rich-relation author;
 - [ ] add specialized helper aliases for common writer tasks;
 - [x] add schema-constrained LLM writer prompts/templates outside core
   (`api/examples/inference-prompts/kernel-write-memory.txt` and

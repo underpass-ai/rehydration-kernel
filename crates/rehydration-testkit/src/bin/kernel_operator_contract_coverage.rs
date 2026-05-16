@@ -11,7 +11,8 @@ use serde_json::Value;
 
 use rehydration_mcp::kernel_mcp_tool_names;
 use rehydration_testkit::{
-    kernel_operator_allowed_read_tools, kernel_operator_is_bounded_tool_call,
+    kernel_operator_allowed_full_tools, kernel_operator_allowed_read_tools,
+    kernel_operator_is_bounded_tool_call,
 };
 
 const REPORTER: &str = "kernel-operator-contract-coverage-v1";
@@ -113,9 +114,12 @@ fn build_report(
     trajectories: Option<&[Value]>,
 ) -> Result<CoverageReport, Box<dyn Error + Send + Sync>> {
     let mcp_tools = kernel_mcp_tool_names().into_iter().collect::<BTreeSet<_>>();
-    let operator_tools = kernel_operator_allowed_read_tools()
-        .into_iter()
-        .collect::<BTreeSet<_>>();
+    let operator_tools = match args.profile {
+        Profile::Read => kernel_operator_allowed_read_tools(),
+        Profile::Full => kernel_operator_allowed_full_tools(),
+    }
+    .into_iter()
+    .collect::<BTreeSet<_>>();
     let required_ids = required_capability_ids(args.profile);
     let observed = trajectories.map(observed_capabilities);
     let required_rows = required_ids
@@ -485,6 +489,7 @@ fn observe_action(action: &Value, observed: &mut ObservedCoverage) {
         {
             observed.capabilities.insert("inspect.raw:false");
         }
+        "kernel_write_memory" => observe_write_memory(arguments, observed),
         _ => {}
     }
     observe_window(arguments, observed);
@@ -610,6 +615,79 @@ fn observe_window(arguments: &Value, observed: &mut ObservedCoverage) {
     if before.is_some_and(|value| value < 6) || entries.is_some_and(|value| value < 12) {
         observed.capabilities.insert("window:shrink");
     }
+}
+
+fn observe_write_memory(arguments: &Value, observed: &mut ObservedCoverage) {
+    let relation_refs = arguments
+        .get("connect_to")
+        .and_then(Value::as_array)
+        .map(|links| {
+            links
+                .iter()
+                .filter_map(|link| link.get("ref").and_then(Value::as_str))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    let relation_quality_observed = arguments
+        .get("connect_to")
+        .and_then(Value::as_array)
+        .is_some_and(|links| {
+            !links.is_empty()
+                && links.iter().all(|link| {
+                    ["ref", "rel", "class", "why", "evidence"]
+                        .iter()
+                        .all(|field| {
+                            link.get(*field)
+                                .and_then(Value::as_str)
+                                .is_some_and(|value| !value.is_empty())
+                        })
+                })
+        });
+    if relation_quality_observed {
+        observed.capabilities.insert("write:relation_quality");
+    }
+
+    let read_context_refs = write_read_context_refs(arguments.get("read_context"));
+    if relation_refs
+        .iter()
+        .any(|relation_ref| read_context_refs.contains(*relation_ref))
+    {
+        observed.capabilities.insert("write:read_context_proof");
+    }
+}
+
+fn write_read_context_refs(read_context: Option<&Value>) -> BTreeSet<&str> {
+    let mut refs = BTreeSet::new();
+    let Some(read_context) = read_context else {
+        return refs;
+    };
+    for field in ["inspected_refs", "temporal_refs", "wake_refs", "ask_refs"] {
+        if let Some(values) = read_context.get(field).and_then(Value::as_array) {
+            for value in values {
+                if let Some(ref_id) = value.as_str() {
+                    refs.insert(ref_id);
+                }
+            }
+        }
+    }
+    if let Some(paths) = read_context.get("trace_paths").and_then(Value::as_array) {
+        for path in paths {
+            for field in ["from", "to"] {
+                if let Some(ref_id) = path.get(field).and_then(Value::as_str) {
+                    refs.insert(ref_id);
+                }
+            }
+            if let Some(values) = path.get("refs").and_then(Value::as_array) {
+                for value in values {
+                    if let Some(ref_id) = value.as_str() {
+                        refs.insert(ref_id);
+                    }
+                }
+            }
+        }
+    }
+    refs
 }
 
 fn ratio(covered: usize, total: usize) -> CoverageRatio {

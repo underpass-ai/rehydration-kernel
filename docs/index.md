@@ -38,6 +38,8 @@ Current integration stance:
 | [kernel-plugin-architecture.md](product/kernel-plugin-architecture.md) | Exportable plugin API architecture and implementation guide for external plugin crates |
 | [kernel-write-protocol-plan.md](product/kernel-write-protocol-plan.md) | Writer-first plan for LLM/human memory ingestion above canonical `kernel_ingest` |
 | [kernel-tool-operator-model-plan.md](product/kernel-tool-operator-model-plan.md) | P1 plan for a small sidecar model that learns bounded KMP/MCP tool operation from audited trajectories |
+| [operator-training-experiment-process.md](product/operator-training-experiment-process.md) | Process for versioned Operator training attempts, dataset provenance, stop gates, and required evidence |
+| [operator-training-runs/](product/operator-training-runs/README.md) | Per-attempt Operator training records |
 | [operator-benchmark-status-and-next-steps-2026-05-14.md](product/operator-benchmark-status-and-next-steps-2026-05-14.md) | Current Operator benchmark status, MemoryArena vs LongMemEval boundaries, and next execution steps |
 | [operator-mcp-api-contract-gap-audit-2026-05-14.md](product/operator-mcp-api-contract-gap-audit-2026-05-14.md) | Contract coverage audit for Operator vs KMP/MCP tools, cursor modes, dimensions, pagination, and required P0 datasets |
 | [kernel-tool-operator-publication-plan.md](product/kernel-tool-operator-publication-plan.md) | Hugging Face publication gate, model/dataset packaging, and repository visibility checklist |
