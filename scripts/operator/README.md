@@ -312,8 +312,8 @@ writer pre-read rows from blocking a read-profile claim:
 
 ```bash
 cargo run -p rehydration-testkit --bin kernel_operator_conformance_trajectory_export -- \
-  --suite writer-pre-read-v1 \
-  --run-id kmp-operator-writer-pre-read-v1-YYYYMMDD \
+  --suite writer-pre-read-v2 \
+  --run-id kmp-operator-writer-pre-read-v2-YYYYMMDD \
   --output <writer-pre-read-conformance-dir> \
   --force
 
@@ -339,10 +339,15 @@ python scripts/operator/prepare_operator_sft_dataset.py \
   --force
 ```
 
-The `writer-pre-read` profile currently requires bounded `near`, `inspect`, and
-`trace`, ref cursors, current-about dimensions, shrink/expand window policy,
-`inspect.raw=false`, first trace page, writer `last_tool` states, and candidate
-roles for previous answers and same-subtask questions.
+The `writer-pre-read` profile requires bounded `near`, `inspect`, `trace`, and
+`stop`, ref cursors, current-about dimensions, shrink/expand/stop window
+policy, `inspect.raw=false`, first and continuation trace pages, writer
+`last_tool` states through `kernel_trace`, candidate roles for previous answers
+and same-subtask questions, and explicit ambiguous candidate pools.
+
+`writer-pre-read-v1` is retained as a historical fixture. Use
+`writer-pre-read-v2` for new training claims because it covers sufficient
+context stops, trace pagination, and ambiguous writer candidate decisions.
 
 For large real benchmark exports, also add model-row quality gates before
 training:

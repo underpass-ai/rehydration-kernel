@@ -221,6 +221,10 @@ fn required_capability_ids(profile: Profile) -> Vec<Capability> {
                 group: "tool",
             },
             Capability {
+                id: "tool:stop",
+                group: "tool",
+            },
+            Capability {
                 id: "cursor:ref",
                 group: "cursor",
             },
@@ -249,6 +253,14 @@ fn required_capability_ids(profile: Profile) -> Vec<Capability> {
                 group: "pagination",
             },
             Capability {
+                id: "trace.page:continue",
+                group: "pagination",
+            },
+            Capability {
+                id: "window:stop_sufficient",
+                group: "window_policy",
+            },
+            Capability {
                 id: "writer.last_tool:none",
                 group: "writer_state",
             },
@@ -261,11 +273,19 @@ fn required_capability_ids(profile: Profile) -> Vec<Capability> {
                 group: "writer_state",
             },
             Capability {
+                id: "writer.last_tool:kernel_trace",
+                group: "writer_state",
+            },
+            Capability {
                 id: "writer.candidate_role:previous_subtask_answer",
                 group: "writer_candidate",
             },
             Capability {
                 id: "writer.candidate_role:same_subtask_question",
+                group: "writer_candidate",
+            },
+            Capability {
+                id: "writer.candidate_pool:ambiguous",
                 group: "writer_candidate",
             },
         ];
@@ -414,8 +434,10 @@ fn contract_supports(
         | "writer.last_tool:none"
         | "writer.last_tool:kernel_near"
         | "writer.last_tool:kernel_inspect"
+        | "writer.last_tool:kernel_trace"
         | "writer.candidate_role:previous_subtask_answer"
-        | "writer.candidate_role:same_subtask_question" => true,
+        | "writer.candidate_role:same_subtask_question"
+        | "writer.candidate_pool:ambiguous" => true,
         "write:relation_quality" | "write:read_context_proof" => {
             mcp_tools.contains("kernel_write_memory")
                 && operator_tools.contains("kernel_write_memory")
@@ -555,10 +577,20 @@ fn observe_writer_pre_read_state(row: &Value, observed: &mut ObservedCoverage) {
                 .capabilities
                 .insert("writer.last_tool:kernel_inspect");
         }
+        Some("kernel_trace") => {
+            observed
+                .capabilities
+                .insert("writer.last_tool:kernel_trace");
+        }
         None if state.get("last_tool").is_some_and(Value::is_null) => {
             observed.capabilities.insert("writer.last_tool:none");
         }
         _ => {}
+    }
+    if state.get("candidate_pool").and_then(Value::as_str) == Some("ambiguous") {
+        observed
+            .capabilities
+            .insert("writer.candidate_pool:ambiguous");
     }
     let Some(candidate_details) = state.get("candidate_ref_details").and_then(Value::as_array)
     else {
