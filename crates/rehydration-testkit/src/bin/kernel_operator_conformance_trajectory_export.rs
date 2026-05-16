@@ -71,9 +71,10 @@ fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         "golden-v4" => golden_v4_trajectories(&args.run_id),
         "read-generalization" => read_generalization_trajectories(&args.run_id),
         "read-rare-v1" => read_rare_expansion_trajectories(&args.run_id),
+        "writer-pre-read-v1" => writer_pre_read_trajectories(&args.run_id),
         other => {
             return Err(format!(
-                "unknown --suite `{other}`; expected `golden`, `golden-v3`, `golden-v4`, `read-generalization`, or `read-rare-v1`"
+                "unknown --suite `{other}`; expected `golden`, `golden-v3`, `golden-v4`, `read-generalization`, `read-rare-v1`, or `writer-pre-read-v1`"
             )
             .into());
         }
@@ -131,7 +132,7 @@ fn next_arg(
 }
 
 fn usage() -> String {
-    "usage: kernel_operator_conformance_trajectory_export --output <dir> [--run-id id] [--suite golden|golden-v3|golden-v4|read-generalization|read-rare-v1] [--force]"
+    "usage: kernel_operator_conformance_trajectory_export --output <dir> [--run-id id] [--suite golden|golden-v3|golden-v4|read-generalization|read-rare-v1|writer-pre-read-v1] [--force]"
         .to_string()
 }
 
@@ -2600,6 +2601,163 @@ fn read_rare_expansion_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
     items
 }
 
+fn writer_pre_read_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
+    let mut items = Vec::new();
+    let read_tools = kernel_operator_allowed_read_tools();
+    let about = "incident:writer-pre-read";
+    let entry_question = "incident:writer-pre-read:subtask:4:question";
+    let entry_answer = "incident:writer-pre-read:subtask:4:answer";
+    let same_question = "incident:writer-pre-read:subtask:4:question";
+    let previous_answer = "incident:writer-pre-read:subtask:3:answer";
+    let previous_question = "incident:writer-pre-read:subtask:3:question";
+    let older_answer = "incident:writer-pre-read:subtask:2:answer";
+
+    let question_candidates = writer_pre_read_candidate_details(vec![
+        (
+            previous_answer,
+            "previous_subtask_answer",
+            10,
+            "question_follows_previous_answer",
+        ),
+        (
+            previous_question,
+            "previous_subtask_question",
+            30,
+            "question_refines_previous_question",
+        ),
+        (
+            older_answer,
+            "older_subtask_answer",
+            50,
+            "question_uses_older_answer",
+        ),
+    ]);
+    let answer_candidates = writer_pre_read_candidate_details(vec![
+        (
+            same_question,
+            "same_subtask_question",
+            10,
+            "answer_addresses_question",
+        ),
+        (
+            previous_answer,
+            "previous_subtask_answer",
+            30,
+            "answer_uses_prior_answer",
+        ),
+        (
+            previous_question,
+            "previous_subtask_question",
+            40,
+            "answer_uses_prior_question",
+        ),
+    ]);
+
+    push_writer_pre_read_near(
+        &mut items,
+        run_id,
+        &read_tools,
+        about,
+        "writer-question-near-previous-answer-shrink",
+        entry_question,
+        previous_answer,
+        question_candidates.clone(),
+        json!({ "entries": 6, "tokens": 1200 }),
+        json!({ "before_entries": 3, "after_entries": 0 }),
+        "Use a tight near read around the previous answer before writing why this question follows it.",
+        vec![previous_answer, previous_question],
+    );
+    push_writer_pre_read_inspect(
+        &mut items,
+        run_id,
+        &read_tools,
+        about,
+        "writer-question-inspect-previous-answer-after-near",
+        entry_question,
+        previous_answer,
+        question_candidates.clone(),
+        "Inspect the prior answer after near surfaced it as the likely relation target.",
+    );
+    push_writer_pre_read_trace(
+        &mut items,
+        run_id,
+        &read_tools,
+        about,
+        "writer-question-trace-to-previous-answer-after-inspect",
+        entry_question,
+        previous_answer,
+        question_candidates.clone(),
+        "Trace from the new question to the prior answer to prove the relation path.",
+    );
+    push_writer_pre_read_near(
+        &mut items,
+        run_id,
+        &read_tools,
+        about,
+        "writer-question-near-older-answer-expand",
+        entry_question,
+        older_answer,
+        question_candidates,
+        json!({ "entries": 24, "tokens": 3200 }),
+        json!({ "before_entries": 12, "after_entries": 0 }),
+        "Use a wider near read when the relation candidate is older than the immediate prior turn.",
+        vec![older_answer, previous_answer, previous_question],
+    );
+
+    push_writer_pre_read_near(
+        &mut items,
+        run_id,
+        &read_tools,
+        about,
+        "writer-answer-near-same-question-shrink",
+        entry_answer,
+        same_question,
+        answer_candidates.clone(),
+        json!({ "entries": 6, "tokens": 1200 }),
+        json!({ "before_entries": 3, "after_entries": 0 }),
+        "Use a tight near read around the same subtask question before writing an answer relation.",
+        vec![same_question, previous_answer],
+    );
+    push_writer_pre_read_inspect(
+        &mut items,
+        run_id,
+        &read_tools,
+        about,
+        "writer-answer-inspect-same-question-after-near",
+        entry_answer,
+        same_question,
+        answer_candidates.clone(),
+        "Inspect the same subtask question after near surfaced it as the relation target.",
+    );
+    push_writer_pre_read_trace(
+        &mut items,
+        run_id,
+        &read_tools,
+        about,
+        "writer-answer-trace-to-same-question-after-inspect",
+        entry_answer,
+        same_question,
+        answer_candidates.clone(),
+        "Trace from the new answer to the same question to prove answer-addresses-question.",
+    );
+    push_writer_pre_read_near(
+        &mut items,
+        run_id,
+        &read_tools,
+        about,
+        "writer-answer-near-previous-answer-expand",
+        entry_answer,
+        previous_answer,
+        answer_candidates,
+        json!({ "entries": 24, "tokens": 3200 }),
+        json!({ "before_entries": 12, "after_entries": 0 }),
+        "Use a wider near read when an answer may reuse a previous answer as relation evidence.",
+        vec![previous_answer, previous_question, same_question],
+    );
+
+    items
+}
+
 fn push_training_corpus_variants(
     items: &mut Vec<TrajectoryItem>,
     run_id: &str,
@@ -3183,6 +3341,242 @@ fn push_training_corpus_variants(
 
 fn push(items: &mut Vec<TrajectoryItem>, item: TrajectoryItem) {
     items.push(item);
+}
+
+fn writer_pre_read_candidate_details(candidates: Vec<(&str, &str, u64, &str)>) -> Vec<Value> {
+    candidates
+        .into_iter()
+        .map(|(reference, role, priority, relation_hint)| {
+            json!({
+                "ref": reference,
+                "role": role,
+                "turn_kind": reference
+                    .rsplit_once(':')
+                    .map(|(_, kind)| kind)
+                    .unwrap_or("unknown"),
+                "relative_position": role
+                    .split_once('_')
+                    .map(|(position, _)| position)
+                    .unwrap_or("unknown"),
+                "priority": priority,
+                "relation_hint": relation_hint,
+            })
+        })
+        .collect()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn push_writer_pre_read_near(
+    items: &mut Vec<TrajectoryItem>,
+    run_id: &str,
+    read_tools: &[String],
+    about: &str,
+    step_id: &str,
+    entry_ref: &str,
+    target_ref: &str,
+    candidate_ref_details: Vec<Value>,
+    limit: Value,
+    window: Value,
+    goal: &str,
+    observed_refs: Vec<&str>,
+) {
+    push(
+        items,
+        item(
+            run_id,
+            "conformance.writer_pre_read",
+            "write_context_read",
+            about,
+            step_id,
+            goal,
+            writer_pre_read_visible_state(
+                entry_ref,
+                candidate_ref_details,
+                Vec::new(),
+                None,
+                Vec::new(),
+                None,
+                None,
+                3,
+            ),
+            read_tools.to_vec(),
+            temporal_call_for_about(
+                about,
+                "kernel_near",
+                "around",
+                json!({ "ref": target_ref }),
+                json!({ "mode": "all", "scope": "current_about" }),
+                limit,
+                window,
+            ),
+            json!({
+                "success": true,
+                "observed_refs": observed_refs,
+                "partial_result": true,
+                "page": {
+                    "returned": 3,
+                    "total": 9,
+                    "has_more": true,
+                    "next_cursor": target_ref
+                }
+            }),
+            json!({
+                "bounded": true,
+                "contract_expected": true,
+                "writer_pre_read_contract": true
+            }),
+        ),
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn push_writer_pre_read_inspect(
+    items: &mut Vec<TrajectoryItem>,
+    run_id: &str,
+    read_tools: &[String],
+    about: &str,
+    step_id: &str,
+    entry_ref: &str,
+    target_ref: &str,
+    candidate_ref_details: Vec<Value>,
+    goal: &str,
+) {
+    push(
+        items,
+        item(
+            run_id,
+            "conformance.writer_pre_read",
+            "write_context_read",
+            about,
+            step_id,
+            goal,
+            writer_pre_read_visible_state(
+                entry_ref,
+                candidate_ref_details,
+                vec![target_ref.to_string()],
+                Some("kernel_near"),
+                vec![target_ref.to_string()],
+                Some(json!({
+                    "returned": 3,
+                    "total": 9,
+                    "has_more": true,
+                    "next_cursor": target_ref
+                })),
+                Some(true),
+                2,
+            ),
+            read_tools.to_vec(),
+            tool_call("kernel_inspect", inspection_request(target_ref)),
+            json!({
+                "success": true,
+                "observed_refs": [target_ref, entry_ref],
+                "partial_result": false
+            }),
+            json!({
+                "bounded": true,
+                "contract_expected": true,
+                "writer_pre_read_contract": true
+            }),
+        ),
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn push_writer_pre_read_trace(
+    items: &mut Vec<TrajectoryItem>,
+    run_id: &str,
+    read_tools: &[String],
+    about: &str,
+    step_id: &str,
+    entry_ref: &str,
+    target_ref: &str,
+    candidate_ref_details: Vec<Value>,
+    goal: &str,
+) {
+    push(
+        items,
+        item(
+            run_id,
+            "conformance.writer_pre_read",
+            "write_context_read",
+            about,
+            step_id,
+            goal,
+            writer_pre_read_visible_state(
+                entry_ref,
+                candidate_ref_details,
+                vec![target_ref.to_string()],
+                Some("kernel_inspect"),
+                vec![target_ref.to_string(), entry_ref.to_string()],
+                None,
+                Some(false),
+                1,
+            ),
+            read_tools.to_vec(),
+            tool_call(
+                "kernel_trace",
+                json!({
+                    "from": entry_ref,
+                    "to": target_ref,
+                    "goal": "Prove the writer pre-read relation target before writing memory.",
+                    "role": "operator",
+                    "budget": { "depth": 2, "tokens": 1600 },
+                    "page": { "entries": 16 }
+                }),
+            ),
+            json!({
+                "success": true,
+                "observed_refs": [entry_ref, target_ref],
+                "partial_result": false,
+                "page": {
+                    "returned": 2,
+                    "total": 2,
+                    "has_more": false
+                }
+            }),
+            json!({
+                "bounded": true,
+                "contract_expected": true,
+                "writer_pre_read_contract": true
+            }),
+        ),
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn writer_pre_read_visible_state(
+    entry_ref: &str,
+    candidate_ref_details: Vec<Value>,
+    known_refs: Vec<String>,
+    last_tool: Option<&str>,
+    last_observed_refs: Vec<String>,
+    last_result_page: Option<Value>,
+    last_result_partial: Option<bool>,
+    remaining_tool_calls: usize,
+) -> Value {
+    let candidate_refs = candidate_ref_details
+        .iter()
+        .filter_map(|detail| detail.get("ref").and_then(Value::as_str))
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+    json!({
+        "current_ref": entry_ref,
+        "candidate_refs": candidate_refs,
+        "candidate_ref_details": candidate_ref_details,
+        "known_refs": known_refs,
+        "last_tool": last_tool,
+        "last_observed_refs": last_observed_refs,
+        "last_result_page": last_result_page,
+        "last_result_partial": last_result_partial,
+        "remaining_budget": {
+            "tool_calls": remaining_tool_calls,
+            "context_chars": DEFAULT_CONTEXT_CHARS
+        },
+        "operator_state": {
+            "decision_boundary": "read_before_write",
+            "why": "The writer must inspect enough prior memory to justify the next relation without inventing it."
+        }
+    })
 }
 
 // These helpers are fixture factories: keeping each KMP field explicit makes the
@@ -4336,6 +4730,50 @@ mod tests {
                 .count()
                 >= 8
         );
+    }
+
+    #[test]
+    fn generated_writer_pre_read_trajectories_are_contract_valid_and_unique() {
+        let trajectories = writer_pre_read_trajectories("kmp-operator-writer-pre-read-test");
+        validate_trajectories(&trajectories).expect("valid writer pre-read trajectories");
+
+        let step_ids = trajectories
+            .iter()
+            .map(|trajectory| trajectory.step_id.as_str())
+            .collect::<BTreeSet<_>>();
+        assert_eq!(step_ids.len(), trajectories.len());
+        assert!(
+            trajectories
+                .iter()
+                .all(|trajectory| trajectory.mode == "write_context_read")
+        );
+        assert!(trajectories.iter().any(|trajectory| {
+            trajectory.target_action.get("tool").and_then(Value::as_str) == Some("kernel_near")
+                && trajectory
+                    .target_action
+                    .pointer("/arguments/window/before_entries")
+                    .and_then(Value::as_u64)
+                    == Some(3)
+        }));
+        assert!(trajectories.iter().any(|trajectory| {
+            trajectory.target_action.get("tool").and_then(Value::as_str) == Some("kernel_near")
+                && trajectory
+                    .target_action
+                    .pointer("/arguments/window/before_entries")
+                    .and_then(Value::as_u64)
+                    == Some(12)
+        }));
+        assert!(trajectories.iter().any(|trajectory| {
+            trajectory.target_action.get("tool").and_then(Value::as_str) == Some("kernel_inspect")
+        }));
+        assert!(trajectories.iter().any(|trajectory| {
+            trajectory.target_action.get("tool").and_then(Value::as_str) == Some("kernel_trace")
+                && trajectory
+                    .target_action
+                    .pointer("/arguments/page/entries")
+                    .and_then(Value::as_u64)
+                    == Some(16)
+        }));
     }
 
     #[test]

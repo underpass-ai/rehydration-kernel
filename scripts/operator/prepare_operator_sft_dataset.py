@@ -128,6 +128,25 @@ FULL_REQUIRED_CAPABILITIES = READ_REQUIRED_CAPABILITIES + (
     "write:read_context_proof",
 )
 
+WRITER_PRE_READ_REQUIRED_CAPABILITIES = (
+    "mode:write_context_read",
+    "tool:kernel_near",
+    "tool:kernel_inspect",
+    "tool:kernel_trace",
+    "cursor:ref",
+    "dimensions.mode:all",
+    "dimensions.scope:current_about",
+    "window:expand",
+    "window:shrink",
+    "inspect.raw:false",
+    "trace.page:first",
+    "writer.last_tool:none",
+    "writer.last_tool:kernel_near",
+    "writer.last_tool:kernel_inspect",
+    "writer.candidate_role:previous_subtask_answer",
+    "writer.candidate_role:same_subtask_question",
+)
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -190,7 +209,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--capability-split-profile",
-        choices=["read", "full"],
+        choices=["read", "full", "writer-pre-read"],
         default=None,
         help=(
             "When set with --split-mode=group, seed the eval split with groups "
@@ -891,6 +910,8 @@ def profile_required_capabilities(profile: str | None) -> tuple[str, ...]:
         return READ_REQUIRED_CAPABILITIES
     if profile == "full":
         return FULL_REQUIRED_CAPABILITIES
+    if profile == "writer-pre-read":
+        return WRITER_PRE_READ_REQUIRED_CAPABILITIES
     return ()
 
 
@@ -1332,9 +1353,42 @@ def observed_capability_counts(
 ) -> dict[str, int]:
     counts: dict[str, int] = {}
     for _, trajectory, _ in pairs:
-        for capability in action_capabilities(trajectory.get("target_action", {})):
+        for capability in trajectory_capabilities(trajectory):
             counts[capability] = counts.get(capability, 0) + 1
     return dict(sorted(counts.items()))
+
+
+def trajectory_capabilities(trajectory: dict[str, Any]) -> set[str]:
+    capabilities = action_capabilities(trajectory.get("target_action", {}))
+    mode = trajectory.get("mode")
+    if isinstance(mode, str):
+        capabilities.add(f"mode:{mode}")
+    if mode == "write_context_read":
+        capabilities.update(writer_pre_read_capabilities(trajectory))
+    return capabilities
+
+
+def writer_pre_read_capabilities(trajectory: dict[str, Any]) -> set[str]:
+    capabilities: set[str] = set()
+    state = trajectory.get("visible_state")
+    if not isinstance(state, dict):
+        return capabilities
+
+    last_tool = state.get("last_tool")
+    if last_tool is None:
+        capabilities.add("writer.last_tool:none")
+    elif isinstance(last_tool, str):
+        capabilities.add(f"writer.last_tool:{last_tool}")
+
+    candidate_details = state.get("candidate_ref_details")
+    if isinstance(candidate_details, list):
+        for detail in candidate_details:
+            if not isinstance(detail, dict):
+                continue
+            role = detail.get("role")
+            if isinstance(role, str):
+                capabilities.add(f"writer.candidate_role:{role}")
+    return capabilities
 
 
 def action_capabilities(action: dict[str, Any]) -> set[str]:

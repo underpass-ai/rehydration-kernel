@@ -286,7 +286,6 @@ python scripts/operator/prepare_operator_sft_dataset.py \
   --trajectories <conformance-trajectories.jsonl> \
   --output <operator-read-sft-dir> \
   --include-mode read \
-  --include-mode write_context_read \
   --split-mode group \
   --group-key task_or_step \
   --eval-ratio 0.1 \
@@ -306,6 +305,44 @@ a usable training claim if either train or eval lacks a required capability. If
 a required capability appears in fewer than two distinct groups, the command
 fails because the same example cannot prove both train exposure and eval
 coverage without leakage.
+
+Use a separate profile for smart-writer pre-read. This prevents normal
+`operator-read` results from hiding writer pre-read failures, and prevents
+writer pre-read rows from blocking a read-profile claim:
+
+```bash
+cargo run -p rehydration-testkit --bin kernel_operator_conformance_trajectory_export -- \
+  --suite writer-pre-read-v1 \
+  --run-id kmp-operator-writer-pre-read-v1-YYYYMMDD \
+  --output <writer-pre-read-conformance-dir> \
+  --force
+
+cargo run -p rehydration-testkit --bin kernel_operator_contract_coverage -- \
+  --profile writer-pre-read \
+  --trajectories <writer-pre-read-conformance-dir>/trajectories.jsonl \
+  --fail-under 100
+
+python scripts/operator/prepare_operator_sft_dataset.py \
+  --trajectories <writer-pre-read-conformance-dir>/trajectories.jsonl \
+  --output <writer-pre-read-sft-dir> \
+  --include-mode write_context_read \
+  --split-mode group \
+  --group-key task_or_step \
+  --eval-ratio 0.5 \
+  --seed 42 \
+  --anonymize-refs \
+  --require-visible-target-refs \
+  --require-visible-target-cursors \
+  --capability-split-profile writer-pre-read \
+  --require-eval-capability-coverage \
+  --require-train-capability-coverage \
+  --force
+```
+
+The `writer-pre-read` profile currently requires bounded `near`, `inspect`, and
+`trace`, ref cursors, current-about dimensions, shrink/expand window policy,
+`inspect.raw=false`, first trace page, writer `last_tool` states, and candidate
+roles for previous answers and same-subtask questions.
 
 For large real benchmark exports, also add model-row quality gates before
 training:
