@@ -70,9 +70,10 @@ fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         "golden-v3" => golden_v3_trajectories(&args.run_id),
         "golden-v4" => golden_v4_trajectories(&args.run_id),
         "read-generalization" => read_generalization_trajectories(&args.run_id),
+        "read-rare-v1" => read_rare_expansion_trajectories(&args.run_id),
         other => {
             return Err(format!(
-                "unknown --suite `{other}`; expected `golden`, `golden-v3`, `golden-v4`, or `read-generalization`"
+                "unknown --suite `{other}`; expected `golden`, `golden-v3`, `golden-v4`, `read-generalization`, or `read-rare-v1`"
             )
             .into());
         }
@@ -130,7 +131,7 @@ fn next_arg(
 }
 
 fn usage() -> String {
-    "usage: kernel_operator_conformance_trajectory_export --output <dir> [--run-id id] [--suite golden|golden-v3|golden-v4|read-generalization] [--force]"
+    "usage: kernel_operator_conformance_trajectory_export --output <dir> [--run-id id] [--suite golden|golden-v3|golden-v4|read-generalization|read-rare-v1] [--force]"
         .to_string()
 }
 
@@ -2199,6 +2200,406 @@ fn read_generalization_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
     items
 }
 
+fn read_rare_expansion_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
+    let mut items = Vec::new();
+    let read_tools = kernel_operator_allowed_read_tools();
+    let scenarios = [
+        ("auth-refresh", "login refresh race", "agent:auth"),
+        ("billing-capture", "payment capture retry", "agent:payments"),
+        ("search-index", "search index lag", "agent:search"),
+        ("deploy-rollback", "deployment rollback", "agent:release"),
+        ("cache-invalidation", "cache invalidation", "agent:platform"),
+        ("quota-enforcement", "quota enforcement", "agent:runtime"),
+        ("webhook-delivery", "webhook delivery", "agent:integrations"),
+        ("report-export", "report export", "agent:data"),
+    ];
+
+    for (index, (slug, topic, agent_dimension)) in scenarios.iter().enumerate() {
+        let about = format!("incident:{slug}");
+        let sibling_about = format!("incident:{slug}:sibling");
+        let current_ref = format!("{about}:question:root-cause");
+        let observation_ref = format!("{about}:observation:primary-signal");
+        let stale_ref = format!("{about}:hypothesis:discarded-cause");
+        let decision_ref = format!("{about}:decision:final-fix");
+        let sibling_ref = format!("{sibling_about}:observation:similar-signal");
+        let time = format!("2026-05-16T11:{:02}:00Z", index + 10);
+        let later_time = format!("2026-05-16T11:{:02}:30Z", index + 10);
+        let sequence = 40 + index;
+        let later_sequence = 80 + index;
+        let refs = vec![
+            current_ref.as_str(),
+            observation_ref.as_str(),
+            stale_ref.as_str(),
+            decision_ref.as_str(),
+            sibling_ref.as_str(),
+        ];
+
+        let wake_step = format!("rare-wake-start-{slug}");
+        push(
+            &mut items,
+            item(
+                run_id,
+                "conformance.read.wake",
+                "read",
+                &about,
+                &wake_step,
+                &format!("Wake the {topic} memory before choosing a bounded read."),
+                json!({
+                    "current_ref": null,
+                    "known_refs": [],
+                    "last_tool": null,
+                    "remaining_budget": budget(5),
+                    "requested_wake": requested_wake(
+                        "resume_process",
+                        json!({ "mode": "all", "scope": "current_about" }),
+                        2200,
+                        2
+                    ),
+                    "operator_state": {
+                        "decision": "wake_current_about",
+                        "scenario": slug
+                    }
+                }),
+                read_tools.clone(),
+                tool_call(
+                    "kernel_wake",
+                    json!({
+                        "about": about,
+                        "role": "operator",
+                        "intent": "resume_process",
+                        "dimensions": { "mode": "all", "scope": "current_about" },
+                        "depth": 2,
+                        "budget": { "tokens": 2200, "depth": 2 }
+                    }),
+                ),
+                json!({ "success": true, "observed_refs": [current_ref, observation_ref] }),
+                json!({ "bounded": true, "contract_expected": true, "rare_expansion": true }),
+            ),
+        );
+
+        for (step_suffix, question, answer_policy, dimensions, tokens) in [
+            (
+                "ask-all-abouts",
+                format!("Does another incident show the same {topic} pattern?"),
+                "evidence_or_unknown",
+                json!({ "mode": "all", "scope": "all_abouts" }),
+                3200,
+            ),
+            (
+                "ask-about-list",
+                format!("Compare this {topic} incident with the sibling incident."),
+                "evidence_or_unknown",
+                json!({ "mode": "all", "scope": "abouts", "abouts": [&about, &sibling_about] }),
+                3000,
+            ),
+            (
+                "ask-only-agent-decision",
+                format!("Which {topic} decision evidence is visible for this agent?"),
+                "show_conflicts",
+                json!({ "mode": "only", "scope": "current_about", "include": [agent_dimension, "decision"] }),
+                2500,
+            ),
+            (
+                "ask-except-discarded",
+                format!("What {topic} evidence remains after discarded attempts are excluded?"),
+                "evidence_or_unknown",
+                json!({ "mode": "except", "scope": "current_about", "exclude": ["attempt:discarded", "scratch"] }),
+                2600,
+            ),
+        ] {
+            let step_id = format!("rare-{step_suffix}-{slug}");
+            push(
+                &mut items,
+                item(
+                    run_id,
+                    "conformance.read.ask",
+                    "read",
+                    &about,
+                    &step_id,
+                    &format!("Ask the requested {topic} question using explicit dimensions."),
+                    json!({
+                        "current_ref": current_ref,
+                        "known_refs": refs,
+                        "last_tool": "kernel_near",
+                        "last_observed_refs": [observation_ref, decision_ref],
+                        "remaining_budget": budget(3),
+                        "requested_ask": requested_ask(
+                            &question,
+                            answer_policy,
+                            dimensions.clone(),
+                            tokens,
+                            2
+                        ),
+                        "operator_state": {
+                            "decision": "ask_for_context",
+                            "scenario": slug
+                        }
+                    }),
+                    read_tools.clone(),
+                    tool_call(
+                        "kernel_ask",
+                        json!({
+                            "about": about,
+                            "answer_policy": answer_policy,
+                            "dimensions": dimensions,
+                            "question": question,
+                            "budget": { "tokens": tokens },
+                            "depth": 2
+                        }),
+                    ),
+                    json!({ "success": true, "observed_refs": [observation_ref, decision_ref, sibling_ref] }),
+                    json!({ "bounded": true, "contract_expected": true, "rare_expansion": true }),
+                ),
+            );
+        }
+
+        for (step_suffix, around, dimensions, limit, window, policy) in [
+            (
+                "near-time-about-list-expand",
+                json!({ "time": time }),
+                json!({ "mode": "all", "scope": "abouts", "abouts": [&about, &sibling_about] }),
+                json!({ "entries": 24, "tokens": 3200 }),
+                json!({ "before_entries": 12, "after_entries": 6 }),
+                "expand_window",
+            ),
+            (
+                "near-sequence-only-shrink",
+                json!({ "sequence": sequence }),
+                json!({ "mode": "only", "scope": "current_about", "include": [agent_dimension, "decision"] }),
+                json!({ "entries": 5, "tokens": 1300 }),
+                json!({ "before_entries": 2, "after_entries": 1 }),
+                "shrink_window",
+            ),
+            (
+                "near-ref-except-shrink",
+                json!({ "ref": observation_ref }),
+                json!({ "mode": "except", "scope": "current_about", "exclude": ["attempt:discarded"] }),
+                json!({ "entries": 6, "tokens": 1500 }),
+                json!({ "before_entries": 3, "after_entries": 1 }),
+                "shrink_window",
+            ),
+        ] {
+            let step_id = format!("rare-{step_suffix}-{slug}");
+            push(
+                &mut items,
+                item(
+                    run_id,
+                    "conformance.read.near",
+                    "read",
+                    &about,
+                    &step_id,
+                    &format!("Read near {topic} memory with the requested cursor and scope."),
+                    json!({
+                        "current_ref": current_ref,
+                        "known_refs": refs,
+                        "last_tool": "kernel_ask",
+                        "last_observed_refs": [observation_ref],
+                        "last_result_count": if policy == "expand_window" { 0 } else { 1 },
+                        "last_result_partial": policy == "expand_window",
+                        "remaining_budget": budget(3),
+                        "requested_move": requested_move("kernel_near", "around", around.clone()),
+                        "requested_scope": dimensions.clone(),
+                        "requested_bounds": requested_bounds(limit.clone(), window.clone()),
+                        "operator_state": {
+                            "decision": policy,
+                            "scenario": slug
+                        }
+                    }),
+                    read_tools.clone(),
+                    temporal_call_for_about(
+                        &about,
+                        "kernel_near",
+                        "around",
+                        around,
+                        dimensions,
+                        limit,
+                        window,
+                    ),
+                    json!({ "success": true, "observed_refs": [observation_ref, decision_ref] }),
+                    json!({ "bounded": true, "contract_expected": true, "rare_expansion": true, "policy": policy }),
+                ),
+            );
+        }
+
+        for (tool, cursor_key, cursor, step_suffix, limit, window) in [
+            (
+                "kernel_goto",
+                "at",
+                json!({ "sequence": later_sequence }),
+                "goto-sequence",
+                json!({ "entries": 10, "tokens": 2200 }),
+                json!({ "before_entries": 4, "after_entries": 2 }),
+            ),
+            (
+                "kernel_rewind",
+                "from",
+                json!({ "time": later_time }),
+                "rewind-time",
+                json!({ "entries": 14, "tokens": 2400 }),
+                json!({ "before_entries": 8, "after_entries": 0 }),
+            ),
+            (
+                "kernel_forward",
+                "from",
+                json!({ "ref": stale_ref }),
+                "forward-ref",
+                json!({ "entries": 14, "tokens": 2400 }),
+                json!({ "before_entries": 0, "after_entries": 8 }),
+            ),
+        ] {
+            let step_id = format!("rare-{step_suffix}-{slug}");
+            push(
+                &mut items,
+                item(
+                    run_id,
+                    "conformance.read.temporal",
+                    "read",
+                    &about,
+                    &step_id,
+                    &format!("Move through {topic} memory using the requested temporal tool."),
+                    json!({
+                        "current_ref": decision_ref,
+                        "known_refs": refs,
+                        "last_tool": "kernel_trace",
+                        "last_observed_refs": [observation_ref, decision_ref],
+                        "remaining_budget": budget(3),
+                        "requested_move": requested_move(tool, cursor_key, cursor.clone()),
+                        "requested_scope": json!({ "mode": "all", "scope": "current_about" }),
+                        "requested_bounds": requested_bounds(limit.clone(), window.clone()),
+                        "operator_state": {
+                            "decision": tool,
+                            "cursor_key": cursor_key,
+                            "scenario": slug
+                        }
+                    }),
+                    read_tools.clone(),
+                    temporal_call_for_about(
+                        &about,
+                        tool,
+                        cursor_key,
+                        cursor,
+                        json!({ "mode": "all", "scope": "current_about" }),
+                        limit,
+                        window,
+                    ),
+                    json!({ "success": true, "observed_refs": [observation_ref, decision_ref] }),
+                    json!({ "bounded": true, "contract_expected": true, "rare_expansion": true }),
+                ),
+            );
+        }
+
+        let trace_goal = format!("Trace how the {topic} final fix replaced the discarded cause.");
+        let trace_first_step = format!("rare-trace-first-{slug}");
+        push(
+            &mut items,
+            item(
+                run_id,
+                "conformance.read.trace",
+                "read",
+                &about,
+                &trace_first_step,
+                &trace_goal,
+                json!({
+                    "current_ref": observation_ref,
+                    "trace_target_ref": decision_ref,
+                    "known_refs": [observation_ref, stale_ref, decision_ref],
+                    "last_tool": "kernel_forward",
+                    "last_observed_refs": [decision_ref],
+                    "last_result_page": null,
+                    "remaining_budget": budget(2),
+                    "requested_trace": requested_trace(
+                        &observation_ref,
+                        &decision_ref,
+                        &trace_goal,
+                        json!({ "entries": 14 })
+                    ),
+                    "operator_state": {
+                        "decision": "trace_first_page",
+                        "scenario": slug
+                    }
+                }),
+                read_tools.clone(),
+                tool_call(
+                    "kernel_trace",
+                    json!({
+                        "from": observation_ref,
+                        "to": decision_ref,
+                        "goal": trace_goal,
+                        "role": "operator",
+                        "budget": { "depth": 2, "tokens": 2400 },
+                        "page": { "entries": 14 }
+                    }),
+                ),
+                json!({
+                    "success": true,
+                    "observed_refs": [observation_ref, stale_ref],
+                    "page": { "entries": 14, "has_more": true, "next_cursor": format!("{slug}:trace:page:2") }
+                }),
+                json!({ "bounded": true, "contract_expected": true, "rare_expansion": true, "policy": "trace_first_page" }),
+            ),
+        );
+
+        let trace_continue_goal = format!("Continue the {topic} trace with the returned cursor.");
+        let trace_continue_step = format!("rare-trace-continue-{slug}");
+        let trace_cursor = format!("{slug}:trace:page:2");
+        push(
+            &mut items,
+            item(
+                run_id,
+                "conformance.read.trace",
+                "read",
+                &about,
+                &trace_continue_step,
+                &trace_continue_goal,
+                json!({
+                    "current_ref": observation_ref,
+                    "trace_target_ref": decision_ref,
+                    "known_refs": [observation_ref, stale_ref, decision_ref],
+                    "last_tool": "kernel_trace",
+                    "last_observed_refs": [observation_ref, stale_ref],
+                    "last_result_page": {
+                        "entries": 14,
+                        "has_more": true,
+                        "next_cursor": trace_cursor
+                    },
+                    "last_result_partial": true,
+                    "remaining_budget": budget(2),
+                    "requested_trace": requested_trace(
+                        &observation_ref,
+                        &decision_ref,
+                        &trace_continue_goal,
+                        json!({ "entries": 14, "cursor": trace_cursor })
+                    ),
+                    "operator_state": {
+                        "decision": "continue_page",
+                        "scenario": slug
+                    }
+                }),
+                read_tools.clone(),
+                tool_call(
+                    "kernel_trace",
+                    json!({
+                        "from": observation_ref,
+                        "to": decision_ref,
+                        "goal": trace_continue_goal,
+                        "role": "operator",
+                        "budget": { "depth": 2, "tokens": 2400 },
+                        "page": { "entries": 14, "cursor": trace_cursor }
+                    }),
+                ),
+                json!({
+                    "success": true,
+                    "observed_refs": [observation_ref, stale_ref, decision_ref],
+                    "page": { "entries": 14, "has_more": false }
+                }),
+                json!({ "bounded": true, "contract_expected": true, "rare_expansion": true, "policy": "continue_page" }),
+            ),
+        );
+    }
+
+    items
+}
+
 fn push_training_corpus_variants(
     items: &mut Vec<TrajectoryItem>,
     run_id: &str,
@@ -3881,6 +4282,60 @@ mod tests {
         assert!(trajectories.iter().any(|trajectory| {
             trajectory.target_action.get("type").and_then(Value::as_str) == Some("stop")
         }));
+    }
+
+    #[test]
+    fn generated_read_rare_expansion_trajectories_are_contract_valid_and_unique() {
+        let trajectories = read_rare_expansion_trajectories("kmp-operator-rare-read-test");
+        validate_trajectories(&trajectories).expect("valid rare read trajectories");
+
+        let step_ids = trajectories
+            .iter()
+            .map(|trajectory| trajectory.step_id.as_str())
+            .collect::<BTreeSet<_>>();
+        assert_eq!(step_ids.len(), trajectories.len());
+        assert!(
+            trajectories
+                .iter()
+                .all(|trajectory| trajectory.mode == "read")
+        );
+        assert!(
+            trajectories
+                .iter()
+                .filter(|trajectory| {
+                    trajectory.target_action.get("tool").and_then(Value::as_str)
+                        == Some("kernel_wake")
+                })
+                .count()
+                >= 8
+        );
+        assert!(
+            trajectories
+                .iter()
+                .filter(|trajectory| {
+                    trajectory
+                        .target_action
+                        .pointer("/arguments/dimensions/scope")
+                        .and_then(Value::as_str)
+                        == Some("all_abouts")
+                })
+                .count()
+                >= 8
+        );
+        assert!(
+            trajectories
+                .iter()
+                .filter(|trajectory| {
+                    trajectory.target_action.get("tool").and_then(Value::as_str)
+                        == Some("kernel_trace")
+                        && trajectory
+                            .target_action
+                            .pointer("/arguments/page/cursor")
+                            .is_some()
+                })
+                .count()
+                >= 8
+        );
     }
 
     #[test]

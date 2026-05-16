@@ -307,6 +307,44 @@ a required capability appears in fewer than two distinct groups, the command
 fails because the same example cannot prove both train exposure and eval
 coverage without leakage.
 
+For large real benchmark exports, also add model-row quality gates before
+training:
+
+```bash
+python scripts/operator/prepare_operator_sft_dataset.py \
+  --trajectories <real-benchmark-trajectories.jsonl> \
+  --trajectories <conformance-trajectories.jsonl> \
+  --output <operator-read-quality-sft-dir> \
+  --include-mode read \
+  --include-mode write_context_read \
+  --split-mode group \
+  --group-key task_or_step \
+  --eval-ratio 0.1 \
+  --seed 42 \
+  --anonymize-refs \
+  --require-visible-target-refs \
+  --require-visible-target-cursors \
+  --capability-split-profile read \
+  --require-eval-capability-coverage \
+  --require-train-capability-coverage \
+  --min-train-capability-count 5 \
+  --min-eval-capability-count 3 \
+  --max-duplicate-model-row-count 1 \
+  --drop-eval-model-row-overlap \
+  --force
+```
+
+`--max-duplicate-model-row-count` caps exact duplicate model-facing SFT rows
+after prompt construction. `--drop-eval-model-row-overlap` removes eval rows
+whose exact model-facing row also appears in train, then rechecks capability
+coverage on the final split. Use these gates when anonymization collapses many
+real trajectories into the same prompt/answer template.
+
+`--min-train-capability-count` and `--min-eval-capability-count` prevent a false
+green dataset where a required API/MCP capability appears only once. For current
+`operator-read` release-candidate cuts, use at least 5 train and 3 eval examples
+per required capability.
+
 Strict ref-safe split for the current real operator run:
 
 ```bash
