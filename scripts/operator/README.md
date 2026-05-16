@@ -560,6 +560,11 @@ The Kubernetes prediction job may create `/tmp/kernel-operator-qwen05-prediction
 as `nobody`. In that case, write `policy-eval.json` to a sibling path as shown
 above.
 
+The policy evaluator reports both global metrics and `by_mode_eval`. Treat the
+mode-specific breakdown as the release gate. For example, `read` can pass while
+`write_context_read` remains diagnostic; do not promote a mixed global score if
+one mode is hiding another mode's failures.
+
 Use policy details to compare whether a new dataset or model actually improves
 the same frozen probe set:
 
