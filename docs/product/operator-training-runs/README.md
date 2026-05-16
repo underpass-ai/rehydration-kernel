@@ -29,6 +29,7 @@ as the source template.
 | `v2-golden-eval-passed` | A second golden cut passed strict prediction and policy evaluation; still requires generalization tests before promotion. |
 | `v4-golden-plus-holdout-passed` | A contrastive golden cut passed both fixed golden eval and independent read-generalization holdout; still requires real KMP/MCP replay before promotion. |
 | `v5-real-requested-replay-passed` | The golden read contract plus a real requested benchmark slice passed strict eval, raw de-anonymization, and live KMP/MCP replay against the deployed kernel. |
+| `read-profile-passed` | The read profile passed strict offline eval and live read replay; adjacent modes such as writer pre-read may still be diagnostic. |
 | `running` | Training/eval is active. |
 | `paused` | Execution stopped temporarily and may resume. |
 | `failed` | The run produced a negative result or hit a blocker. |
@@ -46,3 +47,4 @@ Add rows here as attempts are opened.
 | --- | --- | --- | --- |
 | [2026-05-14-next-operator-training-draft.md](2026-05-14-next-operator-training-draft.md) | internal-only | `operator-read` mixed MemoryArena + conformance | Strong MemoryArena result, but conformance rare API/MCP rows failed; not a public candidate. |
 | [2026-05-15-opread-golden-v1.md](2026-05-15-opread-golden-v1.md) | v5-real-requested-replay-passed | `operator-read` golden conformance + real requested P111 replay | V1/V3 were diagnostic; V4 passed golden and holdout; V5 mixed golden v4 with 200 requested P111 rows, reached 55/55 exact offline eval, 43/43 raw P111 exact eval, and 32/32 successful live KMP/MCP tool calls with zero missing expected refs. |
+| [2026-05-16-p111-scale-gate.md](2026-05-16-p111-scale-gate.md) | read-profile-passed | MemoryArena P1.11 221-task scale gate + rare read conformance | V3 baseline was not promotable. `read-rare-v1` reached 673/673 strict predictions, 665/665 exact `read` actions, 0 invalid, 0 missing, 0 unbounded, 3/3 trace continuation, and live MCP replay over all 633 real MemoryArena eval read rows with 469/469 successful tool calls. `write_context_read` remains diagnostic at 4/8 exact. |

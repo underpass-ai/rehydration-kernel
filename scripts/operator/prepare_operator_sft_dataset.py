@@ -14,6 +14,7 @@ expected action wrapper consumed by the policy evaluator.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import shutil
 from pathlib import Path
@@ -213,6 +214,28 @@ def parse_args() -> argparse.Namespace:
             "from --capability-split-profile."
         ),
     )
+    parser.add_argument(
+        "--min-train-capability-count",
+        type=int,
+        default=0,
+        help=(
+            "Fail fast unless every required capability from "
+            "--capability-split-profile appears at least this many times in "
+            "the train split. Also influences capability-aware eval group "
+            "selection so train examples are preserved."
+        ),
+    )
+    parser.add_argument(
+        "--min-eval-capability-count",
+        type=int,
+        default=0,
+        help=(
+            "Fail fast unless every required capability from "
+            "--capability-split-profile appears at least this many times in "
+            "the eval split. Capability-aware splitting will keep selecting "
+            "eval groups until this count is reached when possible."
+        ),
+    )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--max-refs", type=int, default=32)
     parser.add_argument(
@@ -246,6 +269,25 @@ def parse_args() -> argparse.Namespace:
             "decision claims."
         ),
     )
+    parser.add_argument(
+        "--max-duplicate-model-row-count",
+        type=int,
+        default=None,
+        help=(
+            "Cap exact duplicate model-facing rows after prompt construction and "
+            "before splitting. Duplicates are keyed by the canonical SFT messages "
+            "payload, not by step_id. Rows beyond the cap are dropped and audited."
+        ),
+    )
+    parser.add_argument(
+        "--drop-eval-model-row-overlap",
+        action="store_true",
+        help=(
+            "After splitting, drop eval rows whose exact model-facing messages "
+            "also appear in train. Capability requirements are rechecked on the "
+            "final split."
+        ),
+    )
     parser.add_argument("--force", action="store_true")
     return parser.parse_args()
 
@@ -257,12 +299,23 @@ def main() -> None:
     if (
         args.require_eval_capability_coverage
         or args.require_train_capability_coverage
+        or args.min_train_capability_count > 0
+        or args.min_eval_capability_count > 0
     ) and not args.capability_split_profile:
         raise SystemExit(
             "capability coverage requirements need --capability-split-profile"
         )
     if args.capability_split_profile and args.split_mode != "group":
         raise SystemExit("--capability-split-profile requires --split-mode=group")
+    if (
+        args.max_duplicate_model_row_count is not None
+        and args.max_duplicate_model_row_count < 1
+    ):
+        raise SystemExit("--max-duplicate-model-row-count must be >= 1")
+    if args.min_train_capability_count < 0:
+        raise SystemExit("--min-train-capability-count must be >= 0")
+    if args.min_eval_capability_count < 0:
+        raise SystemExit("--min-eval-capability-count must be >= 0")
     if args.output.exists():
         if not args.force:
             raise SystemExit(f"output already exists: {args.output}; pass --force")
@@ -287,6 +340,7 @@ def main() -> None:
         for item in selected
     }
 
+    selected_after_mode_filters = len(selected)
     dropped_rows: list[dict[str, Any]] = []
     if args.require_visible_target_refs:
         visible_selected = []
@@ -341,8 +395,51 @@ def main() -> None:
         selected = cursor_visible_selected
         validate_unique_step_ids(selected, "cursor visible selected trajectories")
 
+    selected_after_visibility_filters = len(selected)
     pairs = [build_pair(item, args.max_refs, args.anonymize_refs) for item in selected]
+    quality_summary: dict[str, Any] = {
+        "selected_after_mode_filters": selected_after_mode_filters,
+        "selected_after_visibility_filters": selected_after_visibility_filters,
+        "max_duplicate_model_row_count": args.max_duplicate_model_row_count,
+        "drop_eval_model_row_overlap": args.drop_eval_model_row_overlap,
+        "model_row_quality_before_filters": duplicate_model_row_summary(pairs),
+    }
+    dropped_duplicate_model_rows: list[dict[str, Any]] = []
+    if args.max_duplicate_model_row_count is not None:
+        pairs, dropped_duplicate_model_rows, duplicate_cap_summary = (
+            cap_duplicate_model_rows(
+                pairs,
+                args.max_duplicate_model_row_count,
+                debug_audit,
+            )
+        )
+        quality_summary.update(duplicate_cap_summary)
+    else:
+        quality_summary["dropped_duplicate_model_rows"] = 0
+    quality_summary["model_row_quality_after_duplicate_cap"] = (
+        duplicate_model_row_summary(pairs)
+    )
     train_pairs, eval_pairs, split_summary = split_pairs(pairs, args)
+    dropped_eval_model_row_overlap: list[dict[str, Any]] = []
+    if args.drop_eval_model_row_overlap:
+        train_pairs, eval_pairs, dropped_eval_model_row_overlap, overlap_summary = (
+            drop_eval_model_row_overlap(train_pairs, eval_pairs, debug_audit)
+        )
+        quality_summary.update(overlap_summary)
+        split_summary = refresh_split_summary_after_quality_filters(
+            split_summary,
+            train_pairs,
+            eval_pairs,
+            args,
+        )
+    else:
+        quality_summary["eval_model_row_overlap_hashes_before_drop"] = (
+            train_eval_model_row_overlap_hashes(train_pairs, eval_pairs)
+        )
+        quality_summary["dropped_eval_model_row_overlap"] = 0
+    quality_summary["model_row_quality_final"] = duplicate_model_row_summary(
+        train_pairs + eval_pairs
+    )
     eval_rows = [pair[0] for pair in eval_pairs]
     train_rows = [pair[0] for pair in train_pairs]
     ordered_pairs = train_pairs + eval_pairs
@@ -375,6 +472,14 @@ def main() -> None:
         args.output / "dropped_non_visible_target_cursors.jsonl",
         dropped_cursor_rows,
     )
+    write_jsonl(
+        args.output / "dropped_duplicate_model_rows.jsonl",
+        dropped_duplicate_model_rows,
+    )
+    write_jsonl(
+        args.output / "dropped_eval_model_row_overlap.jsonl",
+        dropped_eval_model_row_overlap,
+    )
     write_jsonl(args.output / "debug_audit.jsonl", debug_audit_rows)
     write_openai_jsonl(args.output / "openai_train.jsonl", train_rows)
     write_openai_jsonl(args.output / "openai_eval.jsonl", eval_rows)
@@ -384,7 +489,8 @@ def main() -> None:
         "source": [str(path) for path in args.trajectories],
         "output": str(args.output),
         "total_source": len(source_trajectories),
-        "selected": len(selected),
+        "selected_before_quality_filters": selected_after_visibility_filters,
+        "selected": len(rows),
         "train": len(train_rows),
         "eval": len(eval_rows),
         "openai_train": str(args.output / "openai_train.jsonl"),
@@ -398,8 +504,11 @@ def main() -> None:
         "require_visible_target_refs": args.require_visible_target_refs,
         "require_visible_target_cursors": args.require_visible_target_cursors,
         "inject_target_request_fields": args.inject_target_request_fields,
+        "min_train_capability_count": args.min_train_capability_count,
+        "min_eval_capability_count": args.min_eval_capability_count,
         "dropped_non_visible_target_refs": len(dropped_rows),
         "dropped_non_visible_target_cursors": len(dropped_cursor_rows),
+        "quality_filters": quality_summary,
         "model_trajectories": {
             "train": str(args.output / "train_model_trajectories.jsonl"),
             "eval": str(args.output / "eval_model_trajectories.jsonl"),
@@ -433,6 +542,141 @@ def read_jsonl(path: Path) -> list[dict[str, Any]]:
                 raise ValueError(f"{path}:{line_no} missing target_action")
             rows.append(value)
     return rows
+
+
+def model_row_hash(row: dict[str, Any]) -> str:
+    payload = json.dumps(
+        row["messages"],
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def duplicate_model_row_summary(
+    pairs: list[tuple[dict[str, Any], dict[str, Any], dict[str, Any]]],
+) -> dict[str, Any]:
+    counts: dict[str, int] = {}
+    for pair in pairs:
+        digest = model_row_hash(pair[0])
+        counts[digest] = counts.get(digest, 0) + 1
+    duplicate_counts = [count for count in counts.values() if count > 1]
+    return {
+        "rows": len(pairs),
+        "unique_model_rows": len(counts),
+        "duplicate_model_row_hashes": len(duplicate_counts),
+        "duplicate_model_row_extra_rows": sum(count - 1 for count in duplicate_counts),
+        "max_duplicate_model_row_count_observed": max(counts.values(), default=0),
+    }
+
+
+def cap_duplicate_model_rows(
+    pairs: list[tuple[dict[str, Any], dict[str, Any], dict[str, Any]]],
+    max_count: int,
+    debug_audit: dict[str, dict[str, Any]],
+) -> tuple[
+    list[tuple[dict[str, Any], dict[str, Any], dict[str, Any]]],
+    list[dict[str, Any]],
+    dict[str, Any],
+]:
+    kept: list[tuple[dict[str, Any], dict[str, Any], dict[str, Any]]] = []
+    dropped: list[dict[str, Any]] = []
+    seen_counts: dict[str, int] = {}
+    dropped_hashes: set[str] = set()
+
+    for pair in pairs:
+        row, trajectory, _ = pair
+        digest = model_row_hash(row)
+        duplicate_index = seen_counts.get(digest, 0) + 1
+        seen_counts[digest] = duplicate_index
+        if duplicate_index <= max_count:
+            kept.append(pair)
+            continue
+
+        dropped_hashes.add(digest)
+        details = {
+            "model_row_hash": digest,
+            "duplicate_index": duplicate_index,
+            "max_duplicate_model_row_count": max_count,
+        }
+        mark_debug_drop(debug_audit, trajectory, "duplicate_model_row_cap", details)
+        dropped.append(
+            {
+                "step_id": trajectory.get("step_id"),
+                "run_id": trajectory.get("run_id"),
+                "mode": trajectory.get("mode"),
+                "tool": trajectory.get("target_action", {}).get("tool"),
+                "action_type": trajectory.get("target_action", {}).get("type"),
+                **details,
+            }
+        )
+
+    return kept, dropped, {
+        "dropped_duplicate_model_rows": len(dropped),
+        "duplicate_model_row_hashes_capped": len(dropped_hashes),
+    }
+
+
+def train_eval_model_row_overlap_hashes(
+    train_pairs: list[tuple[dict[str, Any], dict[str, Any], dict[str, Any]]],
+    eval_pairs: list[tuple[dict[str, Any], dict[str, Any], dict[str, Any]]],
+) -> int:
+    train_hashes = {model_row_hash(pair[0]) for pair in train_pairs}
+    eval_hashes = {model_row_hash(pair[0]) for pair in eval_pairs}
+    return len(train_hashes & eval_hashes)
+
+
+def drop_eval_model_row_overlap(
+    train_pairs: list[tuple[dict[str, Any], dict[str, Any], dict[str, Any]]],
+    eval_pairs: list[tuple[dict[str, Any], dict[str, Any], dict[str, Any]]],
+    debug_audit: dict[str, dict[str, Any]],
+) -> tuple[
+    list[tuple[dict[str, Any], dict[str, Any], dict[str, Any]]],
+    list[tuple[dict[str, Any], dict[str, Any], dict[str, Any]]],
+    list[dict[str, Any]],
+    dict[str, Any],
+]:
+    train_hashes = {model_row_hash(pair[0]) for pair in train_pairs}
+    kept_eval: list[tuple[dict[str, Any], dict[str, Any], dict[str, Any]]] = []
+    dropped: list[dict[str, Any]] = []
+    overlap_hashes: set[str] = set()
+
+    for pair in eval_pairs:
+        row, trajectory, _ = pair
+        digest = model_row_hash(row)
+        if digest not in train_hashes:
+            kept_eval.append(pair)
+            continue
+
+        overlap_hashes.add(digest)
+        details = {"model_row_hash": digest}
+        mark_debug_drop(
+            debug_audit,
+            trajectory,
+            "eval_model_row_overlap_with_train",
+            details,
+        )
+        dropped.append(
+            {
+                "step_id": trajectory.get("step_id"),
+                "run_id": trajectory.get("run_id"),
+                "mode": trajectory.get("mode"),
+                "tool": trajectory.get("target_action", {}).get("tool"),
+                "action_type": trajectory.get("target_action", {}).get("type"),
+                **details,
+            }
+        )
+
+    if not kept_eval and eval_pairs:
+        raise ValueError(
+            "--drop-eval-model-row-overlap removed every eval row; "
+            "choose a different split or relax duplicate caps"
+        )
+    return train_pairs, kept_eval, dropped, {
+        "eval_model_row_overlap_hashes_before_drop": len(overlap_hashes),
+        "dropped_eval_model_row_overlap": len(dropped),
+    }
 
 
 def filter_by_mode(
@@ -555,12 +799,15 @@ def split_pairs(
         target_eval_rows = max(1, target_eval_rows)
 
     if required_capabilities:
+        min_train_count = minimum_train_capability_count(args)
+        min_eval_count = minimum_eval_capability_count(args)
         eval_group_ids = capability_eval_group_ids(
             groups,
             ordered_group_ids,
             required_capabilities,
             target_eval_rows,
-            args.require_train_capability_coverage,
+            min_train_count,
+            min_eval_count,
             group_capability_counts_by_group,
             total_capability_counts,
         )
@@ -579,14 +826,15 @@ def split_pairs(
             continue
         if (
             required_capabilities
-            and args.require_train_capability_coverage
-            and not train_covers_after_eval_counts(
+            and min_train_count > 0
+            and not train_meets_min_after_eval_counts(
                 total_capability_counts,
                 merged_capability_counts(
                     eval_capability_counts,
                     group_capability_counts_by_group[group_id],
                 ),
                 required_capabilities,
+                min_train_count,
             )
         ):
             continue
@@ -646,6 +894,18 @@ def profile_required_capabilities(profile: str | None) -> tuple[str, ...]:
     return ()
 
 
+def minimum_train_capability_count(args: argparse.Namespace) -> int:
+    if args.min_train_capability_count > 0:
+        return args.min_train_capability_count
+    return 1 if args.require_train_capability_coverage else 0
+
+
+def minimum_eval_capability_count(args: argparse.Namespace) -> int:
+    if args.min_eval_capability_count > 0:
+        return args.min_eval_capability_count
+    return 1 if args.require_eval_capability_coverage else 0
+
+
 def validate_capability_group_counts(
     groups: dict[str, list[tuple[dict[str, Any], dict[str, Any], dict[str, Any]]]],
     required_capabilities: tuple[str, ...],
@@ -681,6 +941,27 @@ def validate_capability_group_counts(
                 "capability to appear in at least two distinct groups; "
                 f"undersupplied: {details}"
             )
+    min_train_count = minimum_train_capability_count(args)
+    min_eval_count = minimum_eval_capability_count(args)
+    required_split_count = min_train_count + min_eval_count
+    if required_split_count > 0:
+        row_counts = observed_capability_counts(
+            [pair for pairs in groups.values() for pair in pairs]
+        )
+        undersupplied = [
+            capability
+            for capability in required_capabilities
+            if row_counts.get(capability, 0) < required_split_count
+        ]
+        if undersupplied:
+            details = ", ".join(
+                f"{capability}({row_counts.get(capability, 0)} row)"
+                for capability in undersupplied
+            )
+            raise ValueError(
+                "capability minimums require enough rows for train and eval; "
+                f"undersupplied: {details}"
+            )
 
 
 def capability_group_counts(
@@ -701,7 +982,8 @@ def capability_eval_group_ids(
     ordered_group_ids: list[str],
     required_capabilities: tuple[str, ...],
     target_eval_rows: int,
-    preserve_train_coverage: bool,
+    min_train_count: int,
+    min_eval_count: int,
     group_capability_counts_by_group: dict[str, dict[str, int]],
     total_capability_counts: dict[str, int],
 ) -> list[str]:
@@ -712,13 +994,21 @@ def capability_eval_group_ids(
     }
     selected: list[str] = []
     selected_set: set[str] = set()
-    covered: set[str] = set()
     order_index = {group_id: index for index, group_id in enumerate(ordered_group_ids)}
     eval_capability_counts: dict[str, int] = {}
+    target_eval_count = max(1, min_eval_count)
 
-    while covered != required:
+    while not capability_counts_meet_min(
+        eval_capability_counts,
+        required_capabilities,
+        target_eval_count,
+    ):
         candidates = []
-        missing = required - covered
+        missing = {
+            capability
+            for capability in required_capabilities
+            if eval_capability_counts.get(capability, 0) < target_eval_count
+        }
         for group_id in ordered_group_ids:
             if group_id in selected_set:
                 continue
@@ -726,15 +1016,29 @@ def capability_eval_group_ids(
                 eval_capability_counts,
                 group_capability_counts_by_group[group_id],
             )
-            if preserve_train_coverage and not train_covers_after_eval_counts(
-                total_capability_counts, candidate_eval_counts, required_capabilities
+            if min_train_count > 0 and not train_meets_min_after_eval_counts(
+                total_capability_counts,
+                candidate_eval_counts,
+                required_capabilities,
+                min_train_count,
             ):
                 continue
-            gained = group_capabilities[group_id] & missing
-            if gained:
+            gained_score = 0
+            gained_capabilities = set()
+            for capability in group_capabilities[group_id] & missing:
+                gap = target_eval_count - eval_capability_counts.get(capability, 0)
+                gained = min(
+                    group_capability_counts_by_group[group_id].get(capability, 0),
+                    gap,
+                )
+                if gained > 0:
+                    gained_score += gained
+                    gained_capabilities.add(capability)
+            if gained_score > 0:
                 candidates.append(
                     (
-                        -len(gained),
+                        -gained_score,
+                        -len(gained_capabilities),
                         len(groups[group_id]),
                         order_index[group_id],
                         group_id,
@@ -742,13 +1046,12 @@ def capability_eval_group_ids(
                 )
         if not candidates:
             break
-        _, _, _, selected_group = sorted(candidates)[0]
+        _, _, _, _, selected_group = sorted(candidates)[0]
         selected.append(selected_group)
         selected_set.add(selected_group)
         add_capability_counts(
             eval_capability_counts, group_capability_counts_by_group[selected_group]
         )
-        covered.update(group_capabilities[selected_group])
 
     # Keep capability coverage mandatory, then let --eval-ratio fill extra groups.
     # This intentionally allows eval to exceed the ratio when rare contract
@@ -801,10 +1104,35 @@ def train_covers_after_eval_counts(
     eval_capability_counts: dict[str, int],
     required_capabilities: tuple[str, ...],
 ) -> bool:
+    return train_meets_min_after_eval_counts(
+        total_capability_counts,
+        eval_capability_counts,
+        required_capabilities,
+        1,
+    )
+
+
+def train_meets_min_after_eval_counts(
+    total_capability_counts: dict[str, int],
+    eval_capability_counts: dict[str, int],
+    required_capabilities: tuple[str, ...],
+    min_count: int,
+) -> bool:
     return all(
         total_capability_counts.get(capability, 0)
         - eval_capability_counts.get(capability, 0)
-        > 0
+        >= min_count
+        for capability in required_capabilities
+    )
+
+
+def capability_counts_meet_min(
+    counts: dict[str, int],
+    required_capabilities: tuple[str, ...],
+    min_count: int,
+) -> bool:
+    return all(
+        counts.get(capability, 0) >= min_count
         for capability in required_capabilities
     )
 
@@ -848,6 +1176,53 @@ def finalize_group_split(
         )
         enforce_capability_requirements(summary, args)
     return train_pairs, eval_pairs, summary
+
+
+def refresh_split_summary_after_quality_filters(
+    summary: dict[str, Any],
+    train_pairs: list[tuple[dict[str, Any], dict[str, Any], dict[str, Any]]],
+    eval_pairs: list[tuple[dict[str, Any], dict[str, Any], dict[str, Any]]],
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    if not train_pairs:
+        raise ValueError("quality filters produced an empty train split")
+    if not eval_pairs:
+        raise ValueError("quality filters produced an empty eval split")
+
+    refreshed = dict(summary)
+    refreshed["train_after_quality_filters"] = len(train_pairs)
+    refreshed["eval_after_quality_filters"] = len(eval_pairs)
+    if args.split_mode == "group":
+        train_groups = sorted({group_value(pair[1], args.group_key) for pair in train_pairs})
+        eval_groups = sorted({group_value(pair[1], args.group_key) for pair in eval_pairs})
+        refreshed["train_groups_after_quality_filters"] = len(train_groups)
+        refreshed["eval_groups_after_quality_filters"] = len(eval_groups)
+        refreshed["eval_group_values_after_quality_filters"] = eval_groups
+
+    required_capabilities = profile_required_capabilities(args.capability_split_profile)
+    if required_capabilities:
+        refreshed["capability_split_profile"] = args.capability_split_profile
+        refreshed["all_capability_coverage"] = capability_coverage_summary(
+            required_capabilities, train_pairs + eval_pairs
+        )
+        refreshed["train_capability_coverage"] = capability_coverage_summary(
+            required_capabilities, train_pairs
+        )
+        refreshed["eval_capability_coverage"] = capability_coverage_summary(
+            required_capabilities, eval_pairs
+        )
+        if args.split_mode == "group":
+            final_groups: dict[
+                str,
+                list[tuple[dict[str, Any], dict[str, Any], dict[str, Any]]],
+            ] = {}
+            for pair in train_pairs + eval_pairs:
+                final_groups.setdefault(group_value(pair[1], args.group_key), []).append(pair)
+            refreshed["capability_group_counts_after_quality_filters"] = (
+                capability_group_counts(final_groups, required_capabilities)
+            )
+        enforce_capability_requirements(refreshed, args)
+    return refreshed
 
 
 def capability_coverage_summary(
@@ -900,6 +1275,56 @@ def enforce_capability_requirements(summary: dict[str, Any], args: argparse.Name
                 f"{args.capability_split_profile}: "
                 + ", ".join(eval_missing)
             )
+    enforce_min_capability_count(
+        summary,
+        "train_capability_coverage",
+        args.min_train_capability_count,
+        "train",
+        profile_required_capabilities(args.capability_split_profile),
+    )
+    enforce_min_capability_count(
+        summary,
+        "eval_capability_coverage",
+        args.min_eval_capability_count,
+        "eval",
+        profile_required_capabilities(args.capability_split_profile),
+    )
+
+
+def enforce_min_capability_count(
+    summary: dict[str, Any],
+    coverage_key: str,
+    min_count: int,
+    split_name: str,
+    required_capabilities: tuple[str, ...],
+) -> None:
+    if min_count <= 0:
+        return
+    coverage = summary.get(coverage_key)
+    if not isinstance(coverage, dict):
+        return
+    counts = coverage.get("observed_required_counts", {})
+    if not isinstance(counts, dict):
+        counts = {}
+    missing = [
+        capability
+        for capability in coverage.get("missing", [])
+        if isinstance(capability, str)
+    ]
+    undersupplied = [
+        capability
+        for capability in required_capabilities
+        if counts.get(capability, 0) < min_count
+    ]
+    if not undersupplied and not missing:
+        return
+    details = ", ".join(
+        f"{capability}({counts.get(capability, 0)})"
+        for capability in sorted(set(undersupplied + missing))
+    )
+    raise ValueError(
+        f"{split_name} split capability counts below minimum {min_count}: {details}"
+    )
 
 
 def observed_capability_counts(

@@ -53,6 +53,7 @@ struct EvalSummary {
     predictor: String,
     total: usize,
     by_mode: BTreeMap<String, usize>,
+    by_mode_eval: BTreeMap<String, EvalBreakdown>,
     by_task_family: BTreeMap<String, usize>,
     target_actions: BTreeMap<String, usize>,
     predicted_actions: BTreeMap<String, usize>,
@@ -78,6 +79,13 @@ struct EvalDetail {
     prediction_status: &'static str,
     invalid_reason: Option<String>,
     score: ActionScore,
+}
+
+#[derive(Debug, Serialize)]
+struct EvalBreakdown {
+    total: usize,
+    counts: EvalCounts,
+    rates: EvalRates,
 }
 
 #[derive(Debug, Default, Serialize)]
@@ -341,6 +349,7 @@ fn evaluate_internal(
 ) -> Result<EvalResult, Box<dyn Error + Send + Sync>> {
     let mut counts = EvalCounts::default();
     let mut by_mode = BTreeMap::<String, usize>::new();
+    let mut by_mode_counts = BTreeMap::<String, EvalCounts>::new();
     let mut by_task_family = BTreeMap::<String, usize>::new();
     let mut target_actions = BTreeMap::<String, usize>::new();
     let mut predicted_actions = BTreeMap::<String, usize>::new();
@@ -348,23 +357,27 @@ fn evaluate_internal(
     let mut details = Vec::<EvalDetail>::new();
 
     for trajectory in trajectories {
-        *by_mode.entry(trajectory.mode.clone()).or_default() += 1;
+        let mode_key = trajectory.mode.clone();
+        *by_mode.entry(mode_key.clone()).or_default() += 1;
         *by_task_family
             .entry(trajectory.task_family.clone())
             .or_default() += 1;
         *target_actions
             .entry(action_label(&trajectory.target_action))
             .or_default() += 1;
-        match action_type(&trajectory.target_action) {
-            Some("tool_call") => counts.target_tool_calls += 1,
-            Some("stop") => counts.target_stop_actions += 1,
-            _ => {}
-        }
-        count_target_navigation_metrics(&trajectory.target_action, &mut counts);
+        count_target_metrics(&trajectory.target_action, &mut counts);
+        count_target_metrics(
+            &trajectory.target_action,
+            by_mode_counts.entry(mode_key.clone()).or_default(),
+        );
 
         let predicted = predicted_action(args.baseline, trajectory, predictions);
         let Some(predicted) = predicted else {
             counts.missing_predictions += 1;
+            by_mode_counts
+                .entry(mode_key)
+                .or_default()
+                .missing_predictions += 1;
             details.push(eval_detail(
                 trajectory,
                 None,
@@ -378,8 +391,16 @@ fn evaluate_internal(
         *predicted_actions.entry(predicted_action_label).or_default() += 1;
         if let Some(error) = kernel_operator_action_contract_error(&predicted) {
             counts.invalid_predictions += 1;
+            by_mode_counts
+                .entry(mode_key)
+                .or_default()
+                .invalid_predictions += 1;
             if is_unbounded_contract_error(&error) {
                 counts.unbounded_tool_calls += 1;
+                by_mode_counts
+                    .entry(trajectory.mode.clone())
+                    .or_default()
+                    .unbounded_tool_calls += 1;
             }
             *invalid_prediction_reasons.entry(error).or_default() += 1;
             let error = kernel_operator_action_contract_error(&predicted);
@@ -394,6 +415,12 @@ fn evaluate_internal(
         }
         let score = action_score(&trajectory.target_action, &predicted);
         apply_score(&trajectory.target_action, &predicted, &score, &mut counts);
+        apply_score(
+            &trajectory.target_action,
+            &predicted,
+            &score,
+            by_mode_counts.entry(mode_key).or_default(),
+        );
         details.push(eval_detail(
             trajectory,
             Some(&predicted),
@@ -403,7 +430,22 @@ fn evaluate_internal(
         ));
     }
 
-    let rates = rates(&counts, trajectories.len());
+    let summary_rates = rates(&counts, trajectories.len());
+    let by_mode_eval = by_mode_counts
+        .into_iter()
+        .map(|(mode, counts)| {
+            let total = by_mode.get(&mode).copied().unwrap_or_default();
+            let rates = rates(&counts, total);
+            (
+                mode,
+                EvalBreakdown {
+                    total,
+                    counts,
+                    rates,
+                },
+            )
+        })
+        .collect();
     Ok(EvalResult {
         summary: EvalSummary {
             evaluator: EVALUATOR,
@@ -424,12 +466,13 @@ fn evaluate_internal(
             },
             total: trajectories.len(),
             by_mode,
+            by_mode_eval,
             by_task_family,
             target_actions,
             predicted_actions,
             invalid_prediction_reasons,
             counts,
-            rates,
+            rates: summary_rates,
         },
         details,
     })
@@ -614,6 +657,15 @@ fn apply_score(target: &Value, _predicted: &Value, score: &ActionScore, counts: 
             counts.continue_page_correct += 1;
         }
     }
+}
+
+fn count_target_metrics(target: &Value, counts: &mut EvalCounts) {
+    match action_type(target) {
+        Some("tool_call") => counts.target_tool_calls += 1,
+        Some("stop") => counts.target_stop_actions += 1,
+        _ => {}
+    }
+    count_target_navigation_metrics(target, counts);
 }
 
 fn count_target_navigation_metrics(target: &Value, counts: &mut EvalCounts) {
@@ -838,6 +890,95 @@ mod tests {
         let summary = evaluate(&args, &trajectories, None)?;
         assert_eq!(summary.counts.exact_action_correct, 1);
         assert_eq!(summary.counts.tool_correct, 1);
+        Ok(())
+    }
+
+    #[test]
+    fn summary_reports_mode_specific_gate_metrics() -> Result<(), Box<dyn Error + Send + Sync>> {
+        let read_action = json!({
+            "type": "tool_call",
+            "tool": "kernel_inspect",
+            "arguments": {
+                "ref": "node:read",
+                "include": {
+                    "details": true,
+                    "incoming": true,
+                    "outgoing": true,
+                    "raw": false
+                }
+            }
+        });
+        let writer_target = json!({
+            "type": "tool_call",
+            "tool": "kernel_near",
+            "arguments": {
+                "about": "about:1",
+                "around": { "ref": "node:writer" },
+                "dimensions": { "mode": "all", "scope": "current_about" },
+                "include": { "evidence": true, "raw_refs": false, "relations": true },
+                "limit": { "entries": 12, "tokens": 2400 },
+                "budget": { "depth": 3, "tokens": 2400 },
+                "window": { "before_entries": 6, "after_entries": 0 }
+            }
+        });
+        let writer_prediction = json!({
+            "type": "tool_call",
+            "tool": "kernel_trace",
+            "arguments": {
+                "from": "node:writer",
+                "to": "node:prior",
+                "budget": { "depth": 2, "tokens": 1600 }
+            }
+        });
+        let trajectories = vec![
+            Trajectory {
+                step_id: "read".to_string(),
+                about: "about:1".to_string(),
+                mode: "read".to_string(),
+                task_family: "memoryarena.progressive_search".to_string(),
+                visible_state: json!({ "current_ref": "node:read" }),
+                target_action: read_action.clone(),
+            },
+            Trajectory {
+                step_id: "writer".to_string(),
+                about: "about:1".to_string(),
+                mode: "write_context_read".to_string(),
+                task_family: "memoryarena.smart_writer".to_string(),
+                visible_state: json!({ "current_ref": "node:writer" }),
+                target_action: writer_target,
+            },
+        ];
+        let predictions = BTreeMap::from([
+            ("read".to_string(), read_action),
+            ("writer".to_string(), writer_prediction),
+        ]);
+        let args = Args {
+            trajectories: PathBuf::from("trajectories.jsonl"),
+            predictions: Some(PathBuf::from("predictions.jsonl")),
+            baseline: Baseline::Deterministic,
+            output: None,
+            details_output: None,
+            limit: None,
+            offset: 0,
+        };
+
+        let summary = evaluate(&args, &trajectories, Some(&predictions))?;
+
+        assert_eq!(summary.counts.exact_action_correct, 1);
+        assert_eq!(summary.rates.exact_action_accuracy, 0.5);
+
+        let read = summary.by_mode_eval.get("read").expect("read mode summary");
+        assert_eq!(read.total, 1);
+        assert_eq!(read.counts.exact_action_correct, 1);
+        assert_eq!(read.rates.exact_action_accuracy, 1.0);
+
+        let writer = summary
+            .by_mode_eval
+            .get("write_context_read")
+            .expect("writer mode summary");
+        assert_eq!(writer.total, 1);
+        assert_eq!(writer.counts.exact_action_correct, 0);
+        assert_eq!(writer.rates.exact_action_accuracy, 0.0);
         Ok(())
     }
 
