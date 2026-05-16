@@ -16,6 +16,10 @@ Owner: Tirso / Codex
 | Branch | `codex/operator-write-context-read-gate` |
 | Starting point | `main` after PR `#106` |
 
+Historical note: this run was produced before `writer-pre-read-v2` expanded the
+profile from 16 to 21 required capabilities. Keep this document as evidence for
+the original v1 gate; use the v2 gate for new training claims.
+
 ## 2. Why This Exists
 
 The P111 scale gate proved `operator-read`, but left `write_context_read` at

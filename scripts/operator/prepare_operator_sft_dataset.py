@@ -94,6 +94,10 @@ FORBIDDEN_MODEL_VISIBLE_STRING_PREFIXES = (
     "writer_read_context_",
 )
 
+CAP_TOOL_STOP = "tool:stop"
+CAP_TRACE_PAGE_CONTINUE = "trace.page:continue"
+CAP_WINDOW_STOP_SUFFICIENT = "window:stop_sufficient"
+
 READ_REQUIRED_CAPABILITIES = (
     "tool:kernel_wake",
     "tool:kernel_ask",
@@ -103,7 +107,7 @@ READ_REQUIRED_CAPABILITIES = (
     "tool:kernel_forward",
     "tool:kernel_trace",
     "tool:kernel_inspect",
-    "tool:stop",
+    CAP_TOOL_STOP,
     "cursor:ref",
     "cursor:time",
     "cursor:sequence",
@@ -114,10 +118,10 @@ READ_REQUIRED_CAPABILITIES = (
     "dimensions.scope:abouts",
     "dimensions.scope:all_abouts",
     "trace.page:first",
-    "trace.page:continue",
+    CAP_TRACE_PAGE_CONTINUE,
     "window:expand",
     "window:shrink",
-    "window:stop_sufficient",
+    CAP_WINDOW_STOP_SUFFICIENT,
     "inspect.raw:false",
 )
 
@@ -133,18 +137,23 @@ WRITER_PRE_READ_REQUIRED_CAPABILITIES = (
     "tool:kernel_near",
     "tool:kernel_inspect",
     "tool:kernel_trace",
+    CAP_TOOL_STOP,
     "cursor:ref",
     "dimensions.mode:all",
     "dimensions.scope:current_about",
     "window:expand",
     "window:shrink",
+    CAP_WINDOW_STOP_SUFFICIENT,
     "inspect.raw:false",
     "trace.page:first",
+    CAP_TRACE_PAGE_CONTINUE,
     "writer.last_tool:none",
     "writer.last_tool:kernel_near",
     "writer.last_tool:kernel_inspect",
+    "writer.last_tool:kernel_trace",
     "writer.candidate_role:previous_subtask_answer",
     "writer.candidate_role:same_subtask_question",
+    "writer.candidate_pool:ambiguous",
 )
 
 
@@ -1388,6 +1397,8 @@ def writer_pre_read_capabilities(trajectory: dict[str, Any]) -> set[str]:
             role = detail.get("role")
             if isinstance(role, str):
                 capabilities.add(f"writer.candidate_role:{role}")
+    if state.get("candidate_pool") == "ambiguous":
+        capabilities.add("writer.candidate_pool:ambiguous")
     return capabilities
 
 
@@ -1395,8 +1406,8 @@ def action_capabilities(action: dict[str, Any]) -> set[str]:
     capabilities: set[str] = set()
     action_type = action.get("type")
     if action_type == "stop":
-        capabilities.add("tool:stop")
-        capabilities.add("window:stop_sufficient")
+        capabilities.add(CAP_TOOL_STOP)
+        capabilities.add(CAP_WINDOW_STOP_SUFFICIENT)
         return capabilities
     if action_type != "tool_call":
         return capabilities
@@ -1421,7 +1432,7 @@ def action_capabilities(action: dict[str, Any]) -> set[str]:
         page = arguments.get("page")
         if isinstance(page, dict):
             capabilities.add(
-                "trace.page:continue" if "cursor" in page else "trace.page:first"
+                CAP_TRACE_PAGE_CONTINUE if "cursor" in page else "trace.page:first"
             )
     elif tool == "kernel_inspect":
         include = arguments.get("include")

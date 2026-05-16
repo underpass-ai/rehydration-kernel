@@ -72,9 +72,10 @@ fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         "read-generalization" => read_generalization_trajectories(&args.run_id),
         "read-rare-v1" => read_rare_expansion_trajectories(&args.run_id),
         "writer-pre-read-v1" => writer_pre_read_trajectories(&args.run_id),
+        "writer-pre-read-v2" => writer_pre_read_v2_trajectories(&args.run_id),
         other => {
             return Err(format!(
-                "unknown --suite `{other}`; expected `golden`, `golden-v3`, `golden-v4`, `read-generalization`, `read-rare-v1`, or `writer-pre-read-v1`"
+                "unknown --suite `{other}`; expected `golden`, `golden-v3`, `golden-v4`, `read-generalization`, `read-rare-v1`, `writer-pre-read-v1`, or `writer-pre-read-v2`"
             )
             .into());
         }
@@ -132,7 +133,7 @@ fn next_arg(
 }
 
 fn usage() -> String {
-    "usage: kernel_operator_conformance_trajectory_export --output <dir> [--run-id id] [--suite golden|golden-v3|golden-v4|read-generalization|read-rare-v1|writer-pre-read-v1] [--force]"
+    "usage: kernel_operator_conformance_trajectory_export --output <dir> [--run-id id] [--suite golden|golden-v3|golden-v4|read-generalization|read-rare-v1|writer-pre-read-v1|writer-pre-read-v2] [--force]"
         .to_string()
 }
 
@@ -2758,6 +2759,143 @@ fn writer_pre_read_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
     items
 }
 
+fn writer_pre_read_v2_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
+    let mut items = writer_pre_read_trajectories(run_id);
+    let read_tools = kernel_operator_allowed_read_tools();
+    let about = "incident:writer-pre-read";
+    let entry_question = "incident:writer-pre-read:subtask:5:question";
+    let entry_answer = "incident:writer-pre-read:subtask:5:answer";
+    let same_question = "incident:writer-pre-read:subtask:5:question";
+    let previous_answer = "incident:writer-pre-read:subtask:4:answer";
+    let previous_question = "incident:writer-pre-read:subtask:4:question";
+    let older_answer = "incident:writer-pre-read:subtask:3:answer";
+    let older_question = "incident:writer-pre-read:subtask:3:question";
+    let question_trace_cursor = "writer-pre-read:question:trace:page:2";
+    let answer_trace_cursor = "writer-pre-read:answer:trace:page:2";
+
+    let ambiguous_question_candidates = writer_pre_read_candidate_details(vec![
+        (
+            previous_answer,
+            "previous_subtask_answer",
+            10,
+            "question_may_depend_on_previous_answer",
+        ),
+        (
+            older_answer,
+            "older_subtask_answer",
+            10,
+            "question_may_reopen_older_answer",
+        ),
+        (
+            previous_question,
+            "previous_subtask_question",
+            20,
+            "question_may_refine_previous_question",
+        ),
+    ]);
+    let ambiguous_answer_candidates = writer_pre_read_candidate_details(vec![
+        (
+            same_question,
+            "same_subtask_question",
+            10,
+            "answer_may_address_same_question",
+        ),
+        (
+            previous_answer,
+            "previous_subtask_answer",
+            10,
+            "answer_may_supersede_previous_answer",
+        ),
+        (
+            older_question,
+            "older_subtask_question",
+            30,
+            "answer_may_reuse_older_question_context",
+        ),
+    ]);
+
+    push_writer_pre_read_inspect_ambiguous(
+        &mut items,
+        run_id,
+        &read_tools,
+        about,
+        "writer-question-inspect-ambiguous-previous-answer-after-near",
+        entry_question,
+        previous_answer,
+        ambiguous_question_candidates.clone(),
+        vec![previous_answer, older_answer, previous_question],
+        "Inspect the highest-ranked candidate when near returns multiple plausible relation targets.",
+    );
+    push_writer_pre_read_inspect_ambiguous(
+        &mut items,
+        run_id,
+        &read_tools,
+        about,
+        "writer-answer-inspect-ambiguous-same-question-after-near",
+        entry_answer,
+        same_question,
+        ambiguous_answer_candidates.clone(),
+        vec![same_question, previous_answer, older_question],
+        "Inspect the same question before choosing whether the answer addresses or supersedes prior memory.",
+    );
+
+    push_writer_pre_read_trace_continue(
+        &mut items,
+        run_id,
+        &read_tools,
+        about,
+        "writer-question-trace-continue-after-partial-page",
+        entry_question,
+        previous_answer,
+        ambiguous_question_candidates.clone(),
+        question_trace_cursor,
+        vec![entry_question, previous_answer, previous_question],
+        "Continue the trace page instead of deciding from an incomplete relation path.",
+    );
+    push_writer_pre_read_trace_continue(
+        &mut items,
+        run_id,
+        &read_tools,
+        about,
+        "writer-answer-trace-continue-after-partial-page",
+        entry_answer,
+        same_question,
+        ambiguous_answer_candidates.clone(),
+        answer_trace_cursor,
+        vec![entry_answer, same_question, previous_answer],
+        "Continue the trace page when the writer still needs proof before writing the relation.",
+    );
+
+    push_writer_pre_read_stop(
+        &mut items,
+        run_id,
+        &read_tools,
+        about,
+        "writer-question-stop-sufficient-after-trace",
+        entry_question,
+        previous_answer,
+        ambiguous_question_candidates,
+        vec![entry_question, previous_answer, previous_question],
+        vec![previous_answer, previous_question],
+        "Stop reading because the candidate target and supporting prior question are visible enough to write the next relation.",
+    );
+    push_writer_pre_read_stop(
+        &mut items,
+        run_id,
+        &read_tools,
+        about,
+        "writer-answer-stop-sufficient-after-trace",
+        entry_answer,
+        same_question,
+        ambiguous_answer_candidates,
+        vec![entry_answer, same_question, previous_answer],
+        vec![same_question, previous_answer],
+        "Stop reading because the writer has enough evidence to connect the answer without inventing a relation.",
+    );
+
+    items
+}
+
 fn push_training_corpus_variants(
     items: &mut Vec<TrajectoryItem>,
     run_id: &str,
@@ -3577,6 +3715,207 @@ fn writer_pre_read_visible_state(
             "why": "The writer must inspect enough prior memory to justify the next relation without inventing it."
         }
     })
+}
+
+fn with_candidate_pool(mut state: Value, candidate_pool: &str) -> Value {
+    state["candidate_pool"] = json!(candidate_pool);
+    state
+}
+
+#[allow(clippy::too_many_arguments)]
+fn push_writer_pre_read_inspect_ambiguous(
+    items: &mut Vec<TrajectoryItem>,
+    run_id: &str,
+    read_tools: &[String],
+    about: &str,
+    step_id: &str,
+    entry_ref: &str,
+    target_ref: &str,
+    candidate_ref_details: Vec<Value>,
+    last_observed_refs: Vec<&str>,
+    goal: &str,
+) {
+    let last_observed_refs = last_observed_refs
+        .into_iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+    push(
+        items,
+        item(
+            run_id,
+            "conformance.writer_pre_read",
+            "write_context_read",
+            about,
+            step_id,
+            goal,
+            with_candidate_pool(
+                writer_pre_read_visible_state(
+                    entry_ref,
+                    candidate_ref_details,
+                    vec![target_ref.to_string()],
+                    Some("kernel_near"),
+                    last_observed_refs,
+                    Some(json!({
+                        "returned": 3,
+                        "total": 11,
+                        "has_more": true,
+                        "next_cursor": target_ref
+                    })),
+                    Some(true),
+                    2,
+                ),
+                "ambiguous",
+            ),
+            read_tools.to_vec(),
+            tool_call("kernel_inspect", inspection_request(target_ref)),
+            json!({
+                "success": true,
+                "observed_refs": [target_ref, entry_ref],
+                "partial_result": false
+            }),
+            json!({
+                "bounded": true,
+                "candidate_pool": "ambiguous",
+                "contract_expected": true,
+                "writer_pre_read_contract": true
+            }),
+        ),
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn push_writer_pre_read_trace_continue(
+    items: &mut Vec<TrajectoryItem>,
+    run_id: &str,
+    read_tools: &[String],
+    about: &str,
+    step_id: &str,
+    entry_ref: &str,
+    target_ref: &str,
+    candidate_ref_details: Vec<Value>,
+    page_cursor: &str,
+    last_observed_refs: Vec<&str>,
+    goal: &str,
+) {
+    let last_observed_refs = last_observed_refs
+        .into_iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+    push(
+        items,
+        item(
+            run_id,
+            "conformance.writer_pre_read",
+            "write_context_read",
+            about,
+            step_id,
+            goal,
+            writer_pre_read_visible_state(
+                entry_ref,
+                candidate_ref_details,
+                vec![target_ref.to_string()],
+                Some("kernel_trace"),
+                last_observed_refs,
+                Some(json!({
+                    "returned": 16,
+                    "total": 31,
+                    "has_more": true,
+                    "next_cursor": page_cursor
+                })),
+                Some(true),
+                1,
+            ),
+            read_tools.to_vec(),
+            tool_call(
+                "kernel_trace",
+                json!({
+                    "from": entry_ref,
+                    "to": target_ref,
+                    "goal": "Continue the writer pre-read trace page before writing memory.",
+                    "role": "operator",
+                    "budget": { "depth": 2, "tokens": 1600 },
+                    "page": { "entries": 16, "cursor": page_cursor }
+                }),
+            ),
+            json!({
+                "success": true,
+                "observed_refs": [entry_ref, target_ref],
+                "partial_result": false,
+                "page": {
+                    "returned": 12,
+                    "total": 31,
+                    "has_more": false
+                }
+            }),
+            json!({
+                "bounded": true,
+                "contract_expected": true,
+                "writer_pre_read_contract": true
+            }),
+        ),
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn push_writer_pre_read_stop(
+    items: &mut Vec<TrajectoryItem>,
+    run_id: &str,
+    read_tools: &[String],
+    about: &str,
+    step_id: &str,
+    entry_ref: &str,
+    target_ref: &str,
+    candidate_ref_details: Vec<Value>,
+    last_observed_refs: Vec<&str>,
+    final_refs: Vec<&str>,
+    reason: &str,
+) {
+    let last_observed_refs = last_observed_refs
+        .into_iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+    let known_refs = final_refs
+        .iter()
+        .map(|reference| (*reference).to_string())
+        .collect::<Vec<_>>();
+    push(
+        items,
+        item(
+            run_id,
+            "conformance.writer_pre_read",
+            "write_context_read",
+            about,
+            step_id,
+            reason,
+            writer_pre_read_visible_state(
+                entry_ref,
+                candidate_ref_details,
+                known_refs,
+                Some("kernel_trace"),
+                last_observed_refs,
+                Some(json!({
+                    "returned": 12,
+                    "total": 31,
+                    "has_more": false
+                })),
+                Some(false),
+                0,
+            ),
+            read_tools.to_vec(),
+            stop_action("evidence_or_unknown", final_refs, reason),
+            json!({
+                "success": true,
+                "observed_refs": [entry_ref, target_ref],
+                "partial_result": false
+            }),
+            json!({
+                "bounded": true,
+                "contract_expected": true,
+                "policy": "stop_sufficient",
+                "writer_pre_read_contract": true
+            }),
+        ),
+    );
 }
 
 // These helpers are fixture factories: keeping each KMP field explicit makes the
@@ -4774,6 +5113,63 @@ mod tests {
                     .and_then(Value::as_u64)
                     == Some(16)
         }));
+    }
+
+    #[test]
+    fn generated_writer_pre_read_v2_trajectories_cover_stop_and_pagination() {
+        let trajectories = writer_pre_read_v2_trajectories("kmp-operator-writer-pre-read-v2-test");
+        validate_trajectories(&trajectories).expect("valid writer pre-read v2 trajectories");
+
+        assert!(trajectories.len() > writer_pre_read_trajectories("baseline").len());
+        assert!(
+            trajectories
+                .iter()
+                .filter(|trajectory| {
+                    trajectory.target_action.get("type").and_then(Value::as_str) == Some("stop")
+                })
+                .count()
+                >= 2
+        );
+        assert!(
+            trajectories
+                .iter()
+                .filter(|trajectory| {
+                    trajectory.target_action.get("tool").and_then(Value::as_str)
+                        == Some("kernel_trace")
+                        && trajectory
+                            .target_action
+                            .pointer("/arguments/page/cursor")
+                            .is_some()
+                })
+                .count()
+                >= 2
+        );
+        assert!(
+            trajectories
+                .iter()
+                .filter(|trajectory| {
+                    trajectory
+                        .visible_state
+                        .get("candidate_pool")
+                        .and_then(Value::as_str)
+                        == Some("ambiguous")
+                })
+                .count()
+                >= 2
+        );
+        assert!(
+            trajectories
+                .iter()
+                .filter(|trajectory| {
+                    trajectory
+                        .visible_state
+                        .get("last_tool")
+                        .and_then(Value::as_str)
+                        == Some("kernel_trace")
+                })
+                .count()
+                >= 4
+        );
     }
 
     #[test]

@@ -12,6 +12,11 @@
 
 No model training was launched in this slice.
 
+Historical note: this run was produced before `writer-pre-read-v2` expanded the
+profile from 16 to 21 required capabilities. Keep this document as evidence for
+the original P1.11 + v1 mixed gate; use the v2 diversity gate for new training
+claims.
+
 ## 2. Why This Run Exists
 
 The previous `writer-pre-read-gate` proved that the synthetic
