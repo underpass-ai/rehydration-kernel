@@ -30,6 +30,7 @@ struct Args {
 enum Profile {
     Read,
     Full,
+    WriterPreRead,
 }
 
 #[derive(Debug, Serialize)]
@@ -117,6 +118,7 @@ fn build_report(
     let operator_tools = match args.profile {
         Profile::Read => kernel_operator_allowed_read_tools(),
         Profile::Full => kernel_operator_allowed_full_tools(),
+        Profile::WriterPreRead => kernel_operator_allowed_read_tools(),
     }
     .into_iter()
     .collect::<BTreeSet<_>>();
@@ -200,6 +202,74 @@ struct Capability {
 }
 
 fn required_capability_ids(profile: Profile) -> Vec<Capability> {
+    if profile == Profile::WriterPreRead {
+        return vec![
+            Capability {
+                id: "mode:write_context_read",
+                group: "mode",
+            },
+            Capability {
+                id: "tool:kernel_near",
+                group: "tool",
+            },
+            Capability {
+                id: "tool:kernel_inspect",
+                group: "tool",
+            },
+            Capability {
+                id: "tool:kernel_trace",
+                group: "tool",
+            },
+            Capability {
+                id: "cursor:ref",
+                group: "cursor",
+            },
+            Capability {
+                id: "dimensions.mode:all",
+                group: "dimensions",
+            },
+            Capability {
+                id: "dimensions.scope:current_about",
+                group: "dimensions",
+            },
+            Capability {
+                id: "window:expand",
+                group: "window_policy",
+            },
+            Capability {
+                id: "window:shrink",
+                group: "window_policy",
+            },
+            Capability {
+                id: "inspect.raw:false",
+                group: "security",
+            },
+            Capability {
+                id: "trace.page:first",
+                group: "pagination",
+            },
+            Capability {
+                id: "writer.last_tool:none",
+                group: "writer_state",
+            },
+            Capability {
+                id: "writer.last_tool:kernel_near",
+                group: "writer_state",
+            },
+            Capability {
+                id: "writer.last_tool:kernel_inspect",
+                group: "writer_state",
+            },
+            Capability {
+                id: "writer.candidate_role:previous_subtask_answer",
+                group: "writer_candidate",
+            },
+            Capability {
+                id: "writer.candidate_role:same_subtask_question",
+                group: "writer_candidate",
+            },
+        ];
+    }
     let mut capabilities = vec![
         Capability {
             id: "tool:kernel_wake",
@@ -340,6 +410,12 @@ fn contract_supports(
         "trace.page:first" | "trace.page:continue" => bounded_trace_page(id),
         "window:expand" | "window:shrink" | "window:stop_sufficient" => true,
         "inspect.raw:false" => bounded_inspect_raw_false(),
+        "mode:write_context_read"
+        | "writer.last_tool:none"
+        | "writer.last_tool:kernel_near"
+        | "writer.last_tool:kernel_inspect"
+        | "writer.candidate_role:previous_subtask_answer"
+        | "writer.candidate_role:same_subtask_question" => true,
         "write:relation_quality" | "write:read_context_proof" => {
             mcp_tools.contains("kernel_write_memory")
                 && operator_tools.contains("kernel_write_memory")
@@ -453,9 +529,56 @@ fn observed_capabilities(rows: &[Value]) -> ObservedCoverage {
         let Some(action) = row.get("target_action") else {
             continue;
         };
+        observe_trajectory(row, &mut observed);
         observe_action(action, &mut observed);
     }
     observed
+}
+
+fn observe_trajectory(row: &Value, observed: &mut ObservedCoverage) {
+    if row.get("mode").and_then(Value::as_str) == Some("write_context_read") {
+        observed.capabilities.insert("mode:write_context_read");
+        observe_writer_pre_read_state(row, observed);
+    }
+}
+
+fn observe_writer_pre_read_state(row: &Value, observed: &mut ObservedCoverage) {
+    let Some(state) = row.get("visible_state") else {
+        return;
+    };
+    match state.get("last_tool").and_then(Value::as_str) {
+        Some("kernel_near") => {
+            observed.capabilities.insert("writer.last_tool:kernel_near");
+        }
+        Some("kernel_inspect") => {
+            observed
+                .capabilities
+                .insert("writer.last_tool:kernel_inspect");
+        }
+        None if state.get("last_tool").is_some_and(Value::is_null) => {
+            observed.capabilities.insert("writer.last_tool:none");
+        }
+        _ => {}
+    }
+    let Some(candidate_details) = state.get("candidate_ref_details").and_then(Value::as_array)
+    else {
+        return;
+    };
+    for detail in candidate_details {
+        match detail.get("role").and_then(Value::as_str) {
+            Some("previous_subtask_answer") => {
+                observed
+                    .capabilities
+                    .insert("writer.candidate_role:previous_subtask_answer");
+            }
+            Some("same_subtask_question") => {
+                observed
+                    .capabilities
+                    .insert("writer.candidate_role:same_subtask_question");
+            }
+            _ => {}
+        }
+    }
 }
 
 fn observe_action(action: &Value, observed: &mut ObservedCoverage) {
@@ -742,7 +865,10 @@ fn parse_profile(value: &str) -> Result<Profile, Box<dyn Error + Send + Sync>> {
     match value {
         "read" => Ok(Profile::Read),
         "full" => Ok(Profile::Full),
-        other => Err(format!("unknown profile `{other}`; expected read|full").into()),
+        "writer-pre-read" => Ok(Profile::WriterPreRead),
+        other => {
+            Err(format!("unknown profile `{other}`; expected read|full|writer-pre-read").into())
+        }
     }
 }
 
@@ -751,6 +877,7 @@ impl Profile {
         match self {
             Profile::Read => "read",
             Profile::Full => "full",
+            Profile::WriterPreRead => "writer-pre-read",
         }
     }
 }
@@ -764,7 +891,7 @@ fn next_arg(
 }
 
 fn usage() -> String {
-    "usage: kernel_operator_contract_coverage [--trajectories trajectories.jsonl] [--profile read|full] [--fail-under pct] [--output summary.json]".to_string()
+    "usage: kernel_operator_contract_coverage [--trajectories trajectories.jsonl] [--profile read|full|writer-pre-read] [--fail-under pct] [--output summary.json]".to_string()
 }
 
 fn read_jsonl(path: &Path) -> Result<Vec<Value>, Box<dyn Error + Send + Sync>> {
