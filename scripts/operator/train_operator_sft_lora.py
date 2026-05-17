@@ -3,14 +3,22 @@
 
 This script is intentionally external to kernel core. It trains a client-side
 operator over exported KMP trajectories and produces an adapter that can later
-be evaluated offline with `kernel_operator_policy_eval`.
+be evaluated offline with `underpass_operator_policy_eval`.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 from pathlib import Path
 from typing import Any
+
+from predict_operator_sft import (
+    resolve_prepared_payload_action,
+    validate_action_shape,
+    validate_allowed_tools_for_user_payload,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -54,11 +62,36 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--bf16", action="store_true")
     parser.add_argument("--fp16", action="store_true")
     parser.add_argument("--push-to-hub", action="store_true")
+    parser.add_argument(
+        "--validate-only",
+        action="store_true",
+        help="Validate SFT JSONL contract and exit before importing training dependencies.",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    train_rows = read_jsonl(args.train_jsonl)
+    eval_rows = read_jsonl(args.eval_jsonl)
+    validate_sft_rows(train_rows, "train")
+    validate_sft_rows(eval_rows, "eval")
+    validate_no_model_row_overlap(train_rows, eval_rows)
+    if args.validate_only:
+        print(
+            json.dumps(
+                {
+                    "event": "kernel_operator_sft_train.validate_only",
+                    "train_rows": len(train_rows),
+                    "eval_rows": len(eval_rows),
+                    "status": "ok",
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return
+
     try:
         from datasets import load_dataset
         from peft import LoraConfig
@@ -154,6 +187,138 @@ def parse_lora_target_modules(value: str) -> str | list[str]:
     if not modules:
         raise SystemExit("--lora-target-modules must not be empty")
     return modules
+
+
+def read_jsonl(path: Path) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    with path.open(encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, start=1):
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise SystemExit(f"{path}:{line_number}: invalid JSONL row") from exc
+            if not isinstance(row, dict):
+                raise SystemExit(f"{path}:{line_number}: row must be an object")
+            rows.append(row)
+    return rows
+
+
+def validate_sft_rows(rows: list[dict[str, Any]], label: str) -> None:
+    if label == "train" and not rows:
+        raise SystemExit("train dataset must not be empty")
+
+    seen_ids: dict[str, int] = {}
+    seen_message_hashes: dict[str, int] = {}
+    for index, row in enumerate(rows, start=1):
+        row_id = row.get("id") or row.get("step_id") or f"{label}:{index}"
+        if isinstance(row_id, str):
+            previous = seen_ids.get(row_id)
+            if previous is not None:
+                raise SystemExit(
+                    f"{label} row {index}: duplicate row id `{row_id}` "
+                    f"also seen at row {previous}"
+                )
+            seen_ids[row_id] = index
+
+        messages = row.get("messages")
+        if not isinstance(messages, list) or len(messages) != 3:
+            raise SystemExit(f"{label} row {index}: expected exactly 3 messages")
+        roles = [message.get("role") for message in messages if isinstance(message, dict)]
+        if roles != ["system", "user", "assistant"]:
+            raise SystemExit(
+                f"{label} row {index}: expected system/user/assistant roles, got {roles}"
+            )
+        if not all(isinstance(message.get("content"), str) for message in messages):
+            raise SystemExit(f"{label} row {index}: every message needs string content")
+
+        message_hash = canonical_messages_hash(messages)
+        previous_hash = seen_message_hashes.get(message_hash)
+        if previous_hash is not None:
+            raise SystemExit(
+                f"{label} row {index}: duplicate model-facing messages also "
+                f"seen at row {previous_hash}"
+            )
+        seen_message_hashes[message_hash] = index
+
+        user_payload = parse_message_json(messages[1]["content"], label, index, "user")
+        allowed_tools = user_payload.get("allowed_tools")
+        if not isinstance(allowed_tools, list) or not all(
+            isinstance(tool, str) and tool for tool in allowed_tools
+        ):
+            raise SystemExit(f"{label} row {index}: user allowed_tools must be strings")
+        if len(set(allowed_tools)) != len(allowed_tools):
+            raise SystemExit(f"{label} row {index}: duplicate allowed_tools")
+        allowed_mode_error = validate_allowed_tools_for_user_payload(user_payload)
+        if allowed_mode_error is not None:
+            raise SystemExit(f"{label} row {index}: {allowed_mode_error}")
+
+        assistant_payload = parse_message_json(
+            messages[2]["content"], label, index, "assistant"
+        )
+        action = assistant_payload.get("action")
+        if not isinstance(action, dict):
+            raise SystemExit(f"{label} row {index}: assistant payload missing action")
+        shape_error = validate_action_shape(action)
+        if shape_error is not None:
+            raise SystemExit(
+                f"{label} row {index}: target action violates strict contract: "
+                f"{shape_error}"
+            )
+        action_type = action.get("type")
+        if action_type in {"tool_call", "prepared_tool_call"}:
+            tool = action.get("tool")
+            if tool not in allowed_tools:
+                raise SystemExit(
+                    f"{label} row {index}: target tool `{tool}` is not listed in "
+                    "row allowed_tools"
+                )
+        resolved, resolve_error = resolve_prepared_payload_action(action, row)
+        if resolve_error is not None:
+            raise SystemExit(
+                f"{label} row {index}: prepared payload cannot be resolved: "
+                f"{resolve_error}"
+            )
+        if resolved is not None:
+            resolved_error = validate_action_shape(resolved)
+            if resolved_error is not None:
+                raise SystemExit(
+                    f"{label} row {index}: resolved target violates strict "
+                    f"contract: {resolved_error}"
+                )
+
+
+def parse_message_json(content: str, label: str, index: int, role: str) -> dict[str, Any]:
+    try:
+        payload = json.loads(content)
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"{label} row {index}: invalid {role} JSON content") from exc
+    if not isinstance(payload, dict):
+        raise SystemExit(f"{label} row {index}: {role} content must be a JSON object")
+    return payload
+
+
+def validate_no_model_row_overlap(
+    train_rows: list[dict[str, Any]], eval_rows: list[dict[str, Any]]
+) -> None:
+    train_hashes = {
+        canonical_messages_hash(row["messages"]): index
+        for index, row in enumerate(train_rows, start=1)
+    }
+    for index, row in enumerate(eval_rows, start=1):
+        message_hash = canonical_messages_hash(row["messages"])
+        train_index = train_hashes.get(message_hash)
+        if train_index is not None:
+            raise SystemExit(
+                "train/eval model-facing overlap: "
+                f"eval row {index} duplicates train row {train_index}"
+            )
+
+
+def canonical_messages_hash(messages: list[Any]) -> str:
+    payload = json.dumps(messages, separators=(",", ":"), sort_keys=True)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def parse_config_overrides(overrides: list[str]) -> dict[str, Any]:

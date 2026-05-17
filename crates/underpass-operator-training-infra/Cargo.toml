@@ -1,0 +1,16 @@
+[package]
+name = "underpass-operator-training-infra"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Infrastructure adapters for the Operator training bounded context"
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+underpass-operator-shared-domain.workspace = true
+underpass-operator-training-application.workspace = true
+underpass-operator-training-domain.workspace = true

@@ -1,0 +1,110 @@
+[
+  {
+    "slug": "auth-refresh-race",
+    "title": "auth refresh race",
+    "signal": "401 appears immediately after token refresh succeeds",
+    "decision": "prefer refresh retry over timeout widening"
+  },
+  {
+    "slug": "search-index-lag",
+    "title": "search index lag",
+    "signal": "new records are accepted but not visible in search",
+    "decision": "wait for index catch-up before marking the incident solved"
+  },
+  {
+    "slug": "billing-retry",
+    "title": "billing retry loop",
+    "signal": "payment retries are duplicated after provider timeout",
+    "decision": "dedupe provider retries by idempotency key"
+  },
+  {
+    "slug": "deploy-rollback",
+    "title": "deploy rollback",
+    "signal": "error rate rises only after the canary receives traffic",
+    "decision": "rollback the canary before changing database state"
+  },
+  {
+    "slug": "feature-flag",
+    "title": "feature flag exposure",
+    "signal": "flag rollout leaks to the wrong cohort",
+    "decision": "pin rollout scope to the beta cohort"
+  },
+  {
+    "slug": "migration-checksum",
+    "title": "migration checksum",
+    "signal": "checksum differs between source and migrated rows",
+    "decision": "pause rollout until the checksum mismatch is explained"
+  },
+  {
+    "slug": "cache-invalidation",
+    "title": "cache invalidation",
+    "signal": "stale reads continue after the write path succeeds",
+    "decision": "invalidate the product cache after commit acknowledgement"
+  },
+  {
+    "slug": "webhook-dedupe",
+    "title": "webhook dedupe",
+    "signal": "duplicate webhook deliveries create repeated side effects",
+    "decision": "persist delivery ids before applying side effects"
+  },
+  {
+    "slug": "ci-flake",
+    "title": "CI flaky test isolation",
+    "signal": "test fails only when executed after the browser suite",
+    "decision": "isolate the shared browser fixture"
+  },
+  {
+    "slug": "support-sla",
+    "title": "support escalation SLA",
+    "signal": "escalation timer is not reset after human handoff",
+    "decision": "reset the SLA clock at handoff confirmation"
+  },
+  {
+    "slug": "model-drift",
+    "title": "recommendation model drift",
+    "signal": "ranking quality drops after fresh catalog ingestion",
+    "decision": "gate recommendations on catalog freshness"
+  },
+  {
+    "slug": "stock-sync",
+    "title": "warehouse stock sync",
+    "signal": "stock reservation arrives before the inventory snapshot",
+    "decision": "sequence reservation after snapshot confirmation"
+  },
+  {
+    "slug": "rate-limit",
+    "title": "rate limit policy",
+    "signal": "burst traffic triggers global throttling for one tenant",
+    "decision": "apply tenant-local throttling before global throttling"
+  },
+  {
+    "slug": "session-timeout",
+    "title": "session timeout",
+    "signal": "active users are logged out during token rotation",
+    "decision": "preserve active sessions during rotation"
+  },
+  {
+    "slug": "report-export",
+    "title": "report export",
+    "signal": "large report exports complete without the final manifest",
+    "decision": "write the manifest only after all chunks are confirmed"
+  },
+  {
+    "slug": "email-bounce",
+    "title": "email bounce processing",
+    "signal": "hard bounces are retried as transient failures",
+    "decision": "classify hard bounces before scheduling retries"
+  },
+  {
+    "slug": "quota-metering",
+    "title": "quota metering",
+    "signal": "usage is counted twice across the hourly boundary",
+    "decision": "dedupe metering windows by event id"
+  },
+  {
+    "slug": "artifact-retention",
+    "title": "artifact retention",
+    "signal": "build artifacts expire before audit export completes",
+    "decision": "extend retention until audit export is sealed"
+  }
+]

@@ -334,7 +334,7 @@ generation or training job finishes without reconstructing state from stdout.
 Generation:
 
 ```bash
-cargo run -p rehydration-testkit --bin kernel_operator_conformance_trajectory_export -- \
+cargo run -p underpass-operator-synthetic-cli --bin underpass_operator_conformance_trajectory_build -- \
   --output /tmp/kernel-operator-conformance-golden-v1 \
   --run-id kmp-operator-golden-v1 \
   --force
@@ -368,7 +368,7 @@ python scripts/operator/audit_operator_sft_no_gold.py \
   /tmp/kernel-operator-golden-v1-read-sft/openai_eval.jsonl \
   --output /tmp/kernel-operator-golden-v1-read-sft/no_gold_audit.json
 
-cargo run -p rehydration-testkit --bin kernel_operator_contract_coverage -- \
+cargo run -p underpass-operator-evaluation-cli --bin underpass_operator_contract_coverage -- \
   --profile read \
   --trajectories /tmp/kernel-operator-golden-v1-read-sft/all_model_trajectories.jsonl \
   --fail-under 100 \
@@ -509,7 +509,7 @@ the strict MCP/API contract without corrupting it?”
 Generation:
 
 ```bash
-cargo run -p rehydration-testkit --bin kernel_operator_conformance_trajectory_export -- \
+cargo run -p underpass-operator-synthetic-cli --bin underpass_operator_conformance_trajectory_build -- \
   --output /tmp/kernel-operator-conformance-golden-v2 \
   --run-id kmp-operator-golden-v2 \
   --force
@@ -777,7 +777,7 @@ contract.
 Generation:
 
 ```bash
-cargo run -p rehydration-testkit --bin kernel_operator_conformance_trajectory_export -- \
+cargo run -p underpass-operator-synthetic-cli --bin underpass_operator_conformance_trajectory_build -- \
   --output /tmp/kernel-operator-conformance-golden-v4 \
   --run-id kmp-operator-golden-v4 \
   --suite golden-v4 \
@@ -1051,7 +1051,7 @@ This proved that:
 
 - the deployed kernel contains the P111 benchmark data;
 - the public TLS endpoint is usable for this replay path;
-- `kernel_operator_mcp_replay` can execute raw predictions against real KMP/MCP;
+- `underpass_operator_mcp_replay` can execute raw predictions against real KMP/MCP;
 - partial `kernel_near` results are normal when paging or limits are active.
 
 ## 24. Golden V4 + P111 Requested V5

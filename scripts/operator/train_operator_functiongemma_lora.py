@@ -17,6 +17,7 @@ from functiongemma_operator import (
     build_prompt_messages,
     format_function_call,
     target_function_call_from_row,
+    validate_native_supported_dataset,
 )
 
 
@@ -49,6 +50,13 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    train_rows_raw = read_jsonl(args.train_jsonl)
+    eval_rows_raw = read_jsonl(args.eval_jsonl)
+    try:
+        validate_native_supported_dataset(train_rows_raw + eval_rows_raw)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+
     prepare_output_dir(args.output_dir, args.force)
 
     try:
@@ -66,8 +74,8 @@ def main() -> None:
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    train_rows = build_text_rows(read_jsonl(args.train_jsonl), tokenizer)
-    eval_rows = build_text_rows(read_jsonl(args.eval_jsonl), tokenizer)
+    train_rows = build_text_rows(train_rows_raw, tokenizer)
+    eval_rows = build_text_rows(eval_rows_raw, tokenizer)
     if process_rank() == 0:
         write_jsonl(args.output_dir / "functiongemma_train_text.jsonl", train_rows)
         write_jsonl(args.output_dir / "functiongemma_eval_text.jsonl", eval_rows)

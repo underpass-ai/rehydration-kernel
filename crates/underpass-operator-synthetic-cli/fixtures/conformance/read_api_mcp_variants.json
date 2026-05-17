@@ -1,0 +1,14 @@
+[
+  {
+    "slug": "steady",
+    "intent": "single current-about path"
+  },
+  {
+    "slug": "cross-about",
+    "intent": "explicit cross-about comparison"
+  },
+  {
+    "slug": "conflict",
+    "intent": "conflict-aware evidence review"
+  }
+]

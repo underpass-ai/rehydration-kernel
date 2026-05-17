@@ -2,10 +2,13 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: kop-hammer20-05b-predict-lme-v8-clean
+  annotations:
+    underpass.ai/quarantine-reason: "Historical Operator experiment; superseded by strict KMP-cursor/source-kind-agent datasets and kept for traceability only."
   labels:
     app.kubernetes.io/name: kop-hammer20-05b-predict-lme-v8-clean
     app.kubernetes.io/part-of: underpass-kmp
 spec:
+  suspend: true
   backoffLimit: 0
   template:
     metadata:

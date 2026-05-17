@@ -1,0 +1,17 @@
+[package]
+name = "underpass-operator-shared-application"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Application use cases for the Underpass Operator training subsystem"
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+underpass-operator-shared-domain.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

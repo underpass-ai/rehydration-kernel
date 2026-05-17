@@ -38,6 +38,8 @@ Current integration stance:
 | [kernel-plugin-architecture.md](product/kernel-plugin-architecture.md) | Exportable plugin API architecture and implementation guide for external plugin crates |
 | [kernel-write-protocol-plan.md](product/kernel-write-protocol-plan.md) | Writer-first plan for LLM/human memory ingestion above canonical `kernel_ingest` |
 | [kernel-tool-operator-model-plan.md](product/kernel-tool-operator-model-plan.md) | P1 plan for a small sidecar model that learns bounded KMP/MCP tool operation from audited trajectories |
+| [operator-test-architecture.md](product/operator-test-architecture.md) | Rust-first architecture for Operator contracts, evaluators, replay, and fail-fast dataset validation outside kernel core |
+| [operator-dataset-quality-contract.md](product/operator-dataset-quality-contract.md) | Required dataset gates for Operator training: leakage, diversity, balance, contrastive rows, and anti-collapse checks |
 | [operator-training-experiment-process.md](product/operator-training-experiment-process.md) | Process for versioned Operator training attempts, dataset provenance, stop gates, and required evidence |
 | [operator-training-runs/](product/operator-training-runs/README.md) | Per-attempt Operator training records |
 | [operator-benchmark-status-and-next-steps-2026-05-14.md](product/operator-benchmark-status-and-next-steps-2026-05-14.md) | Current Operator benchmark status, MemoryArena vs LongMemEval boundaries, and next execution steps |

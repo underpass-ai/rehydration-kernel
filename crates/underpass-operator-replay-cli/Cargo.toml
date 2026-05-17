@@ -1,0 +1,23 @@
+[package]
+name = "underpass-operator-replay-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "CLI composition root for Operator MCP replay"
+repository.workspace = true
+
+[[bin]]
+name = "underpass_operator_mcp_replay"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+rehydration-mcp.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+underpass-operator-replay-application.workspace = true
+underpass-operator-replay-domain.workspace = true
+underpass-operator-replay-infra.workspace = true

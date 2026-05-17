@@ -4,15 +4,38 @@ This folder contains the external training path for a small KMP tool-operator
 model. The model is not part of kernel core. It learns to emit one bounded
 KMP/MCP action from a visible memory state.
 
-Current training-data status, 2026-05-13:
+Current training-data status, 2026-05-17:
 
 - keep previous LoRA runs as baselines;
 - use the MemoryArena P1.11 corpus as the clean current training base;
+- use `read-api-mcp-v1-kmp-cursor-20260517` as the synthetic read API/MCP
+  conformance base before placing Operator in front of the full read surface;
+- use the KMP-cursor writer orchestration cut as the current writer base:
+  `writer-pre-read-v4-kmp-cursor-v2` plus
+  `writer-exec-v1-kmp-cursor-v2`;
+- keep the older standalone `read-api-mcp-v1` and `writer-pre-read-v4`
+  manifests quarantined because their SFT rows used symbolic trace cursors;
+- keep `writer-orchestration-v1` quarantined for claims because it used
+  symbolic trace cursors and weaker stop/prediction validation;
 - treat mixed MemoryArena + LongMemEval data as internal comparison only;
 - do not train publication candidates from the LongMemEval-S cleaned 500
   full-history artifacts until repeated `session_id` semantics are explicitly
   modeled;
 - fail fast on unsupported benchmark shapes instead of generating fallback ids.
+- require prompt/tool parity: a read-profile SFT dataset must expose only read
+  tools in the system prompt, while write tools remain outside that profile.
+- require trace pagination parity: `kernel_trace.page.cursor` must be the
+  numeric string returned by KMP `Trace.next_cursor`, not a synthetic cursor
+  label such as `page:next` or `trace:page:2`.
+- require exact public KMP/MCP enum and relation wire values; Operator datasets
+  must not rely on trimming, lowercasing, relation aliases, or silent
+  canonicalization.
+- require write-shape visibility in reports: dry-run versus commit, strict
+  options, prepared payload defaults, `kernel_ingest` dimensions/relations/
+  evidence/provenance presence, and raw access exclusions must be explicit.
+- treat the FunctionGemma-native scripts as legacy/read-only experiments. They
+  now fail fast on `write`, `write_context_read`, `prepared_tool_call`, writer
+  datasets, and target tools outside their small native function schema.
 
 See
 [`docs/product/operator-training-data-audit-2026-05-13.md`](../../docs/product/operator-training-data-audit-2026-05-13.md)
@@ -50,6 +73,16 @@ Current contract-coverage status:
 - `operator-read` contract coverage is 100% after adding `kernel_wake`,
   time/sequence temporal cursors, full dimension mode/scope validation, trace
   pagination, and window-policy capability checks.
+- `read-api-mcp-v1-kmp-cursor-20260517` generates 716 strict read
+  trajectories with 100% read profile coverage, 716 unique model-facing SFT
+  rows, zero duplicate row hashes, zero train/eval model-row overlap, and
+  numeric KMP trace cursors.
+- `writer-pre-read-v3` is historical only. It exposed useful coverage but was
+  superseded by v3b/v4 and then by the KMP-cursor v2 cut.
+- The current mixed writer-orchestration dataset has 810 rows, 40/40
+  train/eval capability coverage, 0 duplicate model rows, 0 train/eval
+  overlap, 0 dropped hidden refs/cursors, numeric KMP trace cursors, strict
+  stop validation, and 243/243 resolved oracle exact eval.
 - `operator-full` contract coverage is 100%; the contract now includes
   `kernel_ingest`, `kernel_write_memory`, relation-quality validation, and
   read-context proof.
@@ -84,7 +117,7 @@ Current contract-coverage status:
 Coverage command:
 
 ```bash
-cargo run -p rehydration-testkit --bin kernel_operator_contract_coverage -- \
+cargo run -p underpass-operator-evaluation-cli --bin underpass_operator_contract_coverage -- \
   --profile read \
   --trajectories /tmp/kernel-operator-sft-100-with-writer-by-task-anon-visible-candidate-details-holdout20/eval_trajectories.jsonl
 ```
@@ -92,11 +125,33 @@ cargo run -p rehydration-testkit --bin kernel_operator_contract_coverage -- \
 Conformance trajectory command:
 
 ```bash
-cargo run -p rehydration-testkit --bin kernel_operator_conformance_trajectory_export -- \
+cargo run -p underpass-operator-synthetic-cli --bin underpass_operator_conformance_trajectory_build -- \
+  --suite read-api-mcp-v1 \
+  --run-id kmp-operator-read-api-mcp-v1-kmp-cursor-20260517 \
+  --output /tmp/kernel-operator-conformance-read-api-mcp-v1-kmp-cursor-20260517 \
+  --force
+
+cargo run -p underpass-operator-evaluation-cli --bin underpass_operator_contract_coverage -- \
+  --profile read \
+  --trajectories /tmp/kernel-operator-conformance-read-api-mcp-v1-kmp-cursor-20260517/trajectories.jsonl \
+  --fail-under 100
+
+cargo run -p underpass-operator-synthetic-cli --bin underpass_operator_conformance_trajectory_build -- \
+  --suite writer-pre-read-v4 \
+  --run-id kmp-operator-writer-pre-read-v4-kmp-cursor-v2-20260517 \
+  --output /tmp/kernel-operator-conformance-writer-pre-read-v4-kmp-cursor-v2-20260517 \
+  --force
+
+cargo run -p underpass-operator-evaluation-cli --bin underpass_operator_contract_coverage -- \
+  --profile writer-pre-read \
+  --trajectories /tmp/kernel-operator-conformance-writer-pre-read-v4-kmp-cursor-v2-20260517/trajectories.jsonl \
+  --fail-under 100
+
+cargo run -p underpass-operator-synthetic-cli --bin underpass_operator_conformance_trajectory_build -- \
   --output /tmp/kernel-operator-conformance-full-v5 \
   --force
 
-cargo run -p rehydration-testkit --bin kernel_operator_contract_coverage -- \
+cargo run -p underpass-operator-evaluation-cli --bin underpass_operator_contract_coverage -- \
   --profile full \
   --trajectories /tmp/kernel-operator-conformance-full-v5/trajectories.jsonl \
   --fail-under 100
@@ -201,10 +256,45 @@ The 0.5B Operator can still learn valuable kernel-operation behavior around
 writer workflows:
 
 - when to call `kernel_near`, `kernel_trace`, or `kernel_inspect` before write;
-- when visible context is enough to execute a prepared `kernel_write_memory`;
+- when visible context is enough to execute a prepared write payload;
 - when a relation needs escalation to the teacher/large reasoning model;
 - when only an explicit anemic fallback is allowed;
-- how to emit one bounded KMP/MCP action without inventing refs or arguments.
+- how to emit one bounded Operator decision without inventing refs or
+  arguments.
+
+For the `writer-exec` and `writer-orchestration` profiles, successful writes
+are no longer model-generated full KMP calls. The model emits:
+
+```json
+{"action":{"type":"prepared_tool_call","tool":"kernel_write_memory","source":"draft_write.prepared_arguments"}}
+```
+
+or:
+
+```json
+{"action":{"type":"prepared_tool_call","tool":"kernel_ingest","source":"canonical_payload"}}
+```
+
+The deterministic prepared-payload executor resolves that compact decision into
+the real `kernel_write_memory` or `kernel_ingest` action by copying the visible
+payload exactly and then validating the final action against the KMP contract.
+Use `predict_operator_sft.py --resolve-prepared-payloads` during prediction and
+`underpass_operator_policy_eval --resolve-prepared-payloads` during model-facing
+evaluation.
+
+The `writer-orchestration` profile combines writer pre-read and prepared write
+execution in one policy surface. It still does not let the 0.5B model author
+semantic write payloads. The model-facing `allowed_tools` list is projected per
+row so the prompt and visible contract stay aligned:
+
+- `write_context_read` rows expose only `kernel_near`, `kernel_trace`, and
+  `kernel_inspect`;
+- `write` rows expose only `kernel_write_memory` and `kernel_ingest`;
+- `stop` remains available through the action contract.
+
+The raw trajectory must already match that profile-level tool surface. The SFT
+preparer fails fast if `allowed_tools` contains a tool outside the active
+profile instead of silently dropping it.
 
 Observed failure classes:
 
@@ -311,13 +401,13 @@ Use a separate profile for smart-writer pre-read. This prevents normal
 writer pre-read rows from blocking a read-profile claim:
 
 ```bash
-cargo run -p rehydration-testkit --bin kernel_operator_conformance_trajectory_export -- \
+cargo run -p underpass-operator-synthetic-cli --bin underpass_operator_conformance_trajectory_build -- \
   --suite writer-pre-read-v2 \
   --run-id kmp-operator-writer-pre-read-v2-YYYYMMDD \
   --output <writer-pre-read-conformance-dir> \
   --force
 
-cargo run -p rehydration-testkit --bin kernel_operator_contract_coverage -- \
+cargo run -p underpass-operator-evaluation-cli --bin underpass_operator_contract_coverage -- \
   --profile writer-pre-read \
   --trajectories <writer-pre-read-conformance-dir>/trajectories.jsonl \
   --fail-under 100
@@ -345,9 +435,101 @@ policy, `inspect.raw=false`, first and continuation trace pages, writer
 `last_tool` states through `kernel_trace`, candidate roles for previous answers
 and same-subtask questions, and explicit ambiguous candidate pools.
 
-`writer-pre-read-v1` is retained as a historical fixture. Use
-`writer-pre-read-v2` for new training claims because it covers sufficient
-context stops, trace pagination, and ambiguous writer candidate decisions.
+`writer-pre-read-v1` and `writer-pre-read-v2` are retained as historical
+fixtures. Use `writer-pre-read-v4-kmp-cursor-v2` for new writer pre-read or
+writer-orchestration claims because it covers sufficient-context stops, trace
+pagination, ambiguous writer candidate decisions, and numeric KMP trace
+cursors.
+
+Use `writer-orchestration` when training the combined writer policy that must
+decide whether to keep reading memory or execute a prepared write. For the
+current clean KMP-cursor cut, the preserved artifact root is:
+
+```bash
+ARTIFACT_ROOT=../rehydration-kernel-artifacts/operator/2026-05-17-kmp-cursor-contract-refresh
+RUN_ROOT=../rehydration-kernel-artifacts/operator/runs
+```
+
+The regeneration recipe is:
+
+```bash
+python scripts/operator/prepare_operator_sft_dataset.py \
+  --trajectories /tmp/kernel-operator-conformance-writer-pre-read-v4-kmp-cursor-v2-20260517/trajectories.jsonl \
+  --trajectories /tmp/kernel-operator-conformance-writer-exec-v1-kmp-cursor-v2-20260517/trajectories.jsonl \
+  --output /tmp/kernel-operator-sft-writer-orchestration-v2-kmp-cursor-20260517 \
+  --include-mode write_context_read \
+  --include-mode write \
+  --split-mode group \
+  --group-key task_or_step \
+  --eval-ratio 0.3 \
+  --seed 42 \
+  --anonymize-refs \
+  --require-visible-target-refs \
+  --require-visible-target-cursors \
+  --capability-split-profile writer-orchestration \
+  --min-train-capability-count 5 \
+  --min-eval-capability-count 5 \
+  --force
+```
+
+Do not train current jobs directly from `/tmp`. After regeneration, preserve
+the accepted cut under `ARTIFACT_ROOT` and train from that root. The current
+artifact gate checks train/eval coverage for read, writer-pre-read,
+writer-exec, and mixed writer-orchestration profiles:
+
+```bash
+bash scripts/operator/check_current_operator_artifacts.sh
+```
+
+Before launching a GPU job, validate the exact train/eval files with the same
+contract gate used by the trainer:
+
+```bash
+python scripts/operator/train_operator_sft_lora.py \
+  --train-jsonl "$ARTIFACT_ROOT/kernel-operator-sft-writer-orchestration-v2-kmp-cursor-20260517/openai_train.jsonl" \
+  --eval-jsonl "$ARTIFACT_ROOT/kernel-operator-sft-writer-orchestration-v2-kmp-cursor-20260517/openai_eval.jsonl" \
+  --output-dir "$RUN_ROOT/kernel-operator-qwen05-lora-writer-orchestration-v2-kmp-cursor-validate-only" \
+  --validate-only
+```
+
+This validates strict action shape, row-level `allowed_tools`, prepared-payload
+resolution, duplicate model-facing rows, and train/eval overlap without loading
+training dependencies.
+
+Also gate the prepared SFT rows with the Rust API/MCP coverage reporter. The
+reporter accepts both raw trajectories and final SFT JSONL rows. For the
+combined writer-orchestration cut, both constituent profiles must be 100%:
+
+```bash
+cargo run -p underpass-operator-evaluation-cli --bin underpass_operator_contract_coverage -- \
+  --profile writer-pre-read \
+  --trajectories "$ARTIFACT_ROOT/kernel-operator-sft-writer-orchestration-v2-kmp-cursor-20260517/eval.jsonl" \
+  --fail-under 100
+
+cargo run -p underpass-operator-evaluation-cli --bin underpass_operator_contract_coverage -- \
+  --profile write \
+  --trajectories "$ARTIFACT_ROOT/kernel-operator-sft-writer-orchestration-v2-kmp-cursor-20260517/eval.jsonl" \
+  --fail-under 100
+```
+
+Use the same preflight for prediction:
+
+```bash
+python scripts/operator/predict_operator_sft.py \
+  --dataset-jsonl "$ARTIFACT_ROOT/kernel-operator-sft-writer-orchestration-v2-kmp-cursor-20260517/eval.jsonl" \
+  --model-id Qwen/Qwen2.5-0.5B-Instruct \
+  --output "$RUN_ROOT/kernel-operator-qwen05-predictions-writer-orchestration-v2-kmp-cursor-validate-only" \
+  --resolve-prepared-payloads \
+  --validate-only
+```
+
+This profile requires 100% coverage for both constituent contracts:
+writer pre-read navigation and writer-exec fail-fast/prepared-payload
+execution. Use this profile before claiming that Operator can sit in the
+writer path without hiding part of the KMP/MCP API. Prediction for this profile
+must use `--resolve-prepared-payloads`; live replay expects final
+`kernel_write_memory` or `kernel_ingest` calls, not model-facing
+`prepared_tool_call` placeholders.
 
 For large real benchmark exports, also add model-row quality gates before
 training:
@@ -515,7 +697,7 @@ MemoryArena exporter; both exporters emit the same
 them together.
 
 ```bash
-cargo run -p rehydration-testkit --bin longmemeval_operator_trajectory_export -- \
+cargo run -p underpass-operator-benchmark-adapters-cli --bin longmemeval_operator_trajectory_export -- \
   --run <longmemeval-run-dir> \
   --artifacts <longmemeval-adapter-artifacts-dir> \
   --output <longmemeval-operator-trajectories-dir> \
@@ -526,7 +708,7 @@ cargo run -p rehydration-testkit --bin longmemeval_operator_trajectory_export --
 For LongMemEval smart-writer runs, include writer context reads:
 
 ```bash
-cargo run -p rehydration-testkit --bin longmemeval_operator_trajectory_export -- \
+cargo run -p underpass-operator-benchmark-adapters-cli --bin longmemeval_operator_trajectory_export -- \
   --run <longmemeval-smart-writer-run-dir> \
   --artifacts <longmemeval-smart-writer-artifacts-dir> \
   --output <longmemeval-smart-writer-operator-trajectories-dir> \
@@ -587,16 +769,18 @@ python scripts/operator/predict_operator_sft.py \
 ## 4. Evaluate
 
 ```bash
-cargo run -p rehydration-testkit --bin kernel_operator_policy_eval -- \
-  --trajectories /tmp/kernel-operator-sft-100-with-writer-by-task-anon-visible-candidate-details/eval_model_trajectories.jsonl \
+cargo run -p underpass-operator-evaluation-cli --bin underpass_operator_policy_eval -- \
+  --model-facing-eval /tmp/kernel-operator-sft-100-with-writer-by-task-anon-visible-candidate-details/eval.jsonl \
   --predictions /tmp/kernel-operator-qwen05-predictions-v5/predictions.jsonl \
   --output /tmp/kernel-operator-qwen05-predictions-v5-policy-eval.json \
   --details-output /tmp/kernel-operator-qwen05-predictions-v5-policy-details.jsonl
 ```
 
 For non-anonymized smoke datasets, `eval_model_trajectories.jsonl` and
-`eval_trajectories.jsonl` are equivalent. For strict anonymized datasets, always
-use `eval_model_trajectories.jsonl`.
+`eval_trajectories.jsonl` are equivalent. For strict anonymized SFT datasets,
+use `--model-facing-eval <sft-dir>/eval.jsonl` first. Do not compare
+model-facing refs such as `about_0001` and `ref_0001` directly against raw
+trajectory refs.
 
 The Kubernetes prediction job may create `/tmp/kernel-operator-qwen05-predictions-v5`
 as `nobody`. In that case, write `policy-eval.json` to a sibling path as shown
@@ -751,7 +935,7 @@ python scripts/operator/deanonymize_operator_predictions.py \
 Outputs:
 
 - `predictions.jsonl`: raw-ref predictions accepted by
-  `kernel_operator_policy_eval`;
+  `underpass_operator_policy_eval`;
 - `audit.jsonl`: one row per prediction with model action, raw action, and
   mapped synthetic refs and about ids;
 - `failures.jsonl`: missing or unmappable refs;
@@ -764,7 +948,7 @@ mapping.
 Raw-ref evaluation:
 
 ```bash
-cargo run -p rehydration-testkit --bin kernel_operator_policy_eval -- \
+cargo run -p underpass-operator-evaluation-cli --bin underpass_operator_policy_eval -- \
   --trajectories /tmp/kernel-operator-sft-100-with-writer-by-task-anon-visible-candidate-details-holdout20/eval_trajectories.jsonl \
   --predictions /tmp/kernel-operator-qwen05-predictions-v6-holdout20-strict-20260514-raw/predictions.jsonl \
   --output /tmp/kernel-operator-qwen05-predictions-v6-holdout20-strict-20260514-raw-policy-eval.json
@@ -791,10 +975,10 @@ Raw-ref policy eval proves the predicted action matches the audited target
 action. Live replay proves the predicted action is executable against the
 kernel through the real MCP adapter and typed gRPC service.
 
-Use `kernel_operator_mcp_replay` after de-anonymization:
+Use `underpass_operator_mcp_replay` after de-anonymization:
 
 ```bash
-cargo run -p rehydration-testkit --bin kernel_operator_mcp_replay -- \
+cargo run -p underpass-operator-replay-cli --bin underpass_operator_mcp_replay -- \
   --trajectories /tmp/kernel-operator-sft-100-with-writer-by-task-anon-visible-candidate-details-holdout20/eval_trajectories.jsonl \
   --predictions /tmp/kernel-operator-qwen05-predictions-v6-holdout20-strict-20260514-raw/predictions.jsonl \
   --output /tmp/kernel-operator-qwen05-predictions-v6-holdout20-strict-20260514-mcp-replay-100 \
@@ -928,7 +1112,7 @@ cargo run -p rehydration-testkit --bin memoryarena_kmp_run_audit -- \
 # For the next audit page, use inspect.next_offset from <audit.json> or the
 # last progress event's next_offset as the new --offset.
 
-cargo run -p rehydration-testkit --bin kernel_operator_trajectory_export -- \
+cargo run -p underpass-operator-benchmark-adapters-cli --bin memoryarena_operator_trajectory_export -- \
   --run <memoryarena-run-dir> \
   --output <operator-trajectories-dir> \
   --include-writer-reads \
@@ -962,8 +1146,8 @@ python scripts/operator/predict_operator_sft.py \
   --batch-size 8 \
   --force
 
-cargo run -p rehydration-testkit --bin kernel_operator_policy_eval -- \
-  --trajectories <operator-sft-dir>/eval_model_trajectories.jsonl \
+cargo run -p underpass-operator-evaluation-cli --bin underpass_operator_policy_eval -- \
+  --model-facing-eval <operator-sft-dir>/eval.jsonl \
   --predictions <operator-predictions-dir>/predictions.jsonl \
   --output <operator-policy-eval>.json
 ```

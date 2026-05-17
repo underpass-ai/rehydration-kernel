@@ -1,0 +1,37 @@
+{
+  "about": "incident:mobile-login",
+  "intent": "record_feedback",
+  "actor": "operator:conformance",
+  "observed_at": "2026-05-06T10:09:30Z",
+  "scope": {
+    "task": "incident:mobile-login",
+    "process": "incident:mobile-login:resolution",
+    "episode": "incident:mobile-login:episode:operator"
+  },
+  "current": {
+    "kind": "feedback",
+    "summary": "The operator has enough evidence to answer the login-failure question.",
+    "evidence": "The visible evidence identifies the refresh race and final remediation."
+  },
+  "connect_to": [
+    {
+      "ref": "incident:mobile-login:question:login-failure",
+      "rel": "answers",
+      "class": "evidential",
+      "why": "The feedback answers the original incident question without claiming a richer dependency.",
+      "evidence": "The refresh-race evidence and final decision are visible.",
+      "confidence": "medium"
+    }
+  ],
+  "read_context": {
+    "ask_refs": ["incident:mobile-login:question:login-failure"],
+    "temporal_refs": ["incident:mobile-login:decision:refresh-retry"]
+  },
+  "idempotency_key": "conformance:write-memory:answers:login-failure",
+  "options": {
+    "dry_run": true,
+    "strict": true,
+    "sequence": 8
+  },
+  "source_kind": "agent"
+}

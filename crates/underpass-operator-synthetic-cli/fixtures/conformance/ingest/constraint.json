@@ -1,0 +1,84 @@
+{
+  "about": "incident:mobile-login",
+  "idempotency_key": "conformance:ingest:constraint:no-timeout-widening",
+  "dry_run": true,
+  "memory": {
+    "dimensions": [
+      {
+        "id": "incident:mobile-login",
+        "kind": "task",
+        "title": "Mobile login incident"
+      },
+      {
+        "id": "policy:auth",
+        "kind": "policy",
+        "title": "Authentication policy"
+      }
+    ],
+    "entries": [
+      {
+        "id": "incident:mobile-login:constraint:no-timeout-widening",
+        "kind": "constraint",
+        "text": "Do not widen login timeout when refresh-race evidence is present.",
+        "coordinates": [
+          {
+            "dimension": "task",
+            "scope_id": "incident:mobile-login",
+            "sequence": 12,
+            "observed_at": "2026-05-06T10:08:00Z"
+          },
+          {
+            "dimension": "policy",
+            "scope_id": "policy:auth",
+            "sequence": 1,
+            "observed_at": "2026-05-06T10:08:00Z"
+          }
+        ]
+      },
+      {
+        "id": "incident:mobile-login:decision:refresh-retry",
+        "kind": "decision",
+        "text": "Keep token refresh retry and remove timeout widening.",
+        "coordinates": [
+          {
+            "dimension": "task",
+            "scope_id": "incident:mobile-login",
+            "sequence": 13,
+            "observed_at": "2026-05-06T10:08:30Z"
+          }
+        ]
+      }
+    ],
+    "relations": [
+      {
+        "from": "incident:mobile-login:decision:refresh-retry",
+        "to": "incident:mobile-login:constraint:no-timeout-widening",
+        "rel": "satisfies_constraint",
+        "class": "constraint",
+        "why": "The decision respects the no-timeout-widening constraint.",
+        "evidence": "The refresh retry path removes timeout widening.",
+        "confidence": "high",
+        "sequence": 1
+      }
+    ],
+    "evidence": [
+      {
+        "id": "incident:mobile-login:evidence:no-timeout-widening",
+        "supports": [
+          "incident:mobile-login:constraint:no-timeout-widening",
+          "incident:mobile-login:decision:refresh-retry"
+        ],
+        "text": "Timeout widening was removed after refresh retry passed.",
+        "source": "synthetic_conformance",
+        "time": "2026-05-06T10:08:30Z"
+      }
+    ]
+  },
+  "provenance": {
+    "source_kind": "agent",
+    "source_agent": "operator:conformance",
+    "observed_at": "2026-05-06T10:08:30Z",
+    "correlation_id": "conformance:operator-full",
+    "causation_id": "conformance:ingest:no-timeout-widening"
+  }
+}

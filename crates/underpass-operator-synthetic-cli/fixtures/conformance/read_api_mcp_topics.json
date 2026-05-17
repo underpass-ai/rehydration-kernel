@@ -1,0 +1,62 @@
+[
+  {
+    "slug": "auth-refresh",
+    "title": "login refresh race",
+    "agent": "auth"
+  },
+  {
+    "slug": "billing-capture",
+    "title": "payment capture retry",
+    "agent": "payments"
+  },
+  {
+    "slug": "search-index",
+    "title": "search index lag",
+    "agent": "search"
+  },
+  {
+    "slug": "deploy-rollback",
+    "title": "deployment rollback",
+    "agent": "release"
+  },
+  {
+    "slug": "cache-invalidation",
+    "title": "cache invalidation",
+    "agent": "platform"
+  },
+  {
+    "slug": "quota-enforcement",
+    "title": "quota enforcement",
+    "agent": "runtime"
+  },
+  {
+    "slug": "webhook-delivery",
+    "title": "webhook delivery",
+    "agent": "integrations"
+  },
+  {
+    "slug": "report-export",
+    "title": "report export",
+    "agent": "data"
+  },
+  {
+    "slug": "feature-flag",
+    "title": "feature flag rollout",
+    "agent": "experiments"
+  },
+  {
+    "slug": "migration-checksum",
+    "title": "migration checksum",
+    "agent": "storage"
+  },
+  {
+    "slug": "ci-flake",
+    "title": "CI flaky test isolation",
+    "agent": "ci"
+  },
+  {
+    "slug": "stock-sync",
+    "title": "warehouse stock sync",
+    "agent": "operations"
+  }
+]

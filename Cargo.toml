@@ -18,6 +18,26 @@ members = [
     "crates/rehydration-tests-kernel",
     "crates/rehydration-tests-paper",
     "crates/rehydration-transport-grpc",
+    "crates/underpass-operator-benchmark-adapters-cli",
+    "crates/underpass-operator-evaluation-cli",
+    "crates/underpass-operator-evaluation-application",
+    "crates/underpass-operator-evaluation-domain",
+    "crates/underpass-operator-evaluation-infra",
+    "crates/underpass-operator-replay-application",
+    "crates/underpass-operator-replay-cli",
+    "crates/underpass-operator-replay-domain",
+    "crates/underpass-operator-replay-infra",
+    "crates/underpass-operator-shared-application",
+    "crates/underpass-operator-shared-contract",
+    "crates/underpass-operator-shared-domain",
+    "crates/underpass-operator-shared-infra",
+    "crates/underpass-operator-synthetic-cli",
+    "crates/underpass-operator-synthetic-application",
+    "crates/underpass-operator-synthetic-domain",
+    "crates/underpass-operator-synthetic-infra",
+    "crates/underpass-operator-training-application",
+    "crates/underpass-operator-training-domain",
+    "crates/underpass-operator-training-infra",
 ]
 resolver = "3"
 
@@ -46,6 +66,26 @@ rehydration-proto = { path = "crates/rehydration-proto" }
 rehydration-testkit = { path = "crates/rehydration-testkit" }
 rehydration-tests-shared = { path = "crates/rehydration-tests-shared" }
 rehydration-transport-grpc = { path = "crates/rehydration-transport-grpc" }
+underpass-operator-benchmark-adapters-cli = { path = "crates/underpass-operator-benchmark-adapters-cli" }
+underpass-operator-evaluation-cli = { path = "crates/underpass-operator-evaluation-cli" }
+underpass-operator-evaluation-application = { path = "crates/underpass-operator-evaluation-application" }
+underpass-operator-evaluation-domain = { path = "crates/underpass-operator-evaluation-domain" }
+underpass-operator-evaluation-infra = { path = "crates/underpass-operator-evaluation-infra" }
+underpass-operator-replay-application = { path = "crates/underpass-operator-replay-application" }
+underpass-operator-replay-cli = { path = "crates/underpass-operator-replay-cli" }
+underpass-operator-replay-domain = { path = "crates/underpass-operator-replay-domain" }
+underpass-operator-replay-infra = { path = "crates/underpass-operator-replay-infra" }
+underpass-operator-shared-application = { path = "crates/underpass-operator-shared-application" }
+underpass-operator-shared-contract = { path = "crates/underpass-operator-shared-contract" }
+underpass-operator-shared-domain = { path = "crates/underpass-operator-shared-domain" }
+underpass-operator-shared-infra = { path = "crates/underpass-operator-shared-infra" }
+underpass-operator-synthetic-cli = { path = "crates/underpass-operator-synthetic-cli" }
+underpass-operator-synthetic-application = { path = "crates/underpass-operator-synthetic-application" }
+underpass-operator-synthetic-domain = { path = "crates/underpass-operator-synthetic-domain" }
+underpass-operator-synthetic-infra = { path = "crates/underpass-operator-synthetic-infra" }
+underpass-operator-training-application = { path = "crates/underpass-operator-training-application" }
+underpass-operator-training-domain = { path = "crates/underpass-operator-training-domain" }
+underpass-operator-training-infra = { path = "crates/underpass-operator-training-infra" }
 prost = "0.13.5"
 prost-types = "0.13.5"
 sha2 = "0.10"

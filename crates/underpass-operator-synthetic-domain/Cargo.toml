@@ -1,0 +1,17 @@
+[package]
+name = "underpass-operator-synthetic-domain"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Domain model for the Operator synthetic data bounded context"
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+underpass-operator-shared-domain.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

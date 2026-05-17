@@ -41,7 +41,6 @@ pub(crate) fn tools_list_result() -> Value {
                             "properties": {
                                 "dimensions": {
                                     "type": "array",
-                                    "minItems": 1,
                                     "items": {
                                         "type": "object",
                                         "additionalProperties": true,
