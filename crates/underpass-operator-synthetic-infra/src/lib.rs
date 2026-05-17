@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
 
+pub mod conformance_fixtures;
+
 use underpass_operator_shared_domain::TrainingTrajectory;
 use underpass_operator_shared_infra::mappers::TrainingTrajectoryMapper;
 use underpass_operator_synthetic_application::{

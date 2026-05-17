@@ -14,3 +14,5 @@ workspace = true
 serde.workspace = true
 serde_json.workspace = true
 underpass-operator-shared-domain.workspace = true
+underpass-operator-synthetic-domain.workspace = true
+underpass-operator-synthetic-infra.workspace = true

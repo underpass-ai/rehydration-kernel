@@ -10,11 +10,17 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 use underpass_operator_shared_domain::{
-    operator_action_contract_error as kernel_operator_action_contract_error,
+    operator_action_contract_diagnostic as kernel_operator_action_contract_diagnostic,
     operator_allowed_full_tools as kernel_operator_allowed_full_tools,
     operator_allowed_read_tools as kernel_operator_allowed_read_tools,
     operator_allowed_write_tools as kernel_operator_allowed_write_tools,
     operator_allowed_writer_pre_read_tools as kernel_operator_allowed_writer_pre_read_tools,
+};
+use underpass_operator_synthetic_domain::{ReadAgentDimension, ReadIntent, ReadTopicTitle};
+use underpass_operator_synthetic_infra::conformance_fixtures::{
+    action_arguments_from_json, read_api_mcp_topics_from_json, read_api_mcp_variants_from_json,
+    writer_exec_topics_from_json, writer_pre_read_topics_from_json,
+    writer_pre_read_variants_from_json,
 };
 
 const EXPORTER: &str = "kernel-operator-conformance-trajectory-export-v1";
@@ -61,7 +67,19 @@ struct ExportSummary {
     task_families: BTreeMap<String, usize>,
     target_actions: BTreeMap<String, usize>,
     contract_validation_failures: usize,
+    contract_validation_failure_phases: BTreeMap<String, usize>,
     notes: Vec<String>,
+}
+
+fn fixture_or_panic<T, E: std::fmt::Display>(fixture_name: &str, result: Result<T, E>) -> T {
+    match result {
+        Ok(value) => value,
+        Err(error) => panic!("invalid operator conformance fixture `{fixture_name}`: {error}"),
+    }
+}
+
+fn action_arguments_fixture(fixture_name: &str, raw: &str) -> Value {
+    fixture_or_panic(fixture_name, action_arguments_from_json(raw)).into_value()
 }
 
 fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
@@ -2612,39 +2630,35 @@ fn read_rare_expansion_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
 fn read_api_mcp_v1_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
     let mut items = read_rare_expansion_trajectories(run_id);
 
-    let topics = [
-        ("auth-refresh", "login refresh race", "auth"),
-        ("billing-capture", "payment capture retry", "payments"),
-        ("search-index", "search index lag", "search"),
-        ("deploy-rollback", "deployment rollback", "release"),
-        ("cache-invalidation", "cache invalidation", "platform"),
-        ("quota-enforcement", "quota enforcement", "runtime"),
-        ("webhook-delivery", "webhook delivery", "integrations"),
-        ("report-export", "report export", "data"),
-        ("feature-flag", "feature flag rollout", "experiments"),
-        ("migration-checksum", "migration checksum", "storage"),
-        ("ci-flake", "CI flaky test isolation", "ci"),
-        ("stock-sync", "warehouse stock sync", "operations"),
-    ];
-    let variants = [
-        ("steady", "single current-about path"),
-        ("cross-about", "explicit cross-about comparison"),
-        ("conflict", "conflict-aware evidence review"),
-    ];
+    let topics = fixture_or_panic(
+        "read_api_mcp_topics.json",
+        read_api_mcp_topics_from_json(include_str!(
+            "../../fixtures/conformance/read_api_mcp_topics.json"
+        )),
+    );
+    let variants = fixture_or_panic(
+        "read_api_mcp_variants.json",
+        read_api_mcp_variants_from_json(include_str!(
+            "../../fixtures/conformance/read_api_mcp_variants.json"
+        )),
+    );
 
     let mut index = 0usize;
-    for (topic_slug, topic, agent) in topics {
-        for (variant, intent) in variants {
+    for topic in &topics {
+        for variant in &variants {
             index += 1;
-            let slug = format!("{topic_slug}-{variant}-{index:02}");
-            let agent_dimension = format!("agent:{agent}-{variant}");
+            let slug = format!("{}-{}-{index:02}", topic.slug(), variant.slug());
+            let agent_dimension = fixture_or_panic(
+                "read_api_mcp.agent_dimension",
+                topic.agent_dimension_for(variant),
+            );
             push_read_api_mcp_v1_scenario(
                 &mut items,
                 run_id,
                 &slug,
-                topic,
+                topic.title(),
                 &agent_dimension,
-                intent,
+                variant.intent(),
                 index,
             );
         }
@@ -2658,9 +2672,9 @@ fn push_read_api_mcp_v1_scenario(
     items: &mut Vec<TrajectoryItem>,
     run_id: &str,
     slug: &str,
-    topic: &str,
-    agent_dimension: &str,
-    intent: &str,
+    topic: &ReadTopicTitle,
+    agent_dimension: &ReadAgentDimension,
+    intent: &ReadIntent,
     index: usize,
 ) {
     let read_tools = kernel_operator_allowed_read_tools();
@@ -2710,7 +2724,7 @@ fn push_read_api_mcp_v1_scenario(
                 "operator_state": {
                     "decision": "wake_current_about",
                     "scenario": slug,
-                    "intent": intent
+                    "intent": intent.as_str()
                 }
             }),
             read_tools.clone(),
@@ -2757,7 +2771,7 @@ fn push_read_api_mcp_v1_scenario(
             "ask-conflicts-only",
             format!("Which {topic} hypotheses conflict with the primary signal?"),
             "show_conflicts",
-            json!({ "mode": "only", "scope": "current_about", "include": [agent_dimension, "hypothesis", "decision"] }),
+            json!({ "mode": "only", "scope": "current_about", "include": [agent_dimension.as_str(), "hypothesis", "decision"] }),
             2600,
         ),
     ];
@@ -2788,7 +2802,7 @@ fn push_read_api_mcp_v1_scenario(
                     "operator_state": {
                         "decision": "ask_for_context",
                         "scenario": slug,
-                        "intent": intent
+                        "intent": intent.as_str()
                     }
                 }),
                 read_tools.clone(),
@@ -2861,7 +2875,7 @@ fn push_read_api_mcp_v1_scenario(
                     "operator_state": {
                         "decision": policy,
                         "scenario": slug,
-                        "intent": intent
+                        "intent": intent.as_str()
                     }
                 }),
                 read_tools.clone(),
@@ -2947,7 +2961,7 @@ fn push_read_api_mcp_v1_scenario(
                     "operator_state": {
                         "decision": tool,
                         "scenario": slug,
-                        "intent": intent
+                        "intent": intent.as_str()
                     }
                 }),
                 read_tools.clone(),
@@ -2997,7 +3011,7 @@ fn push_read_api_mcp_v1_scenario(
                 "operator_state": {
                     "decision": "trace_first_page",
                     "scenario": slug,
-                    "intent": intent
+                    "intent": intent.as_str()
                 }
             }),
             read_tools.clone(),
@@ -3056,7 +3070,7 @@ fn push_read_api_mcp_v1_scenario(
                 "operator_state": {
                     "decision": "continue_page",
                     "scenario": slug,
-                    "intent": intent
+                    "intent": intent.as_str()
                 }
             }),
             read_tools.clone(),
@@ -3105,7 +3119,7 @@ fn push_read_api_mcp_v1_scenario(
                     "operator_state": {
                         "decision": "inspect_detail",
                         "scenario": slug,
-                        "intent": intent
+                        "intent": intent.as_str()
                     }
                 }),
                 read_tools.clone(),
@@ -3144,7 +3158,7 @@ fn push_read_api_mcp_v1_scenario(
                 "operator_state": {
                     "decision": "stop_sufficient",
                     "scenario": slug,
-                    "intent": intent
+                        "intent": intent.as_str()
                 }
             }),
             read_tools.clone(),
@@ -3189,7 +3203,7 @@ fn push_read_api_mcp_v1_scenario(
                 "operator_state": {
                     "decision": "stop_invalid_arguments",
                     "scenario": slug,
-                    "intent": intent
+                    "intent": intent.as_str()
                 }
             }),
             read_tools,
@@ -3524,106 +3538,31 @@ fn writer_pre_read_v3_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
     let mut items = Vec::new();
     let read_tools = kernel_operator_allowed_writer_pre_read_tools();
 
-    let topics = [
-        (
-            "auth-refresh-race",
-            "mobile login refresh race",
-            "question_refines_previous_answer",
-            "answer_addresses_same_question",
-        ),
-        (
-            "search-index-lag",
-            "search indexing lag",
-            "question_depends_on_prior_measurement",
-            "answer_supersedes_prior_attempt",
-        ),
-        (
-            "billing-retry",
-            "billing invoice retry",
-            "question_reopens_failed_attempt",
-            "answer_uses_previous_observation",
-        ),
-        (
-            "deploy-rollback",
-            "deployment rollback",
-            "question_contradicts_prior_assumption",
-            "answer_confirms_recovery_path",
-        ),
-        (
-            "feature-flag",
-            "feature flag rollout",
-            "question narrows rollout scope",
-            "answer_updates_rollout_decision",
-        ),
-        (
-            "migration-checksum",
-            "data migration checksum",
-            "question_requests_prior_checksum",
-            "answer_resolves_checksum_conflict",
-        ),
-        (
-            "cache-invalidation",
-            "cache invalidation",
-            "question_depends_on_cache_trace",
-            "answer_explains_stale_read",
-        ),
-        (
-            "webhook-dedupe",
-            "payment webhook dedupe",
-            "question_links_duplicate_event",
-            "answer_selects_dedupe_rule",
-        ),
-        (
-            "ci-flake",
-            "CI flaky test isolation",
-            "question_compares_failed_attempts",
-            "answer_replaces_test_hypothesis",
-        ),
-        (
-            "support-sla",
-            "support escalation SLA",
-            "question_depends_on_escalation_state",
-            "answer_closes_escalation_loop",
-        ),
-        (
-            "model-drift",
-            "recommendation model drift",
-            "question_reuses_prior_drift_signal",
-            "answer_updates_monitoring_threshold",
-        ),
-        (
-            "stock-sync",
-            "warehouse stock sync",
-            "question_depends_on_inventory_snapshot",
-            "answer_resolves_sync_order",
-        ),
-    ];
-    let variants = [
-        (
-            "linear",
-            "previous_subtask_answer",
-            "same_subtask_question",
-            "previous evidence is the likely relation target",
-        ),
-        (
-            "ambiguous",
-            "older_subtask_answer",
-            "previous_subtask_answer",
-            "two plausible targets must be disambiguated before writing",
-        ),
-        (
-            "repair",
-            "previous_subtask_answer",
-            "same_subtask_question",
-            "a later answer repairs or supersedes an earlier attempt",
-        ),
-    ];
+    let topics = fixture_or_panic(
+        "writer_pre_read_topics.json",
+        writer_pre_read_topics_from_json(include_str!(
+            "../../fixtures/conformance/writer_pre_read_topics.json"
+        )),
+    );
+    let variants = fixture_or_panic(
+        "writer_pre_read_variants.json",
+        writer_pre_read_variants_from_json(include_str!(
+            "../../fixtures/conformance/writer_pre_read_variants.json"
+        )),
+    );
 
     let mut case_index = 0usize;
-    for (topic_slug, topic, question_hint, answer_hint) in topics {
-        for (variant_slug, question_primary_role, answer_secondary_role, variant_reason) in variants
-        {
+    for topic in &topics {
+        for variant in &variants {
             case_index += 1;
+            let topic_slug = topic.slug();
+            let topic_title = topic.title();
+            let question_hint = topic.question_hint();
+            let answer_hint = topic.answer_hint();
+            let variant_slug = variant.slug();
+            let question_primary_role = variant.question_primary_role();
+            let answer_secondary_role = variant.answer_secondary_role();
+            let variant_reason = variant.reason();
             let slug = format!("{topic_slug}-{variant_slug}-{case_index:02}");
             let about = format!("incident:{run_id}:writer-pre-read-v3:{slug}");
             let entry_question = format!("{about}:subtask:5:question");
@@ -3637,13 +3576,13 @@ fn writer_pre_read_v3_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
             let trace_cursor_answer = "16";
             let priority_offset = (case_index % 5) as u64;
 
-            let question_primary_ref = if question_primary_role == "older_subtask_answer" {
+            let question_primary_ref = if question_primary_role.selects_older_subtask_answer() {
                 older_answer.as_str()
             } else {
                 previous_answer.as_str()
             };
             let answer_primary_ref = same_question.as_str();
-            let answer_secondary_ref = if answer_secondary_role == "previous_subtask_answer" {
+            let answer_secondary_ref = if answer_secondary_role.selects_previous_subtask_answer() {
                 previous_answer.as_str()
             } else {
                 older_question.as_str()
@@ -3652,9 +3591,9 @@ fn writer_pre_read_v3_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
             let question_candidates = writer_pre_read_candidate_details(vec![
                 (
                     question_primary_ref,
-                    question_primary_role,
+                    question_primary_role.as_str(),
                     10 + priority_offset,
-                    question_hint,
+                    question_hint.as_str(),
                 ),
                 (
                     previous_question.as_str(),
@@ -3680,11 +3619,11 @@ fn writer_pre_read_v3_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
                     answer_primary_ref,
                     "same_subtask_question",
                     10 + priority_offset,
-                    answer_hint,
+                    answer_hint.as_str(),
                 ),
                 (
                     answer_secondary_ref,
-                    answer_secondary_role,
+                    answer_secondary_role.as_str(),
                     18 + priority_offset,
                     "answer_may_reuse_prior_context",
                 ),
@@ -3719,7 +3658,7 @@ fn writer_pre_read_v3_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
                 json!({ "entries": wide_entries, "tokens": 2600 + (case_index % 4) * 200 }),
                 json!({ "before_entries": wide_before, "after_entries": 0 }),
                 &format!(
-                    "Read bounded nearby context for the {topic} question before choosing a memory relation; {variant_reason}."
+                    "Read bounded nearby context for the {topic_title} question before choosing a memory relation; {variant_reason}."
                 ),
                 vec![
                     question_primary_ref,
@@ -3730,8 +3669,8 @@ fn writer_pre_read_v3_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
             tag_writer_pre_read_v3(
                 &mut items,
                 "near_expand_before_relation",
-                variant_slug,
-                topic_slug,
+                variant_slug.as_str(),
+                topic_slug.as_str(),
             );
 
             push_writer_pre_read_inspect_ambiguous(
@@ -3749,14 +3688,14 @@ fn writer_pre_read_v3_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
                     older_answer.as_str(),
                 ],
                 &format!(
-                    "Inspect the strongest {topic} question candidate after near returned several plausible relation targets."
+                    "Inspect the strongest {topic_title} question candidate after near returned several plausible relation targets."
                 ),
             );
             tag_writer_pre_read_v3(
                 &mut items,
                 "inspect_after_near_ambiguous",
-                variant_slug,
-                topic_slug,
+                variant_slug.as_str(),
+                topic_slug.as_str(),
             );
 
             push_writer_pre_read_trace(
@@ -3769,14 +3708,14 @@ fn writer_pre_read_v3_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
                 question_primary_ref,
                 question_candidates.clone(),
                 &format!(
-                    "Trace the {topic} question relation after inspection because the writer still needs path proof."
+                    "Trace the {topic_title} question relation after inspection because the writer still needs path proof."
                 ),
             );
             tag_writer_pre_read_v3(
                 &mut items,
                 "trace_first_after_inspect",
-                variant_slug,
-                topic_slug,
+                variant_slug.as_str(),
+                topic_slug.as_str(),
             );
 
             push_writer_pre_read_trace_continue(
@@ -3795,14 +3734,14 @@ fn writer_pre_read_v3_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
                     previous_question.as_str(),
                 ],
                 &format!(
-                    "Continue the {topic} question trace because the previous page was partial."
+                    "Continue the {topic_title} question trace because the previous page was partial."
                 ),
             );
             tag_writer_pre_read_v3(
                 &mut items,
                 "trace_continue_after_partial_page",
-                variant_slug,
-                topic_slug,
+                variant_slug.as_str(),
+                topic_slug.as_str(),
             );
 
             push_writer_pre_read_stop(
@@ -3825,8 +3764,8 @@ fn writer_pre_read_v3_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
             tag_writer_pre_read_v3(
                 &mut items,
                 "stop_after_complete_trace",
-                variant_slug,
-                topic_slug,
+                variant_slug.as_str(),
+                topic_slug.as_str(),
             );
 
             push_writer_pre_read_near(
@@ -3840,14 +3779,16 @@ fn writer_pre_read_v3_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
                 answer_candidates.clone(),
                 json!({ "entries": tight_entries, "tokens": 1200 + (case_index % 4) * 100 }),
                 json!({ "before_entries": tight_before, "after_entries": 0 }),
-                &format!("Read the nearby question before writing the {topic} answer relation."),
+                &format!(
+                    "Read the nearby question before writing the {topic_title} answer relation."
+                ),
                 vec![answer_primary_ref, answer_secondary_ref],
             );
             tag_writer_pre_read_v3(
                 &mut items,
                 "near_shrink_same_subtask",
-                variant_slug,
-                topic_slug,
+                variant_slug.as_str(),
+                topic_slug.as_str(),
             );
 
             push_writer_pre_read_inspect_ambiguous(
@@ -3865,14 +3806,14 @@ fn writer_pre_read_v3_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
                     previous_question.as_str(),
                 ],
                 &format!(
-                    "Inspect the {topic} question before deciding whether the answer addresses or supersedes prior memory."
+                    "Inspect the {topic_title} question before deciding whether the answer addresses or supersedes prior memory."
                 ),
             );
             tag_writer_pre_read_v3(
                 &mut items,
                 "inspect_answer_candidate",
-                variant_slug,
-                topic_slug,
+                variant_slug.as_str(),
+                topic_slug.as_str(),
             );
 
             push_writer_pre_read_trace(
@@ -3885,14 +3826,14 @@ fn writer_pre_read_v3_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
                 answer_primary_ref,
                 answer_candidates.clone(),
                 &format!(
-                    "Trace the {topic} answer to the question because the relation needs proof before writing."
+                    "Trace the {topic_title} answer to the question because the relation needs proof before writing."
                 ),
             );
             tag_writer_pre_read_v3(
                 &mut items,
                 "trace_first_answer_relation",
-                variant_slug,
-                topic_slug,
+                variant_slug.as_str(),
+                topic_slug.as_str(),
             );
 
             push_writer_pre_read_trace_continue(
@@ -3911,14 +3852,14 @@ fn writer_pre_read_v3_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
                     answer_secondary_ref,
                 ],
                 &format!(
-                    "Continue the {topic} answer trace because the proof path is not complete."
+                    "Continue the {topic_title} answer trace because the proof path is not complete."
                 ),
             );
             tag_writer_pre_read_v3(
                 &mut items,
                 "trace_continue_answer_relation",
-                variant_slug,
-                topic_slug,
+                variant_slug.as_str(),
+                topic_slug.as_str(),
             );
 
             push_writer_pre_read_stop(
@@ -3941,8 +3882,8 @@ fn writer_pre_read_v3_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
             tag_writer_pre_read_v3(
                 &mut items,
                 "stop_after_answer_trace",
-                variant_slug,
-                topic_slug,
+                variant_slug.as_str(),
+                topic_slug.as_str(),
             );
         }
     }
@@ -3976,94 +3917,30 @@ fn writer_pre_read_v4_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
     let mut items = writer_pre_read_v3_trajectories(run_id);
     let read_tools = kernel_operator_allowed_writer_pre_read_tools();
 
-    let topics = [
-        (
-            "auth-refresh-race",
-            "mobile login refresh race",
-            "question_refines_previous_answer",
-            "answer_addresses_same_question",
-        ),
-        (
-            "search-index-lag",
-            "search indexing lag",
-            "question_depends_on_prior_measurement",
-            "answer_supersedes_prior_attempt",
-        ),
-        (
-            "billing-retry",
-            "billing invoice retry",
-            "question_reopens_failed_attempt",
-            "answer_uses_previous_observation",
-        ),
-        (
-            "deploy-rollback",
-            "deployment rollback",
-            "question_contradicts_prior_assumption",
-            "answer_confirms_recovery_path",
-        ),
-        (
-            "feature-flag",
-            "feature flag rollout",
-            "question narrows rollout scope",
-            "answer_updates_rollout_decision",
-        ),
-        (
-            "migration-checksum",
-            "data migration checksum",
-            "question_requests_prior_checksum",
-            "answer_resolves_checksum_conflict",
-        ),
-        (
-            "cache-invalidation",
-            "cache invalidation",
-            "question_depends_on_cache_trace",
-            "answer_explains_stale_read",
-        ),
-        (
-            "webhook-dedupe",
-            "payment webhook dedupe",
-            "question_links_duplicate_event",
-            "answer_selects_dedupe_rule",
-        ),
-        (
-            "ci-flake",
-            "CI flaky test isolation",
-            "question_compares_failed_attempts",
-            "answer_replaces_test_hypothesis",
-        ),
-        (
-            "support-sla",
-            "support escalation SLA",
-            "question_depends_on_escalation_state",
-            "answer_closes_escalation_loop",
-        ),
-        (
-            "model-drift",
-            "recommendation model drift",
-            "question_reuses_prior_drift_signal",
-            "answer_updates_monitoring_threshold",
-        ),
-        (
-            "stock-sync",
-            "warehouse stock sync",
-            "question_depends_on_inventory_snapshot",
-            "answer_resolves_sync_order",
-        ),
-    ];
-    let variants = [
-        ("linear", "previous_subtask_answer", "same_subtask_question"),
-        (
-            "ambiguous",
-            "older_subtask_answer",
-            "previous_subtask_answer",
-        ),
-        ("repair", "previous_subtask_answer", "same_subtask_question"),
-    ];
+    let topics = fixture_or_panic(
+        "writer_pre_read_topics.json",
+        writer_pre_read_topics_from_json(include_str!(
+            "../../fixtures/conformance/writer_pre_read_topics.json"
+        )),
+    );
+    let variants = fixture_or_panic(
+        "writer_pre_read_variants.json",
+        writer_pre_read_variants_from_json(include_str!(
+            "../../fixtures/conformance/writer_pre_read_variants.json"
+        )),
+    );
 
     let mut case_index = 0usize;
-    for (topic_slug, topic, question_hint, answer_hint) in topics {
-        for (variant_slug, question_primary_role, answer_secondary_role) in variants {
+    for topic in &topics {
+        for variant in &variants {
             case_index += 1;
+            let topic_slug = topic.slug();
+            let topic_title = topic.title();
+            let question_hint = topic.question_hint();
+            let answer_hint = topic.answer_hint();
+            let variant_slug = variant.slug();
+            let question_primary_role = variant.question_primary_role();
+            let answer_secondary_role = variant.answer_secondary_role();
             let slug = format!("{topic_slug}-{variant_slug}-{case_index:02}");
             let about = format!("incident:{run_id}:writer-pre-read-v4:{slug}");
             let entry_question = format!("{about}:subtask:6:question");
@@ -4077,13 +3954,13 @@ fn writer_pre_read_v4_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
             let trace_cursor_answer = "16";
             let priority_offset = (case_index % 5) as u64;
 
-            let question_primary_ref = if question_primary_role == "older_subtask_answer" {
+            let question_primary_ref = if question_primary_role.selects_older_subtask_answer() {
                 older_answer.as_str()
             } else {
                 previous_answer.as_str()
             };
             let answer_primary_ref = same_question.as_str();
-            let answer_secondary_ref = if answer_secondary_role == "previous_subtask_answer" {
+            let answer_secondary_ref = if answer_secondary_role.selects_previous_subtask_answer() {
                 previous_answer.as_str()
             } else {
                 older_question.as_str()
@@ -4092,9 +3969,9 @@ fn writer_pre_read_v4_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
             let question_candidates = writer_pre_read_candidate_details(vec![
                 (
                     question_primary_ref,
-                    question_primary_role,
+                    question_primary_role.as_str(),
                     10 + priority_offset,
-                    question_hint,
+                    question_hint.as_str(),
                 ),
                 (
                     previous_question.as_str(),
@@ -4120,11 +3997,11 @@ fn writer_pre_read_v4_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
                     answer_primary_ref,
                     "same_subtask_question",
                     10 + priority_offset,
-                    answer_hint,
+                    answer_hint.as_str(),
                 ),
                 (
                     answer_secondary_ref,
-                    answer_secondary_role,
+                    answer_secondary_role.as_str(),
                     18 + priority_offset,
                     "answer_may_reuse_prior_context",
                 ),
@@ -4152,14 +4029,14 @@ fn writer_pre_read_v4_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
                 question_primary_ref,
                 question_candidates.clone(),
                 &format!(
-                    "Trace the {topic} question relation because inspection did not yet prove the path."
+                    "Trace the {topic_title} question relation because inspection did not yet prove the path."
                 ),
             );
             tag_writer_pre_read_v4(
                 &mut items,
                 "trace_needed_after_inspect",
-                variant_slug,
-                topic_slug,
+                variant_slug.as_str(),
+                topic_slug.as_str(),
             );
 
             push_writer_pre_read_trace_continue(
@@ -4178,14 +4055,14 @@ fn writer_pre_read_v4_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
                     previous_question.as_str(),
                 ],
                 &format!(
-                    "Continue the {topic} question trace because page metadata says more path evidence remains."
+                    "Continue the {topic_title} question trace because page metadata says more path evidence remains."
                 ),
             );
             tag_writer_pre_read_v4(
                 &mut items,
                 "trace_continue_when_page_has_more",
-                variant_slug,
-                topic_slug,
+                variant_slug.as_str(),
+                topic_slug.as_str(),
             );
 
             push_writer_pre_read_stop_boundary(
@@ -4195,7 +4072,7 @@ fn writer_pre_read_v4_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
                 &about,
                 &format!("writer-v4-{slug}-question-stop-complete-trace-zero-budget"),
                 &format!(
-                    "Stop after the complete {topic} question trace; evidence is sufficient and no tool calls remain."
+                    "Stop after the complete {topic_title} question trace; evidence is sufficient and no tool calls remain."
                 ),
                 &entry_question,
                 question_primary_ref,
@@ -4210,8 +4087,8 @@ fn writer_pre_read_v4_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
             tag_writer_pre_read_v4(
                 &mut items,
                 "stop_after_complete_trace_zero_budget",
-                variant_slug,
-                topic_slug,
+                variant_slug.as_str(),
+                topic_slug.as_str(),
             );
 
             push_writer_pre_read_trace(
@@ -4224,14 +4101,14 @@ fn writer_pre_read_v4_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
                 answer_primary_ref,
                 answer_candidates.clone(),
                 &format!(
-                    "Trace the {topic} answer relation because inspection did not yet prove the path."
+                    "Trace the {topic_title} answer relation because inspection did not yet prove the path."
                 ),
             );
             tag_writer_pre_read_v4(
                 &mut items,
                 "trace_needed_after_inspect",
-                variant_slug,
-                topic_slug,
+                variant_slug.as_str(),
+                topic_slug.as_str(),
             );
 
             push_writer_pre_read_trace_continue(
@@ -4250,14 +4127,14 @@ fn writer_pre_read_v4_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
                     answer_secondary_ref,
                 ],
                 &format!(
-                    "Continue the {topic} answer trace because page metadata says more path evidence remains."
+                    "Continue the {topic_title} answer trace because page metadata says more path evidence remains."
                 ),
             );
             tag_writer_pre_read_v4(
                 &mut items,
                 "trace_continue_when_page_has_more",
-                variant_slug,
-                topic_slug,
+                variant_slug.as_str(),
+                topic_slug.as_str(),
             );
 
             push_writer_pre_read_stop_boundary(
@@ -4267,7 +4144,7 @@ fn writer_pre_read_v4_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
                 &about,
                 &format!("writer-v4-{slug}-answer-stop-complete-trace-zero-budget"),
                 &format!(
-                    "Stop after the complete {topic} answer trace; evidence is sufficient and no tool calls remain."
+                    "Stop after the complete {topic_title} answer trace; evidence is sufficient and no tool calls remain."
                 ),
                 &entry_answer,
                 answer_primary_ref,
@@ -4282,8 +4159,8 @@ fn writer_pre_read_v4_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
             tag_writer_pre_read_v4(
                 &mut items,
                 "stop_after_complete_trace_zero_budget",
-                variant_slug,
-                topic_slug,
+                variant_slug.as_str(),
+                topic_slug.as_str(),
             );
         }
     }
@@ -4316,118 +4193,22 @@ fn tag_writer_pre_read_v4(
 
 fn writer_exec_v1_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
     let mut items = Vec::new();
-    let topics = [
-        (
-            "auth-refresh-race",
-            "auth refresh race",
-            "401 appears immediately after token refresh succeeds",
-            "prefer refresh retry over timeout widening",
-        ),
-        (
-            "search-index-lag",
-            "search index lag",
-            "new records are accepted but not visible in search",
-            "wait for index catch-up before marking the incident solved",
-        ),
-        (
-            "billing-retry",
-            "billing retry loop",
-            "payment retries are duplicated after provider timeout",
-            "dedupe provider retries by idempotency key",
-        ),
-        (
-            "deploy-rollback",
-            "deploy rollback",
-            "error rate rises only after the canary receives traffic",
-            "rollback the canary before changing database state",
-        ),
-        (
-            "feature-flag",
-            "feature flag exposure",
-            "flag rollout leaks to the wrong cohort",
-            "pin rollout scope to the beta cohort",
-        ),
-        (
-            "migration-checksum",
-            "migration checksum",
-            "checksum differs between source and migrated rows",
-            "pause rollout until the checksum mismatch is explained",
-        ),
-        (
-            "cache-invalidation",
-            "cache invalidation",
-            "stale reads continue after the write path succeeds",
-            "invalidate the product cache after commit acknowledgement",
-        ),
-        (
-            "webhook-dedupe",
-            "webhook dedupe",
-            "duplicate webhook deliveries create repeated side effects",
-            "persist delivery ids before applying side effects",
-        ),
-        (
-            "ci-flake",
-            "CI flaky test isolation",
-            "test fails only when executed after the browser suite",
-            "isolate the shared browser fixture",
-        ),
-        (
-            "support-sla",
-            "support escalation SLA",
-            "escalation timer is not reset after human handoff",
-            "reset the SLA clock at handoff confirmation",
-        ),
-        (
-            "model-drift",
-            "recommendation model drift",
-            "ranking quality drops after fresh catalog ingestion",
-            "gate recommendations on catalog freshness",
-        ),
-        (
-            "stock-sync",
-            "warehouse stock sync",
-            "stock reservation arrives before the inventory snapshot",
-            "sequence reservation after snapshot confirmation",
-        ),
-        (
-            "rate-limit",
-            "rate limit policy",
-            "burst traffic triggers global throttling for one tenant",
-            "apply tenant-local throttling before global throttling",
-        ),
-        (
-            "session-timeout",
-            "session timeout",
-            "active users are logged out during token rotation",
-            "preserve active sessions during rotation",
-        ),
-        (
-            "report-export",
-            "report export",
-            "large report exports complete without the final manifest",
-            "write the manifest only after all chunks are confirmed",
-        ),
-        (
-            "email-bounce",
-            "email bounce processing",
-            "hard bounces are retried as transient failures",
-            "classify hard bounces before scheduling retries",
-        ),
-        (
-            "quota-metering",
-            "quota metering",
-            "usage is counted twice across the hourly boundary",
-            "dedupe metering windows by event id",
-        ),
-        (
-            "artifact-retention",
-            "artifact retention",
-            "build artifacts expire before audit export completes",
-            "extend retention until audit export is sealed",
-        ),
-    ];
+    let topics = fixture_or_panic(
+        "writer_exec_topics.json",
+        writer_exec_topics_from_json(include_str!(
+            "../../fixtures/conformance/writer_exec_topics.json"
+        )),
+    );
 
-    for (index, (topic_slug, topic, signal, decision)) in topics.iter().enumerate() {
+    for (index, topic_fixture) in topics.iter().enumerate() {
+        let topic_slug = topic_fixture.slug();
+        let topic = topic_fixture.title();
+        let signal = topic_fixture.signal();
+        let decision = topic_fixture.decision();
+        let topic_slug_text = topic_slug.as_str();
+        let topic_text = topic.as_str();
+        let signal_text = signal.as_str();
+        let decision_text = decision.as_str();
         let sequence_base = ((index + 1) * 10) as u64;
         let about = format!("incident:{run_id}:writer-exec-v1:{topic_slug}");
         let question_ref = format!("{about}:question:root");
@@ -4450,7 +4231,7 @@ fn writer_exec_v1_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
 
         let rich_args = writer_exec_write_memory_arguments(
             &about,
-            topic_slug,
+            topic_slug_text,
             sequence_base,
             "record_decision",
             "decision",
@@ -4460,14 +4241,14 @@ fn writer_exec_v1_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
             "chosen_because",
             "causal",
             &format!("The new decision directly addresses the observed {topic} signal."),
-            signal,
+            signal_text,
             "high",
             read_context.clone(),
             Some(json!({
                 "from": format!("The process still considered the stale {topic} path."),
                 "to": format!("The process now selects the {topic} decision."),
                 "why": format!("The inspected signal supports the {topic} decision."),
-                "evidence": signal
+                "evidence": signal_text
             })),
             "rich-chosen-because",
         );
@@ -4479,8 +4260,8 @@ fn writer_exec_v1_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
             &format!("Execute the prepared rich {topic} memory write."),
             writer_exec_positive_state(
                 &about,
-                topic_slug,
-                topic,
+                topic_slug_text,
+                topic_text,
                 &known_refs,
                 &read_context,
                 rich_args.clone(),
@@ -4494,7 +4275,7 @@ fn writer_exec_v1_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
                 "write_attempted": true
             }),
             writer_exec_quality(
-                topic_slug,
+                topic_slug_text,
                 "write_rich_chosen_because",
                 json!({
                     "write_relation_quality": "rich",
@@ -4506,17 +4287,17 @@ fn writer_exec_v1_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
 
         let contradicts_args = writer_exec_write_memory_arguments(
             &about,
-            topic_slug,
+            topic_slug_text,
             sequence_base + 1,
             "record_observation",
             "observation",
             &format!("The {topic} signal contradicts the stale path."),
-            signal,
+            signal_text,
             &stale_ref,
             "contradicts",
             "evidential",
             &format!("The observed {topic} signal conflicts with the stale hypothesis."),
-            signal,
+            signal_text,
             "high",
             json!({
                 "inspected_refs": [stale_ref, observation_ref],
@@ -4534,8 +4315,8 @@ fn writer_exec_v1_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
             &format!("Execute the prepared contradiction write for {topic}."),
             writer_exec_positive_state(
                 &about,
-                topic_slug,
-                topic,
+                topic_slug_text,
+                topic_text,
                 &known_refs,
                 &read_context,
                 contradicts_args.clone(),
@@ -4544,7 +4325,7 @@ fn writer_exec_v1_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
             tool_call("kernel_write_memory", contradicts_args),
             json!({ "success": true, "dry_run": true, "compiled_to": "kernel_ingest" }),
             writer_exec_quality(
-                topic_slug,
+                topic_slug_text,
                 "write_rich_contradicts",
                 json!({
                     "write_relation_quality": "rich",
@@ -4556,7 +4337,7 @@ fn writer_exec_v1_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
 
         let follows_args = writer_exec_write_memory_arguments(
             &about,
-            topic_slug,
+            topic_slug_text,
             sequence_base + 2,
             "record_turn",
             "turn",
@@ -4583,8 +4364,8 @@ fn writer_exec_v1_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
             &format!("Execute the prepared anemic fallback write for {topic}."),
             writer_exec_positive_state(
                 &about,
-                topic_slug,
-                topic,
+                topic_slug_text,
+                topic_text,
                 &known_refs,
                 &json!({ "temporal_refs": [prior_decision_ref], "inspected_refs": [observation_ref] }),
                 follows_args.clone(),
@@ -4593,7 +4374,7 @@ fn writer_exec_v1_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
             tool_call("kernel_write_memory", follows_args),
             json!({ "success": true, "dry_run": true, "compiled_to": "kernel_ingest" }),
             writer_exec_quality(
-                topic_slug,
+                topic_slug_text,
                 "write_anemic_follows",
                 json!({
                     "write_relation_quality": "anemic",
@@ -4606,17 +4387,17 @@ fn writer_exec_v1_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
 
         let updates_args = writer_exec_write_memory_arguments(
             &about,
-            topic_slug,
+            topic_slug_text,
             sequence_base + 3,
             "record_delta",
             "semantic_delta",
             &format!("Update the {topic} policy state."),
-            decision,
+            decision_text,
             &state_ref,
             "updates_state",
             "causal",
             &format!("The prepared delta updates the {topic} state."),
-            decision,
+            decision_text,
             "high",
             json!({
                 "inspected_refs": [state_ref, observation_ref],
@@ -4626,7 +4407,7 @@ fn writer_exec_v1_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
                 "from": format!("The {topic} state still allowed the stale path."),
                 "to": format!("The {topic} state now records the selected decision."),
                 "why": format!("The writer prepared a state update for {topic}."),
-                "evidence": decision
+                "evidence": decision_text
             })),
             "rich-updates-state",
         );
@@ -4638,8 +4419,8 @@ fn writer_exec_v1_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
             &format!("Execute the prepared state update write for {topic}."),
             writer_exec_positive_state(
                 &about,
-                topic_slug,
-                topic,
+                topic_slug_text,
+                topic_text,
                 &known_refs,
                 &read_context,
                 updates_args.clone(),
@@ -4648,7 +4429,7 @@ fn writer_exec_v1_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
             tool_call("kernel_write_memory", updates_args),
             json!({ "success": true, "dry_run": true, "compiled_to": "kernel_ingest" }),
             writer_exec_quality(
-                topic_slug,
+                topic_slug_text,
                 "write_updates_state",
                 json!({
                     "write_relation_quality": "rich",
@@ -4661,11 +4442,11 @@ fn writer_exec_v1_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
 
         let ingest_single = writer_exec_ingest_arguments(
             &about,
-            topic_slug,
+            topic_slug_text,
             sequence_base + 4,
-            topic,
-            signal,
-            decision,
+            topic_text,
+            signal_text,
+            decision_text,
             false,
         );
         push_writer_exec(
@@ -4676,8 +4457,8 @@ fn writer_exec_v1_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
             &format!("Execute canonical ingest for a complete {topic} payload."),
             writer_exec_canonical_state(
                 &about,
-                topic_slug,
-                topic,
+                topic_slug_text,
+                topic_text,
                 &known_refs,
                 ingest_single.clone(),
                 "execute_canonical_ingest",
@@ -4685,7 +4466,7 @@ fn writer_exec_v1_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
             tool_call("kernel_ingest", ingest_single),
             json!({ "success": true, "dry_run": true, "entries": 1 }),
             writer_exec_quality(
-                topic_slug,
+                topic_slug_text,
                 "ingest_single",
                 json!({
                     "canonical_write": true,
@@ -4696,11 +4477,11 @@ fn writer_exec_v1_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
 
         let ingest_multi = writer_exec_ingest_arguments(
             &about,
-            topic_slug,
+            topic_slug_text,
             sequence_base + 5,
-            topic,
-            signal,
-            decision,
+            topic_text,
+            signal_text,
+            decision_text,
             true,
         );
         push_writer_exec(
@@ -4711,8 +4492,8 @@ fn writer_exec_v1_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
             &format!("Execute canonical ingest for a multidimensional {topic} payload."),
             writer_exec_canonical_state(
                 &about,
-                topic_slug,
-                topic,
+                topic_slug_text,
+                topic_text,
                 &known_refs,
                 ingest_multi.clone(),
                 "execute_canonical_ingest",
@@ -4720,7 +4501,7 @@ fn writer_exec_v1_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
             tool_call("kernel_ingest", ingest_multi),
             json!({ "success": true, "dry_run": true, "entries": 2 }),
             writer_exec_quality(
-                topic_slug,
+                topic_slug_text,
                 "ingest_multidimensional",
                 json!({
                     "canonical_write": true,
@@ -4734,8 +4515,8 @@ fn writer_exec_v1_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
             &mut items,
             run_id,
             &about,
-            topic_slug,
-            topic,
+            topic_slug_text,
+            topic_text,
             &known_refs,
             "missing_prepared_payload",
             "missing_prepared_write_payload",
@@ -4745,7 +4526,7 @@ fn writer_exec_v1_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
                     "current": {
                         "kind": "decision",
                         "summary": format!("For {topic}, {decision}."),
-                        "evidence": signal
+                        "evidence": signal_text
                     },
                     "execution_requirement": "do not reconstruct write payload; stop until prepared_arguments are visible"
                 }
@@ -4757,8 +4538,8 @@ fn writer_exec_v1_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
             &mut items,
             run_id,
             &about,
-            topic_slug,
-            topic,
+            topic_slug_text,
+            topic_text,
             &known_refs,
             "missing_read_context_proof",
             "write_requires_read_context_proof",
@@ -4768,17 +4549,17 @@ fn writer_exec_v1_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
                     "prepared_arguments": writer_exec_without_read_context_proof(
                         writer_exec_write_memory_arguments(
                             &about,
-                            topic_slug,
+                            topic_slug_text,
                             sequence_base + 6,
                             "record_decision",
                             "decision",
                             &format!("For {topic}, {decision}."),
-                            signal,
+                            signal_text,
                             &observation_ref,
                             "chosen_because",
                             "causal",
                             &format!("The decision claims to depend on the {topic} observation."),
-                            signal,
+                            signal_text,
                             "high",
                             json!({ "inspected_refs": [], "temporal_refs": [] }),
                             None,
@@ -4797,8 +4578,8 @@ fn writer_exec_v1_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
             &mut items,
             run_id,
             &about,
-            topic_slug,
-            topic,
+            topic_slug_text,
+            topic_text,
             &known_refs,
             "invalid_relation",
             "invalid_write_relation",
@@ -4808,17 +4589,17 @@ fn writer_exec_v1_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
                     "prepared_arguments": writer_exec_invalid_relation(
                         writer_exec_write_memory_arguments(
                             &about,
-                            topic_slug,
+                            topic_slug_text,
                             sequence_base + 7,
                             "record_decision",
                             "decision",
                             &format!("For {topic}, {decision}."),
-                            signal,
+                            signal_text,
                             &observation_ref,
                             "chosen_because",
                             "causal",
                             "This will be replaced by an unsupported relation.",
-                            signal,
+                            signal_text,
                             "medium",
                             read_context.clone(),
                             None,
@@ -4837,8 +4618,8 @@ fn writer_exec_v1_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
             &mut items,
             run_id,
             &about,
-            topic_slug,
-            topic,
+            topic_slug_text,
+            topic_text,
             &known_refs,
             "about_scope_mismatch",
             "write_about_scope_mismatch",
@@ -4848,17 +4629,17 @@ fn writer_exec_v1_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
                     "prepared_arguments": writer_exec_about_mismatch(
                         writer_exec_write_memory_arguments(
                             &about,
-                            topic_slug,
+                            topic_slug_text,
                             sequence_base + 8,
                             "record_decision",
                             "decision",
                             &format!("For {topic}, {decision}."),
-                            signal,
+                            signal_text,
                             &observation_ref,
                             "chosen_because",
                             "causal",
                             "The target about will be replaced to simulate a bad prepared payload.",
-                            signal,
+                            signal_text,
                             "medium",
                             json!({ "inspected_refs": [observation_ref] }),
                             None,
@@ -4877,8 +4658,8 @@ fn writer_exec_v1_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
             &mut items,
             run_id,
             &about,
-            topic_slug,
-            topic,
+            topic_slug_text,
+            topic_text,
             &known_refs,
             "incomplete_canonical_payload",
             "incomplete_canonical_payload",
@@ -4887,11 +4668,11 @@ fn writer_exec_v1_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
                 "canonical_payload": writer_exec_incomplete_canonical_payload(
                     writer_exec_ingest_arguments(
                         &about,
-                        topic_slug,
+                        topic_slug_text,
                         sequence_base + 9,
-                        topic,
-                        signal,
-                        decision,
+                        topic_text,
+                        signal_text,
+                        decision_text,
                         false,
                     )
                 ),
@@ -4902,17 +4683,17 @@ fn writer_exec_v1_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
 
         let duplicate_args = writer_exec_write_memory_arguments(
             &about,
-            topic_slug,
+            topic_slug_text,
             sequence_base + 10,
             "record_decision",
             "decision",
             &format!("For {topic}, {decision}."),
-            signal,
+            signal_text,
             &observation_ref,
             "chosen_because",
             "causal",
             &format!("The duplicate write repeats the prepared {topic} decision."),
-            signal,
+            signal_text,
             "high",
             json!({ "inspected_refs": [observation_ref] }),
             None,
@@ -4927,8 +4708,8 @@ fn writer_exec_v1_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
             &mut items,
             run_id,
             &about,
-            topic_slug,
-            topic,
+            topic_slug_text,
+            topic_text,
             &known_refs,
             "duplicate_idempotency",
             "duplicate_idempotency_key",
@@ -4949,8 +4730,8 @@ fn writer_exec_v1_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
             &mut items,
             run_id,
             &about,
-            topic_slug,
-            topic,
+            topic_slug_text,
+            topic_text,
             &known_refs,
             "strict_required",
             "strict_write_required",
@@ -4960,17 +4741,17 @@ fn writer_exec_v1_trajectories(run_id: &str) -> Vec<TrajectoryItem> {
                     "prepared_arguments": writer_exec_non_strict_options(
                         writer_exec_write_memory_arguments(
                             &about,
-                            topic_slug,
+                            topic_slug_text,
                             sequence_base + 11,
                             "record_decision",
                             "decision",
                             &format!("For {topic}, {decision}."),
-                            signal,
+                            signal_text,
                             &observation_ref,
                             "chosen_because",
                             "causal",
                             &format!("The prepared {topic} write disables strict mode."),
-                            signal,
+                            signal_text,
                             "medium",
                             json!({ "inspected_refs": [observation_ref] }),
                             None,
@@ -6696,77 +6477,17 @@ fn budget(tool_calls: usize) -> Value {
 }
 
 fn write_memory_arguments(rich: bool) -> Value {
-    let relation = if rich {
-        json!({
-            "ref": "incident:mobile-login:observation:401-refresh-race",
-            "rel": "chosen_because",
-            "class": "causal",
-            "why": "The decision directly addresses the observed token refresh race.",
-            "evidence": "Auth logs show 401 immediately after a successful token refresh.",
-            "confidence": "high"
-        })
+    if rich {
+        action_arguments_fixture(
+            "write_memory/rich.json",
+            include_str!("../../fixtures/conformance/write_memory/rich.json"),
+        )
     } else {
-        json!({
-            "ref": "incident:mobile-login:decision:refresh-retry",
-            "rel": "follows",
-            "class": "procedural",
-            "why": "The follow-up status check follows the prior decision in process order.",
-            "evidence": "No stronger causal or evidential relation was justified by the visible context.",
-            "confidence": "medium"
-        })
-    };
-    json!({
-        "about": "incident:mobile-login",
-        "intent": if rich { "record_decision" } else { "record_turn" },
-        "actor": "operator:conformance",
-        "observed_at": "2026-05-06T10:05:00Z",
-        "scope": {
-            "task": "incident:mobile-login",
-            "process": "incident:mobile-login:resolution",
-            "episode": "incident:mobile-login:episode:operator"
-        },
-        "current": {
-            "kind": if rich { "decision" } else { "turn" },
-            "summary": if rich {
-                "Use token refresh retry instead of widening timeout."
-            } else {
-                "Record the follow-up status check after the refresh retry decision."
-            },
-            "evidence": if rich {
-                "Auth logs show 401 immediately after refresh."
-            } else {
-                "The follow-up only continues the process timeline."
-            }
-        },
-        "semantic_delta": {
-            "from": "The team suspected a network timeout.",
-            "to": "The evidence points to a token refresh race.",
-            "why": "The failure appears immediately after refresh rather than after a long timeout.",
-            "evidence": "401 appears after refresh success in auth logs."
-        },
-        "connect_to": [relation],
-        "read_context": if rich {
-            json!({
-                "inspected_refs": ["incident:mobile-login:observation:401-refresh-race"],
-                "temporal_refs": ["incident:mobile-login:decision:widen-timeout"]
-            })
-        } else {
-            json!({
-                "temporal_refs": ["incident:mobile-login:decision:refresh-retry"]
-            })
-        },
-        "idempotency_key": if rich {
-            "conformance:write-memory:rich:refresh-retry"
-        } else {
-            "conformance:write-memory:anemic:follow-up"
-        },
-        "options": {
-            "dry_run": true,
-            "strict": true,
-            "sequence": if rich { 1 } else { 2 }
-        },
-        "source_kind": "agent"
-    })
+        action_arguments_fixture(
+            "write_memory/anemic.json",
+            include_str!("../../fixtures/conformance/write_memory/anemic.json"),
+        )
+    }
 }
 
 fn write_memory_anemic_arguments() -> Value {
@@ -6774,619 +6495,73 @@ fn write_memory_anemic_arguments() -> Value {
 }
 
 fn write_memory_rich_without_delta_arguments() -> Value {
-    json!({
-        "about": "incident:mobile-login",
-        "intent": "record_observation",
-        "actor": "operator:conformance",
-        "observed_at": "2026-05-06T10:06:00Z",
-        "scope": {
-            "task": "incident:mobile-login",
-            "process": "incident:mobile-login:resolution",
-            "episode": "incident:mobile-login:episode:operator"
-        },
-        "current": {
-            "kind": "observation",
-            "summary": "Token refresh race confirmed by auth log ordering.",
-            "evidence": "Refresh success is followed by 401 on the next login attempt."
-        },
-        "connect_to": [
-            {
-                "ref": "incident:mobile-login:observation:401-refresh-race",
-                "rel": "supports",
-                "class": "evidential",
-                "why": "The new observation confirms the previously inspected refresh-race evidence.",
-                "evidence": "Both observations describe refresh success immediately followed by 401.",
-                "confidence": "high"
-            }
-        ],
-        "read_context": {
-            "inspected_refs": ["incident:mobile-login:observation:401-refresh-race"]
-        },
-        "idempotency_key": "conformance:write-memory:rich-no-delta:refresh-race-confirmed",
-        "options": {
-            "dry_run": true,
-            "strict": true,
-            "sequence": 3
-        },
-        "source_kind": "agent"
-    })
+    action_arguments_fixture(
+        "write_memory/rich_without_delta.json",
+        include_str!("../../fixtures/conformance/write_memory/rich_without_delta.json"),
+    )
 }
 
 fn write_memory_anemic_without_delta_arguments() -> Value {
-    json!({
-        "about": "incident:mobile-login",
-        "intent": "record_turn",
-        "actor": "operator:conformance",
-        "observed_at": "2026-05-06T10:07:00Z",
-        "scope": {
-            "task": "incident:mobile-login",
-            "process": "incident:mobile-login:resolution",
-            "episode": "incident:mobile-login:episode:operator"
-        },
-        "current": {
-            "kind": "turn",
-            "summary": "Operator added a short follow-up note.",
-            "evidence": "The note only follows the prior decision in process order."
-        },
-        "connect_to": [
-            {
-                "ref": "incident:mobile-login:decision:refresh-retry",
-                "rel": "follows",
-                "class": "procedural",
-                "why": "The note follows the prior decision in process order.",
-                "evidence": "No stronger causal or evidential relation was justified.",
-                "confidence": "medium"
-            }
-        ],
-        "read_context": {
-            "temporal_refs": ["incident:mobile-login:decision:refresh-retry"]
-        },
-        "idempotency_key": "conformance:write-memory:anemic-no-delta:operator-note",
-        "options": {
-            "dry_run": true,
-            "strict": true,
-            "sequence": 4
-        },
-        "source_kind": "agent"
-    })
+    action_arguments_fixture(
+        "write_memory/anemic_without_delta.json",
+        include_str!("../../fixtures/conformance/write_memory/anemic_without_delta.json"),
+    )
 }
 
 fn write_memory_updates_state_arguments() -> Value {
-    json!({
-        "about": "incident:mobile-login",
-        "intent": "record_delta",
-        "actor": "operator:conformance",
-        "observed_at": "2026-05-06T10:08:00Z",
-        "scope": {
-            "task": "incident:mobile-login",
-            "process": "incident:mobile-login:resolution",
-            "episode": "incident:mobile-login:episode:operator"
-        },
-        "current": {
-            "kind": "semantic_delta",
-            "summary": "Token refresh policy now prefers retry over timeout widening.",
-            "evidence": "The retry passed while timeout widening was superseded."
-        },
-        "semantic_delta": {
-            "from": "Timeout widening was still considered a remediation path.",
-            "to": "Token refresh retry is the selected remediation path.",
-            "why": "The later evidence confirms refresh ordering and removes timeout widening.",
-            "evidence": "Refresh retry passed and the timeout workaround was removed."
-        },
-        "connect_to": [
-            {
-                "ref": "incident:mobile-login:state:token-refresh-policy",
-                "rel": "updates_state",
-                "class": "causal",
-                "why": "The new delta updates the token refresh policy state.",
-                "evidence": "The selected remediation changes the policy from timeout widening to refresh retry.",
-                "confidence": "high"
-            }
-        ],
-        "read_context": {
-            "inspected_refs": ["incident:mobile-login:state:token-refresh-policy"],
-            "temporal_refs": ["incident:mobile-login:decision:refresh-retry"]
-        },
-        "idempotency_key": "conformance:write-memory:updates-state:token-refresh-policy",
-        "options": {
-            "dry_run": true,
-            "strict": true,
-            "sequence": 5
-        },
-        "source_kind": "agent"
-    })
+    action_arguments_fixture(
+        "write_memory/updates_state.json",
+        include_str!("../../fixtures/conformance/write_memory/updates_state.json"),
+    )
 }
 
 fn write_memory_contradicts_arguments() -> Value {
-    json!({
-        "about": "incident:mobile-login",
-        "intent": "record_observation",
-        "actor": "operator:conformance",
-        "observed_at": "2026-05-06T10:08:30Z",
-        "scope": {
-            "task": "incident:mobile-login",
-            "process": "incident:mobile-login:resolution",
-            "episode": "incident:mobile-login:episode:operator"
-        },
-        "current": {
-            "kind": "observation",
-            "summary": "Auth log order contradicts the network-timeout hypothesis.",
-            "evidence": "The 401 appears immediately after refresh success, not after a timeout window."
-        },
-        "connect_to": [
-            {
-                "ref": "incident:mobile-login:hypothesis:network-timeout",
-                "rel": "contradicts",
-                "class": "evidential",
-                "why": "The observed timing conflicts with the timeout hypothesis.",
-                "evidence": "401 occurs immediately after refresh success.",
-                "confidence": "high"
-            }
-        ],
-        "read_context": {
-            "inspected_refs": ["incident:mobile-login:hypothesis:network-timeout"],
-            "temporal_refs": ["incident:mobile-login:observation:401-refresh-race"]
-        },
-        "idempotency_key": "conformance:write-memory:contradicts:network-timeout",
-        "options": {
-            "dry_run": true,
-            "strict": true,
-            "sequence": 6
-        },
-        "source_kind": "agent"
-    })
+    action_arguments_fixture(
+        "write_memory/contradicts.json",
+        include_str!("../../fixtures/conformance/write_memory/contradicts.json"),
+    )
 }
 
 fn write_memory_contributes_to_arguments() -> Value {
-    json!({
-        "about": "incident:mobile-login",
-        "intent": "record_observation",
-        "actor": "operator:conformance",
-        "observed_at": "2026-05-06T10:09:00Z",
-        "scope": {
-            "task": "incident:mobile-login",
-            "process": "incident:mobile-login:resolution",
-            "episode": "incident:mobile-login:episode:operator"
-        },
-        "current": {
-            "kind": "derived_value",
-            "summary": "Refresh ordering is one operand in the final remediation evidence.",
-            "evidence": "The derived remediation uses auth-log ordering as a supporting operand."
-        },
-        "connect_to": [
-            {
-                "ref": "incident:mobile-login:observation:401-refresh-race",
-                "rel": "contributes_to",
-                "class": "evidential",
-                "why": "The observation is intentionally included in the derived remediation evidence.",
-                "evidence": "The derived value uses the refresh-race observation.",
-                "confidence": "medium"
-            }
-        ],
-        "read_context": {
-            "inspected_refs": ["incident:mobile-login:observation:401-refresh-race"],
-            "ask_refs": ["incident:mobile-login:question:login-failure"]
-        },
-        "idempotency_key": "conformance:write-memory:contributes-to:remediation-evidence",
-        "options": {
-            "dry_run": true,
-            "strict": true,
-            "sequence": 7
-        },
-        "source_kind": "agent"
-    })
+    action_arguments_fixture(
+        "write_memory/contributes_to.json",
+        include_str!("../../fixtures/conformance/write_memory/contributes_to.json"),
+    )
 }
 
 fn write_memory_answers_arguments() -> Value {
-    json!({
-        "about": "incident:mobile-login",
-        "intent": "record_feedback",
-        "actor": "operator:conformance",
-        "observed_at": "2026-05-06T10:09:30Z",
-        "scope": {
-            "task": "incident:mobile-login",
-            "process": "incident:mobile-login:resolution",
-            "episode": "incident:mobile-login:episode:operator"
-        },
-        "current": {
-            "kind": "feedback",
-            "summary": "The operator has enough evidence to answer the login-failure question.",
-            "evidence": "The visible evidence identifies the refresh race and final remediation."
-        },
-        "connect_to": [
-            {
-                "ref": "incident:mobile-login:question:login-failure",
-                "rel": "answers",
-                "class": "evidential",
-                "why": "The feedback answers the original incident question without claiming a richer dependency.",
-                "evidence": "The refresh-race evidence and final decision are visible.",
-                "confidence": "medium"
-            }
-        ],
-        "read_context": {
-            "ask_refs": ["incident:mobile-login:question:login-failure"],
-            "temporal_refs": ["incident:mobile-login:decision:refresh-retry"]
-        },
-        "idempotency_key": "conformance:write-memory:answers:login-failure",
-        "options": {
-            "dry_run": true,
-            "strict": true,
-            "sequence": 8
-        },
-        "source_kind": "agent"
-    })
+    action_arguments_fixture(
+        "write_memory/answers.json",
+        include_str!("../../fixtures/conformance/write_memory/answers.json"),
+    )
 }
 
 fn ingest_arguments() -> Value {
-    json!({
-        "about": "incident:mobile-login",
-        "idempotency_key": "conformance:ingest:refresh-retry",
-        "dry_run": true,
-        "memory": {
-            "dimensions": [
-                {
-                    "id": "incident:mobile-login",
-                    "kind": "task",
-                    "title": "Mobile login incident"
-                }
-            ],
-            "entries": [
-                {
-                    "id": "incident:mobile-login:entry:decision:refresh-retry",
-                    "kind": "decision",
-                    "text": "Use token refresh retry instead of widening timeout.",
-                    "coordinates": [
-                        {
-                            "dimension": "task",
-                            "scope_id": "incident:mobile-login",
-                            "sequence": 9,
-                            "observed_at": "2026-05-06T10:05:00Z"
-                        }
-                    ]
-                }
-            ],
-            "relations": [
-                {
-                    "from": "incident:mobile-login:entry:decision:refresh-retry",
-                    "to": "incident:mobile-login:observation:401-refresh-race",
-                    "rel": "chosen_because",
-                    "class": "causal",
-                    "why": "The retry decision addresses the observed token refresh race.",
-                    "evidence": "Auth logs show 401 immediately after token refresh.",
-                    "confidence": "high",
-                    "sequence": 1
-                }
-            ],
-            "evidence": [
-                {
-                    "id": "incident:mobile-login:evidence:auth-log-refresh-race",
-                    "supports": [
-                        "incident:mobile-login:entry:decision:refresh-retry"
-                    ],
-                    "text": "401 appears immediately after refresh success.",
-                    "source": "synthetic_conformance",
-                    "time": "2026-05-06T10:05:00Z"
-                }
-            ]
-        },
-        "provenance": {
-            "source_kind": "agent",
-            "source_agent": "operator:conformance",
-            "observed_at": "2026-05-06T10:05:00Z",
-            "correlation_id": "conformance:operator-full",
-            "causation_id": "conformance:ingest:refresh-retry"
-        }
-    })
+    action_arguments_fixture(
+        "ingest/single_entry.json",
+        include_str!("../../fixtures/conformance/ingest/single_entry.json"),
+    )
 }
 
 fn ingest_multi_entry_arguments() -> Value {
-    json!({
-        "about": "incident:mobile-login",
-        "idempotency_key": "conformance:ingest:final-remediation",
-        "dry_run": true,
-        "memory": {
-            "dimensions": [
-                {
-                    "id": "incident:mobile-login",
-                    "kind": "task",
-                    "title": "Mobile login incident"
-                },
-                {
-                    "id": "agent:solver",
-                    "kind": "agent",
-                    "title": "Solver agent"
-                }
-            ],
-            "entries": [
-                {
-                    "id": "incident:mobile-login:entry:observation:refresh-race-confirmed",
-                    "kind": "observation",
-                    "text": "Refresh success is followed by 401 on the next login attempt.",
-                    "coordinates": [
-                        {
-                            "dimension": "task",
-                            "scope_id": "incident:mobile-login",
-                            "sequence": 10,
-                            "observed_at": "2026-05-06T10:06:00Z"
-                        },
-                        {
-                            "dimension": "agent",
-                            "scope_id": "agent:solver",
-                            "sequence": 3,
-                            "observed_at": "2026-05-06T10:06:00Z"
-                        }
-                    ]
-                },
-                {
-                    "id": "incident:mobile-login:entry:decision:final-remediation",
-                    "kind": "decision",
-                    "text": "Keep token refresh retry and remove the timeout-widening workaround.",
-                    "coordinates": [
-                        {
-                            "dimension": "task",
-                            "scope_id": "incident:mobile-login",
-                            "sequence": 11,
-                            "observed_at": "2026-05-06T10:07:00Z"
-                        },
-                        {
-                            "dimension": "agent",
-                            "scope_id": "agent:solver",
-                            "sequence": 4,
-                            "observed_at": "2026-05-06T10:07:00Z"
-                        }
-                    ]
-                }
-            ],
-            "relations": [
-                {
-                    "from": "incident:mobile-login:entry:decision:final-remediation",
-                    "to": "incident:mobile-login:entry:observation:refresh-race-confirmed",
-                    "rel": "chosen_because",
-                    "class": "causal",
-                    "why": "The final remediation is chosen because the refresh race was confirmed.",
-                    "evidence": "Refresh success is followed by 401 on the next login attempt.",
-                    "confidence": "high",
-                    "sequence": 1
-                },
-                {
-                    "from": "incident:mobile-login:entry:decision:final-remediation",
-                    "to": "incident:mobile-login:decision:widen-timeout",
-                    "rel": "supersedes",
-                    "class": "evidential",
-                    "why": "The final remediation replaces the stale timeout-widening decision.",
-                    "evidence": "The confirmed refresh race explains the failure without a timeout change.",
-                    "confidence": "high",
-                    "sequence": 2
-                }
-            ],
-            "evidence": [
-                {
-                    "id": "incident:mobile-login:evidence:refresh-ordering",
-                    "supports": [
-                        "incident:mobile-login:entry:observation:refresh-race-confirmed"
-                    ],
-                    "text": "Auth logs show refresh success followed by 401.",
-                    "source": "synthetic_conformance",
-                    "time": "2026-05-06T10:06:00Z"
-                },
-                {
-                    "id": "incident:mobile-login:evidence:timeout-workaround-removed",
-                    "supports": [
-                        "incident:mobile-login:entry:decision:final-remediation"
-                    ],
-                    "text": "The timeout-widening workaround was removed after refresh retry passed.",
-                    "source": "synthetic_conformance",
-                    "time": "2026-05-06T10:07:00Z"
-                }
-            ]
-        },
-        "provenance": {
-            "source_kind": "agent",
-            "source_agent": "operator:conformance",
-            "observed_at": "2026-05-06T10:07:00Z",
-            "correlation_id": "conformance:operator-full",
-            "causation_id": "conformance:ingest:final-remediation"
-        }
-    })
+    action_arguments_fixture(
+        "ingest/multi_entry.json",
+        include_str!("../../fixtures/conformance/ingest/multi_entry.json"),
+    )
 }
 
 fn ingest_constraint_arguments() -> Value {
-    json!({
-        "about": "incident:mobile-login",
-        "idempotency_key": "conformance:ingest:constraint:no-timeout-widening",
-        "dry_run": true,
-        "memory": {
-            "dimensions": [
-                {
-                    "id": "incident:mobile-login",
-                    "kind": "task",
-                    "title": "Mobile login incident"
-                },
-                {
-                    "id": "policy:auth",
-                    "kind": "policy",
-                    "title": "Authentication policy"
-                }
-            ],
-            "entries": [
-                {
-                    "id": "incident:mobile-login:constraint:no-timeout-widening",
-                    "kind": "constraint",
-                    "text": "Do not widen login timeout when refresh-race evidence is present.",
-                    "coordinates": [
-                        {
-                            "dimension": "task",
-                            "scope_id": "incident:mobile-login",
-                            "sequence": 12,
-                            "observed_at": "2026-05-06T10:08:00Z"
-                        },
-                        {
-                            "dimension": "policy",
-                            "scope_id": "policy:auth",
-                            "sequence": 1,
-                            "observed_at": "2026-05-06T10:08:00Z"
-                        }
-                    ]
-                },
-                {
-                    "id": "incident:mobile-login:decision:refresh-retry",
-                    "kind": "decision",
-                    "text": "Keep token refresh retry and remove timeout widening.",
-                    "coordinates": [
-                        {
-                            "dimension": "task",
-                            "scope_id": "incident:mobile-login",
-                            "sequence": 13,
-                            "observed_at": "2026-05-06T10:08:30Z"
-                        }
-                    ]
-                }
-            ],
-            "relations": [
-                {
-                    "from": "incident:mobile-login:decision:refresh-retry",
-                    "to": "incident:mobile-login:constraint:no-timeout-widening",
-                    "rel": "satisfies_constraint",
-                    "class": "constraint",
-                    "why": "The decision respects the no-timeout-widening constraint.",
-                    "evidence": "The refresh retry path removes timeout widening.",
-                    "confidence": "high",
-                    "sequence": 1
-                }
-            ],
-            "evidence": [
-                {
-                    "id": "incident:mobile-login:evidence:no-timeout-widening",
-                    "supports": [
-                        "incident:mobile-login:constraint:no-timeout-widening",
-                        "incident:mobile-login:decision:refresh-retry"
-                    ],
-                    "text": "Timeout widening was removed after refresh retry passed.",
-                    "source": "synthetic_conformance",
-                    "time": "2026-05-06T10:08:30Z"
-                }
-            ]
-        },
-        "provenance": {
-            "source_kind": "agent",
-            "source_agent": "operator:conformance",
-            "observed_at": "2026-05-06T10:08:30Z",
-            "correlation_id": "conformance:operator-full",
-            "causation_id": "conformance:ingest:no-timeout-widening"
-        }
-    })
+    action_arguments_fixture(
+        "ingest/constraint.json",
+        include_str!("../../fixtures/conformance/ingest/constraint.json"),
+    )
 }
 
 fn ingest_derived_values_arguments() -> Value {
-    json!({
-        "about": "incident:mobile-login",
-        "idempotency_key": "conformance:ingest:derived-values:refresh-race",
-        "dry_run": true,
-        "memory": {
-            "dimensions": [
-                {
-                    "id": "incident:mobile-login",
-                    "kind": "task",
-                    "title": "Mobile login incident"
-                },
-                {
-                    "id": "agent:reader",
-                    "kind": "agent",
-                    "title": "Reader agent"
-                }
-            ],
-            "entries": [
-                {
-                    "id": "incident:mobile-login:observation:401-refresh-race",
-                    "kind": "observation",
-                    "text": "401 appears immediately after refresh success.",
-                    "coordinates": [
-                        {
-                            "dimension": "task",
-                            "scope_id": "incident:mobile-login",
-                            "sequence": 14,
-                            "observed_at": "2026-05-06T10:09:00Z"
-                        }
-                    ]
-                },
-                {
-                    "id": "incident:mobile-login:entry:observation:refresh-race-confirmed",
-                    "kind": "observation",
-                    "text": "Refresh success followed by 401 confirms refresh-race ordering.",
-                    "coordinates": [
-                        {
-                            "dimension": "agent",
-                            "scope_id": "agent:reader",
-                            "sequence": 5,
-                            "observed_at": "2026-05-06T10:09:10Z"
-                        }
-                    ]
-                },
-                {
-                    "id": "incident:mobile-login:decision:refresh-retry",
-                    "kind": "decision",
-                    "text": "Use token refresh retry as the final remediation.",
-                    "coordinates": [
-                        {
-                            "dimension": "task",
-                            "scope_id": "incident:mobile-login",
-                            "sequence": 15,
-                            "observed_at": "2026-05-06T10:09:20Z"
-                        }
-                    ]
-                }
-            ],
-            "relations": [
-                {
-                    "from": "incident:mobile-login:entry:observation:refresh-race-confirmed",
-                    "to": "incident:mobile-login:observation:401-refresh-race",
-                    "rel": "derived_from",
-                    "class": "evidential",
-                    "why": "The confirmed observation is derived from the original refresh-race evidence.",
-                    "evidence": "Both entries describe refresh success followed by 401.",
-                    "confidence": "high",
-                    "sequence": 1
-                },
-                {
-                    "from": "incident:mobile-login:decision:refresh-retry",
-                    "to": "incident:mobile-login:entry:observation:refresh-race-confirmed",
-                    "rel": "chosen_because",
-                    "class": "causal",
-                    "why": "The decision is chosen because the refresh-race ordering was confirmed.",
-                    "evidence": "The confirmed observation identifies the refresh race.",
-                    "confidence": "high",
-                    "sequence": 2
-                }
-            ],
-            "evidence": [
-                {
-                    "id": "incident:mobile-login:evidence:derived-refresh-race",
-                    "supports": [
-                        "incident:mobile-login:entry:observation:refresh-race-confirmed"
-                    ],
-                    "text": "Derived reader evidence confirms refresh success followed by 401.",
-                    "source": "synthetic_conformance",
-                    "time": "2026-05-06T10:09:10Z"
-                },
-                {
-                    "id": "incident:mobile-login:evidence:derived-final-decision",
-                    "supports": [
-                        "incident:mobile-login:decision:refresh-retry"
-                    ],
-                    "text": "The final decision uses token refresh retry.",
-                    "source": "synthetic_conformance",
-                    "time": "2026-05-06T10:09:20Z"
-                }
-            ]
-        },
-        "provenance": {
-            "source_kind": "agent",
-            "source_agent": "operator:conformance",
-            "observed_at": "2026-05-06T10:09:20Z",
-            "correlation_id": "conformance:operator-full",
-            "causation_id": "conformance:ingest:derived-values"
-        }
-    })
+    action_arguments_fixture(
+        "ingest/derived_values.json",
+        include_str!("../../fixtures/conformance/ingest/derived_values.json"),
+    )
 }
 
 fn validate_trajectories(
@@ -7397,10 +6572,12 @@ fn validate_trajectories(
         if !seen.insert(item.step_id.as_str()) {
             return Err(format!("duplicate step_id `{}`", item.step_id).into());
         }
-        if let Some(error) = kernel_operator_action_contract_error(&item.target_action) {
+        let diagnostic = kernel_operator_action_contract_diagnostic(&item.target_action);
+        if let Some(violation) = diagnostic.violation() {
             return Err(format!(
-                "trajectory {} target_action violates Operator contract: {error}",
-                item.step_id
+                "trajectory {} target_action violates Operator contract: {}",
+                item.step_id,
+                violation.message()
             )
             .into());
         }
@@ -7449,6 +6626,7 @@ fn summary(
     let mut task_families = BTreeMap::<String, usize>::new();
     let mut target_actions = BTreeMap::<String, usize>::new();
     let mut contract_validation_failures = 0usize;
+    let mut contract_validation_failure_phases = BTreeMap::<String, usize>::new();
 
     for item in trajectories {
         *modes.entry(item.mode.clone()).or_default() += 1;
@@ -7474,8 +6652,12 @@ fn summary(
                 *target_actions.entry("unknown".to_string()).or_default() += 1;
             }
         }
-        if kernel_operator_action_contract_error(&item.target_action).is_some() {
+        let diagnostic = kernel_operator_action_contract_diagnostic(&item.target_action);
+        if let Some(violation) = diagnostic.violation() {
             contract_validation_failures += 1;
+            *contract_validation_failure_phases
+                .entry(violation.phase().as_str().to_string())
+                .or_default() += 1;
         }
     }
 
@@ -7491,6 +6673,7 @@ fn summary(
         task_families,
         target_actions,
         contract_validation_failures,
+        contract_validation_failure_phases,
         notes: vec![
             "Synthetic conformance trajectories are protocol tests, not benchmark result claims."
                 .to_string(),

@@ -1,0 +1,104 @@
+{
+  "about": "incident:mobile-login",
+  "idempotency_key": "conformance:ingest:final-remediation",
+  "dry_run": true,
+  "memory": {
+    "dimensions": [
+      {
+        "id": "incident:mobile-login",
+        "kind": "task",
+        "title": "Mobile login incident"
+      },
+      {
+        "id": "agent:solver",
+        "kind": "agent",
+        "title": "Solver agent"
+      }
+    ],
+    "entries": [
+      {
+        "id": "incident:mobile-login:entry:observation:refresh-race-confirmed",
+        "kind": "observation",
+        "text": "Refresh success is followed by 401 on the next login attempt.",
+        "coordinates": [
+          {
+            "dimension": "task",
+            "scope_id": "incident:mobile-login",
+            "sequence": 10,
+            "observed_at": "2026-05-06T10:06:00Z"
+          },
+          {
+            "dimension": "agent",
+            "scope_id": "agent:solver",
+            "sequence": 3,
+            "observed_at": "2026-05-06T10:06:00Z"
+          }
+        ]
+      },
+      {
+        "id": "incident:mobile-login:entry:decision:final-remediation",
+        "kind": "decision",
+        "text": "Keep token refresh retry and remove the timeout-widening workaround.",
+        "coordinates": [
+          {
+            "dimension": "task",
+            "scope_id": "incident:mobile-login",
+            "sequence": 11,
+            "observed_at": "2026-05-06T10:07:00Z"
+          },
+          {
+            "dimension": "agent",
+            "scope_id": "agent:solver",
+            "sequence": 4,
+            "observed_at": "2026-05-06T10:07:00Z"
+          }
+        ]
+      }
+    ],
+    "relations": [
+      {
+        "from": "incident:mobile-login:entry:decision:final-remediation",
+        "to": "incident:mobile-login:entry:observation:refresh-race-confirmed",
+        "rel": "chosen_because",
+        "class": "causal",
+        "why": "The final remediation is chosen because the refresh race was confirmed.",
+        "evidence": "Refresh success is followed by 401 on the next login attempt.",
+        "confidence": "high",
+        "sequence": 1
+      },
+      {
+        "from": "incident:mobile-login:entry:decision:final-remediation",
+        "to": "incident:mobile-login:decision:widen-timeout",
+        "rel": "supersedes",
+        "class": "evidential",
+        "why": "The final remediation replaces the stale timeout-widening decision.",
+        "evidence": "The confirmed refresh race explains the failure without a timeout change.",
+        "confidence": "high",
+        "sequence": 2
+      }
+    ],
+    "evidence": [
+      {
+        "id": "incident:mobile-login:evidence:refresh-ordering",
+        "supports": ["incident:mobile-login:entry:observation:refresh-race-confirmed"],
+        "text": "Auth logs show refresh success followed by 401.",
+        "source": "synthetic_conformance",
+        "time": "2026-05-06T10:06:00Z"
+      },
+      {
+        "id": "incident:mobile-login:evidence:timeout-workaround-removed",
+        "supports": ["incident:mobile-login:entry:decision:final-remediation"],
+        "text": "The timeout-widening workaround was removed after refresh retry passed.",
+        "source": "synthetic_conformance",
+        "time": "2026-05-06T10:07:00Z"
+      }
+    ]
+  },
+  "provenance": {
+    "source_kind": "agent",
+    "source_agent": "operator:conformance",
+    "observed_at": "2026-05-06T10:07:00Z",
+    "correlation_id": "conformance:operator-full",
+    "causation_id": "conformance:ingest:final-remediation"
+  }
+}

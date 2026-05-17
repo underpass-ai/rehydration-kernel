@@ -10,7 +10,8 @@ use serde::Serialize;
 use serde_json::{Map, Value, json};
 
 use underpass_operator_shared_domain::{
-    operator_action_contract_error as kernel_operator_action_contract_error,
+    OperatorActionContractViolationPhase,
+    operator_action_contract_diagnostic as kernel_operator_action_contract_diagnostic,
     operator_allowed_read_tools as kernel_operator_allowed_read_tools,
     operator_allowed_tools_for_mode as kernel_operator_allowed_tools_for_mode,
     operator_allowed_writer_pre_read_tools as kernel_operator_allowed_writer_pre_read_tools,
@@ -74,6 +75,39 @@ struct FailureRow {
     location: String,
     reason: String,
     detail: Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct TargetActionValidationFailure {
+    reason: &'static str,
+    message: String,
+    contract_phase: Option<&'static str>,
+}
+
+impl TargetActionValidationFailure {
+    fn target_contract(message: impl Into<String>) -> Self {
+        Self {
+            reason: "target_action_contract",
+            message: message.into(),
+            contract_phase: None,
+        }
+    }
+
+    fn from_contract_phase(
+        phase: OperatorActionContractViolationPhase,
+        message: impl Into<String>,
+    ) -> Self {
+        let reason = if phase == OperatorActionContractViolationPhase::ToolBounds {
+            "unbounded_tool_call"
+        } else {
+            "target_action_contract"
+        };
+        Self {
+            reason,
+            message: message.into(),
+            contract_phase: Some(phase.as_str()),
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -303,9 +337,10 @@ fn export_results(path: &Path, data: &mut ExportData) -> Result<(), Box<dyn Erro
                 data.failures.push(FailureRow {
                     source: "memoryarena.results".to_string(),
                     location: format!("{location}:calls[{call_index}]"),
-                    reason: "target_action_contract".to_string(),
+                    reason: error.reason.to_string(),
                     detail: json!({
-                        "error": error,
+                        "error": error.message,
+                        "contract_phase": error.contract_phase,
                         "target_action": target_action,
                     }),
                 });
@@ -505,9 +540,10 @@ fn export_writer_reads(
                 data.failures.push(FailureRow {
                     source: "memoryarena.writer_results".to_string(),
                     location: format!("{location}:pre_read_calls[{call_index}]"),
-                    reason: "target_action_contract".to_string(),
+                    reason: error.reason.to_string(),
                     detail: json!({
-                        "error": error,
+                        "error": error.message,
+                        "contract_phase": error.contract_phase,
                         "target_action": target_action,
                     }),
                 });
@@ -919,22 +955,36 @@ fn target_action_validation_error(
     mode: &str,
     allowed_tools: &[String],
     action: &Value,
-) -> Option<String> {
+) -> Option<TargetActionValidationFailure> {
     let allowed_for_mode = match kernel_operator_allowed_tools_for_mode(mode) {
         Some(tools) => tools.into_iter().collect::<BTreeSet<_>>(),
-        None => return Some(format!("unsupported operator mode `{mode}`")),
+        None => {
+            return Some(TargetActionValidationFailure::target_contract(format!(
+                "unsupported operator mode `{mode}`"
+            )));
+        }
     };
     for tool in allowed_tools {
         if !allowed_for_mode.contains(tool) {
-            return Some(format!("allowed tool `{tool}` is outside mode `{mode}`"));
+            return Some(TargetActionValidationFailure::target_contract(format!(
+                "allowed tool `{tool}` is outside mode `{mode}`"
+            )));
         }
     }
     if let Some(tool) = action.get("tool").and_then(Value::as_str)
         && !allowed_tools.iter().any(|allowed| allowed == tool)
     {
-        return Some(format!("target tool `{tool}` is not in allowed_tools"));
+        return Some(TargetActionValidationFailure::target_contract(format!(
+            "target tool `{tool}` is not in allowed_tools"
+        )));
     }
-    kernel_operator_action_contract_error(action)
+    let diagnostic = kernel_operator_action_contract_diagnostic(action);
+    diagnostic.violation().map(|violation| {
+        TargetActionValidationFailure::from_contract_phase(
+            violation.phase(),
+            violation.message().to_string(),
+        )
+    })
 }
 
 fn bool_field(value: &Value, field: &str) -> Option<bool> {
@@ -1144,6 +1194,62 @@ mod tests {
         });
 
         assert_eq!(call_partial_result(&call), Some(false));
+    }
+
+    #[test]
+    fn target_action_validation_classifies_unbounded_tool_calls_for_fail_fast() {
+        let allowed_tools = kernel_operator_allowed_read_tools();
+        let action = json!({
+            "type": "tool_call",
+            "tool": "kernel_near",
+            "arguments": {
+                "about": "memoryarena:run:r:task_type:progressive_search:task:1",
+                "around": {"ref": "memoryarena:run:r:task_type:progressive_search:task:1:subtask:1:answer"},
+                "dimensions": {"mode": "all", "scope": "current_about"},
+                "include": {"evidence": true, "raw_refs": false, "relations": true},
+                "limit": {"entries": 1000, "tokens": 2400},
+                "budget": {"depth": 3, "tokens": 2400},
+                "window": {"before_entries": 6, "after_entries": 0}
+            }
+        });
+
+        let failure = target_action_validation_error("read", &allowed_tools, &action)
+            .expect("unbounded action must fail");
+
+        assert_eq!(failure.reason, "unbounded_tool_call");
+        assert_eq!(failure.contract_phase, Some("tool_bounds"));
+        assert_eq!(
+            failure.message,
+            "unbounded or invalid tool call for `kernel_near`"
+        );
+    }
+
+    #[test]
+    fn target_action_validation_keeps_argument_failures_as_contract_errors() {
+        let allowed_tools = kernel_operator_allowed_read_tools();
+        let action = json!({
+            "type": "tool_call",
+            "tool": "kernel_near",
+            "arguments": {
+                "about": "memoryarena:run:r:task_type:progressive_search:task:1",
+                "around": {"ref": "memoryarena:run:r:task_type:progressive_search:task:1:subtask:1:answer"},
+                "dimensions": {"mode": "all", "scope": "current_about"},
+                "include": {"evidence": true, "raw_refs": true, "relations": true},
+                "limit": {"entries": 12, "tokens": 2400},
+                "budget": {"depth": 3, "tokens": 2400},
+                "window": {"before_entries": 6, "after_entries": 0}
+            }
+        });
+
+        let failure = target_action_validation_error("read", &allowed_tools, &action)
+            .expect("raw_refs action must fail");
+
+        assert_eq!(failure.reason, "target_action_contract");
+        assert_eq!(failure.contract_phase, Some("tool_arguments"));
+        assert_eq!(
+            failure.message,
+            "action.arguments.include.raw_refs must be false"
+        );
     }
 
     #[test]

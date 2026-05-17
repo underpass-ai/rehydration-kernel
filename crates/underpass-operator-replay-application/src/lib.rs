@@ -142,8 +142,12 @@ where
                 ReplayActionDecision::InvalidPrediction {
                     row,
                     unbounded_tool_call,
+                    contract_violation_phase,
                 } => {
-                    counters.record_invalid_prediction(unbounded_tool_call);
+                    counters.record_invalid_prediction(
+                        unbounded_tool_call,
+                        contract_violation_phase.as_deref(),
+                    );
                     rows.push(row);
                     self.observe_progress(&rows, started.elapsed().as_millis(), total);
                 }

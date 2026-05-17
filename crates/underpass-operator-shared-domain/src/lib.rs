@@ -13,10 +13,13 @@ pub use action::{
     ToolCallAction,
 };
 pub use action_contract::{
+    OperatorActionContractDiagnostic, OperatorActionContractViolation,
+    OperatorActionContractViolationPhase, operator_action_contract_diagnostic,
     operator_action_contract_error, operator_action_shape_error, operator_allowed_full_tools,
     operator_allowed_read_tools, operator_allowed_tools_for_mode, operator_allowed_write_tools,
     operator_allowed_writer_pre_read_tools, operator_is_bounded_tool_call,
     operator_is_valid_action_shape, operator_primary_refs,
+    operator_tool_call_arguments_contract_diagnostic, operator_tool_call_arguments_contract_error,
 };
 pub use capability::KmpMcpCapability;
 pub use dataset_metrics::TrainingDatasetPreflightReport;

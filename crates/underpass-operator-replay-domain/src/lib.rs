@@ -2,7 +2,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use underpass_operator_shared_domain::operator_action_contract_error;
+use underpass_operator_shared_domain::{
+    OperatorActionContractViolationPhase, operator_action_contract_diagnostic,
+};
 
 pub const MCP_REPLAYER: &str = "kernel-operator-mcp-replay-v1";
 
@@ -36,6 +38,7 @@ pub enum ReplayActionDecision {
     InvalidPrediction {
         row: ReplayRow,
         unbounded_tool_call: bool,
+        contract_violation_phase: Option<String>,
     },
     Stop(ReplayRow),
     ToolCall(ReplayToolCallPlan),
@@ -51,6 +54,7 @@ pub struct ReplayRow {
     pub elapsed_ms: u128,
     pub success: bool,
     pub error: Option<String>,
+    pub contract_violation_phase: Option<String>,
     pub partial_result: bool,
     pub page: Option<ReplayPage>,
     pub expected_observed_refs: Vec<String>,
@@ -84,6 +88,7 @@ pub struct ReplaySummary {
     pub missing_predictions: usize,
     pub invalid_predictions: usize,
     pub unbounded_tool_calls: usize,
+    pub contract_violation_phases: BTreeMap<String, usize>,
     pub missing_expected_ref_rows: usize,
     pub missing_expected_ref_total: usize,
     pub extra_observed_ref_rows: usize,
@@ -122,6 +127,7 @@ pub struct ReplayCounters {
     pub missing_predictions: usize,
     pub invalid_predictions: usize,
     pub unbounded_tool_calls: usize,
+    pub contract_violation_phases: BTreeMap<String, usize>,
     pub missing_expected_ref_rows: usize,
     pub missing_expected_ref_total: usize,
 }
@@ -131,11 +137,21 @@ impl ReplayCounters {
         self.missing_predictions += 1;
     }
 
-    pub fn record_invalid_prediction(&mut self, unbounded_tool_call: bool) {
+    pub fn record_invalid_prediction(
+        &mut self,
+        unbounded_tool_call: bool,
+        contract_violation_phase: Option<&str>,
+    ) {
         if unbounded_tool_call {
             self.unbounded_tool_calls += 1;
         } else {
             self.invalid_predictions += 1;
+        }
+        if let Some(phase) = contract_violation_phase {
+            *self
+                .contract_violation_phases
+                .entry(phase.to_string())
+                .or_default() += 1;
         }
     }
 
@@ -188,15 +204,20 @@ pub fn decide_replay_action(
 
     let action = &prediction.action;
     let label = action_label(action);
-    if let Some(error) = operator_action_contract_error(action) {
+    let diagnostic = operator_action_contract_diagnostic(action);
+    if let Some(violation) = diagnostic.violation() {
+        let phase = violation.phase();
+        let phase_label = phase.as_str().to_string();
         return ReplayActionDecision::InvalidPrediction {
-            row: failed_row(
+            row: failed_row_with_contract_phase(
                 trajectory,
                 label,
-                format!("action_contract:{error}"),
+                format!("action_contract:{}", violation.message()),
+                Some(phase_label.clone()),
                 expected_observed_refs,
             ),
-            unbounded_tool_call: error.starts_with("unbounded or invalid tool call"),
+            unbounded_tool_call: phase == OperatorActionContractViolationPhase::ToolBounds,
+            contract_violation_phase: Some(phase_label),
         };
     }
     if let Some(tool) = tool(action)
@@ -213,6 +234,7 @@ pub fn decide_replay_action(
                 expected_observed_refs,
             ),
             unbounded_tool_call: false,
+            contract_violation_phase: None,
         };
     }
 
@@ -233,6 +255,7 @@ pub fn decide_replay_action(
                         expected_observed_refs,
                     ),
                     unbounded_tool_call: false,
+                    contract_violation_phase: None,
                 };
             };
             let Some(arguments) = action.get("arguments") else {
@@ -244,6 +267,7 @@ pub fn decide_replay_action(
                         expected_observed_refs,
                     ),
                     unbounded_tool_call: false,
+                    contract_violation_phase: None,
                 };
             };
             ReplayActionDecision::ToolCall(ReplayToolCallPlan {
@@ -261,6 +285,7 @@ pub fn decide_replay_action(
                 expected_observed_refs,
             ),
             unbounded_tool_call: false,
+            contract_violation_phase: None,
         },
         None => ReplayActionDecision::InvalidPrediction {
             row: failed_row(
@@ -270,6 +295,7 @@ pub fn decide_replay_action(
                 expected_observed_refs,
             ),
             unbounded_tool_call: false,
+            contract_violation_phase: None,
         },
     }
 }
@@ -298,6 +324,7 @@ pub fn tool_success_row(
         } else {
             Some("missing_expected_refs".to_string())
         },
+        contract_violation_phase: None,
         partial_result,
         page,
         expected_observed_refs: plan.expected_observed_refs.clone(),
@@ -342,6 +369,7 @@ pub fn build_replay_summary(
         missing_predictions: counters.missing_predictions,
         invalid_predictions: counters.invalid_predictions,
         unbounded_tool_calls: counters.unbounded_tool_calls,
+        contract_violation_phases: counters.contract_violation_phases,
         missing_expected_ref_rows: counters.missing_expected_ref_rows,
         missing_expected_ref_total: counters.missing_expected_ref_total,
         extra_observed_ref_rows: rows
@@ -372,6 +400,7 @@ fn failed_row(
         elapsed_ms: 0,
         success: false,
         error: Some(error),
+        contract_violation_phase: None,
         partial_result: false,
         page: None,
         expected_observed_refs,
@@ -379,6 +408,18 @@ fn failed_row(
         missing_expected_refs: Vec::new(),
         extra_observed_refs: Vec::new(),
     }
+}
+
+fn failed_row_with_contract_phase(
+    trajectory: &ReplayTrajectory,
+    action_label: String,
+    error: String,
+    contract_violation_phase: Option<String>,
+    expected_observed_refs: Vec<String>,
+) -> ReplayRow {
+    let mut row = failed_row(trajectory, action_label, error, expected_observed_refs);
+    row.contract_violation_phase = contract_violation_phase;
+    row
 }
 
 fn stop_row(
@@ -402,6 +443,7 @@ fn stop_row(
         } else {
             Some("missing_expected_refs".to_string())
         },
+        contract_violation_phase: None,
         partial_result: false,
         page: None,
         expected_observed_refs,
@@ -670,6 +712,52 @@ mod tests {
 
         assert_eq!(missing, vec!["incident:run:node:b".to_string()]);
         assert!(extra.is_empty());
+    }
+
+    #[test]
+    fn invalid_contract_predictions_expose_violation_phase() {
+        let trajectory = ReplayTrajectory {
+            step_id: "step:1".to_string(),
+            about: "incident:1".to_string(),
+            mode: "read".to_string(),
+            task_family: "conformance.near".to_string(),
+            allowed_tools: vec!["kernel_near".to_string()],
+            observed_outcome: None,
+        };
+        let prediction = ReplayPrediction {
+            action: json!({
+                "type": "tool_call",
+                "tool": "kernel_near",
+                "arguments": {
+                    "about": "incident:1",
+                    "around": {"ref": "incident:1:node:a"},
+                    "dimensions": {"mode": "all", "scope": "current_about"},
+                    "include": {"evidence": true, "raw_refs": false, "relations": true},
+                    "limit": {"entries": 1000, "tokens": 2400},
+                    "budget": {"depth": 3, "tokens": 2400},
+                    "window": {"before_entries": 6, "after_entries": 0}
+                }
+            }),
+        };
+
+        let decision = decide_replay_action(&trajectory, Some(&prediction));
+
+        match decision {
+            ReplayActionDecision::InvalidPrediction {
+                row,
+                unbounded_tool_call,
+                contract_violation_phase,
+            } => {
+                assert!(unbounded_tool_call);
+                assert_eq!(contract_violation_phase.as_deref(), Some("tool_bounds"));
+                assert_eq!(row.contract_violation_phase.as_deref(), Some("tool_bounds"));
+                assert_eq!(
+                    row.error.as_deref(),
+                    Some("action_contract:unbounded or invalid tool call for `kernel_near`")
+                );
+            }
+            other => panic!("expected invalid prediction, got {other:?}"),
+        }
     }
 }
 

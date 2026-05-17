@@ -1,0 +1,57 @@
+{
+  "about": "incident:mobile-login",
+  "idempotency_key": "conformance:ingest:refresh-retry",
+  "dry_run": true,
+  "memory": {
+    "dimensions": [
+      {
+        "id": "incident:mobile-login",
+        "kind": "task",
+        "title": "Mobile login incident"
+      }
+    ],
+    "entries": [
+      {
+        "id": "incident:mobile-login:entry:decision:refresh-retry",
+        "kind": "decision",
+        "text": "Use token refresh retry instead of widening timeout.",
+        "coordinates": [
+          {
+            "dimension": "task",
+            "scope_id": "incident:mobile-login",
+            "sequence": 9,
+            "observed_at": "2026-05-06T10:05:00Z"
+          }
+        ]
+      }
+    ],
+    "relations": [
+      {
+        "from": "incident:mobile-login:entry:decision:refresh-retry",
+        "to": "incident:mobile-login:observation:401-refresh-race",
+        "rel": "chosen_because",
+        "class": "causal",
+        "why": "The retry decision addresses the observed token refresh race.",
+        "evidence": "Auth logs show 401 immediately after token refresh.",
+        "confidence": "high",
+        "sequence": 1
+      }
+    ],
+    "evidence": [
+      {
+        "id": "incident:mobile-login:evidence:auth-log-refresh-race",
+        "supports": ["incident:mobile-login:entry:decision:refresh-retry"],
+        "text": "401 appears immediately after refresh success.",
+        "source": "synthetic_conformance",
+        "time": "2026-05-06T10:05:00Z"
+      }
+    ]
+  },
+  "provenance": {
+    "source_kind": "agent",
+    "source_agent": "operator:conformance",
+    "observed_at": "2026-05-06T10:05:00Z",
+    "correlation_id": "conformance:operator-full",
+    "causation_id": "conformance:ingest:refresh-retry"
+  }
+}

@@ -6,6 +6,68 @@ use crate::{
     writer_context_read_tool_names,
 };
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OperatorActionContractViolationPhase {
+    ActionShape,
+    ToolArguments,
+    ToolBounds,
+}
+
+impl OperatorActionContractViolationPhase {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ActionShape => "action_shape",
+            Self::ToolArguments => "tool_arguments",
+            Self::ToolBounds => "tool_bounds",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OperatorActionContractViolation {
+    phase: OperatorActionContractViolationPhase,
+    message: String,
+}
+
+impl OperatorActionContractViolation {
+    fn new(phase: OperatorActionContractViolationPhase, message: String) -> Self {
+        Self { phase, message }
+    }
+
+    pub fn phase(&self) -> OperatorActionContractViolationPhase {
+        self.phase
+    }
+
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OperatorActionContractDiagnostic {
+    violation: Option<OperatorActionContractViolation>,
+}
+
+impl OperatorActionContractDiagnostic {
+    fn valid() -> Self {
+        Self { violation: None }
+    }
+
+    fn invalid(phase: OperatorActionContractViolationPhase, message: String) -> Self {
+        Self {
+            violation: Some(OperatorActionContractViolation::new(phase, message)),
+        }
+    }
+
+    pub fn is_valid(&self) -> bool {
+        self.violation.is_none()
+    }
+
+    pub fn violation(&self) -> Option<&OperatorActionContractViolation> {
+        self.violation.as_ref()
+    }
+}
+
 pub fn operator_allowed_read_tools() -> Vec<String> {
     read_tool_names()
 }
@@ -89,15 +151,105 @@ pub fn operator_is_valid_action_shape(action: &Value) -> bool {
 }
 
 pub fn operator_action_contract_error(action: &Value) -> Option<String> {
-    if let Some(error) = operator_action_shape_error(action) {
-        return Some(error);
+    operator_action_contract_diagnostic(action)
+        .violation()
+        .map(|violation| violation.message().to_string())
+}
+
+pub fn operator_action_contract_diagnostic(action: &Value) -> OperatorActionContractDiagnostic {
+    if let Err(error) = object(action, "action") {
+        return OperatorActionContractDiagnostic::invalid(
+            OperatorActionContractViolationPhase::ActionShape,
+            error,
+        );
     }
-    let (tool, arguments) = action_tool_arguments(action)?;
+    let action_type = match required_string(action, "type", "action") {
+        Ok(value) => value,
+        Err(error) => {
+            return OperatorActionContractDiagnostic::invalid(
+                OperatorActionContractViolationPhase::ActionShape,
+                error,
+            );
+        }
+    };
+
+    match action_type {
+        "tool_call" => operator_tool_call_contract_diagnostic(action),
+        "stop" => match validate_stop_shape(action) {
+            Ok(()) => OperatorActionContractDiagnostic::valid(),
+            Err(error) => OperatorActionContractDiagnostic::invalid(
+                OperatorActionContractViolationPhase::ActionShape,
+                error,
+            ),
+        },
+        other => OperatorActionContractDiagnostic::invalid(
+            OperatorActionContractViolationPhase::ActionShape,
+            format!("unsupported action type `{other}`"),
+        ),
+    }
+}
+
+pub fn operator_tool_call_arguments_contract_error(
+    tool: &str,
+    arguments: &Value,
+) -> Option<String> {
+    operator_tool_call_arguments_contract_diagnostic(tool, arguments)
+        .violation()
+        .map(|violation| violation.message().to_string())
+}
+
+pub fn operator_tool_call_arguments_contract_diagnostic(
+    tool: &str,
+    arguments: &Value,
+) -> OperatorActionContractDiagnostic {
+    if let Err(error) = object(arguments, "action.arguments") {
+        return OperatorActionContractDiagnostic::invalid(
+            OperatorActionContractViolationPhase::ActionShape,
+            error,
+        );
+    }
+    if let Err(error) = validate_tool_arguments(tool, arguments) {
+        return OperatorActionContractDiagnostic::invalid(
+            OperatorActionContractViolationPhase::ToolArguments,
+            error,
+        );
+    }
     if operator_is_bounded_tool_call(tool, arguments) {
-        None
+        OperatorActionContractDiagnostic::valid()
     } else {
-        Some(format!("unbounded or invalid tool call for `{tool}`"))
+        OperatorActionContractDiagnostic::invalid(
+            OperatorActionContractViolationPhase::ToolBounds,
+            format!("unbounded or invalid tool call for `{tool}`"),
+        )
     }
+}
+
+fn operator_tool_call_contract_diagnostic(action: &Value) -> OperatorActionContractDiagnostic {
+    if let Err(error) = exact_keys(action, "action", &["type", "tool", "arguments"], &[]) {
+        return OperatorActionContractDiagnostic::invalid(
+            OperatorActionContractViolationPhase::ActionShape,
+            error,
+        );
+    }
+    let tool = match required_string(action, "tool", "action") {
+        Ok(value) => value,
+        Err(error) => {
+            return OperatorActionContractDiagnostic::invalid(
+                OperatorActionContractViolationPhase::ActionShape,
+                error,
+            );
+        }
+    };
+    let arguments = match required_value(action, "arguments", "action") {
+        Ok(value) => value,
+        Err(error) => {
+            return OperatorActionContractDiagnostic::invalid(
+                OperatorActionContractViolationPhase::ActionShape,
+                error,
+            );
+        }
+    };
+    operator_tool_call_arguments_contract_diagnostic(tool, arguments)
 }
 
 pub fn operator_primary_refs(action: &Value) -> Vec<String> {
@@ -157,6 +309,10 @@ fn validate_tool_call_shape(action: &Value) -> Result<(), String> {
     let tool = required_string(action, "tool", "action")?;
     let arguments = required_value(action, "arguments", "action")?;
     object(arguments, "action.arguments")?;
+    validate_tool_arguments(tool, arguments)
+}
+
+fn validate_tool_arguments(tool: &str, arguments: &Value) -> Result<(), String> {
     match tool {
         "kernel_wake" => validate_wake_arguments(arguments),
         "kernel_ask" => validate_ask_arguments(arguments),
@@ -972,15 +1128,6 @@ fn validate_source_kind(value: &str, context: &str) -> Result<(), String> {
     }
 }
 
-fn action_tool_arguments(action: &Value) -> Option<(&str, &Value)> {
-    if action.get("type").and_then(Value::as_str) != Some("tool_call") {
-        return None;
-    }
-    let tool = action.get("tool").and_then(Value::as_str)?;
-    let arguments = action.get("arguments")?;
-    Some((tool, arguments))
-}
-
 fn exact_keys<'a>(
     value: &'a Value,
     context: &str,
@@ -1229,6 +1376,7 @@ mod tests {
     use serde_json::json;
 
     use super::{
+        OperatorActionContractViolationPhase, operator_action_contract_diagnostic,
         operator_action_contract_error, operator_action_shape_error, operator_is_bounded_tool_call,
         operator_primary_refs,
     };
@@ -1467,6 +1615,101 @@ mod tests {
         assert_eq!(
             operator_action_shape_error(&action),
             Some("action.arguments.include.raw_refs must be false".to_string())
+        );
+    }
+
+    #[test]
+    fn action_contract_diagnostic_preserves_error_message_and_classifies_argument_errors() {
+        let action = json!({
+            "type": "tool_call",
+            "tool": "kernel_ask",
+            "arguments": {
+                "about": "about:1",
+                "answer_policy": "evidence_or_unknown",
+                "dimensions": { "mode": "all", "scope": "current_about" },
+                "question": "What changed?",
+                "budget": { "tokens": 2400 },
+                "final_refs": ["node:1"]
+            }
+        });
+
+        let diagnostic = operator_action_contract_diagnostic(&action);
+        let violation = diagnostic
+            .violation()
+            .expect("must classify invalid action");
+
+        assert!(!diagnostic.is_valid());
+        assert_eq!(
+            violation.phase(),
+            OperatorActionContractViolationPhase::ToolArguments
+        );
+        assert_eq!(
+            violation.message(),
+            operator_action_contract_error(&action).expect("legacy error")
+        );
+        assert_eq!(
+            violation.message(),
+            "action.arguments has unexpected field `final_refs`"
+        );
+    }
+
+    #[test]
+    fn action_contract_diagnostic_classifies_top_level_shape_errors() {
+        let action = json!({
+            "type": "tool_call",
+            "tool": "kernel_near",
+            "arguments": {},
+            "fallback": true
+        });
+
+        let diagnostic = operator_action_contract_diagnostic(&action);
+        let violation = diagnostic
+            .violation()
+            .expect("must classify invalid action");
+
+        assert_eq!(
+            violation.phase(),
+            OperatorActionContractViolationPhase::ActionShape
+        );
+        assert_eq!(
+            violation.message(),
+            "action has unexpected field `fallback`"
+        );
+    }
+
+    #[test]
+    fn action_contract_diagnostic_classifies_boundedness_errors_without_message_drift() {
+        let action = json!({
+            "type": "tool_call",
+            "tool": "kernel_near",
+            "arguments": {
+                "about": "about:1",
+                "around": { "ref": "node:1" },
+                "dimensions": { "mode": "all", "scope": "current_about" },
+                "include": { "evidence": true, "raw_refs": false, "relations": true },
+                "limit": { "entries": 1000, "tokens": 2400 },
+                "budget": { "depth": 3, "tokens": 2400 },
+                "window": { "before_entries": 6, "after_entries": 0 }
+            }
+        });
+
+        let diagnostic = operator_action_contract_diagnostic(&action);
+        let violation = diagnostic
+            .violation()
+            .expect("must classify invalid action");
+
+        assert_eq!(operator_action_shape_error(&action), None);
+        assert_eq!(
+            violation.phase(),
+            OperatorActionContractViolationPhase::ToolBounds
+        );
+        assert_eq!(
+            violation.message(),
+            operator_action_contract_error(&action).expect("legacy error")
+        );
+        assert_eq!(
+            violation.message(),
+            "unbounded or invalid tool call for `kernel_near`"
         );
     }
 

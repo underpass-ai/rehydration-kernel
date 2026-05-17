@@ -489,6 +489,7 @@ pub struct ContractTrainingCoverageObservation {
     pub ingest_evidence: BTreeMap<String, usize>,
     pub ingest_provenance: BTreeMap<String, usize>,
     pub action_contract_failures: usize,
+    pub action_contract_failure_phases: BTreeMap<String, usize>,
     pub action_contract_failure_examples: Vec<String>,
 }
 

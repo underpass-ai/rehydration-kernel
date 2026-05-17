@@ -3,7 +3,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::Serialize;
 use serde_json::{Value, json};
 use underpass_operator_shared_domain::{
-    operator_action_contract_error, operator_allowed_tools_for_mode, operator_primary_refs,
+    OperatorActionContractViolationPhase, operator_action_contract_diagnostic,
+    operator_allowed_tools_for_mode, operator_primary_refs,
 };
 
 pub const POLICY_EVALUATOR: &str = "kernel-operator-policy-eval-v1";
@@ -45,6 +46,7 @@ pub struct PolicyEvalSummary {
     pub target_actions: BTreeMap<String, usize>,
     pub predicted_actions: BTreeMap<String, usize>,
     pub invalid_prediction_reasons: BTreeMap<String, usize>,
+    pub invalid_prediction_contract_phases: BTreeMap<String, usize>,
     pub counts: PolicyEvalCounts,
     pub rates: PolicyEvalRates,
 }
@@ -65,6 +67,7 @@ pub struct PolicyEvalDetail {
     pub predicted_action_label: Option<String>,
     pub prediction_status: &'static str,
     pub invalid_reason: Option<String>,
+    pub invalid_contract_phase: Option<String>,
     pub score: PolicyActionScore,
 }
 
@@ -170,6 +173,7 @@ fn evaluate_internal(request: &PolicyEvalRequest) -> Result<PolicyEvalResult, St
     let mut target_actions = BTreeMap::<String, usize>::new();
     let mut predicted_actions = BTreeMap::<String, usize>::new();
     let mut invalid_prediction_reasons = BTreeMap::<String, usize>::new();
+    let mut invalid_prediction_contract_phases = BTreeMap::<String, usize>::new();
     let mut details = Vec::<PolicyEvalDetail>::new();
 
     for raw_trajectory in trajectories {
@@ -200,10 +204,12 @@ fn evaluate_internal(request: &PolicyEvalRequest) -> Result<PolicyEvalResult, St
                 trajectory.step_id
             ));
         }
-        if let Some(error) = operator_action_contract_error(&trajectory.target_action) {
+        let target_diagnostic = operator_action_contract_diagnostic(&trajectory.target_action);
+        if let Some(violation) = target_diagnostic.violation() {
             return Err(format!(
-                "target action for `{}` violates KMP action contract: {error}",
-                trajectory.step_id
+                "target action for `{}` violates KMP action contract: {}",
+                trajectory.step_id,
+                violation.message()
             ));
         }
         let mode_key = trajectory.mode.clone();
@@ -232,6 +238,7 @@ fn evaluate_internal(request: &PolicyEvalRequest) -> Result<PolicyEvalResult, St
                 None,
                 "missing",
                 None,
+                None,
                 PolicyActionScore::default(),
             ));
             continue;
@@ -258,6 +265,7 @@ fn evaluate_internal(request: &PolicyEvalRequest) -> Result<PolicyEvalResult, St
                         Some(&predicted),
                         "invalid",
                         Some(reason),
+                        None,
                         PolicyActionScore::default(),
                     ));
                     continue;
@@ -280,30 +288,35 @@ fn evaluate_internal(request: &PolicyEvalRequest) -> Result<PolicyEvalResult, St
                 Some(&predicted),
                 "invalid",
                 Some(error),
+                None,
                 PolicyActionScore::default(),
             ));
             continue;
         }
-        if let Some(error) = operator_action_contract_error(&predicted) {
+        let diagnostic = operator_action_contract_diagnostic(&predicted);
+        if let Some(violation) = diagnostic.violation() {
             counts.invalid_predictions += 1;
             by_mode_counts
                 .entry(mode_key)
                 .or_default()
                 .invalid_predictions += 1;
-            if is_unbounded_contract_error(&error) {
+            let phase = violation.phase();
+            if phase == OperatorActionContractViolationPhase::ToolBounds {
                 counts.unbounded_tool_calls += 1;
                 by_mode_counts
                     .entry(trajectory.mode.clone())
                     .or_default()
                     .unbounded_tool_calls += 1;
             }
-            *invalid_prediction_reasons.entry(error).or_default() += 1;
-            let error = operator_action_contract_error(&predicted);
+            let error = violation.message().to_string();
+            count_contract_phase(&mut invalid_prediction_contract_phases, phase);
+            *invalid_prediction_reasons.entry(error.clone()).or_default() += 1;
             details.push(eval_detail(
                 &trajectory,
                 Some(&predicted),
                 "invalid",
-                error,
+                Some(error),
+                Some(phase.as_str().to_string()),
                 PolicyActionScore::default(),
             ));
             continue;
@@ -320,6 +333,7 @@ fn evaluate_internal(request: &PolicyEvalRequest) -> Result<PolicyEvalResult, St
             &trajectory,
             Some(&predicted),
             "valid",
+            None,
             None,
             score,
         ));
@@ -359,6 +373,7 @@ fn evaluate_internal(request: &PolicyEvalRequest) -> Result<PolicyEvalResult, St
             target_actions,
             predicted_actions,
             invalid_prediction_reasons,
+            invalid_prediction_contract_phases,
             counts,
             rates: summary_rates,
         },
@@ -383,6 +398,7 @@ fn eval_detail(
     predicted: Option<&Value>,
     prediction_status: &'static str,
     invalid_reason: Option<String>,
+    invalid_contract_phase: Option<String>,
     score: PolicyActionScore,
 ) -> PolicyEvalDetail {
     PolicyEvalDetail {
@@ -394,6 +410,7 @@ fn eval_detail(
         predicted_action_label: predicted.map(action_label),
         prediction_status,
         invalid_reason,
+        invalid_contract_phase,
         score,
     }
 }
@@ -686,8 +703,11 @@ fn target_capability_key(trajectory: &PolicyEvalTrajectory) -> String {
     )
 }
 
-fn is_unbounded_contract_error(error: &str) -> bool {
-    error.starts_with("unbounded or invalid tool call")
+fn count_contract_phase(
+    phases: &mut BTreeMap<String, usize>,
+    phase: OperatorActionContractViolationPhase,
+) {
+    *phases.entry(phase.as_str().to_string()).or_default() += 1;
 }
 
 fn action_type(action: &Value) -> Option<&str> {
@@ -816,9 +836,11 @@ fn resolve_prepared_payload_action(
         "tool": tool,
         "arguments": arguments
     });
-    if let Some(error) = operator_action_contract_error(&resolved) {
+    let diagnostic = operator_action_contract_diagnostic(&resolved);
+    if let Some(violation) = diagnostic.violation() {
         return Err(format!(
-            "resolved action violates KMP action contract: {error}"
+            "resolved action violates KMP action contract: {}",
+            violation.message()
         ));
     }
     Ok(resolved)

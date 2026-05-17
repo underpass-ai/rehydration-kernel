@@ -38,6 +38,10 @@ pub enum DomainError {
         tool: String,
         source: String,
     },
+    UnsupportedFixtureValue {
+        context: String,
+        value: String,
+    },
     DuplicateAllowedTool {
         tool: String,
     },
@@ -55,6 +59,9 @@ pub enum DomainError {
     },
     InvalidActionArguments {
         context: String,
+    },
+    InvalidActionContract {
+        message: String,
     },
 }
 
@@ -88,6 +95,9 @@ impl Display for DomainError {
                 f,
                 "unsupported prepared payload source `{source}` for tool `{tool}`"
             ),
+            Self::UnsupportedFixtureValue { context, value } => {
+                write!(f, "unsupported fixture value `{value}` for `{context}`")
+            }
             Self::DuplicateAllowedTool { tool } => write!(f, "duplicate allowed tool `{tool}`"),
             Self::ToolOutsideMode { mode, tool } => {
                 write!(f, "allowed tool `{tool}` is outside mode `{mode}`")
@@ -106,6 +116,7 @@ impl Display for DomainError {
             Self::InvalidActionArguments { context } => {
                 write!(f, "{context} must be an object")
             }
+            Self::InvalidActionContract { message } => f.write_str(message),
         }
     }
 }

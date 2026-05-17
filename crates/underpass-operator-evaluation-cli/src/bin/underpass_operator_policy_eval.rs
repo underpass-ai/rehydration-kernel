@@ -536,6 +536,12 @@ mod tests {
                 .get("unbounded or invalid tool call for `kernel_near`"),
             Some(&1)
         );
+        assert_eq!(
+            summary
+                .invalid_prediction_contract_phases
+                .get("tool_bounds"),
+            Some(&1)
+        );
         Ok(())
     }
 
@@ -597,6 +603,12 @@ mod tests {
             summary
                 .invalid_prediction_reasons
                 .get("action.arguments has unexpected field `final_refs`"),
+            Some(&1)
+        );
+        assert_eq!(
+            summary
+                .invalid_prediction_contract_phases
+                .get("tool_arguments"),
             Some(&1)
         );
         Ok(())

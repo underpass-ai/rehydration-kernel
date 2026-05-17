@@ -1,0 +1,43 @@
+{
+  "about": "incident:mobile-login",
+  "intent": "record_delta",
+  "actor": "operator:conformance",
+  "observed_at": "2026-05-06T10:08:00Z",
+  "scope": {
+    "task": "incident:mobile-login",
+    "process": "incident:mobile-login:resolution",
+    "episode": "incident:mobile-login:episode:operator"
+  },
+  "current": {
+    "kind": "semantic_delta",
+    "summary": "Token refresh policy now prefers retry over timeout widening.",
+    "evidence": "The retry passed while timeout widening was superseded."
+  },
+  "semantic_delta": {
+    "from": "Timeout widening was still considered a remediation path.",
+    "to": "Token refresh retry is the selected remediation path.",
+    "why": "The later evidence confirms refresh ordering and removes timeout widening.",
+    "evidence": "Refresh retry passed and the timeout workaround was removed."
+  },
+  "connect_to": [
+    {
+      "ref": "incident:mobile-login:state:token-refresh-policy",
+      "rel": "updates_state",
+      "class": "causal",
+      "why": "The new delta updates the token refresh policy state.",
+      "evidence": "The selected remediation changes the policy from timeout widening to refresh retry.",
+      "confidence": "high"
+    }
+  ],
+  "read_context": {
+    "inspected_refs": ["incident:mobile-login:state:token-refresh-policy"],
+    "temporal_refs": ["incident:mobile-login:decision:refresh-retry"]
+  },
+  "idempotency_key": "conformance:write-memory:updates-state:token-refresh-policy",
+  "options": {
+    "dry_run": true,
+    "strict": true,
+    "sequence": 5
+  },
+  "source_kind": "agent"
+}

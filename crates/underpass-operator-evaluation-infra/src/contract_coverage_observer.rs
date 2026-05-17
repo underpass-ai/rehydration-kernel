@@ -5,7 +5,8 @@ use underpass_operator_evaluation_domain::{
     ContractCoverageProfile, ContractTrainingCoverageObservation,
 };
 use underpass_operator_shared_domain::{
-    operator_action_contract_error, operator_allowed_tools_for_mode,
+    OperatorActionContractViolationPhase, operator_action_contract_diagnostic,
+    operator_allowed_tools_for_mode,
 };
 
 pub struct JsonContractCoverageObserver;
@@ -188,8 +189,14 @@ fn validate_observed_action_contract(
     action: &Value,
     observed: &mut ObservedCoverage,
 ) -> bool {
-    if let Some(error) = operator_action_contract_error(action) {
-        record_action_contract_failure(row, &error, observed);
+    let diagnostic = operator_action_contract_diagnostic(action);
+    if let Some(violation) = diagnostic.violation() {
+        record_action_contract_failure_with_phase(
+            row,
+            violation.message(),
+            violation.phase(),
+            observed,
+        );
         return false;
     }
     true
@@ -241,6 +248,19 @@ fn record_action_contract_failure(row: &Value, error: &str, observed: &mut Obser
             .action_contract_failure_examples
             .push(format!("{row_id}: {error}"));
     }
+}
+
+fn record_action_contract_failure_with_phase(
+    row: &Value,
+    error: &str,
+    phase: OperatorActionContractViolationPhase,
+    observed: &mut ObservedCoverage,
+) {
+    *observed
+        .action_contract_failure_phases
+        .entry(phase.as_str().to_string())
+        .or_default() += 1;
+    record_action_contract_failure(row, error, observed);
 }
 
 fn profile_includes_row(profile: Profile, row: &Value) -> bool {

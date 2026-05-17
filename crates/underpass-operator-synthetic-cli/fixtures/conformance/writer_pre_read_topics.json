@@ -1,0 +1,74 @@
+[
+  {
+    "slug": "auth-refresh-race",
+    "title": "mobile login refresh race",
+    "question_hint": "question_refines_previous_answer",
+    "answer_hint": "answer_addresses_same_question"
+  },
+  {
+    "slug": "search-index-lag",
+    "title": "search indexing lag",
+    "question_hint": "question_depends_on_prior_measurement",
+    "answer_hint": "answer_supersedes_prior_attempt"
+  },
+  {
+    "slug": "billing-retry",
+    "title": "billing invoice retry",
+    "question_hint": "question_reopens_failed_attempt",
+    "answer_hint": "answer_uses_previous_observation"
+  },
+  {
+    "slug": "deploy-rollback",
+    "title": "deployment rollback",
+    "question_hint": "question_contradicts_prior_assumption",
+    "answer_hint": "answer_confirms_recovery_path"
+  },
+  {
+    "slug": "feature-flag",
+    "title": "feature flag rollout",
+    "question_hint": "question narrows rollout scope",
+    "answer_hint": "answer_updates_rollout_decision"
+  },
+  {
+    "slug": "migration-checksum",
+    "title": "data migration checksum",
+    "question_hint": "question_requests_prior_checksum",
+    "answer_hint": "answer_resolves_checksum_conflict"
+  },
+  {
+    "slug": "cache-invalidation",
+    "title": "cache invalidation",
+    "question_hint": "question_depends_on_cache_trace",
+    "answer_hint": "answer_explains_stale_read"
+  },
+  {
+    "slug": "webhook-dedupe",
+    "title": "payment webhook dedupe",
+    "question_hint": "question_links_duplicate_event",
+    "answer_hint": "answer_selects_dedupe_rule"
+  },
+  {
+    "slug": "ci-flake",
+    "title": "CI flaky test isolation",
+    "question_hint": "question_compares_failed_attempts",
+    "answer_hint": "answer_replaces_test_hypothesis"
+  },
+  {
+    "slug": "support-sla",
+    "title": "support escalation SLA",
+    "question_hint": "question_depends_on_escalation_state",
+    "answer_hint": "answer_closes_escalation_loop"
+  },
+  {
+    "slug": "model-drift",
+    "title": "recommendation model drift",
+    "question_hint": "question_reuses_prior_drift_signal",
+    "answer_hint": "answer_updates_monitoring_threshold"
+  },
+  {
+    "slug": "stock-sync",
+    "title": "warehouse stock sync",
+    "question_hint": "question_depends_on_inventory_snapshot",
+    "answer_hint": "answer_resolves_sync_order"
+  }
+]

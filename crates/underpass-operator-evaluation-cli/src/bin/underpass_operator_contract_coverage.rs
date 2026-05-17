@@ -77,6 +77,7 @@ struct TrainingCoverage {
     target_ingest_evidence: BTreeMap<String, usize>,
     target_ingest_provenance: BTreeMap<String, usize>,
     target_action_contract_failures: usize,
+    target_action_contract_failure_phases: BTreeMap<String, usize>,
     target_action_contract_failure_examples: Vec<String>,
     missing_capabilities: Vec<String>,
 }
@@ -218,6 +219,7 @@ fn build_report(
             target_ingest_evidence: observed.ingest_evidence,
             target_ingest_provenance: observed.ingest_provenance,
             target_action_contract_failures: observed.action_contract_failures,
+            target_action_contract_failure_phases: observed.action_contract_failure_phases,
             target_action_contract_failure_examples: observed.action_contract_failure_examples,
             missing_capabilities,
         }
@@ -782,6 +784,12 @@ mod tests {
         assert!(!coverage.temporal_raw_refs.contains_key("true"));
         assert_eq!(coverage.inspect_raw.get("false"), Some(&1));
         assert_eq!(coverage.action_contract_failures, 1);
+        assert_eq!(
+            coverage
+                .action_contract_failure_phases
+                .get("tool_arguments"),
+            Some(&1)
+        );
         assert_eq!(
             coverage.action_contract_failure_examples,
             vec!["invalid-raw-refs: action.arguments.include.raw_refs must be false"]

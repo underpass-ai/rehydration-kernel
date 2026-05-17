@@ -17,6 +17,7 @@ use rehydration_testkit::{InMemoryProcessedEventStore, InMemoryProjectionCheckpo
 use rehydration_tests_shared::containers::NEO4J_PASSWORD;
 use rehydration_tests_shared::debug::{debug_log, debug_log_value};
 use rehydration_tests_shared::seed::kernel_data::DEVELOPER_ROLE;
+use rehydration_tests_shared::seed::kernel_e2e_data::EXPECTED_RELATIONSHIP_COUNT;
 use rehydration_tests_shared::tls::grpc::{RunningTlsGrpcServer, stop_server};
 use rehydration_tests_shared::tls::material::TlsMaterial;
 use rehydration_tests_shared::tls::nats::{
@@ -203,7 +204,7 @@ impl RunningTlsProjectionRuntime {
 async fn wait_for_context_ready(
     mut query_client: ContextQueryServiceClient<Channel>,
     root_node_id: &str,
-    _focus_node_id: &str,
+    focus_node_id: &str,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let mut last_error: Option<Box<dyn Error + Send + Sync>> = None;
 
@@ -212,11 +213,11 @@ async fn wait_for_context_ready(
             .get_context(GetContextRequest {
                 root_node_id: root_node_id.to_string(),
                 role: DEVELOPER_ROLE.to_string(),
-                token_budget: 1200,
-                requested_scopes: vec!["implementation".to_string()],
-                depth: 0,
+                token_budget: 65536,
+                requested_scopes: vec!["graph".to_string(), "decisions".to_string()],
+                depth: 3,
                 max_tier: 0,
-                rehydration_mode: 0,
+                rehydration_mode: 2,
             })
             .await
         {
@@ -224,10 +225,17 @@ async fn wait_for_context_ready(
                 let response = response.into_inner();
                 if let Some(bundle) = response.bundle
                     && bundle.root_node_id == root_node_id
-                    && bundle
-                        .bundles
-                        .first()
-                        .is_some_and(|role_bundle| !role_bundle.node_details.is_empty())
+                    && bundle.bundles.first().is_some_and(|role_bundle| {
+                        role_bundle.relationships.len() == EXPECTED_RELATIONSHIP_COUNT
+                            && role_bundle
+                                .neighbor_nodes
+                                .iter()
+                                .any(|node| node.node_id == focus_node_id)
+                            && role_bundle
+                                .node_details
+                                .iter()
+                                .any(|detail| detail.node_id == focus_node_id)
+                    })
                 {
                     debug_log("tls context readiness probe succeeded");
                     return Ok(());

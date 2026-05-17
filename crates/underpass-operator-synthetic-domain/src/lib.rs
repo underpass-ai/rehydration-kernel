@@ -1,8 +1,262 @@
 use underpass_operator_shared_domain::{
     AboutId, AllowedTools, DatasetId, DomainError, DomainResult, ExampleCount, KernelTool,
-    KmpMcpCapability, OperatorAction, OperatorMode, PositiveCount, StepId, SyntheticCaseId,
-    TaskFamily, TrainingTrajectory, VisibleState,
+    KmpMcpCapability, NonEmptyString, OperatorAction, OperatorMode, PositiveCount, StepId,
+    SyntheticCaseId, TaskFamily, TrainingTrajectory, VisibleState,
 };
+
+macro_rules! synthetic_value_object {
+    ($name:ident, $context:literal) => {
+        #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+        pub struct $name(NonEmptyString);
+
+        impl $name {
+            pub fn parse(value: impl Into<String>) -> DomainResult<Self> {
+                Ok(Self(NonEmptyString::parse(value, $context)?))
+            }
+
+            pub fn as_str(&self) -> &str {
+                self.0.as_str()
+            }
+        }
+
+        impl std::fmt::Display for $name {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str(self.as_str())
+            }
+        }
+    };
+}
+
+synthetic_value_object!(WriterTopicSlug, "writer_topic.slug");
+synthetic_value_object!(WriterTopicTitle, "writer_topic.title");
+synthetic_value_object!(WriterRelationHint, "writer_topic.relation_hint");
+synthetic_value_object!(WriterVariantSlug, "writer_variant.slug");
+synthetic_value_object!(WriterVariantReason, "writer_variant.reason");
+synthetic_value_object!(WriterSignal, "writer_exec.signal");
+synthetic_value_object!(WriterDecision, "writer_exec.decision");
+synthetic_value_object!(ReadTopicSlug, "read_api_mcp.topic.slug");
+synthetic_value_object!(ReadTopicTitle, "read_api_mcp.topic.title");
+synthetic_value_object!(ReadAgentSeed, "read_api_mcp.topic.agent");
+synthetic_value_object!(ReadAgentDimension, "read_api_mcp.topic.agent_dimension");
+synthetic_value_object!(ReadIntent, "read_api_mcp.variant.intent");
+synthetic_value_object!(ReadVariantSlug, "read_api_mcp.variant.slug");
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReadApiMcpTopic {
+    slug: ReadTopicSlug,
+    title: ReadTopicTitle,
+    agent_seed: ReadAgentSeed,
+}
+
+impl ReadApiMcpTopic {
+    pub fn new(
+        slug: impl Into<String>,
+        title: impl Into<String>,
+        agent_seed: impl Into<String>,
+    ) -> DomainResult<Self> {
+        Ok(Self {
+            slug: ReadTopicSlug::parse(slug)?,
+            title: ReadTopicTitle::parse(title)?,
+            agent_seed: ReadAgentSeed::parse(agent_seed)?,
+        })
+    }
+
+    pub fn slug(&self) -> &ReadTopicSlug {
+        &self.slug
+    }
+
+    pub fn title(&self) -> &ReadTopicTitle {
+        &self.title
+    }
+
+    pub fn agent_dimension_for(
+        &self,
+        variant: &ReadApiMcpVariant,
+    ) -> DomainResult<ReadAgentDimension> {
+        ReadAgentDimension::parse(format!("agent:{}-{}", self.agent_seed, variant.slug))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReadApiMcpVariant {
+    slug: ReadVariantSlug,
+    intent: ReadIntent,
+}
+
+impl ReadApiMcpVariant {
+    pub fn new(slug: impl Into<String>, intent: impl Into<String>) -> DomainResult<Self> {
+        Ok(Self {
+            slug: ReadVariantSlug::parse(slug)?,
+            intent: ReadIntent::parse(intent)?,
+        })
+    }
+
+    pub fn slug(&self) -> &ReadVariantSlug {
+        &self.slug
+    }
+
+    pub fn intent(&self) -> &ReadIntent {
+        &self.intent
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WriterPreReadRole {
+    PreviousSubtaskAnswer,
+    SameSubtaskQuestion,
+    OlderSubtaskAnswer,
+}
+
+impl WriterPreReadRole {
+    pub fn parse(value: impl Into<String>) -> DomainResult<Self> {
+        let value = value.into();
+        match value.as_str() {
+            "previous_subtask_answer" => Ok(Self::PreviousSubtaskAnswer),
+            "same_subtask_question" => Ok(Self::SameSubtaskQuestion),
+            "older_subtask_answer" => Ok(Self::OlderSubtaskAnswer),
+            _ => Err(DomainError::UnsupportedFixtureValue {
+                context: "writer_pre_read_role".to_string(),
+                value,
+            }),
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::PreviousSubtaskAnswer => "previous_subtask_answer",
+            Self::SameSubtaskQuestion => "same_subtask_question",
+            Self::OlderSubtaskAnswer => "older_subtask_answer",
+        }
+    }
+
+    pub fn selects_older_subtask_answer(self) -> bool {
+        matches!(self, Self::OlderSubtaskAnswer)
+    }
+
+    pub fn selects_previous_subtask_answer(self) -> bool {
+        matches!(self, Self::PreviousSubtaskAnswer)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WriterPreReadTopic {
+    slug: WriterTopicSlug,
+    title: WriterTopicTitle,
+    question_hint: WriterRelationHint,
+    answer_hint: WriterRelationHint,
+}
+
+impl WriterPreReadTopic {
+    pub fn new(
+        slug: impl Into<String>,
+        title: impl Into<String>,
+        question_hint: impl Into<String>,
+        answer_hint: impl Into<String>,
+    ) -> DomainResult<Self> {
+        Ok(Self {
+            slug: WriterTopicSlug::parse(slug)?,
+            title: WriterTopicTitle::parse(title)?,
+            question_hint: WriterRelationHint::parse(question_hint)?,
+            answer_hint: WriterRelationHint::parse(answer_hint)?,
+        })
+    }
+
+    pub fn slug(&self) -> &WriterTopicSlug {
+        &self.slug
+    }
+
+    pub fn title(&self) -> &WriterTopicTitle {
+        &self.title
+    }
+
+    pub fn question_hint(&self) -> &WriterRelationHint {
+        &self.question_hint
+    }
+
+    pub fn answer_hint(&self) -> &WriterRelationHint {
+        &self.answer_hint
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WriterPreReadVariant {
+    slug: WriterVariantSlug,
+    question_primary_role: WriterPreReadRole,
+    answer_secondary_role: WriterPreReadRole,
+    reason: WriterVariantReason,
+}
+
+impl WriterPreReadVariant {
+    pub fn new(
+        slug: impl Into<String>,
+        question_primary_role: impl Into<String>,
+        answer_secondary_role: impl Into<String>,
+        reason: impl Into<String>,
+    ) -> DomainResult<Self> {
+        Ok(Self {
+            slug: WriterVariantSlug::parse(slug)?,
+            question_primary_role: WriterPreReadRole::parse(question_primary_role)?,
+            answer_secondary_role: WriterPreReadRole::parse(answer_secondary_role)?,
+            reason: WriterVariantReason::parse(reason)?,
+        })
+    }
+
+    pub fn slug(&self) -> &WriterVariantSlug {
+        &self.slug
+    }
+
+    pub fn question_primary_role(&self) -> WriterPreReadRole {
+        self.question_primary_role
+    }
+
+    pub fn answer_secondary_role(&self) -> WriterPreReadRole {
+        self.answer_secondary_role
+    }
+
+    pub fn reason(&self) -> &WriterVariantReason {
+        &self.reason
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WriterExecTopic {
+    slug: WriterTopicSlug,
+    title: WriterTopicTitle,
+    signal: WriterSignal,
+    decision: WriterDecision,
+}
+
+impl WriterExecTopic {
+    pub fn new(
+        slug: impl Into<String>,
+        title: impl Into<String>,
+        signal: impl Into<String>,
+        decision: impl Into<String>,
+    ) -> DomainResult<Self> {
+        Ok(Self {
+            slug: WriterTopicSlug::parse(slug)?,
+            title: WriterTopicTitle::parse(title)?,
+            signal: WriterSignal::parse(signal)?,
+            decision: WriterDecision::parse(decision)?,
+        })
+    }
+
+    pub fn slug(&self) -> &WriterTopicSlug {
+        &self.slug
+    }
+
+    pub fn title(&self) -> &WriterTopicTitle {
+        &self.title
+    }
+
+    pub fn signal(&self) -> &WriterSignal {
+        &self.signal
+    }
+
+    pub fn decision(&self) -> &WriterDecision {
+        &self.decision
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SyntheticCaseSpec {

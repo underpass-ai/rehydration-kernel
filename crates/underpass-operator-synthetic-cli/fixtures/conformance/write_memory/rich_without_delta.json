@@ -1,0 +1,36 @@
+{
+  "about": "incident:mobile-login",
+  "intent": "record_observation",
+  "actor": "operator:conformance",
+  "observed_at": "2026-05-06T10:06:00Z",
+  "scope": {
+    "task": "incident:mobile-login",
+    "process": "incident:mobile-login:resolution",
+    "episode": "incident:mobile-login:episode:operator"
+  },
+  "current": {
+    "kind": "observation",
+    "summary": "Token refresh race confirmed by auth log ordering.",
+    "evidence": "Refresh success is followed by 401 on the next login attempt."
+  },
+  "connect_to": [
+    {
+      "ref": "incident:mobile-login:observation:401-refresh-race",
+      "rel": "supports",
+      "class": "evidential",
+      "why": "The new observation confirms the previously inspected refresh-race evidence.",
+      "evidence": "Both observations describe refresh success immediately followed by 401.",
+      "confidence": "high"
+    }
+  ],
+  "read_context": {
+    "inspected_refs": ["incident:mobile-login:observation:401-refresh-race"]
+  },
+  "idempotency_key": "conformance:write-memory:rich-no-delta:refresh-race-confirmed",
+  "options": {
+    "dry_run": true,
+    "strict": true,
+    "sequence": 3
+  },
+  "source_kind": "agent"
+}

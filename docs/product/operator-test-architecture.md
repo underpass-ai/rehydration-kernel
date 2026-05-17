@@ -120,6 +120,94 @@ The no-kernel-dependency rule is enforced by unit tests named:
 crate_has_no_rehydration_dependencies
 ```
 
+## DTO And Fixture Rule
+
+Synthetic fixtures, benchmark artifacts, model-facing rows, and external JSONL
+files are not domain objects.
+
+The rule is:
+
+```text
+JSON fixture / JSONL row -> DTO in contract or infra -> mapper -> domain VO
+domain VO -> mapper -> DTO / JSON only at an output boundary
+```
+
+This means:
+
+- hardcoded conformance payloads should live in fixture files, not as large
+  `json!` blocks embedded in a trajectory builder;
+- fixture DTOs belong in infra and must use strict deserialization such as
+  `deny_unknown_fields`;
+- DTO fields may be primitive strings because they represent transport/file
+  shape;
+- after mapping, synthetic generation code should work with domain vocabulary:
+  topics, variants, intents, relation hints, roles, and prepared payload
+  arguments as VOs or enums;
+- `as_str()` is acceptable when rendering a contract payload, step id, or JSON
+  field at the boundary; it should not become the place where business decisions
+  are made;
+- adding a new synthetic dataset family requires either a domain type for the
+  new concept or an explicit decision that the value is only output formatting.
+
+Current conformance fixture families:
+
+```text
+read_api_mcp_topics.json       -> ReadApiMcpTopicDto       -> ReadApiMcpTopic
+read_api_mcp_variants.json     -> ReadApiMcpVariantDto     -> ReadApiMcpVariant
+writer_pre_read_topics.json    -> WriterPreReadTopicDto    -> WriterPreReadTopic
+writer_pre_read_variants.json  -> WriterPreReadVariantDto  -> WriterPreReadVariant
+writer_exec_topics.json        -> WriterExecTopicDto       -> WriterExecTopic
+write_memory/*.json            -> ActionArguments
+ingest/*.json                  -> ActionArguments
+```
+
+Remaining `serde_json::Value` usage must be intentional:
+
+- contract payloads that are being emitted to or read from the KMP/MCP action
+  contract;
+- visible state shown to Operator as model input;
+- benchmark adapter input where the source schema is external;
+- tests that verify the JSON contract itself.
+
+If a JSON value starts carrying Operator policy, dataset semantics, or fixture
+selection logic, it should be moved behind a DTO mapper and a domain VO.
+
+The action contract keeps a domain-owned diagnostic API for JSON actions:
+
+```text
+operator_action_contract_diagnostic(...)
+operator_tool_call_arguments_contract_diagnostic(...)
+```
+
+These diagnostics do not change the legacy contract behavior. They preserve the
+same error messages as `operator_action_contract_error(...)`, but add a phase:
+
+```text
+action_shape   -> top-level action shape or stop-action shape failed
+tool_arguments -> the selected KMP/MCP tool arguments failed schema/semantic validation
+tool_bounds    -> the action shape is valid but exceeds the bounded safe profile
+```
+
+This is the guardrail for the failures already found in Operator work: JSON can
+still enter at the boundary, but the domain can classify why it is invalid
+without relying on ad hoc string matching in every evaluator, exporter, replay
+runner, or trainer gate.
+
+Current consumers:
+
+- policy evaluation keeps `invalid_prediction_reasons` unchanged, and adds
+  `invalid_prediction_contract_phases` plus per-row `invalid_contract_phase`;
+- training contract coverage keeps the legacy failure examples unchanged, and
+  adds `target_action_contract_failure_phases`;
+- MCP replay keeps row errors unchanged, and adds per-row
+  `contract_violation_phase` plus summary `contract_violation_phases`.
+- benchmark trajectory exporters keep `target_action_contract` failure details,
+  add `contract_phase`, and classify `tool_bounds` as `unbounded_tool_call` so
+  export fails fast instead of silently writing unsafe trajectories.
+
+These fields make it possible to distinguish malformed actions, invalid tool
+arguments, and boundedness violations without parsing English error messages.
+
 ## Shared Context
 
 The shared context contains only language that is genuinely common across
@@ -353,8 +441,8 @@ Domain:
 - `ReplayActionDecision`;
 - `ReplayRow`;
 - `ReplayRunReport`;
-- replay counters, page metadata, partial-result flags, missing/extra ref
-  detection, and latency summary metrics.
+- replay counters, contract violation phases, page metadata, partial-result
+  flags, missing/extra ref detection, and latency summary metrics.
 
 Application:
 
