@@ -1,0 +1,21 @@
+[package]
+name = "underpass-operator-evaluation-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "CLI tools for Operator evaluation and contract coverage"
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+reqwest = { version = "0.12.24", default-features = false, features = ["json", "rustls-tls"] }
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+underpass-operator-evaluation-application.workspace = true
+underpass-operator-evaluation-domain.workspace = true
+underpass-operator-evaluation-infra.workspace = true
+underpass-operator-shared-domain.workspace = true

@@ -10,6 +10,13 @@ measurement and publication claims, not kernel core or this training-data
 classification. See
 [`operator-action-contract-audit-2026-05-14.md`](operator-action-contract-audit-2026-05-14.md).
 
+Follow-up on 2026-05-17: FunctionGemma was evaluated in both compatibility and
+native tool-schema modes. It is not the current Operator backbone. The
+FunctionGemma-native scripts are now treated as legacy read-only experiments
+and fail fast on writer tools, `prepared_tool_call`, or unsupported
+`allowed_tools`. Current writer-side work uses the Qwen 0.5B
+`writer-orchestration-v2-kmp-cursor` path with prepared-payload execution.
+
 ## Decision
 
 Do not discard the previous Operator runs.
@@ -204,10 +211,12 @@ Interpretation:
 - The single unbounded tool call keeps it out of release-candidate territory.
 - Hammer remains a measured candidate, not the current Operator backbone.
 
-The next sub-0.5B candidate should be `google/functiongemma-270m-it`, evaluated
-in a separate cut. FunctionGemma is explicitly designed around tool/function
-calling and has a Google-provided tuning workflow for custom function schemas,
-which matches the Operator task more directly than generic instruction tuning.
+At this point in the audit, the next sub-0.5B candidate was
+`google/functiongemma-270m-it`, to be evaluated in a separate cut. FunctionGemma
+is explicitly designed around tool/function calling and has a Google-provided
+tuning workflow for custom function schemas, which matched the Operator task
+more directly than generic instruction tuning. The later results below showed
+that it should remain a measured legacy/read-only experiment for now.
 
 FunctionGemma access gate, 2026-05-13:
 
@@ -272,7 +281,7 @@ This cut implemented the fairer test:
   declarations.
 - Targets are native FunctionGemma function-call strings.
 - Prediction parses FunctionGemma function calls back into the same
-  `predictions.jsonl` contract used by `kernel_operator_policy_eval`.
+  `predictions.jsonl` contract used by `underpass_operator_policy_eval`.
 
 Training result:
 

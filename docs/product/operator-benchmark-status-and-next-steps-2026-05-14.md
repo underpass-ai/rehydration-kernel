@@ -150,7 +150,7 @@ Hay tres niveles distintos:
 | --- | --- |
 | API canonica | `KernelMemoryService` gRPC en `api/proto/.../memory.proto` |
 | Entrada agentica | MCP tools en `crates/rehydration-mcp/src/protocol.rs` |
-| Contrato del Operator | validador estricto en `crates/rehydration-testkit/src/kernel_operator.rs` |
+| Contrato del Operator | validador estricto en `crates/underpass-operator-shared-domain/src/action_contract.rs` |
 
 ### Gap 1: Herramientas MCP Que El Operator No Cubre
 
@@ -392,7 +392,7 @@ Suites P0 necesarias:
 Cada suite debe producir targets estrictos, policy eval offline y replay real
 contra MCP/gRPC. Si falta una suite, la cobertura debe bajar y hacerlo visible.
 
-Medicion actual con `kernel_operator_contract_coverage` sobre el holdout V6:
+Medicion actual con `underpass_operator_contract_coverage` sobre el holdout V6:
 
 | Metric | Value |
 | --- | ---: |
@@ -683,7 +683,7 @@ pertenece a `stop`.
 
 Estado actual:
 
-- validador compartido en Rust testkit;
+- validador compartido en `underpass-operator-shared-domain`;
 - predictor Python endurecido;
 - evaluator endurecido;
 - no additional properties;

@@ -6,7 +6,7 @@
 | --- | --- |
 | Attempt id | `writer-pre-read-v2-diversity-gate` |
 | Date | 2026-05-16 |
-| Status | `dataset-ready` |
+| Status | `baseline-only` |
 | Scope | `writer-pre-read-v2` conformance plus MemoryArena P1.11 smart-writer pre-read rows |
 | Artifact root | `../rehydration-kernel-artifacts/operator/2026-05-16-writer-pre-read-v2-diversity-gate/` |
 
@@ -37,7 +37,7 @@ between an LLM and KMP/MCP from narrowing the real API surface.
 Command:
 
 ```bash
-cargo run -p rehydration-testkit --bin kernel_operator_conformance_trajectory_export -- \
+cargo run -p underpass-operator-synthetic-cli --bin underpass_operator_conformance_trajectory_build -- \
   --suite writer-pre-read-v2 \
   --run-id kmp-operator-writer-pre-read-v2-20260516 \
   --output /tmp/kernel-operator-conformance-writer-pre-read-v2-20260516 \
@@ -61,7 +61,7 @@ Result:
 Command:
 
 ```bash
-cargo run -p rehydration-testkit --bin kernel_operator_contract_coverage -- \
+cargo run -p underpass-operator-evaluation-cli --bin underpass_operator_contract_coverage -- \
   --profile writer-pre-read \
   --trajectories /tmp/kernel-operator-conformance-writer-pre-read-v2-20260516/trajectories.jsonl \
   --fail-under 100 \
@@ -207,7 +207,7 @@ Result:
 Final compact coverage:
 
 ```bash
-cargo run -p rehydration-testkit --bin kernel_operator_contract_coverage -- \
+cargo run -p underpass-operator-evaluation-cli --bin underpass_operator_contract_coverage -- \
   --profile writer-pre-read \
   --trajectories /tmp/kernel-operator-sft-p111-smart-writer-pre-read-mixed-v2-compact-20260516/all_trajectories.jsonl \
   --fail-under 100 \
@@ -242,8 +242,8 @@ Result:
 
 ## 9. Decision
 
-This attempt is `dataset-ready` for the next diagnostic writer pre-read model
-experiment.
+This attempt is `baseline-only` for writer pre-read history. It was useful for
+diagnosis, but it has been superseded by the v4 stop/trace gate.
 
 It is stronger than the previous mixed cut because the contract now includes
 stop, trace continuation, post-trace state, and candidate ambiguity. It is still
@@ -252,10 +252,10 @@ too repetitive after anonymization.
 
 ## 10. Next Steps
 
-1. Use this v2 mixed cut for the next controlled diagnostic training run only.
+1. Do not use this v2 mixed cut for a current Operator claim.
 2. Generate or collect more real writer pre-read states with distinct visible
    context, not only more rows.
-3. Keep `writer-pre-read-v2` as the minimum conformance source for any future
-   writer pre-read training claim.
+3. Keep `writer-pre-read-v4-kmp-cursor-v2` or later as the minimum conformance
+   source for any future writer pre-read training claim.
 4. Do not place a writer pre-read model in front of KMP/MCP unless the exact
    profile it serves reaches 100% train/eval capability coverage.

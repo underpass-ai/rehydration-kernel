@@ -194,10 +194,19 @@ fn namespaced_memory(
         let relation_type = MemoryRelationType::new(&relation.rel).map_err(|error| {
             ApplicationError::Validation(format!("memory relation type is invalid: {error}"))
         })?;
+        if relation_type.as_str() != relation.rel {
+            return Err(ApplicationError::Validation(format!(
+                "memory relation rel must use canonical wire value `{}`",
+                relation_type.as_str()
+            )));
+        }
         let semantic_class =
             RelationSemanticClass::parse(&relation.semantic_class).map_err(|error| {
                 ApplicationError::Validation(format!("memory relation class is invalid: {error}"))
             })?;
+        if let Some(confidence) = relation.confidence.as_deref() {
+            validate_relation_confidence(confidence)?;
+        }
         let source_ref = normalize_ref(&relation.source_ref, &dimension_aliases);
         let target_ref = normalize_ref(&relation.target_ref, &dimension_aliases);
         if !known_refs.contains(&source_ref) || !known_refs.contains(&target_ref) {
@@ -230,7 +239,6 @@ fn namespaced_memory(
         let mut relation = relation.clone();
         relation.source_ref = source_ref;
         relation.target_ref = target_ref;
-        relation.rel = relation_type.as_str().to_string();
         relations.push(relation);
     }
 
@@ -264,6 +272,15 @@ fn namespaced_memory(
         relations,
         evidence: evidence_items,
     })
+}
+
+fn validate_relation_confidence(value: &str) -> Result<(), ApplicationError> {
+    match value {
+        "high" | "medium" | "low" | "unknown" => Ok(()),
+        other => Err(ApplicationError::Validation(format!(
+            "memory relation confidence is invalid: invalid confidence `{other}`"
+        ))),
+    }
 }
 
 fn existing_dimension_aliases(
@@ -496,17 +513,14 @@ mod tests {
     }
 
     #[test]
-    fn translate_memory_ingest_canonicalizes_known_relation_types() {
+    fn translate_memory_ingest_rejects_noncanonical_relation_types() {
         let mut command = sample_command();
         command.memory.relations[0].rel = " CONTAINS-ENTRY ".to_string();
 
-        let (update, _) = translate_memory_ingest(&command, &ExistingMemoryRefs::default())
-            .expect("known relation aliases should canonicalize");
+        let error = translate_memory_ingest(&command, &ExistingMemoryRefs::default())
+            .expect_err("relation aliases should fail fast at the KMP boundary");
 
-        assert_eq!(
-            update.changes[2].entity_id,
-            "relation:about:question:830ce83f:dimension:conversation:rachel-2026-04-12:contains_entry:claim:rachel-denver"
-        );
+        assert_validation_contains(error, "must use canonical wire value `contains_entry`");
     }
 
     #[test]
@@ -521,6 +535,17 @@ mod tests {
             .expect_err("missing proof should fail");
 
         assert_validation_contains(error, "require confidence");
+    }
+
+    #[test]
+    fn translate_memory_ingest_rejects_noncanonical_relation_confidence() {
+        let mut command = sample_command();
+        command.memory.relations[0].confidence = Some(" high ".to_string());
+
+        let error = translate_memory_ingest(&command, &ExistingMemoryRefs::default())
+            .expect_err("confidence must be exact");
+
+        assert_validation_contains(error, "invalid confidence ` high `");
     }
 
     #[test]

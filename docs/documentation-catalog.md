@@ -21,6 +21,8 @@ These documents are the current source of truth for users and maintainers:
 | Typed KMS/gRPC status | [product/kernel-memory-service-grpc-plan.md](product/kernel-memory-service-grpc-plan.md) |
 | Writer helper protocol | [product/kernel-write-protocol-plan.md](product/kernel-write-protocol-plan.md) |
 | Kernel tool-operator model | [product/kernel-tool-operator-model-plan.md](product/kernel-tool-operator-model-plan.md) |
+| Operator test architecture | [product/operator-test-architecture.md](product/operator-test-architecture.md) |
+| Operator dataset quality contract | [product/operator-dataset-quality-contract.md](product/operator-dataset-quality-contract.md) |
 | Operator training process | [product/operator-training-experiment-process.md](product/operator-training-experiment-process.md), [product/operator-training-runs/README.md](product/operator-training-runs/README.md) |
 | Operator benchmark status | [product/operator-benchmark-status-and-next-steps-2026-05-14.md](product/operator-benchmark-status-and-next-steps-2026-05-14.md) |
 | Operator MCP/API coverage audit | [product/operator-mcp-api-contract-gap-audit-2026-05-14.md](product/operator-mcp-api-contract-gap-audit-2026-05-14.md) |
@@ -54,13 +56,18 @@ The current roadmap is:
 9. Scale the small kernel tool-operator model beyond the current V6 holdout:
    keep grouped anonymized splits, compare baselines, and validate raw
    predictions through live MCP/gRPC before any publication claim.
-10. Record every serious Operator training attempt in
+10. Apply the Operator dataset quality contract before GPU training: leakage,
+    contract coverage, train/eval independence, diversity, action balance,
+    contrastive families, and majority-baseline risk.
+11. Record every serious Operator training attempt in
     [product/operator-training-runs/](product/operator-training-runs/README.md)
     with dataset provenance, evidence, stop gates, and final status.
-11. Publish the operator model and trajectory dataset to Hugging Face only
+12. Keep Operator contracts, evaluators, and replay moving toward standalone
+    Rust crates that do not depend on kernel domain/application crates.
+13. Publish the operator model and trajectory dataset to Hugging Face only
     after the publication gate is clean, then update repo visibility around
     reproducible KMP evidence rather than broad claims.
-12. Continue reducing infrastructure coupling through conformance tests and
+14. Continue reducing infrastructure coupling through conformance tests and
     backend-independent semantics.
 
 ## Active Research And Benchmark Docs
@@ -108,6 +115,9 @@ Fixed or clarified:
   automatically run by `kernel_ask`; readers/adapters must compose them.
 - Writer protocol docs now reflect the implemented `kernel_write_memory` helper
   and leave the remaining P1 work visible.
+- Operator docs now record the separated read/writer 0.5B runs, the
+  model-facing evaluation mode required for anonymized refs, and the dataset
+  requirement that exact requested bounds must be visible to the model.
 
 Open documentation gaps:
 

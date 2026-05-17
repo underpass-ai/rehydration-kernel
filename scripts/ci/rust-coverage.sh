@@ -60,6 +60,12 @@ cargo llvm-cov report \
   --ignore-filename-regex "${COVERAGE_IGNORE_FILENAME_REGEX}" \
   --lcov \
   --output-path target/llvm-cov/lcov.info
+
+if ! grep -q 'SF:.*/crates/underpass-operator-' target/llvm-cov/lcov.info; then
+  echo "coverage report did not include underpass-operator crates" >&2
+  exit 1
+fi
+
 cargo llvm-cov report \
   --locked \
   --ignore-filename-regex "${COVERAGE_IGNORE_FILENAME_REGEX}" \

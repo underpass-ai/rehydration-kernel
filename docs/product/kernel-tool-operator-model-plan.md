@@ -20,6 +20,14 @@ strict contract and live replay evidence.
 
 Date: 2026-05-12.
 
+Update 2026-05-17: this plan is historical and cumulative. The current
+write-side candidate is the Qwen 0.5B `writer-orchestration-v2-kmp-cursor`
+path with prepared-payload execution and strict KMP/MCP validation. The
+FunctionGemma-native scripts remain useful as legacy read-only experiments,
+but they are not compatible with the current writer-orchestration claim path
+and now fail fast on writer tools, `prepared_tool_call`, or unsupported
+allowed tools.
+
 Update 2026-05-13: the previous Operator models are retained as baselines, not
 discarded. The clean current training base is the MemoryArena P1.11 corpus.
 The mixed MemoryArena + LongMemEval run is internal comparison only. The
@@ -43,10 +51,11 @@ function-calling 0.5B alternative on the same corrected LongMemEval v7 slice.
 It parsed more actions than Qwen under the strict single-JSON contract, but
 policy quality was lower: exact action accuracy reached 0.6500, with 7
 prediction failures and 1 unbounded tool call. It remains a useful measured
-candidate, not a release candidate. Google FunctionGemma 270M is now the next
-sub-0.5B candidate to evaluate because it is explicitly designed for
-tool/function calling and has a dedicated tuning workflow for custom function
-schemas.
+candidate, not a release candidate. At that point, Google FunctionGemma 270M
+became the next sub-0.5B candidate to evaluate because it is explicitly
+designed for tool/function calling and has a dedicated tuning workflow for
+custom function schemas. The later 2026-05-17 note above supersedes this as a
+current recommendation.
 
 FunctionGemma relaunch note: the Kubernetes secret for Hugging Face exists, but
 the first launch was not authorized for the gated `google/functiongemma-270m-it`
@@ -184,7 +193,7 @@ counts, observed-ref counts, and the primary visible candidate. On the same
 LongMemEval holdout, Qwen trained in 3m18s with final `eval_loss=0.04027` and
 `eval_mean_token_accuracy=0.9890`. The model produced the full expected action
 distribution including all 14 `kernel_inspect` actions. A follow-up hardening
-pass moved action-shape validation into the shared testkit contract and rejected
+pass moved action-shape validation into the shared Operator domain contract and rejected
 extra fields in tool arguments. Under that stricter evaluator, the same
 prediction file has 59/60 valid predictions, 1 invalid prediction, zero
 unbounded tool calls, 0.9773 tool accuracy, 0.9773 primary-ref accuracy, 0.9773
@@ -469,19 +478,19 @@ be evaluated only by final answer correctness.
 
 ### P1.1 Trajectory Exporter
 
-Add a testkit exporter that converts existing runner logs and artifacts into
-`kernel-operator-trajectory-v1`.
+Add a benchmark-adapter CLI that converts existing runner logs and artifacts
+into `kernel-operator-trajectory-v1`.
 
-Proposed binary:
+MemoryArena binary:
 
 ```text
-kernel_operator_trajectory_export
+memoryarena_operator_trajectory_export
 ```
 
 Implemented binary:
 
 ```text
-cargo run -p rehydration-testkit --bin kernel_operator_trajectory_export -- \
+cargo run -p underpass-operator-benchmark-adapters-cli --bin memoryarena_operator_trajectory_export -- \
   --run <memoryarena-run-dir> \
   --output <output-dir> \
   [--include-writer-reads] \
@@ -568,7 +577,7 @@ recorded target action and final trajectory quality.
 Implemented binary:
 
 ```text
-cargo run -p rehydration-testkit --bin kernel_operator_policy_eval -- \
+cargo run -p underpass-operator-evaluation-cli --bin underpass_operator_policy_eval -- \
   --trajectories <trajectories.jsonl> \
   [--predictions <predictions.jsonl>] \
   [--baseline deterministic|oracle] \
@@ -646,7 +655,7 @@ Implement a simple rule baseline before training:
 This baseline is intentionally modest. It gives the operator model something
 concrete to beat.
 
-Implemented inside `kernel_operator_policy_eval` as `--baseline deterministic`.
+Implemented inside `underpass_operator_policy_eval` as `--baseline deterministic`.
 It is not a trained model. It exists to provide a stable floor for future
 generalist and small-model comparisons.
 
@@ -672,7 +681,7 @@ usage, invalid calls, and latency while preserving ref quality.
 Implemented binary:
 
 ```text
-cargo run -p rehydration-testkit --bin kernel_operator_llm_baseline -- \
+cargo run -p underpass-operator-evaluation-cli --bin underpass_operator_llm_baseline -- \
   --trajectories <trajectory-dir>/trajectories.jsonl \
   --output <output-dir> \
   --endpoint <openai-compatible-chat-completions-url> \
@@ -709,7 +718,7 @@ Guardrails:
 Evaluation command after a run:
 
 ```text
-cargo run -p rehydration-testkit --bin kernel_operator_policy_eval -- \
+cargo run -p underpass-operator-evaluation-cli --bin underpass_operator_policy_eval -- \
   --trajectories <trajectory-dir>/trajectories.jsonl \
   --predictions <llm-baseline-dir>/predictions.jsonl \
   --output <llm-baseline-dir>/policy-eval.json \
@@ -852,7 +861,7 @@ Prediction output:
 Policy evaluation:
 
 ```text
-cargo run -p rehydration-testkit --bin kernel_operator_policy_eval -- \
+cargo run -p underpass-operator-evaluation-cli --bin underpass_operator_policy_eval -- \
   --trajectories /tmp/kernel-operator-sft-100/eval_trajectories.jsonl \
   --predictions /tmp/kernel-operator-qwen05-predictions/predictions.jsonl \
   --output /tmp/kernel-operator-qwen05-policy-eval.json
@@ -1114,7 +1123,7 @@ compaction.
 Candidate-visible export:
 
 ```text
-cargo run -p rehydration-testkit --bin kernel_operator_trajectory_export -- \
+cargo run -p underpass-operator-benchmark-adapters-cli --bin memoryarena_operator_trajectory_export -- \
   --run /tmp/memoryarena-smart-writer-paged-100tasks-20260508-1407-run \
   --output /tmp/kernel-operator-trajectories-100-with-writer-candidates \
   --include-writer-reads \
@@ -1251,7 +1260,7 @@ fields reach `visible_state`.
 Candidate-detail export:
 
 ```text
-cargo run -p rehydration-testkit --bin kernel_operator_trajectory_export -- \
+cargo run -p underpass-operator-benchmark-adapters-cli --bin memoryarena_operator_trajectory_export -- \
   --run /tmp/memoryarena-smart-writer-paged-100tasks-20260508-1407-run \
   --output /tmp/kernel-operator-trajectories-100-with-writer-candidate-details \
   --include-writer-reads \
@@ -1488,7 +1497,7 @@ through the real MCP adapter against the deployed kernel.
 P1.10 adds:
 
 ```text
-cargo run -p rehydration-testkit --bin kernel_operator_mcp_replay
+cargo run -p underpass-operator-replay-cli --bin underpass_operator_mcp_replay
 ```
 
 The replayer takes:
@@ -1605,7 +1614,7 @@ P1.11.0 first implementation slice:
   `Goto`, `Near`, `Rewind`, and `Forward`; the MCP adapter maps the same page
   object into `kernel_goto`, `kernel_near`, `kernel_rewind`, and
   `kernel_forward` structured output.
-- `kernel_operator_mcp_replay` already exposes `--limit`, `--offset`, and
+- `underpass_operator_mcp_replay` already exposes `--limit`, `--offset`, and
   `--log-progress-every`; replay rows now record `partial_result` and `page`,
   and summaries count partial results by action.
 
@@ -2161,13 +2170,15 @@ trained from a clean, versioned dataset after the audit gates pass.
   path? Current answer: yes. `MadeAgents/Hammer2.0-0.5b` was measured and did
   not beat the Qwen v7 baseline on exact policy quality. It still proves that a
   function-calling prior helps parse validity, but it is not enough by itself.
-  `google/functiongemma-270m-it` is now the next serious sub-0.5B candidate:
-  it is gated and uses the Gemma license, but it is explicitly aligned with
-  tool/function calling and has a tuning lab for custom function schemas. Under
-  the generic chat/JSON compatibility cut it underperformed; under the native
-  tool-schema cut it improved parse count but still underperformed on policy
-  accuracy. Do not rerun the same corpus immediately; use this result to drive
-  constrained decoding and stronger decision data.
+  `google/functiongemma-270m-it` was measured as the next serious sub-0.5B
+  function-calling candidate: it is gated and uses the Gemma license, but it is
+  explicitly aligned with tool/function calling and has a tuning lab for custom
+  function schemas. Under the generic chat/JSON compatibility cut it
+  underperformed; under the native tool-schema cut it improved parse count but
+  still underperformed on policy accuracy. It is now retained as a legacy
+  read-only experiment, not as the current writer-orchestration path. Do not
+  rerun the same corpus immediately; use this result to drive constrained
+  decoding and stronger decision data.
 - Should a larger non-0.5B model be measured as a control? Initial answer: yes.
   `meta-llama/Llama-3.2-1B-Instruct` is the first 1B control candidate, but it
   is gated and currently awaiting access approval for the cluster token.

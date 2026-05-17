@@ -15,7 +15,7 @@ pub enum RelationSemanticClass {
 
 impl RelationSemanticClass {
     pub fn parse(value: &str) -> Result<Self, DomainError> {
-        match value.trim() {
+        match value {
             "structural" => Ok(Self::Structural),
             "causal" => Ok(Self::Causal),
             "motivational" => Ok(Self::Motivational),
@@ -54,5 +54,29 @@ impl RelationSemanticClass {
             Self::Procedural => 4,
             Self::Structural => 5,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_roundtrip() {
+        for (wire, expected) in [
+            ("structural", RelationSemanticClass::Structural),
+            ("causal", RelationSemanticClass::Causal),
+            ("motivational", RelationSemanticClass::Motivational),
+            ("procedural", RelationSemanticClass::Procedural),
+            ("evidential", RelationSemanticClass::Evidential),
+            ("constraint", RelationSemanticClass::Constraint),
+        ] {
+            assert_eq!(RelationSemanticClass::parse(wire).expect("valid"), expected);
+        }
+    }
+
+    #[test]
+    fn parse_rejects_whitespace_wrapped_values() {
+        assert!(RelationSemanticClass::parse(" evidential ").is_err());
     }
 }

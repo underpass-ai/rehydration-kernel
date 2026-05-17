@@ -31,11 +31,11 @@ MCP tools schema
 | MCP tools schema | `crates/rehydration-mcp/src/protocol.rs` |
 | MCP -> gRPC request mapping | `crates/rehydration-mcp/src/grpc/requests/*.rs` |
 | MCP structured output mapping | `crates/rehydration-mcp/src/kmp.rs` |
-| Operator Rust contract validator | `crates/rehydration-testkit/src/kernel_operator.rs` |
+| Operator Rust contract validator | `crates/underpass-operator-shared-domain/src/action_contract.rs` |
 | Operator Python predictor validator | `scripts/operator/predict_operator_sft.py` |
-| Operator trajectories exporter | `crates/rehydration-testkit/src/bin/kernel_operator_trajectory_export.rs` |
-| Operator policy evaluator | `crates/rehydration-testkit/src/bin/kernel_operator_policy_eval.rs` |
-| Operator live replay | `crates/rehydration-testkit/src/bin/kernel_operator_mcp_replay.rs` |
+| Operator synthetic trajectory builder | `crates/underpass-operator-synthetic-cli/src/bin/underpass_operator_conformance_trajectory_build.rs` |
+| Operator policy evaluator | `crates/underpass-operator-evaluation-cli/src/bin/underpass_operator_policy_eval.rs` |
+| Operator live replay | `crates/underpass-operator-replay-cli/src/main.rs` |
 
 ## Situacion Actual
 
@@ -112,26 +112,27 @@ en MCP, o si cambia la semantica de dimensiones, cursores, paginacion o raw
 access, la cobertura debe bajar hasta que exista soporte del Operator y dataset
 que lo ejercite.
 
-Medicion actual del reporter `kernel_operator_contract_coverage`:
+Medicion historica del reporter `underpass_operator_contract_coverage` antes del
+refresh de 2026-05-17:
 
 | Scope | Coverage | Lectura |
 | --- | ---: | --- |
 | MCP global tools desde `operator-read` | 80.00% | `kernel_ingest` y `kernel_write_memory` no pertenecen al perfil lector actual. |
-| MCP global tools desde `operator-full` | 100.00% | El contrato full ya cubre todas las tools MCP publicadas. |
+| MCP global tools desde `operator-full` | 100.00% | Cubre las tools MCP publicadas, pero no implica cobertura de todos los campos opcionales, enums, defaults o politicas raw/commit. |
 | `operator-read` contract | 100.00% | El contrato ya puede expresar el perfil lector completo. |
-| `operator-full` contract | 100.00% | El contrato ya expresa `kernel_ingest`, `kernel_write_memory`, relation quality y read_context proof. |
+| `operator-full` contract | 100.00% | Expresa `kernel_ingest`, `kernel_write_memory`, relation quality y read_context proof en el perfil acotado de ese momento. |
 | MemoryArena V6 target capabilities | 41.67% | El dataset actual no cubre todo el perfil lector. |
 | MemoryArena V6 target capabilities contra full | 35.71% | El dataset actual no contiene acciones de escritura. |
 | KMP conformance full target capabilities | 100.00% | Suite sintetica v7 de 61 trajectories para cubrir todo el contrato full. |
 | P1.11 + conformance v7 read train target capabilities | 100.00% | Split capability-aware; 24/24 capacidades read en train. |
 | P1.11 + conformance v7 read eval target capabilities | 100.00% | Split capability-aware; 24/24 capacidades read en eval. |
 
-El dato importante ya no es solo el contrato. El contrato `operator-full` puede
-expresar todo KMP/MCP, incluida escritura. El gap principal pasa a ser de datos:
-el modelo no ha sido entrenado/evaluado todavia con suficientes casos para decir
-que domina el perfil full. Para `operator-read`, el primer dataset mixto con
-cobertura 100% en train y eval ya existe; todavia falta entrenar, evaluar y
-replayar contra MCP real antes de convertirlo en claim de modelo.
+El dato importante ya no es solo el contrato por tool. Un perfil puede tener
+100% de cobertura de tools y seguir sin cubrir partes importantes de la API:
+enum values, `budget.detail`, `dimensions.scope_ids`, raw audit flags,
+commit-write, defaults omitidos o payloads de ingest reducidos. Desde el
+refresh de 2026-05-17, esas distribuciones deben aparecer en el reporte antes
+de convertir un resultado en claim de modelo.
 
 ## P0: Datasets Por Caso De Uso MCP/API
 
@@ -157,7 +158,7 @@ Suites necesarias:
 | `kmp-inspect-policy` | Inspect ligero, inspect tipado completo, raw=false por defecto. |
 | `kmp-audit-raw` | Raw refs/raw inspect solo si se declara perfil auditor. |
 | `kmp-write-memory` | Escribir texto + relacion + why + evidencia + read_context proof. |
-| `kmp-ingest-canonical` | Ingest canonico, idempotency, dimensiones, entradas, relaciones y evidencia. |
+| `kmp-ingest-canonical` | Ingest canonico con idempotency, dimensiones, entradas con coordenadas, variantes completas y variantes reducidas/incrementales permitidas por KMP. |
 
 Cada suite debe producir:
 
@@ -642,6 +643,8 @@ Operator:
 - lo permite;
 - exige `answer_policy`;
 - exige `dimensions`;
+- exige `budget` con `tokens` para mantener llamadas acotadas en el perfil
+  seguro;
 - no aparece en MemoryArena V6 target;
 - LongMemEval v10 lo ejercito y expuso el fallo `final_refs` dentro de
   `kernel_ask.arguments`, ya corregido por predictor estricto.
@@ -866,6 +869,8 @@ Decision:
 | --- | --- | --- |
 | `kernel_ask.answer_policy` | opcional, default `evidence_or_unknown` | requerido |
 | `kernel_ask.dimensions` | opcional | requerido |
+| `kernel_ask.budget` | opcional/default | requerido con `tokens` |
+| `kernel_wake.budget` | opcional/default | requerido con `tokens` |
 | temporal `dimensions` | opcional | requerido |
 | temporal `include` | opcional | requerido |
 | temporal `limit` | opcional | requerido |
@@ -1184,11 +1189,11 @@ Create a small "KMP operator conformance" dataset before scaling benchmarks.
 Implemented exporter:
 
 ```bash
-cargo run -p rehydration-testkit --bin kernel_operator_conformance_trajectory_export -- \
+cargo run -p underpass-operator-synthetic-cli --bin underpass_operator_conformance_trajectory_build -- \
   --output /tmp/kernel-operator-conformance-full-v4 \
   --force
 
-cargo run -p rehydration-testkit --bin kernel_operator_contract_coverage -- \
+cargo run -p underpass-operator-evaluation-cli --bin underpass_operator_contract_coverage -- \
   --profile full \
   --trajectories /tmp/kernel-operator-conformance-full-v4/trajectories.jsonl \
   --fail-under 100
@@ -1397,11 +1402,114 @@ validated on MemoryArena V6 holdout20 and live MCP replay.
 The next public claim must be based on the capability-aware v7 read dataset plus
 fresh training, strict policy eval, and live MCP replay.
 
+## Actualizacion 2026-05-17: Refresh Del Contrato
+
+Este documento nacio del audit de gaps del holdout de MemoryArena. El P0 actual
+ha pasado de "el Operator cubre todas las tools publicadas?" a una pregunta mas
+estricta:
+
+```text
+el perfil de Operator cubre todas las decisiones KMP/MCP que tiene permitido
+tomar, y las formas excluidas estan declaradas de forma explicita?
+```
+
+La cobertura por tool no basta. Un perfil puede cubrir `kernel_ingest` y no
+estar entrenado para escrituras commit, defaults omitidos, appends con
+dimensiones vacias, flags raw de auditoria o payloads reducidos. Un perfil puede
+cubrir `kernel_ask` y aun asi no cubrir uno de sus `answer_policy` soportados.
+
+El refresh activo del contrato esta documentado en:
+
+```text
+docs/product/operator-training-runs/2026-05-17-kmp-cursor-contract-refresh.md
+docs/product/operator-dataset-quality-contract.md
+```
+
+Estado medido actual:
+
+| Area | Estado | Lectura |
+| --- | --- | --- |
+| read profile tools | cubierto para el perfil lector acotado | `wake`, `ask`, movimiento temporal, `trace`, `inspect` y `stop` estan cubiertos |
+| enum opcional de lectura | incompleto | `best_effort` esta soportado por KMP/MCP pero no aparece en los artefactos actuales |
+| dimension scope ids exactos | incompleto | `dimensions.scope_ids` esta soportado pero no aparece en los artefactos actuales |
+| tiers de budget detail | incompleto | `budget.detail={compact,balanced,full}` esta soportado pero no aparece en los artefactos actuales |
+| raw access | excluido por politica y validacion | `inspect.include.raw=true` y temporal `include.raw_refs=true` fallan en el perfil seguro; requieren un perfil auditor separado |
+| writer-exec profile | cubierto para ejecucion segura preparada | el modelo decide si ejecutar payloads preparados visibles |
+| writer commit mode | no entrenado | el writer-exec actual es dry-run-only |
+| raw ingest authoring | no entrenado | el Operator actual no compone todas las formas legales de `kernel_ingest` |
+| ingest reducido/opcional | validator-safe, no entrenado en artefactos preservados | futuros cortes pueden ensenar incremental append y payloads reducidos |
+| structural write relation without proof | runtime/validator safe | se permite solo para relaciones `structural`; no genera evidence vacio y queda medido como `target_write_memory_relation_proof` |
+
+El reporter ahora expone distribuciones que hacen auditables esas afirmaciones:
+
+```text
+target_answer_policies
+target_budget_details
+target_dimension_scope_ids
+target_temporal_raw_refs
+target_inspect_raw
+target_write_memory_options
+target_write_memory_dry_run
+target_write_memory_strict
+target_write_memory_idempotency_key
+target_write_memory_read_context
+target_write_memory_current_evidence
+target_write_memory_source_kind
+target_write_memory_relation_proof
+target_ingest_dry_run
+target_ingest_dimensions
+target_ingest_relations
+target_ingest_evidence
+target_ingest_provenance
+row_parse_failures
+row_parse_failure_examples
+target_action_contract_failures
+target_action_contract_failure_examples
+```
+
+`target_action_contract_failures` must be zero. A row outside the strict action
+contract is not coverage; it is a broken dataset.
+
+`row_parse_failures` must also be zero. A malformed SFT row is not the same as a
+row filtered out by profile.
+
+`allowed_tools` is part of the executable contract, not convenience metadata.
+Every raw trajectory and model-facing row must declare it, it must contain only
+unique non-empty strings, and every tool must be valid for the row mode:
+`read`, `write_context_read`, or `write`. Coverage, policy eval, prediction,
+training, MCP replay, and the LLM baseline must all enforce the same rule.
+
+Prepared write actions only count after the reporter resolves their visible
+payload and validates the resulting executable KMP call. This avoids counting
+`prepared.source:*` coverage for rows that only contain the wrapper but not a
+valid payload.
+
+Durante este refresh se cerro un gap concreto: el caso sintetico
+`incomplete_canonical_payload` habia pasado a ser invalido por el motivo
+equivocado. Tras ampliar `kernel_ingest` para permitir evidence/provenance
+opcionales e incremental appends, un array `memory.evidence` vacio ya no era un
+fallo duro del contrato. El fixture ahora elimina las coordenadas obligatorias
+de una entry, por lo que vuelve a ser un caso real de fail-fast en ingest
+canonico.
+
+La afirmacion actualizada es:
+
+```text
+Operator cubre actualmente los perfiles de lectura acotada y ejecucion segura
+de escritura preparada. Todavia no cubre raw audit access, escrituras commit,
+autoria completa de raw ingest, defaults omitidos de escritura, seleccion de
+budget detail, filtrado exacto por dimension-scope ni todos los ask policies
+soportados.
+```
+
+Esas areas descubiertas son trabajo P0 de datasets/perfiles, no fallbacks de
+runtime.
+
 ## Immediate Work Items
 
 P0 implementation checklist:
 
-1. [x] Extend `kernel_operator_action_contract_error` with full dimension semantic
+1. [x] Extend `operator_action_contract_error` with full dimension semantic
    validation.
 2. [x] Add tests for invalid dimensions:
    - `mode=only` without include;

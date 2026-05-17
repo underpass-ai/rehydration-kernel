@@ -7,6 +7,11 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
+from predict_operator_sft import (
+    validate_action_shape,
+    validate_allowed_tools_for_user_payload,
+)
+
 
 DEVELOPER_PROMPT = (
     "You are a model that can do function calling with the following functions. "
@@ -224,8 +229,120 @@ def build_prompt_messages(row: dict[str, Any]) -> list[dict[str, str]]:
 
 
 def target_function_call_from_row(row: dict[str, Any]) -> tuple[str, dict[str, Any]]:
-    action = json.loads(row["messages"][-1]["content"])["action"]
+    action = target_action_from_row(row)
     return action_to_function_call(action)
+
+
+def validate_native_supported_dataset(rows: list[dict[str, Any]]) -> None:
+    supported_tools = supported_function_names() - {"kernel_stop"}
+    for row in rows:
+        step_id = row.get("step_id", "<missing-step-id>")
+        user_payload = model_facing_user_payload(row)
+        mode = user_payload.get("mode")
+        if mode != "read":
+            raise ValueError(
+                f"{step_id}: FunctionGemma native path is legacy/read-only and "
+                f"does not support mode `{mode}`."
+            )
+        allowed_tools = user_payload.get("allowed_tools")
+        if not isinstance(allowed_tools, list) or not all(
+            isinstance(tool, str) and tool for tool in allowed_tools
+        ):
+            raise ValueError(f"{step_id}: allowed_tools must be non-empty strings.")
+        if len(set(allowed_tools)) != len(allowed_tools):
+            raise ValueError(f"{step_id}: duplicate allowed_tools.")
+        allowed_mode_error = validate_allowed_tools_for_user_payload(user_payload)
+        if allowed_mode_error is not None:
+            raise ValueError(f"{step_id}: {allowed_mode_error}.")
+        unsupported_allowed = sorted(
+            {
+                tool
+                for tool in allowed_tools
+                if tool not in supported_tools and tool != "kernel_stop"
+            }
+        )
+        if unsupported_allowed:
+            raise ValueError(
+                f"{step_id}: FunctionGemma native path supports only "
+                f"{sorted(supported_tools)} in allowed_tools; got "
+                f"{unsupported_allowed}."
+            )
+
+        action = target_action_from_row(row)
+        shape_error = validate_action_shape(action)
+        if shape_error is not None:
+            raise ValueError(
+                f"{step_id}: FunctionGemma native target violates strict "
+                f"action contract: {shape_error}."
+            )
+        action_type = action.get("type")
+        if action_type == "prepared_tool_call":
+            raise ValueError(
+                f"{step_id}: FunctionGemma native path does not support "
+                "prepared_tool_call; use predict_operator_sft.py "
+                "--resolve-prepared-payloads for writer-exec/orchestration."
+            )
+        if action_type == "tool_call":
+            tool = action.get("tool")
+            if tool not in allowed_tools:
+                raise ValueError(
+                    f"{step_id}: target tool `{tool}` is not listed in row allowed_tools."
+                )
+            if tool not in supported_tools:
+                raise ValueError(
+                    f"{step_id}: FunctionGemma native path supports only "
+                    f"{sorted(supported_tools)} target tools; got `{tool}`."
+                )
+            continue
+        if action_type == "stop":
+            continue
+        raise ValueError(
+            f"{step_id}: FunctionGemma native path does not support target "
+            f"action type `{action_type}`."
+        )
+
+
+def target_action_from_row(row: dict[str, Any]) -> dict[str, Any]:
+    messages = row.get("messages")
+    if not isinstance(messages, list) or not messages:
+        raise ValueError(f"{row.get('step_id', '<missing-step-id>')}: missing messages")
+    assistant = messages[-1]
+    if not isinstance(assistant, dict) or not isinstance(assistant.get("content"), str):
+        raise ValueError(
+            f"{row.get('step_id', '<missing-step-id>')}: missing assistant target"
+        )
+    try:
+        payload = json.loads(assistant["content"])
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"{row.get('step_id', '<missing-step-id>')}: invalid assistant JSON"
+        ) from exc
+    action = payload.get("action")
+    if not isinstance(action, dict):
+        raise ValueError(f"{row.get('step_id', '<missing-step-id>')}: missing action")
+    return action
+
+
+def model_facing_user_payload(row: dict[str, Any]) -> dict[str, Any]:
+    messages = row.get("messages")
+    if not isinstance(messages, list) or len(messages) < 2:
+        raise ValueError(f"{row.get('step_id', '<missing-step-id>')}: missing user payload")
+    user = messages[1]
+    if not isinstance(user, dict) or not isinstance(user.get("content"), str):
+        raise ValueError(
+            f"{row.get('step_id', '<missing-step-id>')}: missing user content"
+        )
+    try:
+        payload = json.loads(user["content"])
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"{row.get('step_id', '<missing-step-id>')}: invalid user JSON"
+        ) from exc
+    if not isinstance(payload, dict):
+        raise ValueError(
+            f"{row.get('step_id', '<missing-step-id>')}: user payload is not an object"
+        )
+    return payload
 
 
 def action_to_function_call(action: dict[str, Any]) -> tuple[str, dict[str, Any]]:
@@ -235,6 +352,8 @@ def action_to_function_call(action: dict[str, Any]) -> tuple[str, dict[str, Any]
         arguments = action.get("arguments")
         if not isinstance(tool, str) or not isinstance(arguments, dict):
             raise ValueError(f"invalid tool_call action: {action}")
+        if tool not in supported_function_names() or tool == "kernel_stop":
+            raise ValueError(f"unsupported action tool for FunctionGemma: {tool}")
         return tool, arguments
     if action_type == "stop":
         return "kernel_stop", {
@@ -253,9 +372,13 @@ def function_call_to_action(name: str, arguments: dict[str, Any]) -> dict[str, A
             "final_refs": arguments.get("final_refs", []),
             "reason": arguments.get("reason", "sufficient_evidence"),
         }
-    if name not in {tool["function"]["name"] for tool in KMP_FUNCTION_TOOLS}:
+    if name not in supported_function_names():
         raise ValueError(f"unsupported function name: {name}")
     return {"type": "tool_call", "tool": name, "arguments": arguments}
+
+
+def supported_function_names() -> set[str]:
+    return {tool["function"]["name"] for tool in KMP_FUNCTION_TOOLS}
 
 
 def format_function_call(name: str, arguments: dict[str, Any]) -> str:

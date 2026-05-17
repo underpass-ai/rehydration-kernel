@@ -38,6 +38,18 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
+  operator-k8s-policy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Check Operator Kubernetes job policy
+        run: bash scripts/ci/check-operator-k8s-jobs.sh
+
   clippy:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -250,6 +262,7 @@ jobs:
     timeout-minutes: 25
     needs:
       - rustfmt
+      - operator-k8s-policy
       - clippy
       - test
       - integration-valkey

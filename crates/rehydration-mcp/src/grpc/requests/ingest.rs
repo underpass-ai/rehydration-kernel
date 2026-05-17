@@ -1,3 +1,4 @@
+use rehydration_domain::MemoryRelationType;
 use rehydration_proto::v1beta1::{
     IngestRequest, Memory, MemoryConfidence, MemoryDimension, MemoryEntry, MemoryEvidence,
     MemoryProvenance, MemoryRelation, MemorySemanticClass, TemporalCoordinate,
@@ -156,6 +157,15 @@ fn coordinate_from_value(value: &Value) -> Result<TemporalCoordinate, String> {
 
 fn relation_from_value(value: &Value) -> Result<MemoryRelation, String> {
     let value = object(value, "memory.relations[]")?;
+    let rel = required_string_field(value, "rel", "memory.relations[].rel")?;
+    let relation_type = MemoryRelationType::new(&rel)
+        .map_err(|error| format!("memory.relations[].rel is invalid: {error}"))?;
+    if relation_type.as_str() != rel {
+        return Err(format!(
+            "memory.relations[].rel must use canonical wire value `{}`",
+            relation_type.as_str()
+        ));
+    }
     let semantic_class = semantic_class_from_field(value, "class", "memory.relations[].class")?;
     let why = optional_string_field(value, "why", "memory.relations[].why")?.unwrap_or_default();
     let evidence = optional_string_field(value, "evidence", "memory.relations[].evidence")?
@@ -174,7 +184,7 @@ fn relation_from_value(value: &Value) -> Result<MemoryRelation, String> {
     Ok(MemoryRelation {
         source_ref: required_string_field(value, "from", "memory.relations[].from")?,
         target_ref: required_string_field(value, "to", "memory.relations[].to")?,
-        rel: required_string_field(value, "rel", "memory.relations[].rel")?,
+        rel,
         semantic_class,
         why,
         evidence,
@@ -285,6 +295,123 @@ mod tests {
             request.provenance.expect("provenance").source_kind,
             MemorySourceKind::Agent as i32
         );
+    }
+
+    #[test]
+    fn ingest_request_rejects_whitespace_wrapped_enum_values() {
+        let error = ingest_request_from_arguments(&json!({
+            "about": "question:830ce83f",
+            "memory": {
+                "dimensions": [],
+                "entries": [
+                    {
+                        "id": "claim:rachel-denver",
+                        "kind": "claim",
+                        "text": "Rachel moved to Denver.",
+                        "coordinates": [
+                            {
+                                "dimension": "conversation",
+                                "scope_id": "conversation:rachel",
+                                "sequence": 1
+                            }
+                        ]
+                    }
+                ],
+                "relations": [
+                    {
+                        "from": "claim:rachel-denver",
+                        "to": "claim:rachel-austin",
+                        "rel": "conflicts_with",
+                        "class": "evidential",
+                        "why": "Later statement corrects earlier statement.",
+                        "confidence": "high"
+                    }
+                ],
+                "evidence": []
+            },
+            "provenance": {
+                "source_kind": "agent",
+                "source_agent": "longmemeval-adapter",
+                "observed_at": "2026-05-04T10:00:00Z"
+            },
+            "idempotency_key": "ingest:830ce83f:1"
+        }))
+        .expect_err("relation rel should be exact");
+        assert_eq!(
+            error,
+            "memory.relations[].rel must use canonical wire value `contradicts`"
+        );
+
+        let error = ingest_request_from_arguments(&json!({
+            "about": "question:830ce83f",
+            "memory": {
+                "dimensions": [],
+                "entries": [
+                    {
+                        "id": "claim:rachel-denver",
+                        "kind": "claim",
+                        "text": "Rachel moved to Denver.",
+                        "coordinates": [
+                            {
+                                "dimension": "conversation",
+                                "scope_id": "conversation:rachel",
+                                "sequence": 1
+                            }
+                        ]
+                    }
+                ],
+                "relations": [
+                    {
+                        "from": "claim:rachel-denver",
+                        "to": "claim:rachel-austin",
+                        "rel": "supersedes",
+                        "class": " evidential ",
+                        "why": "Later statement corrects earlier statement.",
+                        "confidence": "high"
+                    }
+                ],
+                "evidence": []
+            },
+            "provenance": {
+                "source_kind": "agent",
+                "source_agent": "longmemeval-adapter",
+                "observed_at": "2026-05-04T10:00:00Z"
+            },
+            "idempotency_key": "ingest:830ce83f:1"
+        }))
+        .expect_err("relation class should be exact");
+        assert_eq!(error, "invalid memory relation class ` evidential `");
+
+        let error = ingest_request_from_arguments(&json!({
+            "about": "question:830ce83f",
+            "memory": {
+                "dimensions": [],
+                "entries": [
+                    {
+                        "id": "claim:rachel-denver",
+                        "kind": "claim",
+                        "text": "Rachel moved to Denver.",
+                        "coordinates": [
+                            {
+                                "dimension": "conversation",
+                                "scope_id": "conversation:rachel",
+                                "sequence": 1
+                            }
+                        ]
+                    }
+                ],
+                "relations": [],
+                "evidence": []
+            },
+            "provenance": {
+                "source_kind": " agent ",
+                "source_agent": "longmemeval-adapter",
+                "observed_at": "2026-05-04T10:00:00Z"
+            },
+            "idempotency_key": "ingest:830ce83f:1"
+        }))
+        .expect_err("source_kind should be exact");
+        assert_eq!(error, "invalid memory provenance source_kind ` agent `");
     }
 
     #[test]

@@ -26,5 +26,5 @@ fi
 
 COVERAGE_HOOK_MIN_LINES="${COVERAGE_HOOK_MIN_LINES:-80}"
 
-echo "pre-commit: running production kernel coverage with minimum ${COVERAGE_HOOK_MIN_LINES}% line coverage"
+echo "pre-commit: running workspace coverage for kernel and operator with minimum ${COVERAGE_HOOK_MIN_LINES}% line coverage"
 COVERAGE_MIN_LINES="${COVERAGE_HOOK_MIN_LINES}" bash scripts/ci/rust-coverage.sh

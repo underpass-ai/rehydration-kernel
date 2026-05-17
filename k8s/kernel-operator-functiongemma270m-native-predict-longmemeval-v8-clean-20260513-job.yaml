@@ -5,7 +5,10 @@ metadata:
   labels:
     app.kubernetes.io/name: kop-functiongemma270m-native-predict-lme-v8-clean
     app.kubernetes.io/part-of: underpass-kmp
+  annotations:
+    underpass.ai/quarantine-reason: "Legacy FunctionGemma read-only experiment; not compatible with current Operator API/MCP writer-orchestration claims."
 spec:
+  suspend: true
   backoffLimit: 0
   template:
     metadata:

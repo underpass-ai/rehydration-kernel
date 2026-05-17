@@ -3,10 +3,13 @@ kind: Job
 metadata:
   name: kop-qwen05-lora-p111-read-rare-v1-4gpu-20260516
   namespace: underpass-runtime
+  annotations:
+    underpass.ai/quarantine-reason: "Historical Operator experiment; superseded by strict KMP-cursor/source-kind-agent datasets and kept for traceability only."
   labels:
     app.kubernetes.io/name: kop-qwen05-lora-p111-read-rare-v1-4gpu-20260516
     app.kubernetes.io/part-of: underpass-kmp
 spec:
+  suspend: true
   backoffLimit: 0
   template:
     metadata:

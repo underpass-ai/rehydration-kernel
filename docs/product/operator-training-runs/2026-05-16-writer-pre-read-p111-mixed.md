@@ -6,16 +6,16 @@
 | --- | --- |
 | Attempt id | `writer-pre-read-p111-mixed` |
 | Date | 2026-05-16 |
-| Status | `dataset-ready` |
+| Status | `baseline-only` |
 | Scope | MemoryArena P1.11 smart-writer pre-read rows plus `writer-pre-read-v1` conformance |
 | Artifact root | `../rehydration-kernel-artifacts/operator/2026-05-16-writer-pre-read-p111-mixed/` |
 
 No model training was launched in this slice.
 
 Historical note: this run was produced before `writer-pre-read-v2` expanded the
-profile from 16 to 21 required capabilities. Keep this document as evidence for
-the original P1.11 + v1 mixed gate; use the v2 diversity gate for new training
-claims.
+profile from 16 to 21 required capabilities, and before the v4 stop/trace gate
+passed. Keep this document as evidence for the original P1.11 + v1 mixed gate;
+do not use it for new training claims.
 
 ## 2. Why This Run Exists
 
@@ -47,7 +47,7 @@ does not rerun MemoryArena or call the deployed kernel.
 Command:
 
 ```bash
-cargo run -p rehydration-testkit --bin kernel_operator_trajectory_export -- \
+cargo run -p underpass-operator-benchmark-adapters-cli --bin memoryarena_operator_trajectory_export -- \
   --run /tmp/memoryarena-p111-smart-221-20260512-000934-run \
   --output /tmp/kernel-operator-trajectories-p111-smart-writer-pre-read-20260516 \
   --include-writer-reads \
@@ -79,7 +79,7 @@ Real target actions:
 Command:
 
 ```bash
-cargo run -p rehydration-testkit --bin kernel_operator_contract_coverage -- \
+cargo run -p underpass-operator-evaluation-cli --bin underpass_operator_contract_coverage -- \
   --profile writer-pre-read \
   --trajectories /tmp/kernel-operator-trajectories-p111-smart-writer-pre-read-20260516/trajectories.jsonl \
   --fail-under 100 \
@@ -205,7 +205,7 @@ Result:
 Final compact coverage:
 
 ```bash
-cargo run -p rehydration-testkit --bin kernel_operator_contract_coverage -- \
+cargo run -p underpass-operator-evaluation-cli --bin underpass_operator_contract_coverage -- \
   --profile writer-pre-read \
   --trajectories /tmp/kernel-operator-sft-p111-smart-writer-pre-read-mixed-compact-20260516/all_trajectories.jsonl \
   --fail-under 100 \
@@ -234,7 +234,7 @@ Result:
 
 ## 10. Decision
 
-This attempt is `dataset-ready` for diagnostic writer-pre-read experiments.
+This attempt is `baseline-only` for diagnostic writer-pre-read history.
 
 It should not be treated as a publication-grade writer-pre-read training set.
 The main value of the run is the measured gap: the real benchmark trace is

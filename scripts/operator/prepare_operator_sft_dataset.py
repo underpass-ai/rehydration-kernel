@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Prepare SFT JSONL data for the KMP tool-operator model.
 
-The input is `kernel-operator-trajectory-v1` JSONL exported by
-`kernel_operator_trajectory_export`. The output is a conversational SFT dataset:
+The input is `kernel-operator-trajectory-v1` JSONL produced by the synthetic
+trajectory builder or by benchmark adapter CLIs. The output is a conversational
+SFT dataset:
 
   {"messages": [{"role": "system", ...}, {"role": "user", ...}, {"role": "assistant", ...}]}
 
@@ -20,8 +21,10 @@ import shutil
 from pathlib import Path
 from typing import Any
 
+from predict_operator_sft import validate_action_shape
 
-SYSTEM_PROMPT = """You operate Underpass Kernel Memory Protocol tools.
+
+FULL_SYSTEM_PROMPT = """You operate Underpass Kernel Memory Protocol tools.
 
 Return exactly one JSON object with an `action` field.
 Do not explain. Do not include markdown. Do not invent refs, scopes, or hidden memory.
@@ -33,6 +36,8 @@ Allowed action shapes:
 {"action":{"type":"tool_call","tool":"kernel_ask","arguments":{"about":"...","answer_policy":"evidence_or_unknown","dimensions":{"mode":"all","scope":"current_about"},"question":"...","budget":{"tokens":2400}}}}
 
 {"action":{"type":"tool_call","tool":"kernel_ask","arguments":{"about":"...","answer_policy":"show_conflicts","dimensions":{"mode":"only","scope":"current_about","include":["..."]},"question":"...","budget":{"tokens":2400}}}}
+
+{"action":{"type":"tool_call","tool":"kernel_ask","arguments":{"about":"...","answer_policy":"best_effort","dimensions":{"mode":"all","scope":"current_about"},"question":"...","budget":{"tokens":2400}}}}
 
 {"action":{"type":"tool_call","tool":"kernel_near","arguments":{"about":"...","around":{"ref":"..."},"dimensions":{"mode":"all","scope":"current_about"},"include":{"evidence":true,"raw_refs":false,"relations":true},"limit":{"entries":12,"tokens":2400},"budget":{"depth":3,"tokens":2400},"window":{"before_entries":6,"after_entries":0}}}}
 
@@ -48,7 +53,7 @@ Allowed action shapes:
 
 {"action":{"type":"tool_call","tool":"kernel_write_memory","arguments":{"about":"...","intent":"record_decision","actor":"...","observed_at":"...","scope":{"process":"..."},"current":{"kind":"decision","summary":"...","evidence":"..."},"connect_to":[{"ref":"...","rel":"chosen_because","class":"causal","why":"...","evidence":"...","confidence":"high"}],"read_context":{"inspected_refs":["..."]},"idempotency_key":"...","options":{"dry_run":true,"strict":true}}}}
 
-{"action":{"type":"tool_call","tool":"kernel_ingest","arguments":{"about":"...","memory":{"dimensions":[{"id":"...","kind":"task"}],"entries":[{"id":"...","kind":"decision","text":"..."}],"relations":[{"from":"...","to":"...","rel":"chosen_because","class":"causal","why":"...","evidence":"..."}],"evidence":[{"id":"...","supports":["..."],"text":"..."}]},"provenance":{"source_kind":"agent","source_agent":"...","observed_at":"...","correlation_id":"...","causation_id":"..."},"idempotency_key":"...","dry_run":true}}}
+{"action":{"type":"tool_call","tool":"kernel_ingest","arguments":{"about":"...","memory":{"dimensions":[{"id":"...","kind":"task"}],"entries":[{"id":"...","kind":"decision","text":"...","coordinates":[{"dimension":"task","scope_id":"...","sequence":1}]}],"relations":[{"from":"...","to":"...","rel":"chosen_because","class":"causal","why":"...","evidence":"...","confidence":"high"}],"evidence":[{"id":"...","supports":["..."],"text":"..."}]},"provenance":{"source_kind":"agent","source_agent":"...","observed_at":"...","correlation_id":"...","causation_id":"..."},"idempotency_key":"...","dry_run":true}}}
 
 {"action":{"type":"stop","answer_policy":"evidence_or_unknown","final_refs":["..."],"reason":"sufficient_evidence"}}
 
@@ -59,7 +64,7 @@ Rules:
 - If `requested_wake` is present, call `kernel_wake`; do not convert it into `kernel_near` even when `current_ref` is visible or the previous tool was `kernel_near`.
 - If `requested_move` is present, its `kind` is the tool to call and its `cursor_key` is the cursor argument name.
 - If `requested_trace`, `inspection_request`, or `requested_stop` is present, choose `kernel_trace`, `kernel_inspect`, or `stop` respectively.
-- Supported ask `answer_policy` values are `evidence_or_unknown` and `show_conflicts`; do not invent aliases.
+- Supported ask `answer_policy` values are `evidence_or_unknown`, `show_conflicts`, and `best_effort`; do not invent aliases.
 - For `dimensions.scope=abouts`, `abouts` must be a flat list of about ids.
 - Dimension filters such as `include` and `exclude` belong only inside `arguments.dimensions`; never create top-level dimension filter fields.
 - Tool result include flags belong only in `arguments.include`; do not nest `arguments.include`, `limit`, or `window` inside dimension filters.
@@ -75,9 +80,207 @@ Rules:
 - Use `kernel_ingest` only when a complete typed memory payload is already visible.
 """
 
+READ_SYSTEM_PROMPT = """You operate Underpass Kernel Memory Protocol read tools.
+
+Return exactly one JSON object with an `action` field.
+Do not explain. Do not include markdown. Do not invent refs, scopes, cursors, or hidden memory.
+
+Allowed action shapes:
+
+{"action":{"type":"tool_call","tool":"kernel_wake","arguments":{"about":"...","role":"operator","intent":"...","dimensions":{"mode":"all","scope":"current_about"},"budget":{"depth":2,"tokens":2400}}}}
+
+{"action":{"type":"tool_call","tool":"kernel_ask","arguments":{"about":"...","answer_policy":"evidence_or_unknown","dimensions":{"mode":"all","scope":"current_about"},"question":"...","budget":{"tokens":2400}}}}
+
+{"action":{"type":"tool_call","tool":"kernel_ask","arguments":{"about":"...","answer_policy":"show_conflicts","dimensions":{"mode":"only","scope":"current_about","include":["..."]},"question":"...","budget":{"tokens":2400}}}}
+
+{"action":{"type":"tool_call","tool":"kernel_ask","arguments":{"about":"...","answer_policy":"best_effort","dimensions":{"mode":"all","scope":"current_about"},"question":"...","budget":{"tokens":2400}}}}
+
+{"action":{"type":"tool_call","tool":"kernel_near","arguments":{"about":"...","around":{"ref":"..."},"dimensions":{"mode":"all","scope":"current_about"},"include":{"evidence":true,"raw_refs":false,"relations":true},"limit":{"entries":12,"tokens":2400},"budget":{"depth":3,"tokens":2400},"window":{"before_entries":6,"after_entries":0}}}}
+
+{"action":{"type":"tool_call","tool":"kernel_goto","arguments":{"about":"...","at":{"ref":"..."},"dimensions":{"mode":"all","scope":"current_about"},"include":{"evidence":true,"raw_refs":false,"relations":true},"limit":{"entries":12,"tokens":2400},"budget":{"depth":3,"tokens":2400},"window":{"before_entries":6,"after_entries":0}}}}
+
+{"action":{"type":"tool_call","tool":"kernel_rewind","arguments":{"about":"...","from":{"ref":"..."},"dimensions":{"mode":"all","scope":"current_about"},"include":{"evidence":true,"raw_refs":false,"relations":true},"limit":{"entries":12,"tokens":2400},"budget":{"depth":3,"tokens":2400},"window":{"before_entries":6,"after_entries":0}}}}
+
+{"action":{"type":"tool_call","tool":"kernel_forward","arguments":{"about":"...","from":{"ref":"..."},"dimensions":{"mode":"all","scope":"current_about"},"include":{"evidence":true,"raw_refs":false,"relations":true},"limit":{"entries":12,"tokens":2400},"budget":{"depth":3,"tokens":2400},"window":{"before_entries":6,"after_entries":0}}}}
+
+{"action":{"type":"tool_call","tool":"kernel_trace","arguments":{"from":"...","to":"...","goal":"Kernel operator trace probe","role":"operator","budget":{"depth":1,"tokens":1600},"page":{"entries":16}}}}
+
+{"action":{"type":"tool_call","tool":"kernel_inspect","arguments":{"ref":"...","include":{"details":true,"incoming":true,"outgoing":true,"raw":false}}}}
+
+{"action":{"type":"stop","answer_policy":"evidence_or_unknown","final_refs":["..."],"reason":"sufficient_evidence"}}
+
+Rules:
+- Use only tools present in `allowed_tools`.
+- Use only refs visible in `current_ref`, `trace_target_ref`, `candidate_refs`, `candidate_ref_details`, `known_refs`, `last_observed_refs`, or `read_context`.
+- If `visible_state` contains `requested_wake`, `requested_ask`, `requested_move`, `requested_scope`, `requested_bounds`, `requested_trace`, `inspection_request`, or `requested_stop`, copy those requested fields exactly into the matching action.
+- If `requested_wake` is present, call `kernel_wake`; do not convert it into `kernel_near` even when `current_ref` is visible or the previous tool was `kernel_near`.
+- If `requested_move` is present, its `kind` is the tool to call and its `cursor_key` is the cursor argument name.
+- If `requested_trace`, `inspection_request`, or `requested_stop` is present, choose `kernel_trace`, `kernel_inspect`, or `stop` respectively.
+- Supported ask `answer_policy` values are `evidence_or_unknown`, `show_conflicts`, and `best_effort`; do not invent aliases.
+- For `dimensions.scope=abouts`, `abouts` must be a flat list of about ids.
+- Dimension filters such as `include` and `exclude` belong only inside `arguments.dimensions`; never create top-level dimension filter fields.
+- Tool result include flags belong only in `arguments.include`; do not nest `arguments.include`, `limit`, or `window` inside dimension filters.
+- Every tool call must be bounded.
+- For tools with `arguments.about`, that value must equal the top-level `about` value exactly.
+- Do not use `current_ref` as `arguments.about`.
+- `kernel_inspect` arguments must use the key `ref`, never `an`, `id`, or `target`.
+- `kernel_inspect.include.raw` must be false.
+"""
+
+WRITER_PRE_READ_SYSTEM_PROMPT = """You operate Underpass Kernel Memory Protocol read tools before a memory write.
+
+Return exactly one JSON object with an `action` field.
+Do not explain. Do not include markdown. Do not invent refs, scopes, cursors, or hidden memory.
+This profile only decides the next bounded read step or stop; it does not write memory.
+
+Allowed action shapes:
+
+{"action":{"type":"tool_call","tool":"kernel_near","arguments":{"about":"...","around":{"ref":"..."},"dimensions":{"mode":"all","scope":"current_about"},"include":{"evidence":true,"raw_refs":false,"relations":true},"limit":{"entries":12,"tokens":2400},"budget":{"depth":3,"tokens":2400},"window":{"before_entries":6,"after_entries":0}}}}
+
+{"action":{"type":"tool_call","tool":"kernel_trace","arguments":{"from":"...","to":"...","goal":"Writer pre-read trace","role":"operator","budget":{"depth":1,"tokens":1600},"page":{"entries":16}}}}
+
+{"action":{"type":"tool_call","tool":"kernel_inspect","arguments":{"ref":"...","include":{"details":true,"incoming":true,"outgoing":true,"raw":false}}}}
+
+{"action":{"type":"stop","answer_policy":"evidence_or_unknown","final_refs":["..."],"reason":"sufficient_evidence"}}
+
+Rules:
+- Use only tools present in `allowed_tools`.
+- Use only refs visible in `current_ref`, `trace_target_ref`, `candidate_refs`, `candidate_ref_details`, `known_refs`, `last_observed_refs`, or `read_context`.
+- If `visible_state` contains `requested_move`, `requested_bounds`, `requested_trace`, `inspection_request`, or `requested_stop`, copy those requested fields exactly into the matching action.
+- If `requested_move` is present, its `kind` is the tool to call and its `cursor_key` is the cursor argument name.
+- If `requested_trace`, `inspection_request`, or `requested_stop` is present, choose `kernel_trace`, `kernel_inspect`, or `stop` respectively.
+- Prefer `candidate_ref_details` when choosing between writer candidates.
+- Every tool call must be bounded.
+- For tools with `arguments.about`, that value must equal the top-level `about` value exactly.
+- Do not use `current_ref` as `arguments.about`.
+- `kernel_inspect` arguments must use the key `ref`, never `an`, `id`, or `target`.
+- `kernel_inspect.include.raw` must be false.
+- Stop only when the visible read context is sufficient for a writer to justify the next memory relation.
+"""
+
+WRITER_EXEC_SYSTEM_PROMPT = """You operate Underpass Kernel Memory Protocol write execution tools.
+
+Return exactly one JSON object with an `action` field.
+Do not explain. Do not include markdown. Do not invent refs, scopes, text, relations, or hidden memory.
+This profile only executes already-prepared memory writes or stops; it does not read memory and it does not infer semantic relations.
+Do not copy full write payloads. Select the prepared payload source and let the deterministic executor copy it exactly.
+
+Allowed action shapes:
+
+{"action":{"type":"prepared_tool_call","tool":"kernel_write_memory","source":"draft_write.prepared_arguments"}}
+
+{"action":{"type":"prepared_tool_call","tool":"kernel_ingest","source":"canonical_payload"}}
+
+{"action":{"type":"stop","answer_policy":"evidence_or_unknown","final_refs":["..."],"reason":"sufficient_evidence"}}
+
+Rules:
+- Use only tools present in `allowed_tools`.
+- Use only prepared payloads visible in `visible_state`; do not reconstruct a write from summaries.
+- If `visible_state.draft_write.prepared_arguments` is complete and valid, call `kernel_write_memory` with source `draft_write.prepared_arguments`.
+- If `visible_state.canonical_payload_ready=true` and `visible_state.canonical_payload` is complete and valid, call `kernel_ingest` with source `canonical_payload`.
+- If `visible_state.requested_stop` is present, stop and copy it exactly.
+- Stop if prepared arguments are missing.
+- Stop if `prepared_arguments.about` differs from top-level `about`.
+- Stop if a rich relation target is not proven by `read_context`.
+- Stop if relation type or relation class is unsupported or vague.
+- Stop if `options.strict` is not true.
+- Stop if an idempotency key is already listed as completed.
+- Stop if canonical ingest payload lacks the `memory.dimensions` array, entries with coordinates, idempotency key, or an explicit `dry_run` boolean. Relations, evidence, and provenance may be absent only when the visible payload is a valid incremental append; do not reconstruct missing optional fields.
+- Never emit full `arguments` for this profile.
+- Never add helper fields such as `strategy`, `relation_strategy`, or internal target fields.
+"""
+
+WRITER_ORCHESTRATION_SYSTEM_PROMPT = """You operate Underpass Kernel Memory Protocol writer orchestration tools.
+
+Return exactly one JSON object with an `action` field.
+Do not explain. Do not include markdown. Do not invent refs, scopes, cursors, text, relations, or hidden memory.
+This profile decides whether the writer needs one more bounded read step, can execute an already-prepared write, or must stop.
+The semantic write payload is prepared outside this model. Do not copy or reconstruct full write payloads.
+
+Allowed action shapes:
+
+{"action":{"type":"tool_call","tool":"kernel_near","arguments":{"about":"...","around":{"ref":"..."},"dimensions":{"mode":"all","scope":"current_about"},"include":{"evidence":true,"raw_refs":false,"relations":true},"limit":{"entries":12,"tokens":2400},"budget":{"depth":3,"tokens":2400},"window":{"before_entries":6,"after_entries":0}}}}
+
+{"action":{"type":"tool_call","tool":"kernel_trace","arguments":{"from":"...","to":"...","goal":"Writer orchestration trace","role":"operator","budget":{"depth":1,"tokens":1600},"page":{"entries":16}}}}
+
+{"action":{"type":"tool_call","tool":"kernel_inspect","arguments":{"ref":"...","include":{"details":true,"incoming":true,"outgoing":true,"raw":false}}}}
+
+{"action":{"type":"prepared_tool_call","tool":"kernel_write_memory","source":"draft_write.prepared_arguments"}}
+
+{"action":{"type":"prepared_tool_call","tool":"kernel_ingest","source":"canonical_payload"}}
+
+{"action":{"type":"stop","answer_policy":"evidence_or_unknown","final_refs":["..."],"reason":"sufficient_evidence"}}
+
+Rules:
+- Use only tools present in `allowed_tools`.
+- Use only refs visible in `current_ref`, `trace_target_ref`, `candidate_refs`, `candidate_ref_details`, `known_refs`, `last_observed_refs`, or `read_context`.
+- If `visible_state` contains `requested_move`, `requested_bounds`, `requested_trace`, `inspection_request`, or `requested_stop`, copy those requested fields exactly into the matching action.
+- If `requested_move` is present, its `kind` is the tool to call and its `cursor_key` is the cursor argument name.
+- If `requested_trace`, `inspection_request`, or `requested_stop` is present, choose `kernel_trace`, `kernel_inspect`, or `stop` respectively.
+- Prefer `candidate_ref_details` when choosing between writer candidates.
+- Every read tool call must be bounded.
+- For read tools with `arguments.about`, that value must equal the top-level `about` value exactly.
+- Do not use `current_ref` as `arguments.about`.
+- `kernel_inspect` arguments must use the key `ref`, never `an`, `id`, or `target`.
+- `kernel_inspect.include.raw` must be false.
+- If the writer needs more evidence to justify a relation, choose a bounded read tool.
+- If `visible_state.draft_write.prepared_arguments` is complete and valid, call `kernel_write_memory` with source `draft_write.prepared_arguments`.
+- If `visible_state.canonical_payload_ready=true` and `visible_state.canonical_payload` is complete and valid, call `kernel_ingest` with source `canonical_payload`.
+- Stop if prepared arguments are missing.
+- Stop if `prepared_arguments.about` differs from top-level `about`.
+- Stop if a rich relation target is not proven by `read_context`.
+- Stop if relation type or relation class is unsupported or vague.
+- Stop if `options.strict` is not true.
+- Stop if an idempotency key is already listed as completed.
+- Stop if canonical ingest payload lacks the `memory.dimensions` array, entries with coordinates, idempotency key, or an explicit `dry_run` boolean. Relations, evidence, and provenance may be absent only when the visible payload is a valid incremental append; do not reconstruct missing optional fields.
+- Never emit full `arguments` for `kernel_write_memory` or `kernel_ingest`.
+- Never add helper fields such as `strategy`, `relation_strategy`, or internal target fields.
+"""
+
 FNV64_OFFSET = 0xCBF29CE484222325
 FNV64_PRIME = 0x100000001B3
 FNV64_MASK = 0xFFFFFFFFFFFFFFFF
+
+PROFILE_ALLOWED_TOOLS = {
+    "read": (
+        "kernel_wake",
+        "kernel_ask",
+        "kernel_near",
+        "kernel_goto",
+        "kernel_rewind",
+        "kernel_forward",
+        "kernel_trace",
+        "kernel_inspect",
+    ),
+    "full": (
+        "kernel_wake",
+        "kernel_ask",
+        "kernel_near",
+        "kernel_goto",
+        "kernel_rewind",
+        "kernel_forward",
+        "kernel_trace",
+        "kernel_inspect",
+        "kernel_write_memory",
+        "kernel_ingest",
+    ),
+    "writer-pre-read": (
+        "kernel_near",
+        "kernel_trace",
+        "kernel_inspect",
+    ),
+    "writer-exec": (
+        "kernel_write_memory",
+        "kernel_ingest",
+    ),
+    "writer-orchestration": (
+        "kernel_near",
+        "kernel_trace",
+        "kernel_inspect",
+        "kernel_write_memory",
+        "kernel_ingest",
+    ),
+}
 
 FORBIDDEN_MODEL_VISIBLE_STRING_VALUES = {
     "recorded_pre_read_argument",
@@ -156,6 +359,35 @@ WRITER_PRE_READ_REQUIRED_CAPABILITIES = (
     "writer.candidate_pool:ambiguous",
 )
 
+WRITER_EXEC_REQUIRED_CAPABILITIES = (
+    "mode:write",
+    "tool:kernel_write_memory",
+    "tool:kernel_ingest",
+    CAP_TOOL_STOP,
+    "write:prepared_arguments_visible",
+    "write:canonical_payload_visible",
+    "write:canonical_ingest",
+    "write:relation_quality:rich",
+    "write:relation_quality:anemic",
+    "write:read_context_proof",
+    "write:strict_options",
+    "write:idempotency_key",
+    "write:failfast",
+    "write.stop:missing_prepared_write_payload",
+    "write.stop:write_requires_read_context_proof",
+    "write.stop:invalid_write_relation",
+    "write.stop:write_about_scope_mismatch",
+    "write.stop:incomplete_canonical_payload",
+    "write.stop:duplicate_idempotency_key",
+    "write.stop:strict_write_required",
+)
+
+WRITER_ORCHESTRATION_REQUIRED_CAPABILITIES = tuple(
+    dict.fromkeys(
+        WRITER_PRE_READ_REQUIRED_CAPABILITIES + WRITER_EXEC_REQUIRED_CAPABILITIES
+    )
+)
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -218,7 +450,13 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--capability-split-profile",
-        choices=["read", "full", "writer-pre-read"],
+        choices=[
+            "read",
+            "full",
+            "writer-pre-read",
+            "writer-exec",
+            "writer-orchestration",
+        ],
         default=None,
         help=(
             "When set with --split-mode=group, seed the eval split with groups "
@@ -424,7 +662,13 @@ def main() -> None:
         validate_unique_step_ids(selected, "cursor visible selected trajectories")
 
     selected_after_visibility_filters = len(selected)
-    pairs = [build_pair(item, args.max_refs, args.anonymize_refs) for item in selected]
+    prompt_profile = operator_prompt_profile(args.capability_split_profile)
+    system_prompt = system_prompt_for_profile(prompt_profile)
+    prompt_tool_parity = prompt_tool_parity_summary(prompt_profile, system_prompt)
+    pairs = [
+        build_pair(item, args.max_refs, args.anonymize_refs, system_prompt, prompt_profile)
+        for item in selected
+    ]
     quality_summary: dict[str, Any] = {
         "selected_after_mode_filters": selected_after_mode_filters,
         "selected_after_visibility_filters": selected_after_visibility_filters,
@@ -513,7 +757,7 @@ def main() -> None:
     write_openai_jsonl(args.output / "openai_eval.jsonl", eval_rows)
     write_openai_jsonl(args.output / "openai_all.jsonl", rows)
     summary = {
-        "dataset": "kernel-operator-sft-v1",
+        "dataset": "kernel-operator-sft-v2",
         "source": [str(path) for path in args.trajectories],
         "output": str(args.output),
         "total_source": len(source_trajectories),
@@ -532,6 +776,9 @@ def main() -> None:
         "require_visible_target_refs": args.require_visible_target_refs,
         "require_visible_target_cursors": args.require_visible_target_cursors,
         "inject_target_request_fields": args.inject_target_request_fields,
+        "operator_prompt_profile": prompt_profile,
+        "model_facing_target_action_projection": target_action_projection(prompt_profile),
+        "prompt_tool_parity": prompt_tool_parity,
         "min_train_capability_count": args.min_train_capability_count,
         "min_eval_capability_count": args.min_eval_capability_count,
         "dropped_non_visible_target_refs": len(dropped_rows),
@@ -551,6 +798,58 @@ def main() -> None:
         "by_mode": count_by(rows, "mode"),
         "by_task_family": count_by(rows, "task_family"),
         "by_action": count_actions(rows),
+        "answer_policy_distribution": split_distribution(
+            train_pairs, eval_pairs, answer_policy_label
+        ),
+        "budget_detail_distribution": split_distribution(
+            train_pairs, eval_pairs, budget_detail_label
+        ),
+        "dimension_scope_ids_distribution": split_distribution(
+            train_pairs, eval_pairs, dimension_scope_ids_label
+        ),
+        "raw_access_policy": split_distribution(
+            train_pairs, eval_pairs, raw_access_label
+        ),
+        "write_memory_options_distribution": split_distribution(
+            train_pairs, eval_pairs, write_memory_options_label
+        ),
+        "write_memory_dry_run_distribution": split_distribution(
+            train_pairs, eval_pairs, write_memory_dry_run_label
+        ),
+        "write_memory_strict_distribution": split_distribution(
+            train_pairs, eval_pairs, write_memory_strict_label
+        ),
+        "write_memory_idempotency_key_distribution": split_distribution(
+            train_pairs, eval_pairs, write_memory_idempotency_key_label
+        ),
+        "write_memory_read_context_distribution": split_distribution(
+            train_pairs, eval_pairs, write_memory_read_context_label
+        ),
+        "write_memory_current_evidence_distribution": split_distribution(
+            train_pairs, eval_pairs, write_memory_current_evidence_label
+        ),
+        "write_memory_source_kind_distribution": split_distribution(
+            train_pairs, eval_pairs, write_memory_source_kind_label
+        ),
+        "write_memory_relation_proof_distribution": split_distribution(
+            train_pairs, eval_pairs, write_memory_relation_proof_label
+        ),
+        "ingest_dry_run_distribution": split_distribution(
+            train_pairs, eval_pairs, ingest_dry_run_label
+        ),
+        "ingest_dimensions_distribution": split_distribution(
+            train_pairs, eval_pairs, ingest_dimensions_label
+        ),
+        "ingest_relations_distribution": split_distribution(
+            train_pairs, eval_pairs, ingest_relations_label
+        ),
+        "ingest_evidence_distribution": split_distribution(
+            train_pairs, eval_pairs, ingest_evidence_label
+        ),
+        "ingest_provenance_distribution": split_distribution(
+            train_pairs, eval_pairs, ingest_provenance_label
+        ),
+        **target_action_contract_summary(train_pairs + eval_pairs),
     }
     (args.output / "summary.json").write_text(
         json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8"
@@ -729,6 +1028,8 @@ def build_pair(
     item: dict[str, Any],
     max_refs: int,
     anonymize_refs: bool,
+    system_prompt: str,
+    prompt_profile: str,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     model_item = sanitize_model_facing_trajectory(item)
     add_operator_state_features(model_item)
@@ -736,7 +1037,96 @@ def build_pair(
     if anonymize_refs:
         model_item = anonymize_trajectory(model_item)
         assert_model_facing_visible_state_clean(model_item)
-    return to_sft_row(model_item, max_refs), item, model_item
+    return to_sft_row(model_item, max_refs, system_prompt, prompt_profile), item, model_item
+
+
+def operator_prompt_profile(capability_split_profile: str | None) -> str:
+    if capability_split_profile == "read":
+        return "read"
+    if capability_split_profile == "writer-pre-read":
+        return "writer-pre-read"
+    if capability_split_profile == "writer-exec":
+        return "writer-exec"
+    if capability_split_profile == "writer-orchestration":
+        return "writer-orchestration"
+    return "full"
+
+
+def system_prompt_for_profile(profile: str) -> str:
+    if profile == "read":
+        return READ_SYSTEM_PROMPT
+    if profile == "writer-pre-read":
+        return WRITER_PRE_READ_SYSTEM_PROMPT
+    if profile == "writer-exec":
+        return WRITER_EXEC_SYSTEM_PROMPT
+    if profile == "writer-orchestration":
+        return WRITER_ORCHESTRATION_SYSTEM_PROMPT
+    if profile == "full":
+        return FULL_SYSTEM_PROMPT
+    raise ValueError(f"unknown operator prompt profile `{profile}`")
+
+
+def target_action_projection(profile: str) -> str:
+    if profile in {"writer-exec", "writer-orchestration"}:
+        return "prepared_payload_decision_v1"
+    return "direct_kmp_action"
+
+
+def prompt_tool_parity_summary(profile: str, system_prompt: str) -> dict[str, Any]:
+    tool_names = PROFILE_ALLOWED_TOOLS["full"]
+    visible_tools = [tool for tool in tool_names if tool in system_prompt]
+    forbidden_by_profile = {
+        "read": ("kernel_write_memory", "kernel_ingest"),
+        "writer-pre-read": (
+            "kernel_wake",
+            "kernel_ask",
+            "kernel_goto",
+            "kernel_rewind",
+            "kernel_forward",
+            "kernel_write_memory",
+            "kernel_ingest",
+        ),
+        "writer-exec": (
+            "kernel_wake",
+            "kernel_ask",
+            "kernel_near",
+            "kernel_goto",
+            "kernel_rewind",
+            "kernel_forward",
+            "kernel_trace",
+            "kernel_inspect",
+        ),
+        "writer-orchestration": (
+            "kernel_wake",
+            "kernel_ask",
+            "kernel_goto",
+            "kernel_rewind",
+            "kernel_forward",
+        ),
+        "full": (),
+    }
+    forbidden_visible = [
+        tool for tool in forbidden_by_profile[profile] if tool in system_prompt
+    ]
+    if forbidden_visible:
+        raise ValueError(
+            f"operator prompt profile `{profile}` exposes forbidden tools: "
+            f"{', '.join(forbidden_visible)}"
+        )
+    missing_visible = [
+        tool for tool in PROFILE_ALLOWED_TOOLS[profile] if tool not in system_prompt
+    ]
+    if missing_visible:
+        raise ValueError(
+            f"operator prompt profile `{profile}` does not document allowed "
+            f"tools: {', '.join(missing_visible)}"
+        )
+    return {
+        "profile": profile,
+        "visible_tools": visible_tools,
+        "forbidden_visible_tools": forbidden_visible,
+        "missing_visible_tools": missing_visible,
+    }
 
 
 def validate_unique_step_ids(rows: list[dict[str, Any]], label: str) -> None:
@@ -921,6 +1311,10 @@ def profile_required_capabilities(profile: str | None) -> tuple[str, ...]:
         return FULL_REQUIRED_CAPABILITIES
     if profile == "writer-pre-read":
         return WRITER_PRE_READ_REQUIRED_CAPABILITIES
+    if profile == "writer-exec":
+        return WRITER_EXEC_REQUIRED_CAPABILITIES
+    if profile == "writer-orchestration":
+        return WRITER_ORCHESTRATION_REQUIRED_CAPABILITIES
     return ()
 
 
@@ -1374,6 +1768,8 @@ def trajectory_capabilities(trajectory: dict[str, Any]) -> set[str]:
         capabilities.add(f"mode:{mode}")
     if mode == "write_context_read":
         capabilities.update(writer_pre_read_capabilities(trajectory))
+    if mode == "write":
+        capabilities.update(writer_exec_capabilities(trajectory))
     return capabilities
 
 
@@ -1399,6 +1795,55 @@ def writer_pre_read_capabilities(trajectory: dict[str, Any]) -> set[str]:
                 capabilities.add(f"writer.candidate_role:{role}")
     if state.get("candidate_pool") == "ambiguous":
         capabilities.add("writer.candidate_pool:ambiguous")
+    return capabilities
+
+
+def writer_exec_capabilities(trajectory: dict[str, Any]) -> set[str]:
+    capabilities: set[str] = set()
+    state = trajectory.get("visible_state")
+    if not isinstance(state, dict):
+        return capabilities
+
+    draft_write = state.get("draft_write")
+    if isinstance(draft_write, dict) and isinstance(
+        draft_write.get("prepared_arguments"), dict
+    ):
+        capabilities.add("write:prepared_arguments_visible")
+
+    if state.get("canonical_payload_ready") is True and isinstance(
+        state.get("canonical_payload"), dict
+    ):
+        capabilities.add("write:canonical_payload_visible")
+
+    action = trajectory.get("target_action")
+    if isinstance(action, dict) and action.get("tool") == "kernel_ingest":
+        capabilities.add("write:canonical_ingest")
+
+    quality = trajectory.get("quality")
+    if isinstance(quality, dict):
+        relation_quality = quality.get("write_relation_quality")
+        if isinstance(relation_quality, str):
+            capabilities.add(f"write:relation_quality:{relation_quality}")
+        if quality.get("read_context_proof") is True:
+            capabilities.add("write:read_context_proof")
+        if quality.get("expected_failfast") is True:
+            capabilities.add("write:failfast")
+        reason = quality.get("failfast_reason")
+        if isinstance(reason, str):
+            capabilities.add(f"write.stop:{reason}")
+
+    arguments = action.get("arguments") if isinstance(action, dict) else None
+    if isinstance(arguments, dict):
+        if isinstance(arguments.get("idempotency_key"), str):
+            capabilities.add("write:idempotency_key")
+        options = arguments.get("options")
+        if (
+            isinstance(options, dict)
+            and options.get("dry_run") is True
+            and options.get("strict") is True
+        ):
+            capabilities.add("write:strict_options")
+
     return capabilities
 
 
@@ -1638,20 +2083,28 @@ def trajectory_task_id(item: dict[str, Any]) -> Any:
     return None
 
 
-def to_sft_row(item: dict[str, Any], max_refs: int) -> dict[str, Any]:
+def to_sft_row(
+    item: dict[str, Any],
+    max_refs: int,
+    system_prompt: str,
+    prompt_profile: str,
+) -> dict[str, Any]:
     visible_state = compact_visible_state(item["visible_state"], max_refs)
     assert_model_facing_visible_state_clean(
         {"step_id": item["step_id"], "visible_state": visible_state}
     )
+    assistant_action = model_facing_target_action(item, prompt_profile)
+    allowed_tools = model_facing_allowed_tools(item, prompt_profile)
+    assert_model_facing_action_allowed(item, assistant_action, allowed_tools)
     user_payload = {
         "task_family": item["task_family"],
         "mode": item["mode"],
         "about": item["about"],
         "goal": item.get("goal"),
-        "allowed_tools": item["allowed_tools"],
+        "allowed_tools": allowed_tools,
         "visible_state": visible_state,
     }
-    assistant_payload = {"action": item["target_action"]}
+    assistant_payload = {"action": assistant_action}
     return {
         "id": item["step_id"],
         "run_id": item["run_id"],
@@ -1659,7 +2112,7 @@ def to_sft_row(item: dict[str, Any], max_refs: int) -> dict[str, Any]:
         "task_family": item["task_family"],
         "mode": item["mode"],
         "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {
                 "role": "user",
                 "content": json.dumps(user_payload, separators=(",", ":"), sort_keys=True),
@@ -1672,6 +2125,176 @@ def to_sft_row(item: dict[str, Any], max_refs: int) -> dict[str, Any]:
             },
         ],
     }
+
+
+def model_facing_target_action(item: dict[str, Any], prompt_profile: str) -> dict[str, Any]:
+    action = item["target_action"]
+    if prompt_profile not in {"writer-exec", "writer-orchestration"}:
+        return action
+    if action.get("type") != "tool_call":
+        return action
+    tool = action.get("tool")
+    if tool == "kernel_write_memory":
+        return {
+            "type": "prepared_tool_call",
+            "tool": "kernel_write_memory",
+            "source": "draft_write.prepared_arguments",
+        }
+    if tool == "kernel_ingest":
+        return {
+            "type": "prepared_tool_call",
+            "tool": "kernel_ingest",
+            "source": "canonical_payload",
+        }
+    return action
+
+
+def model_facing_allowed_tools(item: dict[str, Any], prompt_profile: str) -> list[str]:
+    profile_tools = PROFILE_ALLOWED_TOOLS[prompt_profile]
+    profile_tool_set = set(profile_tools)
+    if "allowed_tools" not in item:
+        raise ValueError(f"{item.get('step_id')} missing allowed_tools")
+    raw_allowed_tools = item["allowed_tools"]
+    if not isinstance(raw_allowed_tools, list):
+        raise ValueError(f"{item.get('step_id')} allowed_tools must be a list")
+    invalid_allowed_tools = [
+        tool
+        for tool in raw_allowed_tools
+        if not isinstance(tool, str) or not tool
+    ]
+    if invalid_allowed_tools:
+        raise ValueError(
+            f"{item.get('step_id')} allowed_tools must contain only non-empty strings"
+        )
+    if len(set(raw_allowed_tools)) != len(raw_allowed_tools):
+        raise ValueError(f"{item.get('step_id')} duplicate allowed_tools")
+    raw_allowed_tool_set = set(raw_allowed_tools)
+    unsupported_for_profile = sorted(raw_allowed_tool_set - profile_tool_set)
+    if unsupported_for_profile:
+        raise ValueError(
+            f"{item.get('step_id')} allowed_tools contains tools outside "
+            f"profile `{prompt_profile}`: {unsupported_for_profile}"
+        )
+    return [tool for tool in profile_tools if tool in raw_allowed_tool_set]
+
+
+def assert_model_facing_action_allowed(
+    item: dict[str, Any],
+    action: dict[str, Any],
+    allowed_tools: list[str],
+) -> None:
+    shape_error = validate_action_shape(action)
+    if shape_error is not None:
+        raise ValueError(
+            f"{item.get('step_id')} model-facing action violates operator "
+            f"contract: {shape_error}"
+        )
+    action_type = action.get("type")
+    if action_type == "stop":
+        expected_keys = {"type", "answer_policy", "final_refs", "reason"}
+        actual_keys = set(action.keys())
+        if actual_keys != expected_keys:
+            raise ValueError(
+                f"{item.get('step_id')} stop action must have exactly "
+                f"{sorted(expected_keys)}; got {sorted(actual_keys)}"
+            )
+        if action.get("answer_policy") not in {
+            "evidence_or_unknown",
+            "show_conflicts",
+            "best_effort",
+        }:
+            raise ValueError(
+                f"{item.get('step_id')} stop action has unsupported answer_policy"
+            )
+        if not isinstance(action.get("reason"), str) or not action["reason"]:
+            raise ValueError(f"{item.get('step_id')} stop action missing reason")
+        final_refs = action.get("final_refs")
+        if not isinstance(final_refs, list) or not all(
+            isinstance(ref, str) and ref for ref in final_refs
+        ):
+            raise ValueError(
+                f"{item.get('step_id')} stop action has invalid final_refs"
+            )
+        return
+    if action_type not in {"tool_call", "prepared_tool_call"}:
+        raise ValueError(
+            f"{item.get('step_id')} unsupported model-facing action type `{action_type}`"
+        )
+    tool = action.get("tool")
+    if tool not in allowed_tools:
+        raise ValueError(
+            f"{item.get('step_id')} target tool `{tool}` is not allowed by "
+            f"model-facing profile tools: {allowed_tools}"
+        )
+    if action_type == "prepared_tool_call":
+        expected_keys = {"type", "tool", "source"}
+        actual_keys = set(action.keys())
+        if actual_keys != expected_keys:
+            raise ValueError(
+                f"{item.get('step_id')} prepared_tool_call must have exactly "
+                f"{sorted(expected_keys)}; got {sorted(actual_keys)}"
+            )
+        source = action.get("source")
+        if (
+            tool == "kernel_write_memory"
+            and source == "draft_write.prepared_arguments"
+        ) or (tool == "kernel_ingest" and source == "canonical_payload"):
+            assert_prepared_payload_visible_and_matches_target(item, tool, source)
+            return
+        raise ValueError(
+            f"{item.get('step_id')} unsupported prepared payload source "
+            f"`{source}` for tool `{tool}`"
+        )
+
+
+def assert_prepared_payload_visible_and_matches_target(
+    item: dict[str, Any],
+    tool: str,
+    source: str,
+) -> None:
+    state = item.get("visible_state")
+    if not isinstance(state, dict):
+        raise ValueError(f"{item.get('step_id')} missing visible_state")
+    if tool == "kernel_write_memory" and source == "draft_write.prepared_arguments":
+        draft_write = state.get("draft_write")
+        if not isinstance(draft_write, dict):
+            raise ValueError(f"{item.get('step_id')} missing visible_state.draft_write")
+        payload = draft_write.get("prepared_arguments")
+    elif tool == "kernel_ingest" and source == "canonical_payload":
+        payload = state.get("canonical_payload")
+    else:
+        raise ValueError(
+            f"{item.get('step_id')} unsupported prepared payload source "
+            f"`{source}` for tool `{tool}`"
+        )
+
+    if not isinstance(payload, dict):
+        raise ValueError(
+            f"{item.get('step_id')} prepared payload `{source}` is not visible"
+        )
+    target_action = item.get("target_action")
+    if not isinstance(target_action, dict):
+        raise ValueError(f"{item.get('step_id')} target_action is not an object")
+    if target_action.get("type") != "tool_call" or target_action.get("tool") != tool:
+        raise ValueError(
+            f"{item.get('step_id')} prepared payload target mismatch for `{tool}`"
+        )
+    if payload != target_action.get("arguments"):
+        raise ValueError(
+            f"{item.get('step_id')} prepared payload `{source}` does not match "
+            "target_action.arguments"
+        )
+    resolved_action = {
+        "type": "tool_call",
+        "tool": tool,
+        "arguments": payload,
+    }
+    shape_error = validate_action_shape(resolved_action)
+    if shape_error is not None:
+        raise ValueError(
+            f"{item.get('step_id')} prepared payload `{source}` resolves to an "
+            f"invalid KMP action: {shape_error}"
+        )
 
 
 def anonymize_trajectory(item: dict[str, Any]) -> dict[str, Any]:
@@ -1991,7 +2614,23 @@ def visible_refs(item: dict[str, Any]) -> set[str]:
                 values = path.get("refs")
                 if isinstance(values, list):
                     refs.update(value for value in values if isinstance(value, str))
+    for key in ("draft_write", "canonical_payload"):
+        collect_visible_payload_refs(state.get(key), refs)
     return refs
+
+
+def collect_visible_payload_refs(value: Any, refs: set[str]) -> None:
+    if isinstance(value, str):
+        if looks_like_ref(value):
+            refs.add(value)
+        return
+    if isinstance(value, list):
+        for item in value:
+            collect_visible_payload_refs(item, refs)
+        return
+    if isinstance(value, dict):
+        for child in value.values():
+            collect_visible_payload_refs(child, refs)
 
 
 def target_primary_refs(item: dict[str, Any]) -> set[str]:
@@ -2088,6 +2727,21 @@ def add_operator_state_features(item: dict[str, Any]) -> None:
     observed_refs = state.get("last_observed_refs")
     if not isinstance(observed_refs, list):
         observed_refs = []
+    remaining_budget = state.get("remaining_budget")
+    if not isinstance(remaining_budget, dict):
+        remaining_budget = {}
+    remaining_tool_calls = remaining_budget.get("tool_calls")
+    if not isinstance(remaining_tool_calls, int) or isinstance(remaining_tool_calls, bool):
+        remaining_tool_calls = None
+    last_result_page = state.get("last_result_page")
+    if not isinstance(last_result_page, dict):
+        last_result_page = {}
+    last_result_has_more = last_result_page.get("has_more")
+    if not isinstance(last_result_has_more, bool):
+        last_result_has_more = None
+    last_result_partial = state.get("last_result_partial")
+    if not isinstance(last_result_partial, bool):
+        last_result_partial = None
 
     last_tool = state.get("last_tool")
     if not isinstance(last_tool, str):
@@ -2104,6 +2758,16 @@ def add_operator_state_features(item: dict[str, Any]) -> None:
         "has_candidate_details": bool(candidate_details),
         "has_observed_refs": bool(observed_refs),
     }
+    if remaining_tool_calls is not None:
+        operator_state["remaining_tool_calls"] = remaining_tool_calls
+    if last_result_has_more is not None:
+        operator_state["last_result_has_more"] = last_result_has_more
+    if last_result_partial is not None:
+        operator_state["last_result_partial"] = last_result_partial
+    if last_tool == "kernel_trace":
+        operator_state["trace_complete"] = (
+            last_result_has_more is False and last_result_partial is False
+        )
     if primary_candidate is not None:
         operator_state["primary_candidate"] = primary_candidate
     state["operator_state"] = operator_state
@@ -2281,10 +2945,285 @@ def count_actions(rows: list[dict[str, Any]]) -> dict[str, int]:
         action = json.loads(assistant)["action"]
         if action.get("type") == "tool_call":
             label = f"tool_call:{action.get('tool', 'unknown')}"
+        elif action.get("type") == "prepared_tool_call":
+            label = (
+                "prepared_tool_call:"
+                f"{action.get('tool', 'unknown')}:"
+                f"{action.get('source', 'unknown')}"
+            )
         else:
             label = str(action.get("type", "unknown"))
         counts[label] = counts.get(label, 0) + 1
     return dict(sorted(counts.items()))
+
+
+def split_distribution(
+    train_pairs: list[tuple[dict[str, Any], dict[str, Any], dict[str, Any]]],
+    eval_pairs: list[tuple[dict[str, Any], dict[str, Any], dict[str, Any]]],
+    labeler: Any,
+) -> dict[str, dict[str, int]]:
+    return {
+        "train": pair_distribution(train_pairs, labeler),
+        "eval": pair_distribution(eval_pairs, labeler),
+        "all": pair_distribution(train_pairs + eval_pairs, labeler),
+    }
+
+
+def pair_distribution(
+    pairs: list[tuple[dict[str, Any], dict[str, Any], dict[str, Any]]],
+    labeler: Any,
+) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for _, trajectory, _ in pairs:
+        labels = labeler(trajectory)
+        if isinstance(labels, str):
+            labels = [labels]
+        for label in labels:
+            if not isinstance(label, str) or not label:
+                continue
+            counts[label] = counts.get(label, 0) + 1
+    return dict(sorted(counts.items()))
+
+
+def answer_policy_label(trajectory: dict[str, Any]) -> list[str]:
+    action = trajectory.get("target_action")
+    if not isinstance(action, dict):
+        return []
+    if action.get("type") == "stop":
+        policy = action.get("answer_policy")
+    elif action.get("tool") == "kernel_ask":
+        policy = (action.get("arguments") or {}).get("answer_policy")
+    else:
+        return []
+    return [policy] if isinstance(policy, str) and policy else []
+
+
+def budget_detail_label(trajectory: dict[str, Any]) -> list[str]:
+    action = trajectory.get("target_action")
+    if not isinstance(action, dict) or action.get("type") != "tool_call":
+        return []
+    arguments = action.get("arguments")
+    if not isinstance(arguments, dict):
+        return []
+    budget = arguments.get("budget")
+    if not isinstance(budget, dict):
+        return []
+    detail = budget.get("detail")
+    return [detail] if isinstance(detail, str) and detail else ["unspecified"]
+
+
+def dimension_scope_ids_label(trajectory: dict[str, Any]) -> list[str]:
+    action = trajectory.get("target_action")
+    if not isinstance(action, dict) or action.get("type") != "tool_call":
+        return []
+    arguments = action.get("arguments")
+    if not isinstance(arguments, dict):
+        return []
+    dimensions = arguments.get("dimensions")
+    if not isinstance(dimensions, dict):
+        return []
+    scope_ids = dimensions.get("scope_ids")
+    if isinstance(scope_ids, list) and scope_ids:
+        return ["present"]
+    return ["absent"]
+
+
+def raw_access_label(trajectory: dict[str, Any]) -> list[str]:
+    action = trajectory.get("target_action")
+    if not isinstance(action, dict) or action.get("type") != "tool_call":
+        return []
+    tool = action.get("tool")
+    arguments = action.get("arguments")
+    if not isinstance(arguments, dict):
+        return []
+    include = arguments.get("include")
+    if not isinstance(include, dict):
+        return []
+    if tool == "kernel_inspect":
+        raw = include.get("raw")
+        return [f"inspect.raw:{str(raw).lower()}"] if isinstance(raw, bool) else []
+    if tool in {"kernel_near", "kernel_goto", "kernel_rewind", "kernel_forward"}:
+        raw_refs = include.get("raw_refs")
+        return (
+            [f"temporal.raw_refs:{str(raw_refs).lower()}"]
+            if isinstance(raw_refs, bool)
+            else []
+        )
+    return []
+
+
+def write_memory_options_label(trajectory: dict[str, Any]) -> list[str]:
+    arguments = target_tool_arguments(trajectory, "kernel_write_memory")
+    if arguments is None:
+        return []
+    return [presence_label(arguments.get("options"))]
+
+
+def write_memory_dry_run_label(trajectory: dict[str, Any]) -> list[str]:
+    arguments = target_tool_arguments(trajectory, "kernel_write_memory")
+    if arguments is None:
+        return []
+    options = arguments.get("options")
+    return [bool_label(options.get("dry_run") if isinstance(options, dict) else None)]
+
+
+def write_memory_strict_label(trajectory: dict[str, Any]) -> list[str]:
+    arguments = target_tool_arguments(trajectory, "kernel_write_memory")
+    if arguments is None:
+        return []
+    options = arguments.get("options")
+    return [bool_label(options.get("strict") if isinstance(options, dict) else None)]
+
+
+def write_memory_idempotency_key_label(trajectory: dict[str, Any]) -> list[str]:
+    arguments = target_tool_arguments(trajectory, "kernel_write_memory")
+    if arguments is None:
+        return []
+    return [presence_label(arguments.get("idempotency_key"))]
+
+
+def write_memory_read_context_label(trajectory: dict[str, Any]) -> list[str]:
+    arguments = target_tool_arguments(trajectory, "kernel_write_memory")
+    if arguments is None:
+        return []
+    return [presence_label(arguments.get("read_context"))]
+
+
+def write_memory_current_evidence_label(trajectory: dict[str, Any]) -> list[str]:
+    arguments = target_tool_arguments(trajectory, "kernel_write_memory")
+    if arguments is None:
+        return []
+    current = arguments.get("current")
+    evidence = current.get("evidence") if isinstance(current, dict) else None
+    return [presence_label(evidence)]
+
+
+def write_memory_source_kind_label(trajectory: dict[str, Any]) -> list[str]:
+    arguments = target_tool_arguments(trajectory, "kernel_write_memory")
+    if arguments is None:
+        return []
+    return [presence_label(arguments.get("source_kind"))]
+
+
+def write_memory_relation_proof_label(trajectory: dict[str, Any]) -> list[str]:
+    arguments = target_tool_arguments(trajectory, "kernel_write_memory")
+    if arguments is None:
+        return []
+    links = arguments.get("connect_to")
+    if not isinstance(links, list):
+        return []
+    labels: list[str] = []
+    for link in links:
+        if not isinstance(link, dict):
+            continue
+        semantic_class = link.get("class")
+        has_why = isinstance(link.get("why"), str) and bool(link["why"].strip())
+        has_evidence = isinstance(link.get("evidence"), str) and bool(
+            link["evidence"].strip()
+        )
+        if semantic_class == "structural":
+            labels.append(
+                "structural_with_proof"
+                if has_why and has_evidence
+                else "structural_without_proof"
+            )
+        else:
+            labels.append(
+                "non_structural_complete"
+                if has_why and has_evidence
+                else "non_structural_incomplete"
+            )
+    return labels
+
+
+def ingest_dry_run_label(trajectory: dict[str, Any]) -> list[str]:
+    arguments = target_tool_arguments(trajectory, "kernel_ingest")
+    if arguments is None:
+        return []
+    return [bool_label(arguments.get("dry_run"))]
+
+
+def ingest_dimensions_label(trajectory: dict[str, Any]) -> list[str]:
+    arguments = target_tool_arguments(trajectory, "kernel_ingest")
+    if arguments is None:
+        return []
+    memory = arguments.get("memory")
+    dimensions = memory.get("dimensions") if isinstance(memory, dict) else None
+    return [array_shape_label(dimensions)]
+
+
+def ingest_relations_label(trajectory: dict[str, Any]) -> list[str]:
+    arguments = target_tool_arguments(trajectory, "kernel_ingest")
+    if arguments is None:
+        return []
+    memory = arguments.get("memory")
+    relations = memory.get("relations") if isinstance(memory, dict) else None
+    return [array_shape_label(relations)]
+
+
+def ingest_evidence_label(trajectory: dict[str, Any]) -> list[str]:
+    arguments = target_tool_arguments(trajectory, "kernel_ingest")
+    if arguments is None:
+        return []
+    memory = arguments.get("memory")
+    evidence = memory.get("evidence") if isinstance(memory, dict) else None
+    return [array_shape_label(evidence)]
+
+
+def ingest_provenance_label(trajectory: dict[str, Any]) -> list[str]:
+    arguments = target_tool_arguments(trajectory, "kernel_ingest")
+    if arguments is None:
+        return []
+    return [presence_label(arguments.get("provenance"))]
+
+
+def target_tool_arguments(trajectory: dict[str, Any], tool: str) -> dict[str, Any] | None:
+    action = trajectory.get("target_action")
+    if not isinstance(action, dict):
+        return None
+    if action.get("type") != "tool_call" or action.get("tool") != tool:
+        return None
+    arguments = action.get("arguments")
+    return arguments if isinstance(arguments, dict) else None
+
+
+def presence_label(value: Any) -> str:
+    return "present" if value is not None else "absent"
+
+
+def bool_label(value: Any) -> str:
+    if isinstance(value, bool):
+        return str(value).lower()
+    if value is None:
+        return "absent"
+    return "invalid"
+
+
+def array_shape_label(value: Any) -> str:
+    if isinstance(value, list):
+        return "empty" if not value else "non_empty"
+    if value is None:
+        return "absent"
+    return "invalid"
+
+
+def target_action_contract_summary(
+    pairs: list[tuple[dict[str, Any], dict[str, Any], dict[str, Any]]],
+) -> dict[str, Any]:
+    failures: list[str] = []
+    for _, trajectory, _ in pairs:
+        action = trajectory.get("target_action")
+        if not isinstance(action, dict):
+            error = "target_action_not_object"
+        else:
+            error = validate_action_shape(action)
+        if error is not None:
+            step_id = trajectory.get("step_id", "<unknown>")
+            failures.append(f"{step_id}: {error}")
+    return {
+        "target_action_contract_failures": len(failures),
+        "target_action_contract_failure_examples": failures[:10],
+    }
 
 
 if __name__ == "__main__":

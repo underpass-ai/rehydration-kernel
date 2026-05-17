@@ -1,0 +1,16 @@
+[package]
+name = "underpass-operator-replay-domain"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Domain model for the Operator replay bounded context"
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+underpass-operator-shared-domain.workspace = true

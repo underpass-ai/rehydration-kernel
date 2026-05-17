@@ -105,8 +105,8 @@ producto es una decision operacional que debe poder ejecutarse contra KMP/MCP.
 | Componente | Afectado | Motivo |
 | --- | --- | --- |
 | `scripts/operator/predict_operator_sft.py` | Si | El predictor aceptaba una accion si tenia forma basica, aunque los argumentos incluyeran campos extra. |
-| `kernel_operator_policy_eval` | Si | El evaluador contaba como valida una `tool_call` si tenia `tool` y `arguments`. |
-| `kernel_operator_llm_baseline` | Si | La baseline LLM compartia una validacion demasiado permisiva. |
+| `underpass_operator_policy_eval` | Si | El evaluador contaba como valida una `tool_call` si tenia `tool` y `arguments`. |
+| `underpass_operator_llm_baseline` | Si | La baseline LLM compartia una validacion demasiado permisiva. |
 | Metricas historicas del Operator | Si, para claims | Las metricas de validez, tool/ref/scope y replay deben revalidarse si se quieren publicar. |
 | Entrenamiento SFT | No directamente | Los targets de entrenamiento pueden seguir siendo estrictos; el bug estaba en aceptar outputs incorrectos al evaluar/predecir. |
 | Pesos/adapters ya entrenados | No directamente | El checkpoint no queda corrupto por este bug. Lo que cambia es como se mide. |
@@ -460,11 +460,11 @@ Si el artefacto no indica validador estricto, no es release-grade.
 
 ## Cambios Implementados
 
-Se implemento una validacion estricta compartida en el testkit:
+Se implemento una validacion estricta compartida en `underpass-operator-shared-domain`:
 
-- `kernel_operator_action_shape_error`;
-- `kernel_operator_is_valid_action_shape`;
-- `kernel_operator_action_contract_error`.
+- `operator_action_shape_error`;
+- `operator_is_valid_action_shape`;
+- `operator_action_contract_error`.
 
 La validacion comprueba:
 
@@ -489,9 +489,9 @@ El contrato se aplica ahora en:
 
 | Pieza | Estado |
 | --- | --- |
-| `crates/rehydration-testkit/src/kernel_operator.rs` | Fuente compartida del contrato estricto en Rust. |
-| `crates/rehydration-testkit/src/bin/kernel_operator_policy_eval.rs` | Usa el contrato estricto para contar invalid predictions. |
-| `crates/rehydration-testkit/src/bin/kernel_operator_llm_baseline.rs` | Usa el contrato estricto antes de aceptar acciones LLM. |
+| `crates/underpass-operator-shared-domain/src/action_contract.rs` | Fuente compartida del contrato estricto en Rust. |
+| `crates/underpass-operator-evaluation-cli/src/bin/underpass_operator_policy_eval.rs` | Usa el contrato estricto para contar invalid predictions. |
+| `crates/underpass-operator-evaluation-cli/src/bin/underpass_operator_llm_baseline.rs` | Usa el contrato estricto antes de aceptar acciones LLM. |
 | `scripts/operator/predict_operator_sft.py` | Replica el contrato para rechazar outputs antes de escribir `predictions.jsonl`. |
 | `docs/product/kernel-tool-operator-model-plan.md` | Documenta el resultado v10 corregido. |
 
@@ -502,17 +502,17 @@ python -m py_compile \
   scripts/operator/predict_operator_sft.py \
   scripts/operator/prepare_operator_sft_dataset.py
 
-cargo test -p rehydration-testkit kernel_operator -- --nocapture
+cargo test -p underpass-operator-shared-domain -- --nocapture
 
-cargo test -p rehydration-testkit \
-  --bin kernel_operator_policy_eval \
+cargo test -p underpass-operator-evaluation-cli \
+  --bin underpass_operator_policy_eval \
   -- --nocapture
 ```
 
 Reevaluacion ejecutada:
 
 ```bash
-cargo run -p rehydration-testkit --bin kernel_operator_policy_eval -- \
+cargo run -p underpass-operator-evaluation-cli --bin underpass_operator_policy_eval -- \
   --trajectories /tmp/kernel-operator-sft-longmemeval-legacy-v10-operator-state-20260513/eval_model_trajectories.jsonl \
   --predictions /tmp/kernel-operator-qwen05-predictions-lme-v10-operator-state-20260513/predictions.jsonl \
   --output /tmp/kernel-operator-qwen05-predictions-lme-v10-operator-state-20260513-policy-eval-strict.json
@@ -523,7 +523,7 @@ cargo run -p rehydration-testkit --bin kernel_operator_policy_eval -- \
 Todavia hay duplicacion de contrato entre Rust y Python:
 
 ```text
-Rust testkit validator <-> Python predictor validator <-> MCP tool schemas
+Rust shared-domain validator <-> Python predictor validator <-> MCP tool schemas
 ```
 
 Esto es aceptable para el corte actual porque el bug esta cerrado, pero no es
@@ -532,13 +532,13 @@ la forma ideal a largo plazo.
 Riesgo:
 
 - el schema MCP cambia y Python no se actualiza;
-- el testkit valida una cosa y el predictor otra;
+- el contrato Rust valida una cosa y el predictor otra;
 - el modelo se evalua contra una variante no identica al runtime real.
 
 Direccion correcta:
 
 ```text
-Una unica fuente de verdad de schema/contrato para MCP, gRPC, testkit y predictor.
+Una unica fuente de verdad de schema/contrato para MCP, gRPC, shared-domain y predictor.
 ```
 
 Hasta que exista esa fuente unica, cada cambio de schema debe incluir:
@@ -628,7 +628,7 @@ Estado al cierre del P0 inmediato:
    }
    ```
 
-   Estado: implementado en `kernel_operator_policy_eval` y en
+   Estado: implementado en `underpass_operator_policy_eval` y en
    `predict_operator_sft.py`. El policy eval estricto del v10 se regenero con
    esta metadata.
 
@@ -723,7 +723,7 @@ La release publica del Operator requiere ahora:
 Revalidar predicciones existentes:
 
 ```bash
-cargo run -p rehydration-testkit --bin kernel_operator_policy_eval -- \
+cargo run -p underpass-operator-evaluation-cli --bin underpass_operator_policy_eval -- \
   --trajectories <operator-sft-dir>/eval_model_trajectories.jsonl \
   --predictions <operator-predictions-dir>/predictions.jsonl \
   --output <operator-policy-eval-strict>.json
@@ -784,7 +784,7 @@ Este problema se considera cerrado cuando:
 
 Estado al 2026-05-14:
 
-- contrato estricto implementado en Rust testkit;
+- contrato estricto implementado en `underpass-operator-shared-domain`;
 - predictor Python endurecido;
 - LLM baseline endurecida;
 - v10 reevaluado;
