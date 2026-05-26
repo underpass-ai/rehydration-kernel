@@ -10,6 +10,7 @@ Current contents:
 - [`kubernetes-transport-smoke.md`](./kubernetes-transport-smoke.md)
 - [`cluster-prerequisites.md`](./cluster-prerequisites.md) — MetalLB, cert-manager, Route 53, NGINX Ingress
 - [`mtls-deployment.md`](./mtls-deployment.md) — Full mTLS deployment guide
+- [`neo4j-schema-migrations.md`](./neo4j-schema-migrations.md) — Explicit projection graph indexes and constraints
 
 Related docs:
 

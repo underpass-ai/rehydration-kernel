@@ -20,3 +20,7 @@ rehydration-transport-grpc.workspace = true
 tokio.workspace = true
 tokio-rustls = "0.26.4"
 tracing.workspace = true
+
+[[bin]]
+name = "rehydration-neo4j-migrate"
+path = "src/bin/rehydration_neo4j_migrate.rs"

@@ -6,6 +6,7 @@ mod projection_store;
 mod queries;
 mod query_executor;
 mod row_mapping;
+mod schema_migration;
 mod write_projection;
 
 #[cfg(test)]
