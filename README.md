@@ -293,3 +293,15 @@ Redistributions and derivative works must preserve applicable copyright,
 license, and NOTICE information.
 
 Original author: [Tirso García Ibáñez](https://github.com/tgarciai) · [LinkedIn](https://www.linkedin.com/in/tirsogarcia/) · [Underpass AI](https://github.com/underpass-ai)
+
+## Running E2E tests
+
+Run `./scripts/e2e/regen.sh` before live E2E, replay validation, or infra-touching checks. It automates the version preflight in [docs/operations/preflight.md](docs/operations/preflight.md) and reports stale binaries, drifted Helm/Kubernetes state, missing certs, or endpoint/model mismatches before expensive tests run.
+
+Example:
+
+```bash
+./scripts/e2e/regen.sh --verbose
+```
+
+Expected output uses `[OK]`, `[WARN]`, and `[FAIL]` lines and ends with an `N/M checks passed` summary.
