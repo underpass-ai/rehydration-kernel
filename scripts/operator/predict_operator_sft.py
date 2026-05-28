@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import shutil
 import sys
@@ -45,13 +46,7 @@ WRITER_NODE_KINDS = {
 }
 
 CONFIDENCE_VALUES = {"high", "medium", "low", "unknown"}
-
-RELATION_ALIASES = {
-    "conflicts": "contradicts",
-    "conflicts_with": "contradicts",
-    "conflict_with": "contradicts",
-    "matches_question_item": "matches_requirement",
-}
+SOURCE_KINDS = {"human", "agent", "projection", "derived"}
 
 RELATION_SPECS = {
     "follows": ("anemic", {"procedural"}),
@@ -82,6 +77,28 @@ RELATION_SPECS = {
     "contains": ("structural", {"structural"}),
     "member_of": ("structural", {"structural"}),
     "scoped_to": ("structural", {"structural"}),
+}
+
+MODE_ALLOWED_TOOLS = {
+    "read": {
+        "kernel_wake",
+        "kernel_ask",
+        "kernel_near",
+        "kernel_goto",
+        "kernel_rewind",
+        "kernel_forward",
+        "kernel_trace",
+        "kernel_inspect",
+    },
+    "write_context_read": {
+        "kernel_near",
+        "kernel_trace",
+        "kernel_inspect",
+    },
+    "write": {
+        "kernel_write_memory",
+        "kernel_ingest",
+    },
 }
 
 
@@ -116,6 +133,20 @@ def parse_args() -> argparse.Namespace:
             "generated. The parser remains strict and rejects invalid actions."
         ),
     )
+    parser.add_argument(
+        "--resolve-prepared-payloads",
+        action="store_true",
+        help=(
+            "Resolve writer-exec prepared_tool_call decisions into final "
+            "kernel_write_memory/kernel_ingest tool calls by copying the "
+            "visible prepared payload deterministically."
+        ),
+    )
+    parser.add_argument(
+        "--validate-only",
+        action="store_true",
+        help="Validate dataset JSONL and exit before creating output or loading the model.",
+    )
     parser.add_argument("--force", action="store_true")
     return parser.parse_args()
 
@@ -124,6 +155,23 @@ def main() -> None:
     args = parse_args()
     if args.batch_size < 1:
         raise SystemExit("--batch-size must be >= 1")
+    rows = read_jsonl(args.dataset_jsonl)
+    validate_dataset_rows(rows, args.resolve_prepared_payloads)
+    if args.validate_only:
+        print(
+            json.dumps(
+                {
+                    "event": "kernel_operator_sft_predict.validate_only",
+                    "rows": len(rows),
+                    "prepared_payload_resolution": args.resolve_prepared_payloads,
+                    "status": "ok",
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return
+
     if args.output.exists():
         if not args.force:
             raise SystemExit(f"output already exists: {args.output}; pass --force")
@@ -171,7 +219,6 @@ def main() -> None:
     model.config.pad_token_id = tokenizer.pad_token_id
     model.eval()
 
-    rows = read_jsonl(args.dataset_jsonl)
     if args.limit is not None:
         rows = rows[: args.limit]
 
@@ -224,10 +271,23 @@ def main() -> None:
             for row, generated_output in zip(batch, output, strict=True):
                 generated = generated_output[prompt_width:]
                 raw = tokenizer.decode(generated, skip_special_tokens=True).strip()
-                action, failure_reason = parse_action(raw)
+                operator_action, failure_reason = parse_action(raw)
+                action = operator_action
+                resolution_error = None
+                if action is not None and args.resolve_prepared_payloads:
+                    action, resolution_error = resolve_prepared_payload_action(action, row)
+                    if resolution_error is not None:
+                        action = None
+                        failure_reason = f"prepared_payload_resolution:{resolution_error}"
+                if action is not None:
+                    allowed_error = validate_action_allowed_by_row(action, row)
+                    if allowed_error is not None:
+                        action = None
+                        failure_reason = allowed_error
                 result = {
                     "step_id": row["step_id"],
                     "raw_response": raw,
+                    "operator_action": operator_action,
                     "action": action,
                     "valid_action": action is not None,
                 }
@@ -296,6 +356,7 @@ def main() -> None:
         "failure_reasons": failure_reasons,
         "max_new_tokens": args.max_new_tokens,
         "stop_after_json": args.stop_after_json,
+        "prepared_payload_resolution": args.resolve_prepared_payloads,
         "temperature": args.temperature,
     }
     (args.output / "summary.json").write_text(
@@ -311,6 +372,106 @@ def read_jsonl(path: Path) -> list[dict[str, Any]]:
             if line.strip():
                 rows.append(json.loads(line))
     return rows
+
+
+def validate_dataset_rows(rows: list[dict[str, Any]], resolve_prepared: bool) -> None:
+    if not rows:
+        raise SystemExit("prediction dataset must not be empty")
+
+    seen_step_ids: dict[str, int] = {}
+    seen_message_hashes: dict[str, int] = {}
+    for index, row in enumerate(rows, start=1):
+        step_id = row.get("step_id")
+        if not isinstance(step_id, str) or not step_id:
+            raise SystemExit(f"dataset row {index}: missing string step_id")
+        previous_step = seen_step_ids.get(step_id)
+        if previous_step is not None:
+            raise SystemExit(
+                f"dataset row {index}: duplicate step_id `{step_id}` also "
+                f"seen at row {previous_step}"
+            )
+        seen_step_ids[step_id] = index
+
+        messages = row.get("messages")
+        if not isinstance(messages, list) or len(messages) != 3:
+            raise SystemExit(f"dataset row {index}: expected exactly 3 messages")
+        roles = [message.get("role") for message in messages if isinstance(message, dict)]
+        if roles != ["system", "user", "assistant"]:
+            raise SystemExit(
+                f"dataset row {index}: expected system/user/assistant roles, got {roles}"
+            )
+        if not all(isinstance(message.get("content"), str) for message in messages):
+            raise SystemExit(f"dataset row {index}: every message needs string content")
+
+        message_hash = canonical_messages_hash(messages)
+        previous_hash = seen_message_hashes.get(message_hash)
+        if previous_hash is not None:
+            raise SystemExit(
+                f"dataset row {index}: duplicate model-facing messages also "
+                f"seen at row {previous_hash}"
+            )
+        seen_message_hashes[message_hash] = index
+
+        user_payload, user_error = model_facing_user_payload(row)
+        if user_error is not None:
+            raise SystemExit(f"dataset row {index}: {user_error}")
+        assert user_payload is not None
+        allowed_tools = user_payload.get("allowed_tools")
+        if not isinstance(allowed_tools, list) or not all(
+            isinstance(tool, str) and tool for tool in allowed_tools
+        ):
+            raise SystemExit(f"dataset row {index}: user allowed_tools must be strings")
+        if len(set(allowed_tools)) != len(allowed_tools):
+            raise SystemExit(f"dataset row {index}: duplicate allowed_tools")
+        allowed_mode_error = validate_allowed_tools_for_user_payload(user_payload)
+        if allowed_mode_error is not None:
+            raise SystemExit(f"dataset row {index}: {allowed_mode_error}")
+
+        assistant = parse_message_json(messages[2]["content"], index, "assistant")
+        action = assistant.get("action")
+        if not isinstance(action, dict):
+            raise SystemExit(f"dataset row {index}: assistant payload missing action")
+        shape_error = validate_action_shape(action)
+        if shape_error is not None:
+            raise SystemExit(
+                f"dataset row {index}: target action violates strict contract: "
+                f"{shape_error}"
+            )
+        action_type = action.get("type")
+        if action_type in {"tool_call", "prepared_tool_call"}:
+            tool = action.get("tool")
+            if tool not in allowed_tools:
+                raise SystemExit(
+                    f"dataset row {index}: target tool `{tool}` is not listed "
+                    "in row allowed_tools"
+                )
+        if resolve_prepared:
+            _, resolve_error = resolve_prepared_payload_action(action, row)
+            if resolve_error is not None:
+                raise SystemExit(
+                    f"dataset row {index}: prepared payload cannot be resolved: "
+                    f"{resolve_error}"
+                )
+        elif action.get("type") == "prepared_tool_call":
+            raise SystemExit(
+                f"dataset row {index}: prepared_tool_call targets require "
+                "--resolve-prepared-payloads for prediction"
+            )
+
+
+def parse_message_json(content: str, index: int, role: str) -> dict[str, Any]:
+    try:
+        payload = json.loads(content)
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"dataset row {index}: invalid {role} JSON content") from exc
+    if not isinstance(payload, dict):
+        raise SystemExit(f"dataset row {index}: {role} content must be a JSON object")
+    return payload
+
+
+def canonical_messages_hash(messages: list[Any]) -> str:
+    payload = json.dumps(messages, separators=(",", ":"), sort_keys=True)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def parse_config_overrides(overrides: list[str]) -> dict[str, Any]:
@@ -396,6 +557,47 @@ def parse_action(raw: str) -> tuple[dict[str, Any] | None, str | None]:
     return action, None
 
 
+def validate_action_allowed_by_row(
+    action: dict[str, Any],
+    row: dict[str, Any],
+) -> str | None:
+    if action.get("type") not in {"tool_call", "prepared_tool_call"}:
+        return None
+    tool = action.get("tool")
+    if not isinstance(tool, str) or not tool:
+        return "missing_tool"
+    user_payload, user_error = model_facing_user_payload(row)
+    if user_error is not None:
+        return f"allowed_tools_unavailable:{user_error}"
+    assert user_payload is not None
+    allowed_tools = user_payload.get("allowed_tools")
+    if not isinstance(allowed_tools, list) or not all(
+        isinstance(value, str) and value for value in allowed_tools
+    ):
+        return "allowed_tools_invalid"
+    allowed_mode_error = validate_allowed_tools_for_user_payload(user_payload)
+    if allowed_mode_error is not None:
+        return allowed_mode_error
+    if tool not in allowed_tools:
+        return f"tool_not_allowed:{tool}"
+    return None
+
+
+def validate_allowed_tools_for_user_payload(user_payload: dict[str, Any]) -> str | None:
+    allowed_tools = user_payload.get("allowed_tools")
+    if not isinstance(allowed_tools, list) or not all(
+        isinstance(tool, str) and tool for tool in allowed_tools
+    ):
+        return "allowed_tools_invalid"
+    mode = user_payload.get("mode")
+    if mode not in MODE_ALLOWED_TOOLS:
+        return f"mode_unsupported:{mode}"
+    unsupported = sorted(set(allowed_tools) - MODE_ALLOWED_TOOLS[mode])
+    if unsupported:
+        return f"allowed_tools_outside_mode:{mode}:{','.join(unsupported)}"
+    return None
+
+
 def first_complete_json_object_end(text: str) -> int | None:
     start = text.find("{")
     if start < 0:
@@ -449,6 +651,18 @@ def validate_action_shape(action: dict[str, Any]) -> str | None:
             return f"unbounded_or_invalid_tool_call:{tool}"
         return None
 
+    if action_type == "prepared_tool_call":
+        key_error = exact_keys(action, {"type", "tool", "source"}, set(), "action")
+        if key_error is not None:
+            return key_error
+        tool = action.get("tool")
+        source = action.get("source")
+        if tool == "kernel_write_memory" and source == "draft_write.prepared_arguments":
+            return None
+        if tool == "kernel_ingest" and source == "canonical_payload":
+            return None
+        return "unsupported_prepared_payload_source"
+
     if action_type == "stop":
         key_error = exact_keys(
             action,
@@ -476,12 +690,79 @@ def validate_action_shape(action: dict[str, Any]) -> str | None:
     return "unsupported_action_type"
 
 
+def resolve_prepared_payload_action(
+    action: dict[str, Any],
+    row: dict[str, Any],
+) -> tuple[dict[str, Any] | None, str | None]:
+    if action.get("type") != "prepared_tool_call":
+        return action, None
+
+    user_payload, user_error = model_facing_user_payload(row)
+    if user_error is not None:
+        return None, user_error
+    assert user_payload is not None
+    visible_state = user_payload.get("visible_state")
+    if not isinstance(visible_state, dict):
+        return None, "missing_visible_state"
+    about = user_payload.get("about")
+    if not isinstance(about, str) or not about:
+        return None, "missing_about"
+
+    tool = action.get("tool")
+    source = action.get("source")
+    if tool == "kernel_write_memory" and source == "draft_write.prepared_arguments":
+        draft_write = visible_state.get("draft_write")
+        if not isinstance(draft_write, dict):
+            return None, "missing_draft_write"
+        arguments = draft_write.get("prepared_arguments")
+    elif tool == "kernel_ingest" and source == "canonical_payload":
+        arguments = visible_state.get("canonical_payload")
+    else:
+        return None, "unsupported_prepared_payload_source"
+
+    if not isinstance(arguments, dict):
+        return None, "missing_prepared_payload"
+    if arguments.get("about") != about:
+        return None, "about_mismatch"
+
+    resolved = {"type": "tool_call", "tool": tool, "arguments": arguments}
+    shape_error = validate_action_shape(resolved)
+    if shape_error is not None:
+        return None, f"resolved_action_invalid:{shape_error}"
+    return resolved, None
+
+
+def model_facing_user_payload(
+    row: dict[str, Any],
+) -> tuple[dict[str, Any] | None, str | None]:
+    messages = row.get("messages")
+    if not isinstance(messages, list):
+        return None, "missing_messages"
+    user_messages = [
+        message
+        for message in messages
+        if isinstance(message, dict) and message.get("role") == "user"
+    ]
+    if len(user_messages) != 1:
+        return None, "missing_or_multiple_user_messages"
+    content = user_messages[0].get("content")
+    if not isinstance(content, str):
+        return None, "user_message_missing_content"
+    try:
+        payload = json.loads(content)
+    except json.JSONDecodeError:
+        return None, "user_message_invalid_json"
+    if not isinstance(payload, dict):
+        return None, "user_message_not_object"
+    return payload, None
+
+
 def validate_tool_arguments(tool: str, arguments: dict[str, Any]) -> str | None:
     if tool == "kernel_wake":
         key_error = exact_keys(
             arguments,
-            {"about"},
-            {"role", "intent", "dimensions", "depth", "budget"},
+            {"about", "budget"},
+            {"role", "intent", "dimensions", "depth"},
             "action.arguments",
         )
         if key_error is not None:
@@ -500,15 +781,13 @@ def validate_tool_arguments(tool: str, arguments: dict[str, Any]) -> str | None:
         error = validate_optional_positive_int(arguments, "depth", "action.arguments")
         if error is not None:
             return error
-        if "budget" in arguments:
-            return validate_budget(arguments["budget"], "action.arguments.budget")
-        return None
+        return validate_budget(arguments.get("budget"), "action.arguments.budget")
 
     if tool == "kernel_ask":
         key_error = exact_keys(
             arguments,
-            {"about", "answer_policy", "dimensions", "question"},
-            {"budget", "depth"},
+            {"about", "answer_policy", "dimensions", "question", "budget"},
+            {"depth"},
             "action.arguments",
         )
         if key_error is not None:
@@ -523,10 +802,9 @@ def validate_tool_arguments(tool: str, arguments: dict[str, Any]) -> str | None:
         error = validate_dimensions(arguments.get("dimensions"), "action.arguments.dimensions")
         if error is not None:
             return error
-        if "budget" in arguments:
-            error = validate_budget(arguments["budget"], "action.arguments.budget")
-            if error is not None:
-                return error
+        error = validate_budget(arguments.get("budget"), "action.arguments.budget")
+        if error is not None:
+            return error
         return validate_optional_positive_int(arguments, "depth", "action.arguments")
 
     if tool in {"kernel_near", "kernel_goto", "kernel_rewind", "kernel_forward"}:
@@ -643,16 +921,18 @@ def validate_write_memory_arguments(arguments: dict[str, Any]) -> str | None:
     error = validate_write_options(arguments.get("options"), "action.arguments.options")
     if error is not None:
         return error
-    return validate_optional_non_empty_string(
-        arguments, "source_kind", "action.arguments"
-    )
+    if "source_kind" in arguments:
+        error = validate_source_kind(arguments.get("source_kind"), "action.arguments.source_kind")
+        if error is not None:
+            return error
+    return None
 
 
 def validate_ingest_arguments(arguments: dict[str, Any]) -> str | None:
     key_error = exact_keys(
         arguments,
-        {"about", "memory", "provenance", "idempotency_key", "dry_run"},
-        set(),
+        {"about", "memory", "idempotency_key"},
+        {"provenance", "dry_run"},
         "action.arguments",
     )
     if key_error is not None:
@@ -666,12 +946,15 @@ def validate_ingest_arguments(arguments: dict[str, Any]) -> str | None:
     )
     if error is not None:
         return error
-    error = validate_ingest_provenance(
-        arguments.get("provenance"), "action.arguments.provenance"
-    )
-    if error is not None:
-        return error
-    return require_bool(arguments, "dry_run", "action.arguments")
+    if "provenance" in arguments:
+        error = validate_ingest_provenance(
+            arguments.get("provenance"), "action.arguments.provenance"
+        )
+        if error is not None:
+            return error
+    if "dry_run" in arguments:
+        return require_bool(arguments, "dry_run", "action.arguments")
+    return None
 
 
 def validate_write_scope(value: Any, context: str) -> str | None:
@@ -786,8 +1069,8 @@ def validate_connect_to(
             return f"{link_context}_not_object"
         key_error = exact_keys(
             link,
-            {"ref", "rel", "class", "why", "evidence"},
-            {"confidence"},
+            {"ref", "rel", "class"},
+            {"why", "evidence", "confidence"},
             link_context,
         )
         if key_error is not None:
@@ -797,7 +1080,7 @@ def validate_connect_to(
             if error is not None:
                 return error
         target_ref = link["ref"]
-        relation = normalize_relation(link["rel"])
+        relation = link["rel"]
         if relation not in RELATION_SPECS:
             return f"{link_context}.rel_outside_writer_vocabulary"
         semantic_class = link["class"]
@@ -809,6 +1092,11 @@ def validate_connect_to(
         if semantic_class != "structural":
             for field in ("why", "evidence"):
                 error = require_non_empty_string(link, field, link_context)
+                if error is not None:
+                    return error
+        else:
+            for field in ("why", "evidence"):
+                error = validate_optional_non_empty_string(link, field, link_context)
                 if error is not None:
                     return error
         if "confidence" in link:
@@ -843,35 +1131,41 @@ def validate_ingest_memory(value: Any, context: str) -> str | None:
     if not isinstance(value, dict):
         return f"{context}_not_object"
     key_error = exact_keys(
-        value, {"dimensions", "entries", "relations", "evidence"}, set(), context
+        value, {"dimensions", "entries"}, {"relations", "evidence"}, context
     )
     if key_error is not None:
         return key_error
-    validators = (
-        validate_dimensions_payload,
-        validate_entries_payload,
-        validate_relations_payload,
-        validate_evidence_payload,
-    )
-    for field, validator in zip(
-        ("dimensions", "entries", "relations", "evidence"), validators, strict=True
+    for field, validator in (
+        ("dimensions", validate_dimensions_payload),
+        ("entries", validate_entries_payload),
     ):
         error = validator(value.get(field), context)
         if error is not None:
             return error
+    for field, validator in (
+        ("relations", validate_relations_payload),
+        ("evidence", validate_evidence_payload),
+    ):
+        if field in value:
+            error = validator(value.get(field), context)
+            if error is not None:
+                return error
     return None
 
 
 def validate_dimensions_payload(value: Any, context: str) -> str | None:
     if not isinstance(value, list):
         return f"{context}.dimensions_not_array"
-    if not value:
-        return f"{context}.dimensions_empty"
     for index, dimension in enumerate(value):
         dimension_context = f"{context}.dimensions[{index}]"
         if not isinstance(dimension, dict):
             return f"{dimension_context}_not_object"
-        key_error = exact_keys(dimension, {"id", "kind"}, {"title"}, dimension_context)
+        key_error = exact_keys(
+            dimension,
+            {"id", "kind"},
+            {"title", "metadata"},
+            dimension_context,
+        )
         if key_error is not None:
             return key_error
         for field in ("id", "kind"):
@@ -881,6 +1175,10 @@ def validate_dimensions_payload(value: Any, context: str) -> str | None:
         error = validate_optional_non_empty_string(dimension, "title", dimension_context)
         if error is not None:
             return error
+        if "metadata" in dimension:
+            error = validate_string_map(dimension["metadata"], f"{dimension_context}.metadata")
+            if error is not None:
+                return error
     return None
 
 
@@ -894,7 +1192,7 @@ def validate_entries_payload(value: Any, context: str) -> str | None:
         if not isinstance(entry, dict):
             return f"{entry_context}_not_object"
         key_error = exact_keys(
-            entry, {"id", "kind", "text"}, {"coordinates", "metadata"}, entry_context
+            entry, {"id", "kind", "text", "coordinates"}, {"metadata"}, entry_context
         )
         if key_error is not None:
             return key_error
@@ -902,8 +1200,11 @@ def validate_entries_payload(value: Any, context: str) -> str | None:
             error = require_non_empty_string(entry, field, entry_context)
             if error is not None:
                 return error
-        if "coordinates" in entry:
-            error = validate_coordinates(entry["coordinates"], f"{entry_context}.coordinates")
+        error = validate_coordinates(entry["coordinates"], f"{entry_context}.coordinates")
+        if error is not None:
+            return error
+        if "metadata" in entry:
+            error = validate_string_map(entry["metadata"], f"{entry_context}.metadata")
             if error is not None:
                 return error
     return None
@@ -912,6 +1213,8 @@ def validate_entries_payload(value: Any, context: str) -> str | None:
 def validate_coordinates(value: Any, context: str) -> str | None:
     if not isinstance(value, list):
         return f"{context}_not_array"
+    if not value:
+        return f"{context}_empty"
     for index, coordinate in enumerate(value):
         coordinate_context = f"{context}[{index}]"
         if not isinstance(coordinate, dict):
@@ -919,7 +1222,16 @@ def validate_coordinates(value: Any, context: str) -> str | None:
         key_error = exact_keys(
             coordinate,
             {"dimension", "scope_id"},
-            {"sequence", "observed_at", "occurred_at", "valid_from"},
+            {
+                "sequence",
+                "rank",
+                "observed_at",
+                "occurred_at",
+                "ingested_at",
+                "valid_from",
+                "valid_until",
+                "metadata",
+            },
             coordinate_context,
         )
         if key_error is not None:
@@ -928,11 +1240,22 @@ def validate_coordinates(value: Any, context: str) -> str | None:
             error = require_non_empty_string(coordinate, field, coordinate_context)
             if error is not None:
                 return error
-        error = validate_optional_positive_int(coordinate, "sequence", coordinate_context)
-        if error is not None:
-            return error
-        for field in ("observed_at", "occurred_at", "valid_from"):
+        for field in ("sequence", "rank"):
+            error = validate_optional_positive_int(coordinate, field, coordinate_context)
+            if error is not None:
+                return error
+        for field in (
+            "observed_at",
+            "occurred_at",
+            "ingested_at",
+            "valid_from",
+            "valid_until",
+        ):
             error = validate_optional_non_empty_string(coordinate, field, coordinate_context)
+            if error is not None:
+                return error
+        if "metadata" in coordinate:
+            error = validate_string_map(coordinate["metadata"], f"{coordinate_context}.metadata")
             if error is not None:
                 return error
     return None
@@ -947,21 +1270,36 @@ def validate_relations_payload(value: Any, context: str) -> str | None:
             return f"{relation_context}_not_object"
         key_error = exact_keys(
             relation,
-            {"from", "to", "rel", "class", "why", "evidence"},
-            {"confidence", "sequence"},
+            {"from", "to", "rel", "class"},
+            {"why", "evidence", "confidence", "sequence"},
             relation_context,
         )
         if key_error is not None:
             return key_error
-        for field in ("from", "to", "rel", "class", "why", "evidence"):
+        for field in ("from", "to", "rel", "class"):
             error = require_non_empty_string(relation, field, relation_context)
             if error is not None:
                 return error
-        if not normalize_relation(relation["rel"]):
+        if relation["rel"] not in RELATION_SPECS:
             return f"{relation_context}.rel_invalid"
         semantic_class = relation["class"]
         if semantic_class not in RELATION_CLASSES:
             return f"{relation_context}.class_invalid"
+        for field in ("why", "evidence"):
+            error = validate_optional_non_empty_string(relation, field, relation_context)
+            if error is not None:
+                return error
+        if semantic_class != "structural":
+            has_why = isinstance(relation.get("why"), str) and bool(relation["why"].strip())
+            has_evidence = isinstance(relation.get("evidence"), str) and bool(
+                relation["evidence"].strip()
+            )
+            if not has_why and not has_evidence:
+                return f"{relation_context}.non_structural_requires_why_or_evidence"
+            if not isinstance(relation.get("confidence"), str) or not relation[
+                "confidence"
+            ].strip():
+                return f"{relation_context}.non_structural_requires_confidence"
         if "confidence" in relation:
             confidence = relation.get("confidence")
             if not isinstance(confidence, str) or confidence not in CONFIDENCE_VALUES:
@@ -980,21 +1318,31 @@ def validate_evidence_payload(value: Any, context: str) -> str | None:
         if not isinstance(evidence, dict):
             return f"{evidence_context}_not_object"
         key_error = exact_keys(
-            evidence, {"id", "supports", "text"}, {"source", "time"}, evidence_context
+            evidence,
+            {"id", "text"},
+            {"supports", "source", "time", "metadata"},
+            evidence_context,
         )
         if key_error is not None:
             return key_error
         error = require_non_empty_string(evidence, "id", evidence_context)
         if error is not None:
             return error
-        error = validate_string_array(evidence.get("supports"), f"{evidence_context}.supports")
-        if error is not None:
-            return error
+        if "supports" in evidence:
+            error = validate_string_array(
+                evidence.get("supports"), f"{evidence_context}.supports"
+            )
+            if error is not None:
+                return error
         error = require_non_empty_string(evidence, "text", evidence_context)
         if error is not None:
             return error
         for field in ("source", "time"):
             error = validate_optional_non_empty_string(evidence, field, evidence_context)
+            if error is not None:
+                return error
+        if "metadata" in evidence:
+            error = validate_string_map(evidence["metadata"], f"{evidence_context}.metadata")
             if error is not None:
                 return error
     return None
@@ -1005,28 +1353,21 @@ def validate_ingest_provenance(value: Any, context: str) -> str | None:
         return f"{context}_not_object"
     key_error = exact_keys(
         value,
-        {"source_kind", "source_agent", "observed_at", "correlation_id", "causation_id"},
-        set(),
+        {"source_kind", "source_agent", "observed_at"},
+        {"correlation_id", "causation_id"},
         context,
     )
     if key_error is not None:
         return key_error
-    for field in (
-        "source_kind",
-        "source_agent",
-        "observed_at",
-        "correlation_id",
-        "causation_id",
-    ):
+    for field in ("source_agent", "observed_at"):
         error = require_non_empty_string(value, field, context)
         if error is not None:
             return error
-    return None
-
-
-def normalize_relation(value: str) -> str:
-    normalized = value.strip().lower().replace("-", "_").replace(" ", "_")
-    return RELATION_ALIASES.get(normalized, normalized)
+    for field in ("correlation_id", "causation_id"):
+        error = validate_optional_non_empty_string(value, field, context)
+        if error is not None:
+            return error
+    return validate_source_kind(value.get("source_kind"), f"{context}.source_kind")
 
 
 def validate_temporal_arguments(arguments: dict[str, Any], cursor_key: str) -> str | None:
@@ -1139,6 +1480,8 @@ def validate_temporal_include(value: Any, context: str) -> str | None:
         error = require_bool(value, field, context)
         if error is not None:
             return error
+    if value["raw_refs"]:
+        return f"{context}.raw_refs_must_be_false"
     return None
 
 
@@ -1212,7 +1555,14 @@ def validate_page(value: Any, context: str) -> str | None:
     error = validate_optional_positive_int(value, "entries", context)
     if error is not None:
         return error
-    return validate_optional_non_empty_string(value, "cursor", context)
+    if "cursor" not in value:
+        return None
+    cursor = value.get("cursor")
+    if not isinstance(cursor, str) or not cursor:
+        return f"{context}.cursor_not_non_empty_string"
+    if not cursor.isdigit():
+        return f"{context}.cursor_not_numeric_trace_next_cursor"
+    return None
 
 
 def validate_answer_policy(value: Any) -> str | None:
@@ -1221,11 +1571,30 @@ def validate_answer_policy(value: Any) -> str | None:
     return None
 
 
+def validate_source_kind(value: Any, context: str) -> str | None:
+    if not isinstance(value, str) or not value:
+        return f"{context}_missing_or_empty"
+    if value not in SOURCE_KINDS:
+        return f"{context}_unsupported"
+    return None
+
+
+def validate_string_map(value: Any, context: str) -> str | None:
+    if not isinstance(value, dict):
+        return f"{context}_not_object"
+    for key, item in value.items():
+        if not isinstance(key, str) or not key:
+            return f"{context}.key_not_non_empty_string"
+        if not isinstance(item, str):
+            return f"{context}.{key}_not_string"
+    return None
+
+
 def is_bounded_tool_call(tool: str, arguments: dict[str, Any]) -> bool:
     if tool == "kernel_wake":
         return (
             path_non_empty_string(arguments, ("about",))
-            and optional_limit(arguments, ("budget", "tokens"), 16_000)
+            and positive_limit(arguments, ("budget", "tokens"), 16_000)
             and optional_limit(arguments, ("budget", "depth"), 8)
             and optional_limit(arguments, ("depth",), 8)
         )
@@ -1261,7 +1630,11 @@ def is_bounded_tool_call(tool: str, arguments: dict[str, Any]) -> bool:
             and optional_limit(arguments, ("budget", "tokens"), 16_000)
         )
     if tool == "kernel_ask":
-        return optional_limit(arguments, ("budget", "tokens"), 16_000)
+        return (
+            positive_limit(arguments, ("budget", "tokens"), 16_000)
+            and optional_limit(arguments, ("budget", "depth"), 8)
+            and optional_limit(arguments, ("depth",), 8)
+        )
     if tool == "kernel_write_memory":
         connect_to = arguments.get("connect_to")
         return (
@@ -1282,13 +1655,11 @@ def is_bounded_tool_call(tool: str, arguments: dict[str, Any]) -> bool:
             validate_ingest_arguments(arguments) is None
             and isinstance(arguments.get("dry_run"), bool)
             and isinstance(dimensions, list)
-            and 0 < len(dimensions) <= 64
+            and len(dimensions) <= 64
             and isinstance(entries, list)
             and 0 < len(entries) <= 256
-            and isinstance(relations, list)
-            and len(relations) <= 512
-            and isinstance(evidence, list)
-            and len(evidence) <= 512
+            and (relations is None or (isinstance(relations, list) and len(relations) <= 512))
+            and (evidence is None or (isinstance(evidence, list) and len(evidence) <= 512))
         )
     return False
 

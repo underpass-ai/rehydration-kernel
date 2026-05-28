@@ -260,6 +260,12 @@ pub(crate) fn build_write_plan(arguments: &Value) -> Result<KernelWritePlan, Str
         let rel_arg = required_map_string(link, "rel", &format!("connect_to[{index}].rel"))?;
         let relation_type = MemoryRelationType::new(rel_arg)
             .map_err(|error| format!("connect_to[{index}].rel is invalid: {error}"))?;
+        if relation_type.as_str() != rel_arg {
+            return Err(format!(
+                "connect_to[{index}].rel must use canonical wire value `{}`",
+                relation_type.as_str()
+            ));
+        }
         let rel = relation_type.as_str();
         let semantic_class =
             required_map_string(link, "class", &format!("connect_to[{index}].class"))?;
@@ -293,13 +299,15 @@ pub(crate) fn build_write_plan(arguments: &Value) -> Result<KernelWritePlan, Str
         ));
         relation_names.push(rel.to_string());
         relation_quality.push(quality);
-        evidence.push(json!({
-            "id": format!("evidence:{}:relation:{}", current_ref, index + 1),
-            "supports": [current_ref.clone(), target_ref],
-            "text": relation_evidence,
-            "source": format!("kernel_write_memory:{actor}:relation:{rel}"),
-            "time": observed_at
-        }));
+        if !relation_evidence.trim().is_empty() {
+            evidence.push(json!({
+                "id": format!("evidence:{}:relation:{}", current_ref, index + 1),
+                "supports": [current_ref.clone(), target_ref],
+                "text": relation_evidence,
+                "source": format!("kernel_write_memory:{actor}:relation:{rel}"),
+                "time": observed_at
+            }));
+        }
     }
 
     if let Some(delta) = arguments.get("semantic_delta").and_then(Value::as_object) {
@@ -516,16 +524,21 @@ fn relation(
     evidence: &str,
     sequence: u32,
 ) -> Value {
-    json!({
+    let mut relation = json!({
         "from": from,
         "to": to,
         "rel": rel,
         "class": semantic_class,
         "confidence": confidence,
-        "why": why,
-        "evidence": evidence,
         "sequence": sequence
-    })
+    });
+    if !why.trim().is_empty() {
+        relation["why"] = json!(why);
+    }
+    if !evidence.trim().is_empty() {
+        relation["evidence"] = json!(evidence);
+    }
+    relation
 }
 
 fn suggested_reads(current_ref: &str, connect_to: &[Value]) -> Vec<Value> {
@@ -1025,6 +1038,46 @@ mod tests {
     }
 
     #[test]
+    fn structural_relation_can_omit_relation_proof_without_empty_evidence() {
+        let mut request = sample_write_request();
+        request
+            .as_object_mut()
+            .expect("sample request should be an object")
+            .remove("semantic_delta");
+        request["connect_to"][0]["rel"] = json!("scoped_to");
+        request["connect_to"][0]["class"] = json!("structural");
+        request["connect_to"][0]
+            .as_object_mut()
+            .expect("sample relation should be an object")
+            .remove("why");
+        request["connect_to"][0]
+            .as_object_mut()
+            .expect("sample relation should be an object")
+            .remove("evidence");
+
+        let plan = build_write_plan(&request).expect("structural relation should plan");
+
+        assert_eq!(plan.relation_quality[0]["quality"], "structural");
+        assert_eq!(
+            plan.ingest_arguments["memory"]["relations"][0].get("why"),
+            None
+        );
+        assert_eq!(
+            plan.ingest_arguments["memory"]["relations"][0].get("evidence"),
+            None
+        );
+        assert!(
+            plan.ingest_arguments["memory"]["evidence"]
+                .as_array()
+                .expect("evidence should be an array")
+                .iter()
+                .all(|item| item["text"].as_str().is_some_and(|text| !text.is_empty()))
+        );
+        crate::ingest::build_ingest_plan(&plan.ingest_arguments)
+            .expect("compiled ingest preview should be valid");
+    }
+
+    #[test]
     fn rejects_strict_write_without_any_relation() {
         let mut request = sample_write_request();
         request
@@ -1103,7 +1156,7 @@ mod tests {
     #[test]
     fn accepts_core_operand_modeling_relations() {
         let mut request = sample_write_request();
-        request["connect_to"][0]["rel"] = json!("matches_question_item");
+        request["connect_to"][0]["rel"] = json!("matches_requirement");
         request["connect_to"][0]["class"] = json!("constraint");
         request["connect_to"][0]["why"] =
             json!("The prior memory satisfies the current requirement predicate.");
@@ -1116,6 +1169,20 @@ mod tests {
         assert_eq!(
             plan.ingest_arguments["memory"]["relations"][0]["rel"],
             "matches_requirement"
+        );
+    }
+
+    #[test]
+    fn rejects_noncanonical_relation_aliases() {
+        let mut request = sample_write_request();
+        request["connect_to"][0]["rel"] = json!("matches_question_item");
+        request["connect_to"][0]["class"] = json!("constraint");
+
+        let error = build_write_plan(&request).expect_err("relation aliases should fail fast");
+
+        assert_eq!(
+            error,
+            "connect_to[0].rel must use canonical wire value `matches_requirement`"
         );
     }
 

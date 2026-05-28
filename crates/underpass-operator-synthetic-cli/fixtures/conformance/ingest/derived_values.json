@@ -1,0 +1,105 @@
+{
+  "about": "incident:mobile-login",
+  "idempotency_key": "conformance:ingest:derived-values:refresh-race",
+  "dry_run": true,
+  "memory": {
+    "dimensions": [
+      {
+        "id": "incident:mobile-login",
+        "kind": "task",
+        "title": "Mobile login incident"
+      },
+      {
+        "id": "agent:reader",
+        "kind": "agent",
+        "title": "Reader agent"
+      }
+    ],
+    "entries": [
+      {
+        "id": "incident:mobile-login:observation:401-refresh-race",
+        "kind": "observation",
+        "text": "401 appears immediately after refresh success.",
+        "coordinates": [
+          {
+            "dimension": "task",
+            "scope_id": "incident:mobile-login",
+            "sequence": 14,
+            "observed_at": "2026-05-06T10:09:00Z"
+          }
+        ]
+      },
+      {
+        "id": "incident:mobile-login:entry:observation:refresh-race-confirmed",
+        "kind": "observation",
+        "text": "Refresh success followed by 401 confirms refresh-race ordering.",
+        "coordinates": [
+          {
+            "dimension": "agent",
+            "scope_id": "agent:reader",
+            "sequence": 5,
+            "observed_at": "2026-05-06T10:09:10Z"
+          }
+        ]
+      },
+      {
+        "id": "incident:mobile-login:decision:refresh-retry",
+        "kind": "decision",
+        "text": "Use token refresh retry as the final remediation.",
+        "coordinates": [
+          {
+            "dimension": "task",
+            "scope_id": "incident:mobile-login",
+            "sequence": 15,
+            "observed_at": "2026-05-06T10:09:20Z"
+          }
+        ]
+      }
+    ],
+    "relations": [
+      {
+        "from": "incident:mobile-login:entry:observation:refresh-race-confirmed",
+        "to": "incident:mobile-login:observation:401-refresh-race",
+        "rel": "derived_from",
+        "class": "evidential",
+        "why": "The confirmed observation is derived from the original refresh-race evidence.",
+        "evidence": "Both entries describe refresh success followed by 401.",
+        "confidence": "high",
+        "sequence": 1
+      },
+      {
+        "from": "incident:mobile-login:decision:refresh-retry",
+        "to": "incident:mobile-login:entry:observation:refresh-race-confirmed",
+        "rel": "chosen_because",
+        "class": "causal",
+        "why": "The decision is chosen because the refresh-race ordering was confirmed.",
+        "evidence": "The confirmed observation identifies the refresh race.",
+        "confidence": "high",
+        "sequence": 2
+      }
+    ],
+    "evidence": [
+      {
+        "id": "incident:mobile-login:evidence:derived-refresh-race",
+        "supports": ["incident:mobile-login:entry:observation:refresh-race-confirmed"],
+        "text": "Derived reader evidence confirms refresh success followed by 401.",
+        "source": "synthetic_conformance",
+        "time": "2026-05-06T10:09:10Z"
+      },
+      {
+        "id": "incident:mobile-login:evidence:derived-final-decision",
+        "supports": ["incident:mobile-login:decision:refresh-retry"],
+        "text": "The final decision uses token refresh retry.",
+        "source": "synthetic_conformance",
+        "time": "2026-05-06T10:09:20Z"
+      }
+    ]
+  },
+  "provenance": {
+    "source_kind": "agent",
+    "source_agent": "operator:conformance",
+    "observed_at": "2026-05-06T10:09:20Z",
+    "correlation_id": "conformance:operator-full",
+    "causation_id": "conformance:ingest:derived-values"
+  }
+}

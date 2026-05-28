@@ -12,7 +12,7 @@ pub enum SourceKind {
 
 impl SourceKind {
     pub fn parse(value: &str) -> Result<Self, DomainError> {
-        match value.trim() {
+        match value {
             "human" => Ok(Self::Human),
             "agent" => Ok(Self::Agent),
             "projection" => Ok(Self::Projection),
@@ -60,5 +60,10 @@ mod tests {
     #[test]
     fn parse_invalid_returns_error() {
         assert!(SourceKind::parse("bogus").is_err());
+    }
+
+    #[test]
+    fn parse_rejects_whitespace_wrapped_values() {
+        assert!(SourceKind::parse(" agent ").is_err());
     }
 }

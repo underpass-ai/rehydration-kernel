@@ -12,7 +12,7 @@ Do not edit this template with run-specific data.
 
 # Operator Training Run: `<attempt-id>`
 
-Status: `planned | dataset-ready | running | paused | failed | quarantined | baseline-only | internal-only | promoted | aborted`
+Status: `planned | dataset-ready | running | paused | failed | quarantined | baseline-only | internal-only | promoted | aborted | read-profile-passed | writer-pre-read-profile-passed | writer-exec-profile-passed | writer-orchestration-profile-passed`
 
 Date opened: `YYYY-MM-DD`
 Date closed: `YYYY-MM-DD or pending`
@@ -23,7 +23,7 @@ Owner: `Tirso / Codex / other`
 | Field | Value |
 | --- | --- |
 | Attempt id | `<attempt-id>` |
-| Profile | `operator-read / prepared-write / writer-teacher / mixed` |
+| Profile | `operator-read / writer-pre-read / writer-exec / writer-orchestration / writer-teacher / full` |
 | Base model | `<model id>` |
 | Adapter output | `<path or hub id>` |
 | Artifact root | `../rehydration-kernel-artifacts/operator/<attempt-id>/` |
@@ -103,6 +103,26 @@ Failure means:
 | dropped non-visible refs | `<n>` |
 | dropped non-visible cursors | `<n>` |
 | duplicate step ids | `<n>` |
+| unique model-facing rows | `<n>` |
+| unique train model-facing rows | `<n>` |
+| unique eval model-facing rows | `<n>` |
+| train/eval model-row overlap | `<n>` |
+| full-row overlap | `<n>` |
+| maximum duplicate model-row count | `<n>` |
+| train action distribution | `<map>` |
+| eval action distribution | `<map>` |
+| unique rows per action, train | `<map>` |
+| unique rows per action, eval | `<map>` |
+| majority-action baseline | `<value>` |
+| contrastive families | `<path/value>` |
+| synthetic use-case families covered | `<n>/<n>` |
+| synthetic use-case minimum counts | `<pass/fail + path/value>` |
+| prompt/tool parity | `<yes/no>` |
+| model-facing target projection | `<direct_kmp_action / prepared_payload_decision_v1>` |
+| prepared-payload resolution required | `<yes/no>` |
+| trace page cursor shape | `<numeric KMP Trace.next_cursor / not applicable / fail>` |
+| stop evidence gate | `<answer_policy + final_refs exact / fail>` |
+| source_kind validation | `<human|agent|projection|derived only / fail>` |
 | contract validation failures | `<n>` |
 | all contract coverage | `<value>` |
 | train contract coverage | `<value>` |
@@ -176,6 +196,11 @@ Stop immediately if any checked gate fails.
 | dropped non-visible target refs | 0 unless explicitly accepted | `<n>` | `yes/no` |
 | declared profile coverage in train | 100% | `<value>` | `yes/no` |
 | declared profile coverage in eval | 100% | `<value>` | `yes/no` |
+| dataset quality contract verdict | trainable for declared tier | `<trainable/diagnostic-only/smoke-only/quarantine>` | `yes/no` |
+| majority-action collapse risk | low or explicitly accepted | `<value>` | `yes/no` |
+| rare actions have enough unique rows | yes | `<value>` | `yes/no` |
+| synthetic use-case coverage | profile minimums met | `<value>` | `yes/no` |
+| prompt/tool parity | yes | `<value>` | `yes/no` |
 | invalid predictions | 0 for candidate | `<n>` | `yes/no` |
 | unbounded tool calls | 0 | `<n>` | `yes/no` |
 | MCP replay failures | 0 | `<n>` | `yes/no` |

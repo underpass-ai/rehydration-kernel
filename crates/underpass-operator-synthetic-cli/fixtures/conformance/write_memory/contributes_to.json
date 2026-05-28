@@ -1,0 +1,37 @@
+{
+  "about": "incident:mobile-login",
+  "intent": "record_observation",
+  "actor": "operator:conformance",
+  "observed_at": "2026-05-06T10:09:00Z",
+  "scope": {
+    "task": "incident:mobile-login",
+    "process": "incident:mobile-login:resolution",
+    "episode": "incident:mobile-login:episode:operator"
+  },
+  "current": {
+    "kind": "derived_value",
+    "summary": "Refresh ordering is one operand in the final remediation evidence.",
+    "evidence": "The derived remediation uses auth-log ordering as a supporting operand."
+  },
+  "connect_to": [
+    {
+      "ref": "incident:mobile-login:observation:401-refresh-race",
+      "rel": "contributes_to",
+      "class": "evidential",
+      "why": "The observation is intentionally included in the derived remediation evidence.",
+      "evidence": "The derived value uses the refresh-race observation.",
+      "confidence": "medium"
+    }
+  ],
+  "read_context": {
+    "inspected_refs": ["incident:mobile-login:observation:401-refresh-race"],
+    "ask_refs": ["incident:mobile-login:question:login-failure"]
+  },
+  "idempotency_key": "conformance:write-memory:contributes-to:remediation-evidence",
+  "options": {
+    "dry_run": true,
+    "strict": true,
+    "sequence": 7
+  },
+  "source_kind": "agent"
+}

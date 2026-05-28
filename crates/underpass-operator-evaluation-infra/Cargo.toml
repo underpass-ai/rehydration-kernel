@@ -1,0 +1,17 @@
+[package]
+name = "underpass-operator-evaluation-infra"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Infrastructure adapters for the Operator evaluation bounded context"
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+serde_json.workspace = true
+underpass-operator-evaluation-application.workspace = true
+underpass-operator-evaluation-domain.workspace = true
+underpass-operator-shared-domain.workspace = true

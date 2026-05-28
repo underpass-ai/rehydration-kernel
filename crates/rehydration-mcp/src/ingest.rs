@@ -1,5 +1,6 @@
 use std::collections::BTreeSet;
 
+use rehydration_domain::MemoryRelationType;
 use serde_json::{Map, Value};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -42,7 +43,7 @@ pub(crate) fn build_ingest_plan(arguments: &Value) -> Result<KmpIngestPlan, Stri
         .and_then(Value::as_object)
         .ok_or_else(|| "missing required object argument `memory`".to_string())?;
 
-    let dimensions = required_array(memory.get("dimensions"), "memory.dimensions")?;
+    let dimensions = required_array_allow_empty(memory.get("dimensions"), "memory.dimensions")?;
     let entries = required_array(memory.get("entries"), "memory.entries")?;
     let relations = optional_array(memory.get("relations"), "memory.relations")?;
     let evidence = optional_array(memory.get("evidence"), "memory.evidence")?;
@@ -86,6 +87,7 @@ pub(crate) fn build_ingest_plan(arguments: &Value) -> Result<KmpIngestPlan, Stri
         let from = required_object_string(relation, "memory.relations[].from")?;
         let to = required_object_string(relation, "memory.relations[].to")?;
         let rel = required_object_string(relation, "memory.relations[].rel")?;
+        validate_relation_type(rel)?;
         let semantic_class = required_object_string(relation, "memory.relations[].class")?;
         validate_semantic_class(semantic_class)?;
         validate_relation_explanation(relation, semantic_class)?;
@@ -175,6 +177,16 @@ fn required_array<'a>(value: Option<&'a Value>, key: &str) -> Result<&'a [Value]
     Ok(values)
 }
 
+fn required_array_allow_empty<'a>(
+    value: Option<&'a Value>,
+    key: &str,
+) -> Result<&'a [Value], String> {
+    value
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .ok_or_else(|| format!("missing required array argument `{key}`"))
+}
+
 fn optional_array<'a>(value: Option<&'a Value>, key: &str) -> Result<&'a [Value], String> {
     match value {
         Some(value) => value
@@ -218,14 +230,26 @@ fn validate_provenance(provenance: &Map<String, Value>) -> Result<(), String> {
 }
 
 fn validate_source_kind(value: &str) -> Result<(), String> {
-    match value.trim() {
+    match value {
         "human" | "agent" | "projection" | "derived" => Ok(()),
         other => Err(format!("invalid memory provenance source_kind `{other}`")),
     }
 }
 
+fn validate_relation_type(value: &str) -> Result<(), String> {
+    let relation_type = MemoryRelationType::new(value)
+        .map_err(|error| format!("memory relation rel is invalid: {error}"))?;
+    if relation_type.as_str() != value {
+        return Err(format!(
+            "memory relation rel must use canonical wire value `{}`",
+            relation_type.as_str()
+        ));
+    }
+    Ok(())
+}
+
 fn validate_semantic_class(value: &str) -> Result<(), String> {
-    match value.trim() {
+    match value {
         "structural" | "causal" | "motivational" | "procedural" | "evidential" | "constraint" => {
             Ok(())
         }
@@ -234,7 +258,7 @@ fn validate_semantic_class(value: &str) -> Result<(), String> {
 }
 
 fn validate_confidence(value: &str) -> Result<(), String> {
-    match value.trim() {
+    match value {
         "high" | "medium" | "low" | "unknown" => Ok(()),
         other => Err(format!("invalid memory relation confidence `{other}`")),
     }
@@ -330,7 +354,7 @@ fn validate_entry_positions(entry: &Value, dimension_ids: &BTreeSet<&str>) -> Re
         if scope_id.trim().is_empty() {
             return Err("memory.entries[].coordinates[].scope_id must not be empty".to_string());
         }
-        if !dimension_ids.contains(scope_id) {
+        if !dimension_ids.is_empty() && !dimension_ids.contains(scope_id) {
             return Err(format!(
                 "memory entry coordinate references unknown dimension scope `{scope_id}`"
             ));
@@ -419,6 +443,32 @@ mod tests {
     }
 
     #[test]
+    fn build_ingest_plan_rejects_whitespace_wrapped_enum_values() {
+        let mut request = sample_ingest_request();
+        request["provenance"]["source_kind"] = json!(" agent ");
+        let error = build_ingest_plan(&request).expect_err("source_kind should be exact");
+        assert_eq!(error, "invalid memory provenance source_kind ` agent `");
+
+        let mut request = sample_ingest_request();
+        request["memory"]["relations"][0]["rel"] = json!("conflicts_with");
+        let error = build_ingest_plan(&request).expect_err("relation rel should be exact");
+        assert_eq!(
+            error,
+            "memory relation rel must use canonical wire value `contradicts`"
+        );
+
+        let mut request = sample_ingest_request();
+        request["memory"]["relations"][0]["class"] = json!(" evidential ");
+        let error = build_ingest_plan(&request).expect_err("relation class should be exact");
+        assert_eq!(error, "invalid memory relation class ` evidential `");
+
+        let mut request = sample_ingest_request();
+        request["memory"]["relations"][0]["confidence"] = json!(" high ");
+        let error = build_ingest_plan(&request).expect_err("confidence should be exact");
+        assert_eq!(error, "invalid memory relation confidence ` high `");
+    }
+
+    #[test]
     fn build_ingest_plan_rejects_unknown_entry_position_scope() {
         let error = build_ingest_plan(&json!({
             "about": "question:830ce83f",
@@ -452,6 +502,37 @@ mod tests {
             error,
             "memory entry coordinate references unknown dimension scope `conversation:missing`"
         );
+    }
+
+    #[test]
+    fn build_ingest_plan_allows_empty_dimensions_for_incremental_append() {
+        let plan = build_ingest_plan(&json!({
+            "about": "question:830ce83f",
+            "memory": {
+                "dimensions": [],
+                "entries": [
+                    {
+                        "id": "claim:rachel-denver",
+                        "kind": "claim",
+                        "text": "Rachel moved to Denver.",
+                        "coordinates": [
+                            {
+                                "dimension": "conversation",
+                                "scope_id": "conversation:rachel",
+                                "sequence": 2
+                            }
+                        ]
+                    }
+                ]
+            },
+            "idempotency_key": "ingest:830ce83f:2",
+            "dry_run": true
+        }))
+        .expect("incremental append dry-run should match the gRPC ingest mapper");
+
+        assert_eq!(plan.accepted.entries, 1);
+        assert_eq!(plan.changes[0].entity_kind, "memory_entry");
+        assert_eq!(plan.changes[0].scopes, vec!["conversation:rachel"]);
     }
 
     fn sample_ingest_request() -> Value {

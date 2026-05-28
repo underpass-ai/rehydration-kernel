@@ -1,0 +1,18 @@
+[package]
+name = "underpass-operator-synthetic-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "CLI tools for Operator synthetic trajectory construction"
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+underpass-operator-shared-domain.workspace = true
+underpass-operator-synthetic-domain.workspace = true
+underpass-operator-synthetic-infra.workspace = true

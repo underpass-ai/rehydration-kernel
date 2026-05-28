@@ -1,0 +1,20 @@
+[
+  {
+    "slug": "linear",
+    "question_primary_role": "previous_subtask_answer",
+    "answer_secondary_role": "same_subtask_question",
+    "reason": "previous evidence is the likely relation target"
+  },
+  {
+    "slug": "ambiguous",
+    "question_primary_role": "older_subtask_answer",
+    "answer_secondary_role": "previous_subtask_answer",
+    "reason": "two plausible targets must be disambiguated before writing"
+  },
+  {
+    "slug": "repair",
+    "question_primary_role": "previous_subtask_answer",
+    "answer_secondary_role": "same_subtask_question",
+    "reason": "a later answer repairs or supersedes an earlier attempt"
+  }
+]

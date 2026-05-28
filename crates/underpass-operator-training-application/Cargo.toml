@@ -1,0 +1,18 @@
+[package]
+name = "underpass-operator-training-application"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Application use cases for the Operator training bounded context"
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+underpass-operator-shared-domain.workspace = true
+underpass-operator-training-domain.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

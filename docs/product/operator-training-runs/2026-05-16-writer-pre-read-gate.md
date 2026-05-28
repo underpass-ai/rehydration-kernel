@@ -1,6 +1,6 @@
 # Operator Training Run: `writer-pre-read-gate`
 
-Status: `dataset-ready`
+Status: `baseline-only`
 
 Date opened: 2026-05-16
 Owner: Tirso / Codex
@@ -17,8 +17,9 @@ Owner: Tirso / Codex
 | Starting point | `main` after PR `#106` |
 
 Historical note: this run was produced before `writer-pre-read-v2` expanded the
-profile from 16 to 21 required capabilities. Keep this document as evidence for
-the original v1 gate; use the v2 gate for new training claims.
+profile from 16 to 21 required capabilities, and before the later v4
+stop/trace gate passed. Keep this document as evidence for the original v1
+gate; do not use it for new training claims.
 
 ## 2. Why This Exists
 
@@ -68,7 +69,7 @@ phase before writing memory, not the write action itself.
 Generate conformance trajectories:
 
 ```bash
-cargo run -p rehydration-testkit --bin kernel_operator_conformance_trajectory_export -- \
+cargo run -p underpass-operator-synthetic-cli --bin underpass_operator_conformance_trajectory_build -- \
   --suite writer-pre-read-v1 \
   --run-id kmp-operator-writer-pre-read-v1-20260516 \
   --output /tmp/kernel-operator-conformance-writer-pre-read-v1-20260516 \
@@ -78,7 +79,7 @@ cargo run -p rehydration-testkit --bin kernel_operator_conformance_trajectory_ex
 Contract coverage:
 
 ```bash
-cargo run -p rehydration-testkit --bin kernel_operator_contract_coverage -- \
+cargo run -p underpass-operator-evaluation-cli --bin underpass_operator_contract_coverage -- \
   --profile writer-pre-read \
   --trajectories /tmp/kernel-operator-conformance-writer-pre-read-v1-20260516/trajectories.jsonl \
   --fail-under 100 \

@@ -1,0 +1,15 @@
+[package]
+name = "underpass-operator-shared-contract"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Standalone Operator/KMP test contract DTOs and value objects"
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true

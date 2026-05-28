@@ -15,7 +15,9 @@ from functiongemma_operator import (
     build_prompt_messages,
     function_call_to_action,
     parse_function_call,
+    validate_native_supported_dataset,
 )
+from predict_operator_sft import validate_action_allowed_by_row, validate_action_shape
 
 
 def parse_args() -> argparse.Namespace:
@@ -36,6 +38,14 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    rows = read_jsonl(args.dataset_jsonl)
+    try:
+        validate_native_supported_dataset(rows)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+    if args.limit is not None:
+        rows = rows[: args.limit]
+
     if args.output.exists():
         if not args.force:
             raise SystemExit(f"output already exists: {args.output}; pass --force")
@@ -65,10 +75,6 @@ def main() -> None:
         model = PeftModel.from_pretrained(model, args.adapter)
     model.config.pad_token_id = tokenizer.pad_token_id
     model.eval()
-
-    rows = read_jsonl(args.dataset_jsonl)
-    if args.limit is not None:
-        rows = rows[: args.limit]
 
     predictions_path = args.output / "predictions.jsonl"
     results_path = args.output / "llm_results.jsonl"
@@ -120,6 +126,15 @@ def main() -> None:
                 try:
                     function_name, arguments = parse_function_call(raw)
                     action = function_call_to_action(function_name, arguments)
+                    shape_error = validate_action_shape(action)
+                    if shape_error is not None:
+                        action = None
+                        failure_reason = f"strict_action_contract:{shape_error}"
+                    if action is not None:
+                        allowed_error = validate_action_allowed_by_row(action, row)
+                        if allowed_error is not None:
+                            action = None
+                            failure_reason = allowed_error
                 except ValueError as exc:
                     failure_reason = str(exc)
 

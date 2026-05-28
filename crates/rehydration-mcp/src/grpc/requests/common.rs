@@ -41,7 +41,7 @@ pub(super) fn memory_budget_from_arguments(
 
 pub(super) fn answer_policy_from_object(arguments: &Map<String, Value>) -> Result<i32, String> {
     Ok(
-        match optional_string_field(arguments, "answer_policy", "answer_policy")?.as_deref() {
+        match optional_enum_string_field(arguments, "answer_policy", "answer_policy")?.as_deref() {
             None | Some("evidence_or_unknown") => AnswerPolicy::EvidenceOrUnknown as i32,
             Some("show_conflicts") => AnswerPolicy::ShowConflicts as i32,
             Some("best_effort") => AnswerPolicy::BestEffort as i32,
@@ -52,7 +52,7 @@ pub(super) fn answer_policy_from_object(arguments: &Map<String, Value>) -> Resul
 
 fn detail_level_from_object(value: &Map<String, Value>) -> Result<i32, String> {
     Ok(
-        match optional_string_field(value, "detail", "budget.detail")?.as_deref() {
+        match optional_enum_string_field(value, "detail", "budget.detail")?.as_deref() {
             None => MemoryDetailLevel::Unspecified as i32,
             Some("compact") => MemoryDetailLevel::Compact as i32,
             Some("balanced") => MemoryDetailLevel::Balanced as i32,
@@ -278,15 +278,17 @@ pub(super) fn semantic_class_from_field(
     key: &str,
     path: &str,
 ) -> Result<i32, String> {
-    Ok(match required_string_field(object, key, path)?.as_str() {
-        "structural" => MemorySemanticClass::Structural as i32,
-        "causal" => MemorySemanticClass::Causal as i32,
-        "motivational" => MemorySemanticClass::Motivational as i32,
-        "procedural" => MemorySemanticClass::Procedural as i32,
-        "evidential" => MemorySemanticClass::Evidential as i32,
-        "constraint" => MemorySemanticClass::Constraint as i32,
-        other => return Err(format!("invalid memory relation class `{other}`")),
-    })
+    Ok(
+        match required_enum_string_field(object, key, path)?.as_str() {
+            "structural" => MemorySemanticClass::Structural as i32,
+            "causal" => MemorySemanticClass::Causal as i32,
+            "motivational" => MemorySemanticClass::Motivational as i32,
+            "procedural" => MemorySemanticClass::Procedural as i32,
+            "evidential" => MemorySemanticClass::Evidential as i32,
+            "constraint" => MemorySemanticClass::Constraint as i32,
+            other => return Err(format!("invalid memory relation class `{other}`")),
+        },
+    )
 }
 
 pub(super) fn confidence_from_field(
@@ -294,14 +296,16 @@ pub(super) fn confidence_from_field(
     key: &str,
     path: &str,
 ) -> Result<i32, String> {
-    Ok(match optional_string_field(object, key, path)?.as_deref() {
-        None => MemoryConfidence::Unspecified as i32,
-        Some("high") => MemoryConfidence::High as i32,
-        Some("medium") => MemoryConfidence::Medium as i32,
-        Some("low") => MemoryConfidence::Low as i32,
-        Some("unknown") => MemoryConfidence::Unknown as i32,
-        Some(other) => return Err(format!("invalid memory relation confidence `{other}`")),
-    })
+    Ok(
+        match optional_enum_string_field(object, key, path)?.as_deref() {
+            None => MemoryConfidence::Unspecified as i32,
+            Some("high") => MemoryConfidence::High as i32,
+            Some("medium") => MemoryConfidence::Medium as i32,
+            Some("low") => MemoryConfidence::Low as i32,
+            Some("unknown") => MemoryConfidence::Unknown as i32,
+            Some(other) => return Err(format!("invalid memory relation confidence `{other}`")),
+        },
+    )
 }
 
 pub(super) fn source_kind_from_field(
@@ -309,11 +313,43 @@ pub(super) fn source_kind_from_field(
     key: &str,
     path: &str,
 ) -> Result<i32, String> {
-    Ok(match required_string_field(object, key, path)?.as_str() {
-        "human" => MemorySourceKind::Human as i32,
-        "agent" => MemorySourceKind::Agent as i32,
-        "projection" => MemorySourceKind::Projection as i32,
-        "derived" => MemorySourceKind::Derived as i32,
-        other => return Err(format!("invalid memory provenance source_kind `{other}`")),
-    })
+    Ok(
+        match required_enum_string_field(object, key, path)?.as_str() {
+            "human" => MemorySourceKind::Human as i32,
+            "agent" => MemorySourceKind::Agent as i32,
+            "projection" => MemorySourceKind::Projection as i32,
+            "derived" => MemorySourceKind::Derived as i32,
+            other => return Err(format!("invalid memory provenance source_kind `{other}`")),
+        },
+    )
+}
+
+fn required_enum_string_field(
+    object: &Map<String, Value>,
+    key: &str,
+    path: &str,
+) -> Result<String, String> {
+    object
+        .get(key)
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+        .ok_or_else(|| format!("missing required argument `{path}`"))
+}
+
+fn optional_enum_string_field(
+    object: &Map<String, Value>,
+    key: &str,
+    path: &str,
+) -> Result<Option<String>, String> {
+    object
+        .get(key)
+        .map(|value| {
+            value
+                .as_str()
+                .filter(|value| !value.is_empty())
+                .map(ToString::to_string)
+                .ok_or_else(|| format!("argument `{path}` must be a non-empty string"))
+        })
+        .transpose()
 }

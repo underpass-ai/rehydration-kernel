@@ -3,7 +3,7 @@
 
 The inputs are produced by:
 
-  kernel_operator_policy_eval --details-output <details.jsonl>
+  underpass_operator_policy_eval --details-output <details.jsonl>
 
 Use this after adding or removing a training batch and re-running the same
 frozen probe set. It classifies each probe as improved, regressed, stable

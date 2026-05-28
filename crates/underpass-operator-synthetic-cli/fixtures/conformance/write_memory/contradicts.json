@@ -1,0 +1,37 @@
+{
+  "about": "incident:mobile-login",
+  "intent": "record_observation",
+  "actor": "operator:conformance",
+  "observed_at": "2026-05-06T10:08:30Z",
+  "scope": {
+    "task": "incident:mobile-login",
+    "process": "incident:mobile-login:resolution",
+    "episode": "incident:mobile-login:episode:operator"
+  },
+  "current": {
+    "kind": "observation",
+    "summary": "Auth log order contradicts the network-timeout hypothesis.",
+    "evidence": "The 401 appears immediately after refresh success, not after a timeout window."
+  },
+  "connect_to": [
+    {
+      "ref": "incident:mobile-login:hypothesis:network-timeout",
+      "rel": "contradicts",
+      "class": "evidential",
+      "why": "The observed timing conflicts with the timeout hypothesis.",
+      "evidence": "401 occurs immediately after refresh success.",
+      "confidence": "high"
+    }
+  ],
+  "read_context": {
+    "inspected_refs": ["incident:mobile-login:hypothesis:network-timeout"],
+    "temporal_refs": ["incident:mobile-login:observation:401-refresh-race"]
+  },
+  "idempotency_key": "conformance:write-memory:contradicts:network-timeout",
+  "options": {
+    "dry_run": true,
+    "strict": true,
+    "sequence": 6
+  },
+  "source_kind": "agent"
+}

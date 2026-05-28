@@ -1,0 +1,42 @@
+{
+  "about": "incident:mobile-login",
+  "intent": "record_turn",
+  "actor": "operator:conformance",
+  "observed_at": "2026-05-06T10:05:00Z",
+  "scope": {
+    "task": "incident:mobile-login",
+    "process": "incident:mobile-login:resolution",
+    "episode": "incident:mobile-login:episode:operator"
+  },
+  "current": {
+    "kind": "turn",
+    "summary": "Record the follow-up status check after the refresh retry decision.",
+    "evidence": "The follow-up only continues the process timeline."
+  },
+  "semantic_delta": {
+    "from": "The team suspected a network timeout.",
+    "to": "The evidence points to a token refresh race.",
+    "why": "The failure appears immediately after refresh rather than after a long timeout.",
+    "evidence": "401 appears after refresh success in auth logs."
+  },
+  "connect_to": [
+    {
+      "ref": "incident:mobile-login:decision:refresh-retry",
+      "rel": "follows",
+      "class": "procedural",
+      "why": "The follow-up status check follows the prior decision in process order.",
+      "evidence": "No stronger causal or evidential relation was justified by the visible context.",
+      "confidence": "medium"
+    }
+  ],
+  "read_context": {
+    "temporal_refs": ["incident:mobile-login:decision:refresh-retry"]
+  },
+  "idempotency_key": "conformance:write-memory:anemic:follow-up",
+  "options": {
+    "dry_run": true,
+    "strict": true,
+    "sequence": 2
+  },
+  "source_kind": "agent"
+}

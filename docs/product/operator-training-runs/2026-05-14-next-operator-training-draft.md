@@ -1,17 +1,16 @@
 # Operator Training Run: `2026-05-14-next-operator-training`
 
-Status: `running`
+Status: `internal-only`
 
 Date opened: `2026-05-14`
-Date closed: `pending`
+Date closed: `2026-05-16`
 Owner: `Tirso / Codex`
 
-This run was opened as the next serious Operator training attempt. The first
-preflight paused on a real measurement gap: the mixed dataset had 100% read
-target coverage overall, but eval covered only 75% of the read profile. That
-gap is now closed by a capability-aware split plus expanded conformance data.
-Training started with Qwen 0.5B as the current strongest baseline. Live MCP
-replay remains gated until predictions exist.
+This run was opened as the next serious Operator training attempt. It is now
+closed as internal history: later read-profile and writer-profile runs replaced
+it with stricter capability splits, action-contract validation, and live
+MCP/KMP replay. Keep this document for the measurement path, not as an active
+run.
 
 ## 1. Scope
 

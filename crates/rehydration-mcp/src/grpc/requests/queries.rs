@@ -127,4 +127,29 @@ mod tests {
             "kernel_ask.prefer is not supported by KernelMemoryService.Ask in this cut"
         );
     }
+
+    #[test]
+    fn ask_request_rejects_whitespace_wrapped_answer_policy() {
+        let error = ask_request_from_arguments(&json!({
+            "about": "question:830ce83f",
+            "question": "Where did Rachel move?",
+            "answer_policy": " evidence_or_unknown "
+        }))
+        .expect_err("answer_policy should be exact");
+
+        assert_eq!(error, "invalid answer_policy ` evidence_or_unknown `");
+    }
+
+    #[test]
+    fn wake_request_rejects_whitespace_wrapped_budget_detail() {
+        let error = wake_request_from_arguments(&json!({
+            "about": "question:830ce83f",
+            "budget": {
+                "detail": " compact "
+            }
+        }))
+        .expect_err("budget.detail should be exact");
+
+        assert_eq!(error, "invalid budget.detail ` compact `");
+    }
 }

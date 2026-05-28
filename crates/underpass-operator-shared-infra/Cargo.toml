@@ -1,0 +1,17 @@
+[package]
+name = "underpass-operator-shared-infra"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Infrastructure adapters and mappers for the Underpass Operator training subsystem"
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+serde_json.workspace = true
+underpass-operator-shared-application.workspace = true
+underpass-operator-shared-contract.workspace = true
+underpass-operator-shared-domain.workspace = true
