@@ -42,6 +42,16 @@ the memory model.
 - Not tied to one model — GPT, Claude, Qwen, Gemma, local models, and humans can
   all use the same protocol.
 
+> **Note on "Operator".** You may see *Operator* mentioned around the benchmarks.
+> **Operator is not KMP.** KMP (this kernel) is designed to be easy to use by **people and
+> agents** — hence its **MCP/API duality** — and would exist, unchanged, with no Operator at
+> all. **Operator is a separate, external project — not part of this kernel — and it is
+> benchmark-only.** It exists solely because memory benchmarks (LongMemEval) mandate gpt‑4o,
+> which operates the KMP write API poorly; Operator is a small specialist that covers that one
+> gap. It is **not** a production layer and is **never** placed above a frontier model — any
+> capable model operates KMP directly through MCP. Full explanation:
+> **[docs/operator.md](./docs/operator.md)**.
+
 ## Why This Matters
 
 Agents do not only need larger prompts. They need memory that can be navigated.
@@ -76,6 +86,35 @@ Current operator-model work is tracked in
 [`docs/product/kernel-tool-operator-model-plan.md`](./docs/product/kernel-tool-operator-model-plan.md).
 The Hugging Face publication gate and draft model/dataset cards are tracked in
 [`docs/product/kernel-tool-operator-publication-plan.md`](./docs/product/kernel-tool-operator-publication-plan.md).
+
+### KMP is operated directly through MCP
+
+KMP is exposed through MCP as the **same tool surface an agent uses** (`kernel_wake`,
+`kernel_ask`, `kernel_near`, `kernel_trace`, `kernel_inspect`, `kernel_write_memory`).
+**Any capable frontier model — Claude Opus, GPT-5.x, etc. — operates KMP directly. There is
+no required intermediary, and a frontier model would not route through a smaller one.**
+
+```mermaid
+graph LR
+    A["Frontier model / agent<br/>(Codex, Claude Code, Opus, GPT-5.x)<br/>understands the message · reasons"]
+    MCP["MCP — KMP tool surface"]
+    K["Underpass Kernel / KMP<br/>memory · traversal · proof · validation"]
+    A -->|"kernel_wake / ask / near / trace / inspect / write_memory"| MCP
+    MCP --> K
+    K -->|"evidence · refs · proof · or fail-fast"| A
+```
+
+> **Operator — a small API-use specialist (research / benchmark thread).** A separate
+> external project (not part of this kernel) trains a *small* model (0.5B) to use this exact
+> MCP surface. It exists only to
+> cover what **gpt-4o — used here solely because the benchmark's official judge requires it,
+> not by choice — does *not* do well: operating KMP**. It tests one specific claim:
+> **a small model trained specifically to use an API can match a 4o / 4o-mini-class model at
+> using it.** It is **not** compared to or placed above frontier
+> models (Claude Opus, GPT-5.x), which operate KMP directly and would never route through it.
+> Honest claim: *it predicts bounded KMP actions from a visible memory state, under a strict
+> contract and real MCP replay against the kernel.* See
+> [Entrenando un modelo pequeño para operar KMP](./docs/research/entrenando-un-modelo-pequeno-para-operar-kmp.md).
 
 ## Current Status
 
