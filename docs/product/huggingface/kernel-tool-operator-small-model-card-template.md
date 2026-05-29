@@ -20,6 +20,16 @@ language:
 
 # Underpass Kernel Tool Operator Small
 
+> **Publication note (2026-05-29):** v8.x training (through the 2026-05-29 Tier-4
+> run) was done **without ref anonymization** (a design divergence vs the opaque-ref
+> requirement). Separately, an evaluation bug (eval rows missing the MCP/API schema
+> in their system prompt) initially made the model look broken on read-nav; a
+> diagnostic showed the model is actually strong (99.7% base, 92.9% all) once given
+> the schema. Do NOT use v8.x for publication until (a) every row + the runtime
+> carry the full-schema prompt and (b) refs are anonymized. The V6 result (1.000
+> exact accuracy) and this template remain valid guides. See the operator repo
+> `docs/training/DIVERGENCE_AND_CORRECTIVE_PLAN_2026-05-29.md`.
+
 This is a draft model card for `underpass-ai/kernel-tool-operator-small`.
 Do not publish it as final until the release gate in
 [`kernel-tool-operator-publication-plan.md`](../kernel-tool-operator-publication-plan.md)

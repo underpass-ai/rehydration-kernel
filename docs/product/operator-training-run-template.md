@@ -8,6 +8,10 @@ docs/product/operator-training-runs/YYYY-MM-DD-<attempt-id>-<scope>.md
 
 Do not edit this template with run-specific data.
 
+> Required since 2026-05-29: every run MUST record **Anonymization Status (ON/OFF)**
+> under scope, and an **Anonymization audit (zero findings on domain-ref patterns)**
+> line under Dataset Evidence. A run with anonymization OFF is non-publishable.
+
 ---
 
 # Operator Training Run: `<attempt-id>`

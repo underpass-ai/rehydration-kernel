@@ -18,6 +18,13 @@ pretty_name: Kernel Operator Trajectories
 
 # Kernel Operator Trajectories
 
+> **CRITICAL publication gate (2026-05-29): refs MUST be anonymized.** Model-facing
+> refs must be opaque ids (`ref_0001`/`about_0001`); no domain topic may appear. The
+> v8.1.8 Tier-4 corpus (2026-05-29) was built with anonymization OFF and contains
+> literal domain refs — it does **NOT** meet this gate and must NOT be published.
+> Require the corpus manifest to confirm `anonymize_refs: true`. See the operator
+> repo `docs/training/DIVERGENCE_AND_CORRECTIVE_PLAN_2026-05-29.md`.
+
 This is a draft dataset card for
 `underpass-ai/kernel-operator-trajectories`. Do not publish it as final until
 the release gate in

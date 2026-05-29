@@ -3,6 +3,14 @@
 Status: active process
 Date: 2026-05-14
 
+> **Mandatory rule (added 2026-05-29): reference anonymization is non-optional.**
+> The operator "only learns to use KMP" — model-facing refs MUST be anonymized to
+> opaque ids (`ref_0001`/`about_0001`); no domain topic may reach model-facing
+> state (model plan:182-186, :243-244). **No model claim is publishable with
+> anonymization=OFF.** The training manifest MUST record the anonymization status.
+> A 2026-05-29 audit found the v7/v8 path shipped un-anonymized domain refs; see
+> the operator repo's `docs/training/DIVERGENCE_AND_CORRECTIVE_PLAN_2026-05-29.md`.
+
 This document defines how Operator training attempts are planned, generated,
 audited, run, stopped, and recorded.
 

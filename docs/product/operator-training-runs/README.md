@@ -1,5 +1,13 @@
 # Operator Training Runs
 
+> **Divergence timeline note (2026-05-29):** pre-split runs (2026-05-11..05-15)
+> used anonymized refs (V6 validated at 1.000 exact acc). The divergence
+> normalized at the 2026-05-20 realistic-v7 plan, hardened 2026-05-22 (v7.3
+> teacher corpus), and shipped un-anonymized through v8.1.8 Tier 4 (2026-05-29).
+> Anonymization is now mandatory. See
+> `operator-experiments/audits/training_divergence_audit_20260529.json` and the
+> operator repo `docs/training/DIVERGENCE_AND_CORRECTIVE_PLAN_2026-05-29.md`.
+
 This directory contains one document per serious Operator training attempt.
 
 Use:
