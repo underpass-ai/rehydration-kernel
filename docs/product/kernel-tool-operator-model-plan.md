@@ -1,5 +1,12 @@
 # Kernel Tool Operator Model Plan
 
+> **Canonical pre-v8-divergence design baseline.** This doc defines the intended
+> design (anonymized refs, schema-in-prompt, offline teacher) and the V6 result
+> (1.000 exact acc). A 2026-05-29 audit found v7/v8 training diverged from it by
+> dropping ref anonymization; for the divergence record + corrective plan see the
+> operator repo `docs/training/DIVERGENCE_AND_CORRECTIVE_PLAN_2026-05-29.md`. Do not
+> alter the V6 result or design content below.
+
 Status: P1.1-P1.10 are implemented: trajectory export, offline evaluation,
 deterministic and generalist baselines, ref-safe datasets, SFT LoRA training,
 explicit holdout validation, raw-ref de-anonymization, and live MCP replay.

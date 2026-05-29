@@ -3,6 +3,12 @@
 Date: 2026-05-11
 Status: planned publication gate
 
+> **Gate addendum (2026-05-29):** models trained with **un-anonymized refs** do NOT
+> meet these publication gates; their claims are invalid until refs are
+> re-anonymized and the model is retrained. All v8.x models (through 2026-05-29
+> Tier 4) are affected. See the operator repo
+> `docs/training/DIVERGENCE_AND_CORRECTIVE_PLAN_2026-05-29.md`.
+
 This document defines when the kernel tool-operator model can be published and
 how to package it so the repository, model, and dataset are credible.
 
