@@ -186,6 +186,19 @@ pub(crate) fn temporal_response_from_result(
         );
     }
 
+    let dimensions = temporal_dimension_coverage(
+        &entries,
+        traversal.included_dimensions(),
+        traversal.missing_dimensions(),
+    );
+    let quality = response_quality(
+        count as u32,
+        relationships.len() as u32,
+        causal_count(&relationships),
+        entries_with_detail(&entries),
+        page.has_more(),
+    );
+
     TemporalMoveResponse {
         summary: format!(
             "Returned {count} temporal {}.",
@@ -202,6 +215,7 @@ pub(crate) fn temporal_response_from_result(
             )),
             included: traversal.included_dimensions().to_vec(),
             missing: traversal.missing_dimensions().to_vec(),
+            dimensions,
         }),
         entries,
         proof: Some(proof(
@@ -222,6 +236,7 @@ pub(crate) fn temporal_response_from_result(
             has_more: page.has_more(),
             next_cursor: page.next_cursor().unwrap_or_default().to_string(),
         }),
+        quality: Some(quality),
     }
 }
 
@@ -245,9 +260,18 @@ pub(crate) fn trace_response_from_result(
         warnings.push("trace response paginated; use page.next_cursor to continue".to_string());
     }
 
+    let returned_trace = trace[offset..end].to_vec();
+    let quality = response_quality(
+        distinct_relation_nodes(&returned_trace),
+        returned_trace.len() as u32,
+        causal_count(&returned_trace),
+        0,
+        has_more,
+    );
+
     TraceResponse {
         summary: rendered_summary(&result.rendered),
-        trace: trace[offset..end].to_vec(),
+        trace: returned_trace,
         warnings,
         page: Some(PageInfo {
             returned: u32_saturating(end.saturating_sub(offset)),
@@ -259,11 +283,99 @@ pub(crate) fn trace_response_from_result(
                 String::new()
             },
         }),
+        quality: Some(quality),
     }
 }
 
 fn u32_saturating(value: usize) -> u32 {
     value.min(u32::MAX as usize) as u32
+}
+
+fn ratio(numerator: u32, denominator: u32) -> f64 {
+    if denominator > 0 {
+        f64::from(numerator) / f64::from(denominator)
+    } else {
+        0.0
+    }
+}
+
+fn causal_count(relationships: &[rehydration_proto::v1beta1::MemoryRelation]) -> u32 {
+    relationships
+        .iter()
+        .filter(|relation| {
+            relation.semantic_class
+                == rehydration_proto::v1beta1::MemorySemanticClass::Causal as i32
+        })
+        .count() as u32
+}
+
+fn response_quality(
+    nodes: u32,
+    relationships: u32,
+    causal: u32,
+    details: u32,
+    truncated: bool,
+) -> rehydration_proto::v1beta1::ResponseQuality {
+    rehydration_proto::v1beta1::ResponseQuality {
+        nodes,
+        relationships,
+        details,
+        detail_coverage: ratio(details, nodes),
+        causal_density: ratio(causal, relationships),
+        truncated,
+    }
+}
+
+fn temporal_dimension_coverage(
+    entries: &[ProtoTemporalEntry],
+    included: &[String],
+    missing: &[String],
+) -> Vec<rehydration_proto::v1beta1::DimensionCoverage> {
+    let mut coverage = Vec::with_capacity(included.len() + missing.len());
+    for dimension in included {
+        let returned = entries
+            .iter()
+            .filter(|entry| {
+                entry
+                    .coordinates
+                    .iter()
+                    .any(|coordinate| &coordinate.dimension == dimension)
+            })
+            .count() as u32;
+        coverage.push(rehydration_proto::v1beta1::DimensionCoverage {
+            dimension: dimension.clone(),
+            returned,
+            present: true,
+        });
+    }
+    for dimension in missing {
+        coverage.push(rehydration_proto::v1beta1::DimensionCoverage {
+            dimension: dimension.clone(),
+            returned: 0,
+            present: false,
+        });
+    }
+    coverage
+}
+
+fn entries_with_detail(entries: &[ProtoTemporalEntry]) -> u32 {
+    entries
+        .iter()
+        .filter(|entry| !entry.text.trim().is_empty())
+        .count() as u32
+}
+
+fn distinct_relation_nodes(relationships: &[rehydration_proto::v1beta1::MemoryRelation]) -> u32 {
+    let mut refs = std::collections::BTreeSet::new();
+    for relation in relationships {
+        if !relation.source_ref.is_empty() {
+            refs.insert(relation.source_ref.as_str());
+        }
+        if !relation.target_ref.is_empty() {
+            refs.insert(relation.target_ref.as_str());
+        }
+    }
+    refs.len() as u32
 }
 
 pub(crate) fn inspect_response_from_result(result: InspectMemoryResult) -> InspectResponse {
@@ -298,12 +410,12 @@ pub(crate) fn inspect_response_from_result(result: InspectMemoryResult) -> Inspe
     } else {
         Vec::new()
     };
-    let incoming = result
+    let incoming: Vec<MemoryRelation> = result
         .incoming
         .iter()
         .map(memory_relation_from_graph_relationship)
         .collect();
-    let outgoing = result
+    let outgoing: Vec<MemoryRelation> = result
         .outgoing
         .iter()
         .map(memory_relation_from_graph_relationship)
@@ -341,6 +453,17 @@ pub(crate) fn inspect_response_from_result(result: InspectMemoryResult) -> Inspe
         Vec::new()
     };
 
+    let inspect_details = u32::from(!text.trim().is_empty());
+    let inspect_relationships = (incoming.len() + outgoing.len()) as u32;
+    let inspect_causal = causal_count(&incoming) + causal_count(&outgoing);
+    let quality = response_quality(
+        1,
+        inspect_relationships,
+        inspect_causal,
+        inspect_details,
+        false,
+    );
+
     InspectResponse {
         summary: format!("Found live kernel node `{}`.", node_ref),
         object: Some(InspectedObject {
@@ -352,6 +475,7 @@ pub(crate) fn inspect_response_from_result(result: InspectMemoryResult) -> Inspe
         evidence,
         warnings: Vec::new(),
         raw,
+        quality: Some(quality),
     }
 }
 

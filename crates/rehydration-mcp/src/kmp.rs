@@ -113,13 +113,19 @@ pub(crate) fn temporal_from_response(response: TemporalMoveResponse) -> Value {
                         .map(dimension_selection_json)
                         .unwrap_or(Value::Null),
                     "included": coverage.included,
-                    "missing": coverage.missing
+                    "missing": coverage.missing,
+                    "dimensions": coverage
+                        .dimensions
+                        .iter()
+                        .map(dimension_coverage_json)
+                        .collect::<Vec<_>>()
                 })
             })
             .unwrap_or_else(|| json!({
                 "requested": Value::Null,
                 "included": Vec::<String>::new(),
-                "missing": Vec::<String>::new()
+                "missing": Vec::<String>::new(),
+                "dimensions": Vec::<Value>::new()
         })),
         "entries": response.entries.iter().map(temporal_entry_json).collect::<Vec<_>>(),
         "page": response
@@ -129,6 +135,7 @@ pub(crate) fn temporal_from_response(response: TemporalMoveResponse) -> Value {
             .unwrap_or_else(empty_page_info_json),
         "raw_refs": response.raw_refs.iter().map(raw_memory_ref_json).collect::<Vec<_>>(),
         "proof": response.proof.as_ref().map(proof_json).unwrap_or_else(empty_proof_json),
+        "quality": optional_quality_json(response.quality.as_ref()),
         "warnings": response.warnings
     })
 }
@@ -142,6 +149,7 @@ pub(crate) fn trace_from_response(response: TraceResponse) -> Value {
             .as_ref()
             .map(page_info_json)
             .unwrap_or_else(empty_page_info_json),
+        "quality": optional_quality_json(response.quality.as_ref()),
         "warnings": response.warnings
     })
 }
@@ -178,6 +186,7 @@ pub(crate) fn inspect_from_response(response: InspectResponse) -> Value {
         },
         "evidence": response.evidence.iter().map(memory_evidence_json).collect::<Vec<_>>(),
         "raw": response.raw.iter().map(raw_memory_ref_json).collect::<Vec<_>>(),
+        "quality": optional_quality_json(response.quality.as_ref()),
         "warnings": response.warnings
     })
 }
@@ -198,12 +207,36 @@ fn answer_reason_json(reason: &AnswerReason) -> Value {
     })
 }
 
+fn dimension_coverage_json(dimension: &rehydration_proto::v1beta1::DimensionCoverage) -> Value {
+    json!({
+        "dimension": dimension.dimension,
+        "returned": dimension.returned,
+        "present": dimension.present
+    })
+}
+
+fn response_quality_json(quality: &rehydration_proto::v1beta1::ResponseQuality) -> Value {
+    json!({
+        "nodes": quality.nodes,
+        "relationships": quality.relationships,
+        "details": quality.details,
+        "detail_coverage": quality.detail_coverage,
+        "causal_density": quality.causal_density,
+        "truncated": quality.truncated
+    })
+}
+
+fn optional_quality_json(quality: Option<&rehydration_proto::v1beta1::ResponseQuality>) -> Value {
+    quality.map(response_quality_json).unwrap_or(Value::Null)
+}
+
 fn proof_json(proof: &rehydration_proto::v1beta1::Proof) -> Value {
     json!({
         "path": proof.path.iter().map(memory_relation_json).collect::<Vec<_>>(),
         "evidence": proof.evidence.iter().map(memory_evidence_json).collect::<Vec<_>>(),
         "conflicts": proof.conflicts,
         "missing": proof.missing,
+        "frontier_size": proof.frontier_size,
         "confidence": confidence_label(proof.confidence)
     })
 }
@@ -214,6 +247,7 @@ fn empty_proof_json() -> Value {
         "evidence": [],
         "conflicts": [],
         "missing": ["proof"],
+        "frontier_size": 1,
         "confidence": "unknown"
     })
 }
@@ -458,6 +492,7 @@ mod tests {
                 evidence: vec![evidence()],
                 conflicts: Vec::new(),
                 missing: vec!["generative_answer".to_string()],
+                frontier_size: 1,
                 confidence: MemoryConfidence::Medium as i32,
             }),
             warnings: Vec::new(),
@@ -469,6 +504,7 @@ mod tests {
         assert_eq!(value["because"][0]["ref"], "evidence:1");
         assert_eq!(value["proof"]["path"][0]["from"], "claim:source");
         assert_eq!(value["proof"]["confidence"], "medium");
+        assert_eq!(value["proof"]["frontier_size"], 1);
     }
 
     #[test]
@@ -495,6 +531,11 @@ mod tests {
                 }),
                 included: vec!["timeline".to_string()],
                 missing: Vec::new(),
+                dimensions: vec![rehydration_proto::v1beta1::DimensionCoverage {
+                    dimension: "timeline".to_string(),
+                    returned: 1,
+                    present: true,
+                }],
             }),
             entries: vec![TemporalEntry {
                 r#ref: "claim:target".to_string(),
@@ -511,6 +552,14 @@ mod tests {
                 has_more: true,
                 next_cursor: "claim:target".to_string(),
             }),
+            quality: Some(rehydration_proto::v1beta1::ResponseQuality {
+                nodes: 1,
+                relationships: 0,
+                details: 1,
+                detail_coverage: 1.0,
+                causal_density: 0.0,
+                truncated: true,
+            }),
         };
 
         let value = temporal_from_response(response);
@@ -523,6 +572,13 @@ mod tests {
             value["coverage"]["requested"]["scope_ids"][0],
             "timeline:main"
         );
+        assert_eq!(value["coverage"]["dimensions"][0]["dimension"], "timeline");
+        assert_eq!(value["coverage"]["dimensions"][0]["returned"], 1);
+        assert_eq!(value["coverage"]["dimensions"][0]["present"], true);
+        assert_eq!(value["quality"]["nodes"], 1);
+        assert_eq!(value["quality"]["details"], 1);
+        assert_eq!(value["quality"]["detail_coverage"], 1.0);
+        assert_eq!(value["quality"]["truncated"], true);
         assert_eq!(value["page"]["returned"], 1);
         assert_eq!(value["page"]["total"], 2);
         assert_eq!(value["page"]["has_more"], true);
