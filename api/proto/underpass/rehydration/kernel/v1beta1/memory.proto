@@ -235,6 +235,7 @@ message TemporalMoveResponse {
   repeated string warnings = 6;
   repeated RawMemoryRef raw_refs = 7;
   PageInfo page = 8;
+  ResponseQuality quality = 9;
 }
 
 message GotoResponse {
@@ -246,6 +247,7 @@ message GotoResponse {
   repeated string warnings = 6;
   repeated RawMemoryRef raw_refs = 7;
   PageInfo page = 8;
+  ResponseQuality quality = 9;
 }
 
 message NearResponse {
@@ -257,6 +259,7 @@ message NearResponse {
   repeated string warnings = 6;
   repeated RawMemoryRef raw_refs = 7;
   PageInfo page = 8;
+  ResponseQuality quality = 9;
 }
 
 message RewindResponse {
@@ -268,6 +271,7 @@ message RewindResponse {
   repeated string warnings = 6;
   repeated RawMemoryRef raw_refs = 7;
   PageInfo page = 8;
+  ResponseQuality quality = 9;
 }
 
 message ForwardResponse {
@@ -279,6 +283,7 @@ message ForwardResponse {
   repeated string warnings = 6;
   repeated RawMemoryRef raw_refs = 7;
   PageInfo page = 8;
+  ResponseQuality quality = 9;
 }
 
 message TemporalState {
@@ -291,6 +296,19 @@ message TemporalCoverage {
   DimensionSelection requested = 1;
   repeated string included = 2;
   repeated string missing = 3;
+  // Per-dimension coverage detail, for online context-coverage feedback: lets a
+  // client measure the per-dimension shortfall of the retrieved context without
+  // gold labels.
+  repeated DimensionCoverage dimensions = 4;
+}
+
+// Per-dimension slice of TemporalCoverage. `returned` counts the entries in this
+// page that carry the dimension; `present` is true when the dimension appeared
+// in `included` (false when it was requested but absent).
+message DimensionCoverage {
+  string dimension = 1;
+  uint32 returned = 2;
+  bool present = 3;
 }
 
 message TemporalCursor {
@@ -319,6 +337,7 @@ message TraceResponse {
   repeated MemoryRelation trace = 2;
   repeated string warnings = 3;
   PageInfo page = 4;
+  ResponseQuality quality = 5;
 }
 
 message InspectRequest {
@@ -333,6 +352,7 @@ message InspectResponse {
   repeated MemoryEvidence evidence = 4;
   repeated string warnings = 5;
   repeated RawMemoryRef raw = 6;
+  ResponseQuality quality = 7;
 }
 
 message InspectedObject {
@@ -362,6 +382,23 @@ message Proof {
   repeated string conflicts = 3;
   repeated string missing = 4;
   MemoryConfidence confidence = 5;
+  // Count of unresolved required-context nodes the proof still depends on
+  // (currently the size of `missing`). A non-zero frontier means necessary
+  // context has not yet been reached.
+  uint32 frontier_size = 6;
+}
+
+// Per-response quality/composition summary, promoted from OTel so a client can
+// read it in-band and feed an online context-coverage estimator. Counts and
+// ratios describe THIS response only (not aggregate system health). Ratios are
+// in [0.0, 1.0].
+message ResponseQuality {
+  uint32 nodes = 1;
+  uint32 relationships = 2;
+  uint32 details = 3;
+  double detail_coverage = 4;
+  double causal_density = 5;
+  bool truncated = 6;
 }
 
 message MemoryBudget {

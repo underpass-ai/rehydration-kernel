@@ -149,12 +149,14 @@ pub(super) fn proof(
     confidence: MemoryConfidence,
 ) -> Proof {
     let conflicts = conflicts_from_relations(&path);
+    let frontier_size = missing.len() as u32;
     Proof {
         path,
         evidence,
         conflicts,
         missing,
         confidence: confidence as i32,
+        frontier_size,
     }
 }
 

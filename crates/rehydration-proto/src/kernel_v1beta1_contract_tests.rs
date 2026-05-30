@@ -167,30 +167,36 @@ fn v1beta1_kernel_memory_core_fields_are_stable() {
     assert_eq!(
         message_field_names(memory_file, "GotoResponse"),
         vec![
-            "summary", "temporal", "coverage", "entries", "proof", "warnings", "raw_refs", "page"
+            "summary", "temporal", "coverage", "entries", "proof", "warnings", "raw_refs", "page",
+            "quality"
         ]
     );
     assert_eq!(
         message_field_names(memory_file, "NearResponse"),
         vec![
-            "summary", "temporal", "coverage", "entries", "proof", "warnings", "raw_refs", "page"
+            "summary", "temporal", "coverage", "entries", "proof", "warnings", "raw_refs", "page",
+            "quality"
         ]
     );
     assert_eq!(
         message_field_names(memory_file, "RewindResponse"),
         vec![
-            "summary", "temporal", "coverage", "entries", "proof", "warnings", "raw_refs", "page"
+            "summary", "temporal", "coverage", "entries", "proof", "warnings", "raw_refs", "page",
+            "quality"
         ]
     );
     assert_eq!(
         message_field_names(memory_file, "ForwardResponse"),
         vec![
-            "summary", "temporal", "coverage", "entries", "proof", "warnings", "raw_refs", "page"
+            "summary", "temporal", "coverage", "entries", "proof", "warnings", "raw_refs", "page",
+            "quality"
         ]
     );
     assert_eq!(
         message_field_names(memory_file, "InspectResponse"),
-        vec!["summary", "object", "links", "evidence", "warnings", "raw"]
+        vec![
+            "summary", "object", "links", "evidence", "warnings", "raw", "quality"
+        ]
     );
     assert_eq!(
         message_field_names(memory_file, "RawMemoryRef"),

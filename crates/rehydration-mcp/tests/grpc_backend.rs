@@ -762,6 +762,7 @@ impl KernelMemoryService for FakeMemoryService {
             trace: vec![relation(&request.from, &request.to, "supports")],
             warnings: Vec::new(),
             page: None,
+            quality: None,
         }))
     }
 
@@ -790,6 +791,7 @@ impl KernelMemoryService for FakeMemoryService {
             } else {
                 Vec::new()
             },
+            quality: None,
         }))
     }
 }
@@ -868,6 +870,7 @@ fn goto_response_from_temporal(response: TemporalMoveResponse) -> GotoResponse {
         warnings: response.warnings,
         raw_refs: response.raw_refs,
         page: response.page,
+        quality: response.quality,
     }
 }
 
@@ -881,6 +884,7 @@ fn near_response_from_temporal(response: TemporalMoveResponse) -> NearResponse {
         warnings: response.warnings,
         raw_refs: response.raw_refs,
         page: response.page,
+        quality: response.quality,
     }
 }
 
@@ -894,6 +898,7 @@ fn rewind_response_from_temporal(response: TemporalMoveResponse) -> RewindRespon
         warnings: response.warnings,
         raw_refs: response.raw_refs,
         page: response.page,
+        quality: response.quality,
     }
 }
 
@@ -907,6 +912,7 @@ fn forward_response_from_temporal(response: TemporalMoveResponse) -> ForwardResp
         warnings: response.warnings,
         raw_refs: response.raw_refs,
         page: response.page,
+        quality: response.quality,
     }
 }
 
@@ -937,6 +943,7 @@ fn temporal_response(
             has_more: false,
             next_cursor: String::new(),
         }),
+        quality: None,
     }
 }
 
@@ -946,6 +953,7 @@ fn proof(source: &str, target: &str) -> Proof {
         evidence: vec![evidence(source)],
         conflicts: Vec::new(),
         missing: Vec::new(),
+        frontier_size: 0,
         confidence: MemoryConfidence::High as i32,
     }
 }

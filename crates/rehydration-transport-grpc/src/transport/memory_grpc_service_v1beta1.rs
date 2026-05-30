@@ -419,6 +419,7 @@ fn goto_response_from_temporal(response: TemporalMoveResponse) -> GotoResponse {
         warnings: response.warnings,
         raw_refs: response.raw_refs,
         page: response.page,
+        quality: response.quality,
     }
 }
 
@@ -432,6 +433,7 @@ fn near_response_from_temporal(response: TemporalMoveResponse) -> NearResponse {
         warnings: response.warnings,
         raw_refs: response.raw_refs,
         page: response.page,
+        quality: response.quality,
     }
 }
 
@@ -445,6 +447,7 @@ fn rewind_response_from_temporal(response: TemporalMoveResponse) -> RewindRespon
         warnings: response.warnings,
         raw_refs: response.raw_refs,
         page: response.page,
+        quality: response.quality,
     }
 }
 
@@ -458,6 +461,7 @@ fn forward_response_from_temporal(response: TemporalMoveResponse) -> ForwardResp
         warnings: response.warnings,
         raw_refs: response.raw_refs,
         page: response.page,
+        quality: response.quality,
     }
 }
 
