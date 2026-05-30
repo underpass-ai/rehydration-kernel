@@ -164,34 +164,24 @@ fn v1beta1_kernel_memory_core_fields_are_stable() {
             "budget",
         ]
     );
-    assert_eq!(
-        message_field_names(memory_file, "GotoResponse"),
-        vec![
-            "summary", "temporal", "coverage", "entries", "proof", "warnings", "raw_refs", "page",
-            "quality"
-        ]
-    );
-    assert_eq!(
-        message_field_names(memory_file, "NearResponse"),
-        vec![
-            "summary", "temporal", "coverage", "entries", "proof", "warnings", "raw_refs", "page",
-            "quality"
-        ]
-    );
-    assert_eq!(
-        message_field_names(memory_file, "RewindResponse"),
-        vec![
-            "summary", "temporal", "coverage", "entries", "proof", "warnings", "raw_refs", "page",
-            "quality"
-        ]
-    );
-    assert_eq!(
-        message_field_names(memory_file, "ForwardResponse"),
-        vec![
-            "summary", "temporal", "coverage", "entries", "proof", "warnings", "raw_refs", "page",
-            "quality"
-        ]
-    );
+    // The four temporal-move responses share one field set (including the
+    // appended `quality`); assert them in a loop so the contract is stated
+    // once rather than duplicated per response.
+    for response in [
+        "GotoResponse",
+        "NearResponse",
+        "RewindResponse",
+        "ForwardResponse",
+    ] {
+        assert_eq!(
+            message_field_names(memory_file, response),
+            vec![
+                "summary", "temporal", "coverage", "entries", "proof", "warnings", "raw_refs",
+                "page", "quality",
+            ],
+            "temporal response {response} field set drifted",
+        );
+    }
     assert_eq!(
         message_field_names(memory_file, "InspectResponse"),
         vec![
