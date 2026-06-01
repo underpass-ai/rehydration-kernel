@@ -172,13 +172,23 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         )
         .await?;
         let latency_ms = call_started.elapsed().as_millis();
-        let response = parse_derivation_response(item, &prompt_candidates, &raw)?;
-        let derivation = compute_derivation(&item.question, &response).map_err(|error| {
-            format!(
-                "failed to compute derivation for {}: {error}",
-                item.question_id
-            )
-        })?;
+        // Tolerate a malformed LLM response or an incompatible operand on a single
+        // item: skip it (a downstream reader falls back) instead of aborting the
+        // whole benchmark run.
+        let response = match parse_derivation_response(item, &prompt_candidates, &raw) {
+            Ok(response) => response,
+            Err(error) => {
+                eprintln!("skip {}: derivation parse error: {error}", item.question_id);
+                continue;
+            }
+        };
+        let derivation = match compute_derivation(&item.question, &response) {
+            Ok(derivation) => derivation,
+            Err(error) => {
+                eprintln!("skip {}: derivation compute error: {error}", item.question_id);
+                continue;
+            }
+        };
         let lexical_answer_hit =
             answer_contains_expected(&item.answer, Some(&derivation.derived_answer));
 
