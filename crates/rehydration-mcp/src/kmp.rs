@@ -608,6 +608,7 @@ mod tests {
             tokens: 1,
             detail: MemoryDetailLevel::Full as i32,
             depth: 1,
+            max_entries: 0,
         };
 
         let value = wake_from_response(response);

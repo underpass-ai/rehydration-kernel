@@ -99,12 +99,13 @@ where
         let query = wake_query_from_proto(request.clone())
             .map_err(|status| map_proto_error("KernelMemoryService.Wake", &start, *status))?;
         let intent = query.intent.clone();
+        let max_entries = query.max_entries;
         log_dimensioned_request("KernelMemoryService.Wake", &query.about, &query.dimensions);
         let result = self.application.wake(query).await.map_err(|error| {
             map_application_error_with_log("KernelMemoryService.Wake", &start, error)
         })?;
         let selected_abouts = selected_abouts_from_bundle(&result.bundle);
-        let response = wake_response_from_result(&intent, result);
+        let response = wake_response_from_result(&intent, max_entries, result);
         let proof_paths = response
             .proof
             .as_ref()

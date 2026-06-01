@@ -19,11 +19,21 @@ use super::bundle_views::{
 use super::dimensions::proto_dimension_selection_from_domain;
 use super::scalars::{proto_confidence, proto_direction, proto_semantic_class};
 
-pub(crate) fn wake_response_from_result(intent: &str, result: GetContextResult) -> WakeResponse {
+pub(crate) fn wake_response_from_result(
+    intent: &str,
+    max_entries: Option<usize>,
+    result: GetContextResult,
+) -> WakeResponse {
     let relationships = memory_relations_from_bundle(&result.bundle);
-    let evidence = memory_evidence_from_bundle(&result.bundle);
+    let full_evidence = memory_evidence_from_bundle(&result.bundle);
     let current_state = rendered_current_state(&result.rendered);
     let summary = rendered_summary(&result.rendered);
+
+    // Opt-in entry cap: surface the first `max_entries` evidence entries
+    // (graph-traversal order, closest to the about) and report the withheld
+    // sources as proof.missing so proof.frontier_size signals "near-expand to
+    // cover the rest". Unset (or not exceeded) -> behavior unchanged.
+    let (evidence, withheld) = cap_wake_evidence(full_evidence, max_entries);
 
     WakeResponse {
         summary,
@@ -50,10 +60,30 @@ pub(crate) fn wake_response_from_result(intent: &str, result: GetContextResult) 
         proof: Some(proof(
             relationships,
             evidence,
-            Vec::new(),
+            withheld,
             MemoryConfidence::Medium,
         )),
         warnings: Vec::new(),
+    }
+}
+
+/// Opt-in entry cap for Wake: keep the first `max_entries` evidence items and
+/// return the withheld sources (which become `proof.missing` → `frontier_size`,
+/// signalling the client to near-expand). `None`, or a limit the evidence does
+/// not exceed, leaves it unbounded — the existing behavior.
+fn cap_wake_evidence(
+    evidence: Vec<MemoryEvidence>,
+    max_entries: Option<usize>,
+) -> (Vec<MemoryEvidence>, Vec<String>) {
+    match max_entries {
+        Some(limit) if evidence.len() > limit => {
+            let withheld = evidence[limit..]
+                .iter()
+                .map(|item| item.source.clone())
+                .collect();
+            (evidence[..limit].to_vec(), withheld)
+        }
+        _ => (evidence, Vec::new()),
     }
 }
 
@@ -528,5 +558,43 @@ fn memory_relation_from_graph_relationship(relationship: &GraphRelationshipView)
         evidence: explanation.evidence().unwrap_or_default().to_string(),
         confidence: proto_confidence(explanation.confidence()) as i32,
         sequence: explanation.sequence(),
+    }
+}
+
+#[cfg(test)]
+mod wake_cap_tests {
+    use super::*;
+
+    fn ev(source: &str) -> MemoryEvidence {
+        MemoryEvidence {
+            id: format!("detail:{source}"),
+            supports: vec![source.to_string()],
+            text: source.to_string(),
+            source: source.to_string(),
+            time: None,
+            metadata: Default::default(),
+        }
+    }
+
+    #[test]
+    fn unbounded_when_max_entries_is_none() {
+        let (kept, withheld) = cap_wake_evidence(vec![ev("a"), ev("b")], None);
+        assert_eq!(kept.len(), 2);
+        assert!(withheld.is_empty());
+    }
+
+    #[test]
+    fn unbounded_when_evidence_within_limit() {
+        let (kept, withheld) = cap_wake_evidence(vec![ev("a"), ev("b")], Some(5));
+        assert_eq!(kept.len(), 2);
+        assert!(withheld.is_empty());
+    }
+
+    #[test]
+    fn caps_and_reports_withheld_sources() {
+        let (kept, withheld) = cap_wake_evidence(vec![ev("a"), ev("b"), ev("c")], Some(1));
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].source, "a");
+        assert_eq!(withheld, vec!["b".to_string(), "c".to_string()]);
     }
 }
