@@ -319,6 +319,34 @@ random seeds. Null hypothesis rejected at 95% confidence.
 > Synthetic graphs, not production workloads.
 > Full results, methodology, and statistical analysis: [docs/research/](./docs/research/)
 
+### Operator (0.5B) — a separate, external benchmark thread
+
+[Operator](./docs/operator.md) is a **separate, external project — not part of this kernel**. It trains a *small* **0.5B** model to **operate KMP** (use the tool surface well); it is **never placed above a frontier model** — any capable model operates KMP directly. The claim it tests: *a small model trained specifically to use an API can match a 4o / 4o‑mini‑class model at using it.* The numbers below are **local scorecards, not official benchmark submissions**; model-facing refs are anonymized.
+
+**MemoryArena V6 grouped holdout — KMP tool-use (2026-05-14):**
+
+| Metric | Value |
+|:-------|------:|
+| Held-out decisions | 1,124 |
+| Exact action accuracy | 1.000 |
+| Tool / primary-ref / scope / stop accuracy | 1.000 |
+| Invalid / unbounded actions | 0 / 0 |
+| Live MCP/gRPC replay | 976 tool calls · 148 stops · 0 failures · 0 missing refs |
+
+> Narrow grouped holdout (tasks 80–99 reserved for eval). Measures whether the 0.5B drives the KMP read/write contract correctly — not full question answering.
+
+**LongMemEval full-system — operator + gpt-4o reader (2026-06-02):**
+
+| Metric | Value |
+|:-------|------:|
+| Questions | 100 (60 temporal · 40 multi-session) |
+| Full-system accuracy | 73 / 100 |
+| Operand full coverage | 81 / 100 |
+
+> Local full-system scorecard: the operator exposes the operand, the benchmark-mandated gpt‑4o reader derives the answer. Not an official LongMemEval submission. The remaining ceiling lives in the reader and memory representation, not in how the operator uses KMP.
+
+Full explanation and framing: [docs/operator.md](./docs/operator.md).
+
 ## Research
 
 The repository includes a paper draft on explanatory graph context
