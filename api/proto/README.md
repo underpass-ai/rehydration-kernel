@@ -7,6 +7,7 @@ Current public surface:
 
 - `ContextQueryService`
 - `ContextCommandService`
+- `KernelMemoryService` (canonical KMP contract; memory-move nouns: `Ingest`, `Wake`, `Ask`, `Goto`, `Near`, `Rewind`, `Forward`, `Trace`, `Inspect`)
 
 Primary generic contract:
 

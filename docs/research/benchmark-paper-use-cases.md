@@ -231,6 +231,12 @@ judges:
     provider: openai-new
     api_key_env: OPENAI_KEY
 
+  sonnet-4.6:
+    endpoint: https://api.anthropic.com/v1/messages
+    model: claude-sonnet-4-6
+    provider: anthropic
+    api_key_env: ANTHROPIC_KEY
+
 prompts:
   v1-original: prompt-variants/v1-original-judge.yaml
   default: null           # compiled-in v2 causal-aware prompt
@@ -243,10 +249,19 @@ scales:
   meso: meso              # 21 nodes, ~1500 tokens
   stress: stress          # 49 nodes, ~4000 tokens
 
+seeds_per_cell: 3         # distinct graph seeds per variant cell
+
 noise:
-  clean: none
-  competing: competing    # competing causal distractors
+  clean: structural               # baseline: irrelevant structural nodes
+  competing: competing-causal     # plausible alternative rationale
+  conflicting: conflicting-path   # contradicts main chain reasoning
+  restart: competing-restart      # alternative recovery point
 ```
+
+Noise is **distributed per relation mix** (not a free cross-product): each
+mix pairs `clean` with one adversarial mode — `explanatory`/`competing`,
+`structural`/`conflicting`, `mixed`/`restart` — so every cell yields two
+noise modes.
 
 ### What the YAML controls
 
@@ -382,8 +397,8 @@ all values for that dimension.
 | `FILTER_MODELS` | `qwen3-8b`, `gpt-5.4`, `opus-4.6` |
 | `FILTER_PROMPTS` | `v1-original`, `default`, `citation-agent`, `strict-judge`, `lenient-judge` |
 | `FILTER_SCALES` | `micro`, `meso`, `stress` |
-| `FILTER_NOISE` | `clean`, `competing` |
-| `FILTER_JUDGES` | `opus-4.6`, `gpt-5.4` |
+| `FILTER_NOISE` | `clean`, `competing`, `conflicting`, `restart` |
+| `FILTER_JUDGES` | `opus-4.6`, `gpt-5.4`, `sonnet-4.6` |
 
 ### Step 4: Check output
 
@@ -410,10 +425,14 @@ E2E_OUTPUT_DIR=/custom/path cargo test ...
 
 The full matrix produces:
 
-- **3 scales** x **2 domains** x **3 mixes** x **2 noise** = **36 captured variants** per boot
-- **3 agents** x **2 judges** (minus 2 self-judge) = **4 agent-judge pairs**
+- **3 scales** x **2 domains** x **3 mixes** x **2 noise/mix** x **3 seeds** (`seeds_per_cell`) = **108 captured variants** per boot
+- **3 agents** x **3 judges** (minus 2 self-judge) = **7 agent-judge pairs**
 - **5 prompt variants**
-- Total: 36 x 4 x 5 = **720 evaluations** in the full matrix
+- Total: 108 x 7 x 5 = **3780 evaluations** in the full matrix
+
+These counts are derived from `evaluation-matrix.yaml` (`seeds_per_cell`,
+`judges`) and the per-mix noise distribution — change the YAML and the
+matrix size changes with it.
 
 Each evaluation measures:
 
