@@ -1,3 +1,5 @@
+> **Historical analysis.** This report predates the implemented relation `sequence` ordering. Retained for context; see RELATION_EXPLANATION_MODEL.md for the current model.
+
 # Informe: Ordenamiento de Nodos y Relaciones en el Grafo
 
 ## Estado actual

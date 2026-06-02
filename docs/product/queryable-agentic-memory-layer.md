@@ -155,7 +155,7 @@ Metrics that matter for agents:
 | --- | --- |
 | KMP request count, latency, and errors by move | Shows whether agents can reliably call `ingest`, `wake`, `ask`, `goto`, `trace`, and `inspect`. |
 | Ingest accepted counts | Entries, relations, evidence, dimensions, and rejected items per request. |
-| Projection lag | Time between accepted memory event and queryable projection. |
+| Projection lag | Consumer processing time (pull -> apply), not full publish-to-queryable latency. |
 | Idempotency outcomes | Detects duplicate writes, replay behavior, and unsafe retries. |
 | Traversal scope | Selected abouts, dimensions, temporal windows, path length, and hop count. |
 | Proof quality | Evidence count, missing count, warning count, conflict count, weak-proof count. |

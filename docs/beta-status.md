@@ -15,7 +15,7 @@ The kernel targets a stable `v1` contract once these conditions are met:
 | Authorization backend for scope validation | Not started |
 | Timeline and summary filtering in RehydrateSession | Not started |
 | Quality metrics in all render paths (including RehydrateSession) | Done — GetContext, GetContextPath, and RehydrateSession emit quality metrics |
-| Full benchmark matrix validated (3 agents x 3 judges x 4 noise) | Planned — see [ROADMAP_MASTER.md](research/ROADMAP_MASTER.md) |
+| Full benchmark matrix validated (3 agents x 3 judges x 4 noise) | Planned — see [kernel-roadmap-milestones.md](product/kernel-roadmap-milestones.md) |
 | Async contract: `context.bundle.generated` actually emitted by runtime | Not started — contract-only today |
 | OTLP mTLS to OTel Collector | Done — env-var TLS config, Helm wiring, cert-manager |
 | Neo4j client mTLS (2FA since Neo4j 5.19+) | Partial — Helm + URI parsing done, neo4rs client cert pending |

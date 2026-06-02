@@ -77,7 +77,7 @@ Preliminary results (subset run):
 - Gap widens under token pressure and adversarial noise
 - `ResumeFocused` recovers accuracy under extreme budgets
 
-Full matrix run planned (see [ROADMAP_MASTER.md](ROADMAP_MASTER.md)).
+Full matrix run planned (see [kernel-roadmap-milestones.md](../product/kernel-roadmap-milestones.md)).
 
 ## Where It Fits
 
