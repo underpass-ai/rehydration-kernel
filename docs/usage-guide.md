@@ -407,11 +407,12 @@ graph LR
     C2 -. ack .-> NT
 ```
 
-Two durable pull consumers run in parallel:
-- `context-projection-graph-node-materialized` — writes nodes + relationships to Neo4j
+Three durable pull consumers run in parallel:
+- `context-projection-graph-node-materialized` — writes nodes to Neo4j
+- `context-projection-graph-relation-materialized` — writes relationships to Neo4j
 - `context-projection-node-detail-materialized` — writes detail to Valkey
 
-Both use explicit ack. If a handler fails, the message is nak'd (requeued)
+All three use explicit ack. If a handler fails, the message is nak'd (requeued)
 and the runtime stops — operator must investigate and restart.
 
 ### Event store backend
@@ -432,7 +433,8 @@ Both implement the same `ContextEventStore` port with:
 
 | Subject pattern | Purpose |
 |:----------------|:--------|
-| `{prefix}.graph.node.materialized` | Inbound: nodes + relationships |
+| `{prefix}.graph.node.materialized` | Inbound: nodes |
+| `{prefix}.graph.relation.materialized` | Inbound: relationships |
 | `{prefix}.node.detail.materialized` | Inbound: extended detail |
 | `{prefix}.cmd.evt.{root_node_id}.{role}` | Event store: command events |
 | `{prefix}.cmd.idem.{key}` | Event store: idempotency outcomes |
@@ -499,6 +501,8 @@ will be treated as a new request. The kernel logs a warning when this happens.
 - [GraphBatch Quickstart](graph-batch-quickstart.md) — fastest model-driven path
 - [GraphBatch ingestion API](graph-batch-ingestion-api.md) — experimental ingress proposal
 - [Proto contracts](../api/proto/underpass/rehydration/kernel/v1beta1/) — gRPC API definition
+- [Kernel Memory Protocol API design](product/kernel-context-api-design.md) — the typed `kernel_*` tool surface (wake/ask/near/trace/inspect/write_memory)
+- [MCP stdio adapter](operations/mcp-stdio.md) — run the KMP tools over MCP stdio
 - [AsyncAPI contract](../api/asyncapi/context-projection.v1beta1.yaml) — event schema
 - [Reference fixtures](../api/examples/kernel/v1beta1/grpc/) — example request/response JSON
 - [Integration contract](migration/kernel-node-centric-integration-contract.md) — stability rules

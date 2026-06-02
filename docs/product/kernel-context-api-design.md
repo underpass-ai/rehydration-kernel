@@ -852,7 +852,13 @@ MCP response:
     "missing": [],
     "confidence": "medium"
   },
-  "warnings": []
+  "warnings": [],
+  "page": {
+    "returned": 2,
+    "total": 2,
+    "has_more": false,
+    "next_cursor": ""
+  }
 }
 ```
 

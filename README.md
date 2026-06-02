@@ -150,13 +150,15 @@ What is out of scope:
 
 ```bash
 # Toolchain: Rust 1.90.0 (pinned in rust-toolchain.toml)
-cargo test --workspace               # 270 unit tests, no infra needed
+cargo test --workspace               # workspace unit tests, no infra needed
 bash scripts/ci/quality-gate.sh      # format + clippy + contract + tests
 ```
 
 ```bash
 docker pull ghcr.io/underpass-ai/rehydration-kernel:latest
 ```
+
+`latest` is for a quick trial; pin a `sha-<short-commit>` or `v*` tag (or a digest) in production.
 
 Full guides: [usage](./docs/usage-guide.md) | [testing](./docs/testing.md) |
 [container image](./docs/operations/container-image.md) |
@@ -220,7 +222,7 @@ DDD, hexagonal boundaries, one concept per file, one use case per file.
 - **NATS JetStream** — event store (append-only, file-backed) + projection event bus
 - **gRPC + TLS/mTLS** — supports plaintext, server TLS, mutual TLS (default: plaintext)
 - **cl100k_base** — BPE tokenization (tiktoken-rs) for accurate token budgets
-- **OpenTelemetry + Loki** — 17 active instruments + structured JSON logs. See [observability](./docs/observability.md)
+- **OpenTelemetry + Loki** — OTLP metric instruments + structured JSON logs. See [observability](./docs/observability.md)
 - **Helm chart** — optional Neo4j/NATS/Valkey/Loki/Grafana/OTel Collector sidecars
 
 ## Multi-Resolution Rendering

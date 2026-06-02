@@ -1,3 +1,5 @@
+> **Draft / may lag implementation.** Verify any claim against [../beta-status.md](../beta-status.md) before reuse.
+
 # Draft Paper: Agentic Context Rehydration
 
 Status: Working submission draft
