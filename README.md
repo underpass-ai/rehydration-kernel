@@ -146,6 +146,23 @@ What is out of scope:
 - Product-side integration adapters, shadow mode, or rollout logic
 - Authorization backend (scope validation is set-comparison only)
 
+## Distributions
+
+KMP is moving toward two distributions that share the same protocol semantics:
+
+- **Infrastructure** (today) — the typed `KernelMemoryService` gRPC server with
+  Neo4j / Valkey / NATS adapters, Helm/Kubernetes deployment, and full TLS/mTLS
+  plus observability. For teams running shared, auditable agent memory at scale.
+- **Local / embedded** (planned) — a no-infrastructure build with embedded
+  storage, installable directly as an MCP server in coding agents such as
+  **Claude Code**, **Codex**, and **OpenCode**. Same KMP tools (`kernel_wake`,
+  `kernel_ask`, `kernel_near`, `kernel_trace`, `kernel_inspect`,
+  `kernel_write_memory`), with no separate graph / key-value / event backends to
+  operate.
+
+Both expose the identical KMP surface, so memory written through one is
+navigable through the other.
+
 ## Quickstart
 
 ```bash
