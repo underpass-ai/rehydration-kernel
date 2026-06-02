@@ -31,11 +31,17 @@ pub(super) fn memory_budget_from_arguments(
             .flatten()
             .unwrap_or(default_depth),
     };
+    let max_entries = budget
+        .map(|budget| optional_positive_u32_field(budget, "max_entries", "budget.max_entries"))
+        .transpose()?
+        .flatten()
+        .unwrap_or(0);
 
     Ok(MemoryBudget {
         tokens,
         detail,
         depth,
+        max_entries,
     })
 }
 

@@ -612,6 +612,10 @@ fn budget_schema() -> Value {
             "depth": {
                 "type": "integer",
                 "minimum": 1
+            },
+            "max_entries": {
+                "type": "integer",
+                "minimum": 1
             }
         }
     })

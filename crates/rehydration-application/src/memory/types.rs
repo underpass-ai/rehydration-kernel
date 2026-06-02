@@ -133,6 +133,10 @@ pub struct WakeMemoryQuery {
     pub token_budget: u32,
     pub depth: u32,
     pub max_tier: Option<ResolutionTier>,
+    /// Cap on surfaced proof.evidence entries (None = unbounded). When set and
+    /// the about has more, Wake returns the first `max_entries` and reports the
+    /// withheld count via proof.frontier_size so the client near-expands.
+    pub max_entries: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -1222,6 +1222,7 @@ async fn memory_service_wake_and_ask_read_live_context() {
             role: "developer".to_string(),
             intent: "resume incident".to_string(),
             budget: Some(MemoryBudget {
+                max_entries: 0,
                 tokens: 1024,
                 depth: 1,
                 ..Default::default()
@@ -1239,6 +1240,7 @@ async fn memory_service_wake_and_ask_read_live_context() {
             about: "node-123".to_string(),
             question: "What is current?".to_string(),
             budget: Some(MemoryBudget {
+                max_entries: 0,
                 tokens: 1024,
                 depth: 1,
                 ..Default::default()
@@ -1265,6 +1267,7 @@ async fn memory_service_ask_uses_explicit_memory_evidence_not_anchor_detail() {
             question: "What is the explicit answer?".to_string(),
             answer_policy: AnswerPolicy::EvidenceOrUnknown as i32,
             budget: Some(MemoryBudget {
+                max_entries: 0,
                 tokens: 1024,
                 detail: MemoryDetailLevel::Full as i32,
                 depth: 3,
@@ -1303,6 +1306,7 @@ async fn memory_service_ask_show_conflicts_surfaces_explicit_conflict_relations(
             question: "Is cache enabled at the incident checkpoint?".to_string(),
             answer_policy: AnswerPolicy::ShowConflicts as i32,
             budget: Some(MemoryBudget {
+                max_entries: 0,
                 tokens: 1024,
                 detail: MemoryDetailLevel::Full as i32,
                 depth: 3,
@@ -1347,6 +1351,7 @@ async fn memory_service_wake_and_ask_apply_dimensions_detail_and_answer_policy()
             role: "developer".to_string(),
             intent: "resume relocation memory".to_string(),
             budget: Some(MemoryBudget {
+                max_entries: 0,
                 tokens: 1024,
                 detail: MemoryDetailLevel::Balanced as i32,
                 depth: 3,
@@ -1386,6 +1391,7 @@ async fn memory_service_wake_and_ask_apply_dimensions_detail_and_answer_policy()
             question: "Where did Rachel move?".to_string(),
             answer_policy: AnswerPolicy::EvidenceOrUnknown as i32,
             budget: Some(MemoryBudget {
+                max_entries: 0,
                 tokens: 1024,
                 detail: MemoryDetailLevel::Compact as i32,
                 depth: 3,
@@ -1689,6 +1695,7 @@ async fn memory_service_trace_and_inspect_use_existing_query_ports() {
             to: "node-789".to_string(),
             goal: "prove path".to_string(),
             budget: Some(MemoryBudget {
+                max_entries: 0,
                 tokens: 1024,
                 depth: 1,
                 ..Default::default()
@@ -1707,6 +1714,7 @@ async fn memory_service_trace_and_inspect_use_existing_query_ports() {
             to: "node-789".to_string(),
             goal: "prove path".to_string(),
             budget: Some(MemoryBudget {
+                max_entries: 0,
                 tokens: 1024,
                 depth: 1,
                 ..Default::default()
@@ -2004,6 +2012,7 @@ fn temporal_move_request(
         }),
         include: None,
         budget: Some(MemoryBudget {
+            max_entries: 0,
             tokens: 1024,
             depth: 3,
             ..Default::default()
