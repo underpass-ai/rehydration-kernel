@@ -185,7 +185,10 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         let derivation = match compute_derivation(&item.question, &response) {
             Ok(derivation) => derivation,
             Err(error) => {
-                eprintln!("skip {}: derivation compute error: {error}", item.question_id);
+                eprintln!(
+                    "skip {}: derivation compute error: {error}",
+                    item.question_id
+                );
                 continue;
             }
         };
