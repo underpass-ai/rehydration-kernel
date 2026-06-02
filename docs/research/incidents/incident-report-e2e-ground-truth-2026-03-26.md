@@ -1,8 +1,10 @@
 # Incident Report: E2E Ground Truth Penalizes Better Models
 
+> **Historical (superseded).** Point-in-time record; code paths/line citations below were refactored after this was written (ground-truth construction now lives in `crates/rehydration-testkit/src/llm_evaluator.rs`).
+
 **Date**: 2026-03-26
 **Severity**: P1 — evaluation results are misleading
-**Status**: Open — documented, fix pending
+**Status**: Resolved — full causal chain shipped
 
 ## Observed
 

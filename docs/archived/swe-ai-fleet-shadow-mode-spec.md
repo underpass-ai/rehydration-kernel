@@ -1,5 +1,7 @@
 # swe-ai-fleet Shadow Mode Spec
 
+> **Historical (superseded).** Point-in-time record; the externally-owned `swe-ai-fleet` program and some kernel-dependency links below were refactored after this was written.
+
 Status: planned
 Scope: external to this repo, owned by `swe-ai-fleet`
 
@@ -274,8 +276,8 @@ Requirements:
 
 This spec assumes `swe-ai-fleet` depends only on kernel-owned artifacts such as:
 
-- [`kernel-node-centric-integration-contract.md`](./kernel-node-centric-integration-contract.md)
-- [`kernel-runtime-integration-reference.md`](./kernel-runtime-integration-reference.md)
+- [`kernel-node-centric-integration-contract.md`](../migration/kernel-node-centric-integration-contract.md)
+- [`kernel-runtime-integration-reference.md`](../migration/kernel-runtime-integration-reference.md)
 - [`api/examples/README.md`](../../api/examples/README.md)
 
 ## Exit Statement

@@ -1,12 +1,14 @@
 # Context Service Rust Roadmap
 
+> **Historical (superseded).** Point-in-time record; code paths/links below were refactored after this was written.
+
 > Review required. This roadmap was written for the compatibility-era migration
 > plan. Parts of it are historical after the `v1beta1` cut and removal of the
 > compatibility layer. Revalidate every action against the current kernel
 > contract before reusing it.
 
-Status: Active
-Source of truth: [`CONTEXT_SERVICE_RUST_MIGRATION_PLAN.md`](../../CONTEXT_SERVICE_RUST_MIGRATION_PLAN.md)
+Status: Superseded — archived roadmap
+Source of truth: [`CONTEXT_SERVICE_RUST_MIGRATION_PLAN.md`](./CONTEXT_SERVICE_RUST_MIGRATION_PLAN.md)
 
 ## Purpose
 
@@ -126,7 +128,7 @@ Scope:
 
 Reference:
 
-- [`llm-response-determinism-strategy.md`](./llm-response-determinism-strategy.md)
+- [`llm-response-determinism-strategy.md`](../migration/llm-response-determinism-strategy.md)
 
 ## Strategic Security Milestone
 
@@ -168,7 +170,7 @@ Those concerns belong in an anti-corruption layer inside `swe-ai-fleet`.
 
 See:
 
-- [`kernel-node-centric-integration-contract.md`](./kernel-node-centric-integration-contract.md)
+- [`kernel-node-centric-integration-contract.md`](../migration/kernel-node-centric-integration-contract.md)
 - [`swe-ai-fleet-node-centric-integration-strategy.md`](./swe-ai-fleet-node-centric-integration-strategy.md)
 - [`swe-ai-fleet-integration-checklist.md`](./swe-ai-fleet-integration-checklist.md)
 
@@ -228,9 +230,9 @@ Delivered after Phase 3 hardening:
 
 See:
 
-- [`kernel-agentic-integration-e2e.md`](./kernel-agentic-integration-e2e.md)
-- [`kernel-agentic-event-trigger-e2e.md`](./kernel-agentic-event-trigger-e2e.md)
-- [`kernel-runtime-integration-reference.md`](./kernel-runtime-integration-reference.md)
+- [`kernel-agentic-integration-e2e.md`](../migration/kernel-agentic-integration-e2e.md)
+- [`kernel-agentic-event-trigger-e2e.md`](../migration/kernel-agentic-event-trigger-e2e.md)
+- [`kernel-runtime-integration-reference.md`](../migration/kernel-runtime-integration-reference.md)
 
 ### Stream C: Rollout and shadow mode
 

@@ -282,8 +282,9 @@ noise modes.
 | Domains | `ops`, `debug` | Two representative domains |
 | Relation mixes | `explanatory`, `structural`, `mixed` | Three ablation variants |
 | Self-judge skip | agent name == judge name | Avoids circular evaluation |
-| Token budget | 4096 | Standard context window |
-| Temperature | 0.0 | Deterministic inference |
+| Kernel context budget | 4096 | `GetContextRequest.token_budget` (override via `BENCHMARK_TOKEN_BUDGET`) |
+| LLM inference `max_tokens` | 200 | Per-call answer budget — forced in the eval path, not read from YAML |
+| Temperature | 0.0 | Deterministic inference — forced in the eval path, ignores per-agent YAML |
 | Readiness poll | 40 attempts x 200ms | Wait for projection to populate |
 
 ## Precheck

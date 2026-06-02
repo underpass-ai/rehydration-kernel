@@ -1,5 +1,7 @@
 # PIR Fix Planning Live Smoke Failure Report
 
+> **Historical (superseded).** Point-in-time record; the PIR `fix_planning` program was decommissioned and the `internal/specialists/*` and `cmd/fixplanning-*-smoke` paths linked below no longer exist.
+
 Date: `2026-04-12`
 
 Scope: live validation of the hardened `fix_planning` path after adding:

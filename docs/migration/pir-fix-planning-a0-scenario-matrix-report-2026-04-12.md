@@ -1,5 +1,7 @@
 # PIR Fix Planning A0 Scenario Matrix Report 2026-04-12
 
+> **Historical (superseded).** Point-in-time record; the PIR `fix_planning` specialist program was later restructured, so code paths and tooling referenced below (`cmd/fixplanning-deployed-smoke`, `fixplanning-deployed-smoke-scenarios.yaml`) no longer exist as cited.
+
 Status: completed
 Date: 2026-04-12
 Scope: first multi-scenario deployed `A0` batch after `A0.3` execution

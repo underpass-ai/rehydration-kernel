@@ -23,4 +23,4 @@ The shared reference implementation lives in:
 
 The fake server used by the E2E lives in:
 
-- [`fake_underpass_runtime.rs`](../../../../crates/rehydration-transport-grpc/tests/support/fake_underpass_runtime.rs)
+- [`fake_underpass.rs`](../../../../crates/rehydration-tests-shared/src/runtime/fake_underpass.rs)

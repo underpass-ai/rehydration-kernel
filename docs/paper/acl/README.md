@@ -1,7 +1,7 @@
 # ACL Submission Package
 
 This directory contains an ACL-style LaTeX package derived from
-[`docs/PAPER_SUBMISSION_DRAFT.md`](../../PAPER_SUBMISSION_DRAFT.md).
+[`docs/research/PAPER_SUBMISSION_DRAFT.md`](../../research/PAPER_SUBMISSION_DRAFT.md).
 
 The current manuscript covers four use cases:
 

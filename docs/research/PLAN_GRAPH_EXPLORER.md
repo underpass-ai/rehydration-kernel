@@ -1,5 +1,7 @@
 # Plan: Graph Explorer
 
+> **Historical (superseded).** Point-in-time record; the `fleet.context.v1` compat surface and the `1..3` depth clamp described below were removed/refactored after this was written (native guardrail now caps traversal depth).
+
 > Historical implementation plan. Completed and retained for traceability.
 > Review the current explorer contracts and code before using this plan to
 > justify new work.
