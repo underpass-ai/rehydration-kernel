@@ -311,6 +311,7 @@ random seeds. Null hypothesis rejected at 95% confidence.
 | Structural (edges only) | 3% [0%, 14%] | 0% [0%, 10%] | 0% [0%, 10%] | baseline |
 | **Mixed** (both) | **92%** [78%, 97%] | **81%** [65%, 90%] | **89%** [75%, 96%] | **+89pp** |
 
+> **Local scorecard** — our own LLM-as-judge evaluation, not an official benchmark submission.
 > Agent: Qwen3-8B with chain-of-thought (local). Judge: GPT-5.4. Wilson 95% CI in brackets.
 > Cross-judge validated: Sonnet 4.6 produces the same gap (+67pp).
 > Synthetic graphs, not production workloads.
