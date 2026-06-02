@@ -91,6 +91,24 @@ product moves:
 | `kernel_remember` | `kernel_ingest` |
 | `kernel_ingest_context` | `kernel_ingest` |
 
+Live MCP also exposes a tenth tool that is not a memory move:
+
+| MCP tool | Canonical write path | Purpose |
+|:---------|:---------------------|:--------|
+| `kernel_write_memory` | compiles to `kernel_ingest` | Writer-friendly helper above canonical ingest: validates writer intent, relation quality, and read-context proof, then compiles to a `kernel_ingest` call. |
+
+`kernel_write_memory` is neither a memory move nor an ingest alias. It is the
+ergonomic entry point for writers above the canonical low-level write path
+(`kernel_ingest` / `KernelMemoryService.Ingest`). It defaults to `dry_run = true`
+and `strict = true`, so a writer previews the compiled canonical ingest and
+fails fast on unsupported relations or missing proof before committing. In
+`strict` mode it requires `current.evidence` and at least one `connect_to`
+relation.
+
+So the live MCP surface is **ten tools**: the nine memory moves above plus
+`kernel_write_memory`, with `kernel_remember` and `kernel_ingest_context` as
+hidden ingest aliases (not counted as product moves).
+
 ## Why These Moves
 
 `ingest` is not "insert rows". It accepts validated memory and makes it
@@ -1135,6 +1153,7 @@ Required tools:
 
 ```text
 kernel_ingest
+kernel_write_memory
 kernel_wake
 kernel_ask
 kernel_goto
@@ -1144,6 +1163,10 @@ kernel_forward
 kernel_trace
 kernel_inspect
 ```
+
+`kernel_write_memory` is the writer helper above `kernel_ingest`; see the Memory
+Moves section. `kernel_remember` and `kernel_ingest_context` remain as hidden
+ingest aliases.
 
 MCP tool descriptions should be written for LLM tool choice, not for generated
 SDKs. They should answer:
