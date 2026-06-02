@@ -28,8 +28,10 @@ These are kernel-owned because the kernel cannot function without its
 infrastructure. Packaging them as optional sidecars allows a single
 `helm install` for development without depending on external infrastructure.
 
-In production, consumers typically provide their own Neo4j, Valkey, and NATS
-and disable the sidecars via `secrets.existingSecret`.
+In production, consumers typically provide their own Neo4j, Valkey, and NATS.
+`secrets.existingSecret` supplies the external connection URIs; the bundled
+sidecars are disabled separately via `neo4j.enabled=false`,
+`valkey.enabled=false`, and `nats.enabled=false`.
 
 ## This Repo Does NOT Own
 

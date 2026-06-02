@@ -1,9 +1,10 @@
 # Requirements: Deep Graph Traversal & Rehydration from Any Node
 
+> **Historical (fulfilled).** The graph-explorer requirements described here have been delivered. Retained for historical context.
+
 **Priority:** P0 — blocks demo and interactive graph explorer
 **Date:** 2026-03-18
 **Related:**
-- [`docs/BUG_DEPTH_TRAVERSAL.md`](./BUG_DEPTH_TRAVERSAL.md)
 - [`docs/PLAN_GRAPH_EXPLORER.md`](./PLAN_GRAPH_EXPLORER.md)
 
 ## Context

@@ -458,7 +458,7 @@ keys, then inject them with `envFrom`. A reference manifest lives at
 > It is the only test that evaluates the kernel's core value proposition
 > end-to-end: explanatory relationships improve LLM context quality over
 > structural-only edges. Results provide directional evidence — methodology
-> refinement is ongoing (see [ROADMAP_MASTER.md](research/ROADMAP_MASTER.md)).
+> refinement is ongoing (see [kernel-roadmap-milestones.md](product/kernel-roadmap-milestones.md)).
 
 Each evaluation calls an LLM for inference (agent) and a second LLM for judging.
 The test uses testcontainers to spin up Neo4j + Valkey + NATS + kernel locally,
@@ -483,7 +483,7 @@ Local machine                          External
 
 ### Execution phases
 
-The test runs 5 phases in order. Expensive API calls only happen in phase 4.
+The test runs 5 phases in order. The main API cost is phase 3 (Evaluate), with a small calibration cost in phase 1.
 
 | Phase | What it does | Cost |
 |:------|:-------------|:-----|

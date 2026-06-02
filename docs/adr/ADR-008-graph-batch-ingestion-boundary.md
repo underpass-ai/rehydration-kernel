@@ -54,6 +54,7 @@ Each batch is local, not global:
 The stable kernel-owned write boundary remains:
 
 - `graph.node.materialized`
+- `graph.relation.materialized`
 - `node.detail.materialized`
 
 Those async subjects are still the durable projection contract.

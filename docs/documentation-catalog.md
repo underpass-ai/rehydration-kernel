@@ -32,6 +32,9 @@ These documents are the current source of truth for users and maintainers:
 | Deployment/security boundary | [operations/deployment-boundary.md](operations/deployment-boundary.md), [security-model.md](security-model.md), [operations/mtls-deployment.md](operations/mtls-deployment.md) |
 | Observability | [observability.md](observability.md) |
 | Tests and quality gates | [testing.md](testing.md) |
+| Getting started / usage guide | [usage-guide.md](usage-guide.md) |
+| GraphBatch ingestion quickstart | [graph-batch-quickstart.md](graph-batch-quickstart.md) |
+| Runtime guarantees | [runtime-guarantees.md](runtime-guarantees.md) |
 
 ## Active Roadmap
 
@@ -74,7 +77,6 @@ Use these for current benchmark work:
 | MemoryArena evaluator | [research/memoryarena-paper-aligned-evaluator.md](research/memoryarena-paper-aligned-evaluator.md) |
 | MemoryAgentBench | [research/memoryagentbench-benchmark.md](research/memoryagentbench-benchmark.md) |
 | LongMemEval | [research/longmemeval-benchmark.md](research/longmemeval-benchmark.md) |
-| Graph visualizer | [research/PLAN_GRAPH_EXPLORER.md](research/PLAN_GRAPH_EXPLORER.md), [research/REQUIREMENTS_GRAPH_EXPLORER.md](research/REQUIREMENTS_GRAPH_EXPLORER.md) |
 
 ## Historical Or Needs Review
 
@@ -86,6 +88,7 @@ current kernel contract:
 | [archived/](archived/README.md) | Explicitly historical or superseded. |
 | [migration/](migration/README.md) | Historical migration area. Use only the files listed by its README and review against current KMP before applying. |
 | [research/ROADMAP_MASTER.md](research/ROADMAP_MASTER.md) | Legacy master roadmap. The active roadmap is now [product/kernel-roadmap-milestones.md](product/kernel-roadmap-milestones.md). |
+| [research/PLAN_GRAPH_EXPLORER.md](research/PLAN_GRAPH_EXPLORER.md), [research/REQUIREMENTS_GRAPH_EXPLORER.md](research/REQUIREMENTS_GRAPH_EXPLORER.md) | Completed graph-explorer plan and requirements. Retained for traceability; the depth clamp described was since removed, so check current explorer contracts before reuse. |
 | PIR/fix-planning migration reports | Historical integration evidence. They should not drive current kernel API decisions without revalidation. |
 | Paper drafts under [paper/](paper/README.md) and [research/PAPER_*](research/README.md) | Publication artifacts. They may lag implementation and must be checked against `beta-status.md` before reuse. |
 

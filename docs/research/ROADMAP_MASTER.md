@@ -1,6 +1,8 @@
+> **Legacy / superseded.** The active roadmap is [product/kernel-roadmap-milestones.md](../product/kernel-roadmap-milestones.md). This document is retained for historical context only.
+
 # Master Roadmap
 
-Single source of truth for kernel maturity, technical debt, and next steps.
+Historical source of truth for kernel maturity, technical debt, and next steps; superseded by [product/kernel-roadmap-milestones.md](../product/kernel-roadmap-milestones.md).
 
 ## Completed
 
@@ -382,7 +384,7 @@ emits rpc.duration + quality + timing. `RehydrateSession` only emits rpc.duratio
 - [x] `GetContextPath`: add bundle.nodes, bundle.relationships, bundle.details, rendered.tokens, truncation.total, mode.selected
 - [x] `RehydrateSession`: add bundle metrics per role — nodes, rels, details, tokens, truncation, mode, quality observer
 - [x] Wire `rehydration.bundle.details` — now recorded in GetContext
-- [ ] Wire `rehydration.projection.lag` — defined in KernelMetrics but never recorded by projection runtime
+- [x] Wire `rehydration.projection.lag` — recorded by the NATS projection runtime per processed message
 
 ### P2 — Async quality observer fan-out
 

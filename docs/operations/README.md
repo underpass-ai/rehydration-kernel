@@ -11,6 +11,8 @@ Current contents:
 - [`cluster-prerequisites.md`](./cluster-prerequisites.md) — MetalLB, cert-manager, Route 53, NGINX Ingress
 - [`mtls-deployment.md`](./mtls-deployment.md) — Full mTLS deployment guide
 - [`neo4j-schema-migrations.md`](./neo4j-schema-migrations.md) — Explicit projection graph indexes and constraints
+- [`mcp-stdio.md`](./mcp-stdio.md) — Stdio MCP adapter exposing the KMP tools
+- [`preflight.md`](./preflight.md) — E2E version preflight checklist before live runs
 
 Related docs:
 
