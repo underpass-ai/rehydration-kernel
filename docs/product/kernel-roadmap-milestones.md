@@ -1,6 +1,6 @@
 # Kernel Roadmap Milestones
 
-Date: 2026-05-06
+Last updated: 2026-05-06
 Status: active planning document
 
 ## Product Direction

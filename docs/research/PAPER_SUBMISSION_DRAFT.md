@@ -1,3 +1,5 @@
+> **Draft / may lag implementation.** Verify any claim against [../beta-status.md](../beta-status.md) before reuse.
+
 # Submission Draft: Explanatory Graph Context Rehydration
 
 Status: Submission-oriented draft based on the current repository artifact

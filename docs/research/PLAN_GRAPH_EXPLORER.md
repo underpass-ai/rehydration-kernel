@@ -12,8 +12,6 @@
 **Completed:** 2026-03-19
 **Related:**
 - [`docs/REQUIREMENTS_GRAPH_EXPLORER.md`](./REQUIREMENTS_GRAPH_EXPLORER.md)
-- [`docs/BUG_DEPTH_TRAVERSAL.md`](./BUG_DEPTH_TRAVERSAL.md)
-- [`docs/operations/graph-explorer-demo.md`](./operations/graph-explorer-demo.md)
 
 ## Goal
 

@@ -227,8 +227,10 @@ REHYDRATION_KERNEL_GRPC_ENDPOINT = "https://rehydration-kernel.underpassai.com"
 ```
 
 When the public endpoint is served through the configured Ingress, the MCP
-client uses server TLS to the public host. The Ingress handles upstream GRPCS
-and the kernel backend's mutual TLS using its configured proxy client secret.
+client uses server TLS to the public host. The default exposure profile
+forwards plaintext upstream h2c (`backend-protocol: GRPC`); only the mTLS
+transport-security profile uses upstream GRPCS to a TLS-enabled kernel and the
+kernel backend's mutual TLS via its configured proxy client secret.
 
 ## Manual JSON-RPC Check
 
