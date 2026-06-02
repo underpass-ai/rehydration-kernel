@@ -954,12 +954,16 @@ Input:
 ### Advanced/Alias Tools
 
 Advanced tools or migration aliases may exist in future cuts, but should not be
-the normal caller path. The current MCP live adapter implements only the ingest
-aliases:
+the normal caller path. Beyond the nine canonical moves, the current MCP live
+adapter exposes two ingest aliases plus one distinct writer-friendly tool, for
+ten tools total:
 
 ```text
 kernel_remember           -> alias for kernel_ingest
 kernel_ingest_context     -> alias for kernel_ingest
+kernel_write_memory       -> distinct writer-friendly tool with its own schema;
+                             validates writer intent and relation quality, then
+                             compiles to canonical kernel_ingest
 ```
 
 ## Storage And Indexing Requirements

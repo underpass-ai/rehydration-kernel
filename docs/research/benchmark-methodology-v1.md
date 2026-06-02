@@ -25,17 +25,24 @@ not experimental. Label it accordingly.
 
 | Agent | Endpoint | Provider | Config |
 |-------|----------|----------|--------|
-| `qwen3-8b` | `llm.underpassai.com` (vLLM) | openai | mTLS, `max_tokens=4096`, `temp=0.6` |
+| `qwen3-8b` | `llm.underpassai.com` (vLLM) | openai | mTLS; YAML `max_tokens`/`temperature` apply to **calibration only** (eval path forces `max_tokens=200`, `temp=0.0` — see below) |
 | `gpt-5.4` | `api.openai.com` | openai-new | Bearer token |
 | `opus-4.6` | `api.anthropic.com` | anthropic | x-api-key |
 
 Qwen3-8B thinks by default (`--reasoning-parser=qwen3` on server).
 Thinking disabled via `LLM_ENABLE_THINKING=false` for baseline runs.
 
-**Sampling (Qwen3 model card):**
+**Sampling (Qwen3 model card guidance):**
 - Thinking mode: `temperature=0.6`, `top_p=0.95`
 - Non-thinking mode: `temperature=0.7`, `top_p=0.8`
-- DO NOT use greedy decoding (`temperature=0.0`) — causes repetition loops
+- The model card advises against greedy decoding (`temperature=0.0`) — it can cause repetition loops
+
+**What the eval path actually sends:** the per-agent YAML `max_tokens`/`temperature`
+above are honored **only by agent calibration** (`build_agent_cal_config`). The
+evaluation inference path (`build_llm_config`) deliberately ignores them and hardcodes
+`max_tokens=200`, `temperature=0.0` (greedy) for every agent. This keeps scored runs
+deterministic and bounds the response to the short structured JSON verdict the judge
+expects; it is an intentional divergence from the model-card/calibration sampling above.
 
 ## Judges
 

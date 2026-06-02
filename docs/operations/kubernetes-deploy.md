@@ -139,10 +139,9 @@ After deploying transport-security changes, use the dedicated smoke script:
 That path validates real in-cluster gRPC TLS and mTLS, and it can also validate
 outbound NATS and Valkey TLS against a TLS-enabled environment.
 
-After deploying graph-explorer changes, use the explorer demo workflow:
+After deploying graph-explorer changes, use the starship explorer end-to-end test:
 
-- [`scripts/demo/run-starship-demo-k8s-job.sh`](../../scripts/demo/run-starship-demo-k8s-job.sh)
-- runbook: [graph-explorer-demo.md](./graph-explorer-demo.md)
+- [`crates/rehydration-transport-grpc/src/starship_e2e.rs`](../../crates/rehydration-transport-grpc/src/starship_e2e.rs)
 
 That path validates the explorer journey itself: root load, node detail,
 mid-level zoom, and leaf rehydration against the deployed release.

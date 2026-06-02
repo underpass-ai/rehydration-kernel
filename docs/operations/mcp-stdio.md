@@ -7,6 +7,7 @@ The repo includes a stdio MCP server in
 tools:
 
 - `kernel_ingest`
+- `kernel_write_memory`
 - `kernel_wake`
 - `kernel_ask`
 - `kernel_goto`
@@ -101,6 +102,7 @@ Live mapping:
 | MCP tool | Kernel binding |
 |:---------|:------------|
 | `kernel_ingest` | `KernelMemoryService.Ingest` |
+| `kernel_write_memory` | `KernelMemoryService.Ingest` (compiled from canonical `kernel_ingest`) |
 | `kernel_wake` | `KernelMemoryService.Wake` |
 | `kernel_ask` | `KernelMemoryService.Ask` |
 | `kernel_goto` | `KernelMemoryService.Goto` |
