@@ -237,7 +237,7 @@ Current internal validation before the larger release gate:
 | Failed tool calls | 0 |
 | Missing expected ref rows | 0 |
 | Unbounded tool calls | 0 |
-| Elapsed | 7m18.7s |
+| Elapsed | 10m15.9s |
 
 ## Safety And Redaction
 

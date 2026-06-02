@@ -17,8 +17,8 @@ Primary generic contract:
 
 Reference:
 
-- [`docs/migration/kernel-node-centric-integration-contract.md`](docs/migration/kernel-node-centric-integration-contract.md)
-- [`api/examples/kernel/v1beta1/grpc`](api/examples/kernel/v1beta1/grpc)
+- [`docs/migration/kernel-node-centric-integration-contract.md`](../../docs/migration/kernel-node-centric-integration-contract.md)
+- [`api/examples/kernel/v1beta1/grpc`](../examples/kernel/v1beta1/grpc)
 
 Validation entrypoints:
 

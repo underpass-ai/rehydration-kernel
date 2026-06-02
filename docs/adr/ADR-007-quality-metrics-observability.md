@@ -27,7 +27,8 @@ Observability Adapters (rehydration-observability)
 Transport Layer
 └── QueryGrpcServiceV1Beta1    (holds Arc<dyn QualityMetricsObserver>)
     ├── get_context()          → observer.observe()
-    └── get_context_path()     → observer.observe()
+    ├── get_context_path()     → observer.observe()
+    └── rehydrate_session()    → observer.observe()   (per-role bundles)
 
 Composition Root (main.rs)
 └── CompositeQualityObserver(OTel + Tracing)
@@ -53,7 +54,7 @@ is consistent between kernel and benchmarks.
 
 ```rust
 pub struct QualityObservationContext {
-    pub rpc: String,          // "GetContext", "GetContextPath"
+    pub rpc: String,          // "GetContext", "GetContextPath", "RehydrateSession"
     pub root_node_id: String, // Graph root being queried
     pub role: String,         // Role for which the bundle was rendered
 }
@@ -144,6 +145,9 @@ rehydration_quality_compression_ratio_bucket{rpc="GetContext"}
   trait — no changes to domain, application, or transport layers.
 - **Positive:** Compression ratio is now trustworthy for paper claims. Kernel and
   testkit produce identical raw dump text.
-- **Trade-off:** `rehydrate_session()` does not emit quality metrics because it
-  returns raw bundles without `RenderedContext`. Adding quality to session requires
-  rendering per-role bundles at the session level.
+- **Update (superseded since this ADR):** `rehydrate_session()` now renders
+  per-role bundles and emits per-role quality metrics through the same observer
+  (`QualityObservationContext { rpc: "RehydrateSession", .. }`). All three render
+  RPCs — `GetContext`, `GetContextPath`, and `RehydrateSession` — are covered.
+  `get_node_detail()` stays uninstrumented because it returns a single node
+  without a rendered bundle.

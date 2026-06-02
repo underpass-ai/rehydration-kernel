@@ -42,7 +42,7 @@ bash scripts/mcp/install-rehydration-mcp.sh
 Live gRPC backend:
 
 ```bash
-REHYDRATION_KERNEL_GRPC_ENDPOINT=http://127.0.0.1:50051 cargo run -p rehydration-mcp --locked
+REHYDRATION_KERNEL_GRPC_ENDPOINT=http://127.0.0.1:50054 cargo run -p rehydration-mcp --locked
 ```
 
 Public HTTPS endpoint:
