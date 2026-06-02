@@ -1,6 +1,8 @@
 # PIR Fix Planning Long-Budget Retry Plan
 
-Status: in_progress
+> **Historical (superseded).** Point-in-time record; the PIR repo was restructured (the `fix_planning` specialist program was decommissioned) and the PIR code/tooling paths referenced below are point-in-time, not live.
+
+Status: Superseded (PIR `fix_planning` specialist program decommissioned; repo restructured)
 Date: 2026-04-12
 Scope: next iteration series for the first real `PIR` event-driven agent after
 the initial `fix_planning` live smokes

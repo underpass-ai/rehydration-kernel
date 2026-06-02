@@ -1,5 +1,7 @@
 # Node-Centric Implementation Plan
 
+> **Historical (superseded — paths refactored).** Point-in-time plan; the graph-native bundle model below shipped, but the code paths/files referenced were refactored after this was written.
+
 This is the implementation plan for the next slice of this repo.
 
 ## Goal

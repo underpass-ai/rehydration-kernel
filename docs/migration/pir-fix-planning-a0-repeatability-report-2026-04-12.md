@@ -1,5 +1,7 @@
 # PIR Fix Planning A0 Repeatability Report 2026-04-12
 
+> **Historical (superseded).** Point-in-time record; the PIR `fix_planning` program was decommissioned and the PIR code paths/tooling cited below (e.g. `cmd/fixplanning-*-smoke`, `internal/specialists/*`, `fixplanning-deployed-smoke-scenarios.yaml`) were restructured after this was written.
+
 Status: completed
 Date: 2026-04-12
 Scope: first repeatability pass for deployed `A0` after adding first-class LLM

@@ -15,7 +15,7 @@ rehydration paper.
 Primary entrypoints:
 
 - manuscript source:
-  [`../PAPER_SUBMISSION_DRAFT.md`](../PAPER_SUBMISSION_DRAFT.md)
+  [`../research/PAPER_SUBMISSION_DRAFT.md`](../research/PAPER_SUBMISSION_DRAFT.md)
 - ACL package guide:
   [`acl/README.md`](./acl/README.md)
   (PDFs are built locally from LaTeX sources; not committed to preserve anonymity)

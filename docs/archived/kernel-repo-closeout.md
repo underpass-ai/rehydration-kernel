@@ -1,5 +1,8 @@
 # Kernel Repo Closeout
 
+> **Historical (superseded).** Point-in-time record; some relative links below
+> were repointed after stable artifacts moved to `docs/migration/`.
+
 > Archived on 2026-04-09. This note is retained for traceability, but it is no
 > longer a current source of truth for the kernel boundary or product write
 > path.
@@ -98,10 +101,10 @@ Its non-responsibilities are:
 Consumers may depend on these artifacts as the frozen integration surface of
 this repo:
 
-- [`kernel-node-centric-integration-contract.md`](./kernel-node-centric-integration-contract.md)
-- [`kernel-runtime-integration-reference.md`](./kernel-runtime-integration-reference.md)
-- [`kernel-agentic-integration-e2e.md`](./kernel-agentic-integration-e2e.md)
-- [`kernel-agentic-event-trigger-e2e.md`](./kernel-agentic-event-trigger-e2e.md)
+- [`kernel-node-centric-integration-contract.md`](../migration/kernel-node-centric-integration-contract.md)
+- [`kernel-runtime-integration-reference.md`](../migration/kernel-runtime-integration-reference.md)
+- [`kernel-agentic-integration-e2e.md`](../migration/kernel-agentic-integration-e2e.md)
+- [`kernel-agentic-event-trigger-e2e.md`](../migration/kernel-agentic-event-trigger-e2e.md)
 - [`context-service-rust-roadmap.md`](./context-service-rust-roadmap.md)
 - [`api/examples/README.md`](../../api/examples/README.md)
 - [`api/examples/runtime-reference/v1/README.md`](../../api/examples/runtime-reference/v1/README.md)

@@ -3,7 +3,7 @@
 > **Path update**: Test files referenced below moved from
 > `crates/rehydration-transport-grpc/tests/` to `crates/rehydration-tests-kernel/tests/`
 > and support modules to `crates/rehydration-tests-shared/src/`. See the
-> [benchmark docs](../benchmark-paper-use-cases.md) for current paths.
+> [benchmark docs](../research/benchmark-paper-use-cases.md) for current paths.
 
 Status: Active
 
@@ -23,7 +23,7 @@ This milestone demonstrates an end-to-end path where:
 ## What Is Implemented
 
 The repository now contains a container-backed agentic integration suite in
-[`agentic_integration.rs`](../../crates/rehydration-transport-grpc/tests/agentic_integration.rs).
+[`agentic_integration.rs`](../../crates/rehydration-tests-kernel/tests/agentic_integration.rs).
 
 The suite proves two runtime modes:
 
@@ -38,13 +38,11 @@ The test infrastructure is split into small files:
 - runtime-agnostic agent logic:
   - [`basic_context_agent.rs`](../../crates/rehydration-transport-grpc/src/agentic_reference/basic_context_agent.rs)
 - kernel fixture and projection seeding:
-  - [`agentic_fixture.rs`](../../crates/rehydration-transport-grpc/tests/support/agentic_fixture.rs)
-  - [`generic_seed_data.rs`](../../crates/rehydration-transport-grpc/tests/support/generic_seed_data.rs)
-  - [`projection_runtime.rs`](../../crates/rehydration-transport-grpc/tests/support/projection_runtime.rs)
+  - [`projection_runtime.rs`](../../crates/rehydration-adapter-nats/src/runtime/projection_runtime.rs)
 - runtime abstractions and implementations:
-  - [`runtime_workspace.rs`](../../crates/rehydration-transport-grpc/tests/support/runtime_workspace.rs)
+  - [`workspace.rs`](../../crates/rehydration-tests-shared/src/runtime/workspace.rs)
   - [`runtime_http_client.rs`](../../crates/rehydration-transport-grpc/src/agentic_reference/runtime_http_client.rs)
-  - [`fake_underpass_runtime.rs`](../../crates/rehydration-transport-grpc/tests/support/fake_underpass_runtime.rs)
+  - [`fake_underpass.rs`](../../crates/rehydration-tests-shared/src/runtime/fake_underpass.rs)
   - [`main.rs`](../../crates/rehydration-transport-grpc/src/bin/runtime_reference_client/main.rs)
 
 ## What The E2E Proves

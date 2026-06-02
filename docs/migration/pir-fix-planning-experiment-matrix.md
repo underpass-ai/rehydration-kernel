@@ -1,6 +1,8 @@
 # PIR Fix Planning Experiment Matrix
 
-Status: in_progress
+> **Historical (superseded).** Point-in-time record from the PIR `fix_planning` specialist program, which has since been decommissioned and restructured (`internal/application/{saturation*,paymentintegrity}`). Code paths and tooling referenced below (`internal/specialists/*`, `cmd/fixplanning-*-smoke`, `fixplanning-deployed-smoke-scenarios.yaml`, `llm_trace_repo.go`) were refactored or removed after this was written.
+
+Status: Superseded (PIR fix_planning program decommissioned; matrix never advanced past Phase A/D1)
 Date: 2026-04-12
 Scope: controlled experiment matrix for model, retry, and long-budget policy
 selection around the first real `PIR` `fix_planning` agent

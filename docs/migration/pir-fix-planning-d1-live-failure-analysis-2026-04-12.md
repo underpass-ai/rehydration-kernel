@@ -1,5 +1,7 @@
 # PIR Fix Planning D1 Live Failure Analysis
 
+> **Historical (superseded).** Point-in-time record; the PIR `fix_planning` specialist program was decommissioned and the `internal/specialists/*`, `cmd/fixplanning-*-smoke`, and `fixplanning-deployed-smoke-scenarios.yaml` code paths/links below were refactored/removed after this was written.
+
 Date: `2026-04-12`
 
 Status: failed truthfully

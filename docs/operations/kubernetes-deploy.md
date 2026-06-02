@@ -48,7 +48,7 @@ The default values file is:
 - [`charts/rehydration-kernel/values.underpass-runtime.yaml`](../../charts/rehydration-kernel/values.underpass-runtime.yaml)
 
 The chart deploys all infrastructure self-contained within the target namespace:
-Neo4j, Valkey, and NATS are managed as subchart resources (`neo4j.enabled`,
+Neo4j, Valkey, and NATS are managed as in-chart optional components (`neo4j.enabled`,
 `valkey.enabled`, `nats.enabled`). Connection URIs are auto-generated from the
 release name. There are no cross-namespace dependencies.
 
@@ -410,7 +410,7 @@ Current boundary:
 
 ## Observability Stack
 
-The chart includes optional Loki, Grafana, and OTel Collector subcharts:
+The chart includes optional Loki, Grafana, and OTel Collector in-chart components:
 
 ```yaml
 loki:

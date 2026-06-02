@@ -1,11 +1,13 @@
 # Context Service Phase 0 Contract Freeze
 
+> **Historical (superseded).** Point-in-time record; code paths/links below (the source-of-truth plan and the removed swe-ai-fleet evidence dir) were refactored or deleted after this was written.
+
 > Obsolete. This freeze captured the removed compatibility boundary. It remains
 > useful only as historical evidence and should not be treated as a current
 > kernel contract.
 
 Status: Complete
-Source of truth: [`CONTEXT_SERVICE_RUST_MIGRATION_PLAN.md`](../../CONTEXT_SERVICE_RUST_MIGRATION_PLAN.md)
+Source of truth: [`CONTEXT_SERVICE_RUST_MIGRATION_PLAN.md`](./CONTEXT_SERVICE_RUST_MIGRATION_PLAN.md)
 
 ## Purpose
 

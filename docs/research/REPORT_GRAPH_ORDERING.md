@@ -16,13 +16,14 @@ TUI (DFS walk) ← GetContext response ← ordered_neighborhood() ← Cypher que
 
 #### 1. Neo4j Schema (`upsert_relation_projection_query.rs`)
 
-Las relaciones `RELATED_TO` solo tienen `relation_type`:
+Las relaciones `RELATED_TO` ya persisten metadatos (incluido `sequence`) en `properties_json`:
 
 ```cypher
 MERGE (source)-[edge:RELATED_TO {relation_type: $relation_type}]->(target)
+SET edge.properties_json = $properties_json
 ```
 
-**No hay** `sequence`, `order`, `position`, `weight`, ni ningún campo de ordenamiento.
+El `properties_json` se serializa desde `relation.explanation.to_properties()` (que incluye `sequence`, `semantic_class`, `rationale`) y se lee de vuelta como `relation_properties_json`.
 
 #### 2. Domain Model (`NodeRelationProjection`)
 
@@ -31,10 +32,11 @@ pub struct NodeRelationProjection {
     pub source_node_id: String,
     pub target_node_id: String,
     pub relation_type: String,
+    pub explanation: RelationExplanation,
 }
 ```
 
-Solo 3 campos. Sin campo de orden.
+4 campos. El orden/`sequence` vive dentro de `explanation` (`RelationExplanation`, que expone `sequence()`/`with_sequence()`).
 
 #### 3. Cypher Query (`load_neighborhood_query.rs`)
 
