@@ -71,6 +71,3 @@ unsafe_code = "forbid"
 dbg_macro = "warn"
 todo = "warn"
 unwrap_used = "warn"
-
-[patch.crates-io]
-async-nats = { path = "vendor/async-nats" }
