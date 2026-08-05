@@ -249,6 +249,11 @@ fn recall_view(about: String, result: &GetContextResult) -> MemoryRecallView {
                 source_node_id: relationship.source_node_id().to_string(),
                 target_node_id: relationship.target_node_id().to_string(),
                 relationship_type: relationship.relationship_type().to_string(),
+                why: relationship
+                    .explanation()
+                    .rationale()
+                    .map(ToOwned::to_owned),
+                evidence: relationship.explanation().evidence().map(ToOwned::to_owned),
             })
             .collect(),
         details: bundle
